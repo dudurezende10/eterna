@@ -91,7 +91,7 @@ A Nova venda segue esta ordem (12/11):
    - O tablet copia os vídeos em segundo plano para o IndexedDB (`eterna-ativ`, store `demo`), sem barra e sem espera, e só baixa de novo quando o arquivo muda no servidor. Na venda, o vídeo toca do tablet.
    - Vídeo que ainda não está no tablet toca do servidor do ponto, se houver rede. Sem os dois, a tela diz que o vídeo ainda não está no tablet e a venda segue.
    - Rotas: `GET /ativ/demo/lista` e `GET /ativ/demo/<nome>` (com `ativvenda.r` ou `catalogo.r`).
-3. **Venda (carrinho, v99.18.3):** tudo se escolhe no card antes de **Adicionar**: local, 4K, chuva e o número de pessoas (no Chute a Gol, participantes), de 1 a 5. O preço do card já mostra o valor com essas escolhas.
+3. **Venda (carrinho, v99.18.3):** tudo se escolhe no card antes de **Adicionar**: local, 4K e o número de pessoas (no Chute a Gol, participantes), de 1 a 5. O preço do card já mostra o valor com essas escolhas.
    - A linha da venda não se edita: tem só a **lixeira**. Para mudar, tira e coloca de novo. O mesmo produto com a mesma escolha soma na linha ("2×").
    - O número de pessoas não muda o preço do drone; acréscimo por pessoa só se o admin configurar em Preços.
    - **Preço fixo (decidido 12/11):** vale o preço do catálogo, com os adicionais somados sozinhos. O vendedor não digita valor, diferente do sistema antigo, que aceitava desconto ou acréscimo.
@@ -129,7 +129,7 @@ Cada vendedor tem cadastro próprio no Eterna, com nome e login. Hoje são 12 ta
 - **Módulo próprio, `ativvenda` (12/11):** Criar = registrar venda; Ver = abrir a tela e ver as próprias vendas; Excluir = cancelar venda com o vídeo não entregue. A tela saiu do módulo Posto de venda.
 - **Perfil pronto "Vendedor Drone, Chute a Gol e Snap Pop":** só `ativvenda` Criar e Ver, menu só com a tela de venda, que abre direto ao entrar. O vendedor não vê o resto do sistema e não cancela. O Supervisor tem o módulo inteiro; o Admin, como sempre, tudo.
 - **Login:** o admin cadastra a pessoa em Usuários, escolhe o perfil acima e gera a senha provisória em Senhas de acesso. No tablet, o vendedor entra com o e-mail e a senha e troca a senha no primeiro acesso.
-- **Quem está logado:** o tablet chama o servidor a cada 30 s com a tela aberta. No Resumo, o painel **Equipe agora** mostra cada vendedor visto nas últimas 16 h: "Conectado" (visto há menos de 2 min) ou "Visto há N min". Rota `GET /ativ/equipe` (com `estatisticas.r`, `financeiro.r` ou `ativvenda.d`). Fica só na memória do servidor.
+- **Quem está logado:** o tablet chama o servidor a cada 30 s com a tela aberta. Até 16/11, o Resumo tinha o painel **Equipe agora**, que mostrava cada vendedor visto nas últimas 16 h: "Conectado" (visto há menos de 2 min) ou "Visto há N min". Rota `GET /ativ/equipe` (com `estatisticas.r`, `financeiro.r` ou `ativvenda.d`). Fica só na memória do servidor. Em 16/11 o painel saiu do Resumo (Ronaldo: não fazia sentido ali); a rota continua, sem tela.
 - A venda grava quem vendeu, e o resumo mostra o vendedor pelo nome.
 - As vendas importadas do sistema antigo são ligadas ao vendedor pelo nome. Um nome que não estiver no cadastro aparece como veio.
 
@@ -217,6 +217,8 @@ Igual à Fila de fotos: em cada serviço (Drone, Chute a Gol, Snap Pop) quatro c
 
 **Fora de venda no dia (v99.21.1, como "Configuração de experiências" do sistema antigo):** em Catálogo › Ativações, além do "Hoje não vendo" do produto, cada local (ou tema) de um produto com mais de um tem o seu: por exemplo, o Banco de Suplentes sai e Campo e Arquibancada seguem. Produto sem nenhum local à venda sai; serviço sem nenhum produto à venda some da tela de venda. Tudo volta sozinho no dia seguinte. Gravado em `ativ/hoje|<produto>.<local>`.
 
+**Chave liga/desliga e Chovendo hoje (18/11, Ronaldo):** em Catálogo › Ativações, a coluna "Vende hoje" é uma chave por produto e, no produto com mais de um local, uma chave por local na mesma linha do preço (os botões "Hoje não vendo"/"Voltar a vender hoje" saíram). A seção Drone tem a chave do dia **Chovendo hoje** (`ativ/hoje|_chuva`, volta sozinha no dia seguinte, mesma permissão do Vende hoje). Ligada, o drone sem preço de chuva sai da venda (chave travada, preços riscados) e o que tem preço de chuva (Boomerang) passa a custar esse preço em todos os locais. A venda não tem mais a caixinha "Com chuva" por item: o preço já vem do dia, e o item registrado leva `chuva: true`.
+
 ### 4b. Feito na v99.20.0: o vídeo na galeria da nuvem
 
 Decidido em 12/11: o QR abre o vídeo direto, com o aceite de uso de imagem e o e-mail, **sem selfie** (o reconhecimento de rosto não compara com vídeo, e o cartão físico já prova a compra). Fica registrado, com data e hora, quando o cliente abriu o QR, aceitou, deu play e baixou.
@@ -282,6 +284,7 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 ### 4g. Fila de entrega em tabela e tela enxuta para quem entrega (Ronaldo, 15/11)
 
 - Com a leitura da pulseira (4e), o quadro da fila por ativação (4a.1) ficou sem botão e a equipe deixou de ver o que faltava entregar. Agora a tela de entrega tem a **Fila de entrega** fixa, abaixo do Agora: **uma linha por entrega** (cada pulseira é um atendimento; uma venda de 3 pessoas dá 3 linhas), de todas as vendas do dia, da mais antiga para a mais nova. Colunas: foto, cliente (hora e número da venda), produto e itens, pulseira (1 / 3), situação em palavras (próximo a voar ou chutar, voando desde, chutando, faltam itens, entregue). Na tela estreita a linha quebra em duas, sem rolagem lateral. Um toque na linha abre o atendimento daquela pulseira. A aba **Entregues** mostra as de hoje já entregues.
+- **A fila só informa (Ronaldo, 16/11):** tocar na linha não abre mais o atendimento. Abrir pela fila deixava registrar o voo ou o chute e entregar o vídeo sem a pessoa estar com a pulseira. O atendimento abre só pela leitura da pulseira (leitor, câmera ou número digitado). O quadro **Agora** continua abrindo o que já está em andamento, porque ali só chega quem já passou pela pulseira.
 - Quem só entrega (perfil Equipe de campo) não vê o cadastro de pilotos, drones e baterias nem o estado da nuvem: isso fica para quem tem Alterar em Configurações (Supervisor e Admin). Erro de envio do vídeo continua aparecendo para todos.
 
 ### 4h. Drone com mais de 5 pessoas (Ronaldo, 15/11)
@@ -289,6 +292,14 @@ Os cartões são impressos por gráfica e ficam no Maracanã. Preocupação do R
 - O seletor de pessoas tem 1 a 5 e o botão **6+**; acima de 5 aparece **− N +** (até 20). O preço do cartão e da venda já soma a pessoa extra pela regra do produto (Pessoas incluídas e Valor por pessoa extra, no cadastro do produto). Drones: 5 pessoas incluídas, R$ 15 por pessoa a mais. O vídeo de demonstração continua o de 5 pessoas.
 
 **Catálogo sempre no servidor (15/11):** o servidor do estádio nunca tinha recebido o catálogo (a tela mostrava o padrão de dentro do app). Ao gravar só o Asteroid, os outros 14 sumiram da tela e da venda até serem gravados de novo no servidor (mesmos preços; Drone com 5 incluídas e R$ 15 por pessoa a mais). Agora, se o servidor ainda não tem o catálogo, a primeira gravação (Editar ou Hoje não vendo) manda o catálogo inteiro, nunca um item sozinho.
+
+### 4i. Ingresso do cliente obrigatório na venda (Ronaldo, 16/11)
+
+- É pelo ingresso que a ativação se liga à venda original (Imply). No passo **Cliente**, antes do nome, fica o campo **Ingresso do cliente (localizador)** com o botão **Ler QR do ingresso**, que abre a câmera (mesmo leitor da pulseira). O localizador também pode ser digitado (12 caracteres, maiúsculas, sem espaço), mas o normal é ler o QR.
+- Sem ingresso válido a venda não é registrada. Formato do localizador (QR conferido em 29/10, plano v85): 4 dígitos do mês e dia + 8 letras e números, por exemplo `1116AB12CD34`. O número de reimpressão (10 caracteres) e mês ou dia impossíveis são recusados. Não se confere se o mês e o dia batem com hoje, porque o ingresso pode ter sido comprado em outro dia.
+- A venda grava `ingresso` e `ingresso_meio` (`camera` ou `digitado`), nas colunas novas de `ativ_venda`, e o resumo `/ativ/vendas` passa a trazê-las. Uma compra com Drone e Chute a Gol leva o mesmo ingresso nas duas vendas. O mesmo ingresso pode aparecer em compras diferentes, porque o cliente pode voltar e comprar mais.
+- O servidor não recusa venda sem ingresso, porque um tablet com a página antiga vende sem rede e a venda não pode se perder. Nesse caso o campo fica vazio e a obrigatoriedade vale na tela.
+- Testes: `testes/ativacoes_venda.js` cobre o pedido do ingresso, a recusa da reimpressão e do mês 13, a leitura do QR com texto em volta e o ingresso nas duas vendas.
 
 ## 5. Vendas: listar, editar, cancelar
 

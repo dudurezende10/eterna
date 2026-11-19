@@ -181,13 +181,13 @@ ok(len(lg7) == 1 and lg7[0]["alvo"] == "klassius@eterna.photo" and lg7[0]["acao"
 ok(m.usuarios_grafia() == 0 and len([d for d in m.estado_col("usuarios_log")["docs"] if d["valor"].get("por") == "servidor"]) == 1, "7b: rodar de novo não muda nada")
 
 # Escala desligada (16/11): por padrão o agente não usa a função do dia; a sessão nasce sem função e sem ponto e a regra
-# dos cliques de IA cai em "sem_funcao", mesmo com função guardada numa sessão aberta antes do deploy
+# dos cliques de IA não vale (sem_funcao até 17/11); desde 18/11 vale a regra 19 (o reconhecimento do gramado, cena_desligada por padrão)
 CFG_IA = {"ligada": True, "cliques": 2, "pontos": ["campo2"], "volante": False}
 X_ANT = {"fotografo": "carlos", "funcao": {"tipo": "campo", "point": "campo2"}}
 with m.ff_lock:
     m.ff_funcao.update(dia=m._ff_hoje(), map={"carlos": {"tipo": "campo", "point": "campo2"}})
 ok(m.FUNCAO_DIA_ON is False and m._ff_func_snapshot("carlos") is None, "Escala desligada: a chave nasce desligada e a sessão não recebe função")
-ok(m._sess_ia_regra(X_ANT, CFG_IA) == (0, "sem_funcao"), "Escala desligada: regra de IA = sem_funcao: %r" % (m._sess_ia_regra(X_ANT, CFG_IA),))
+ok(m._sess_ia_regra(X_ANT, CFG_IA) == (0, "cena_desligada"), "Escala desligada: regra de IA segue o reconhecimento do gramado (18/11, regra 19; desligado = cena_desligada): %r" % (m._sess_ia_regra(X_ANT, CFG_IA),))
 m.FUNCAO_DIA_ON = True                      # religar (ETERNA_FUNCAO_DIA=1): tudo volta
 ok(m._ff_func_snapshot("carlos") == {"tipo": "campo", "point": "campo2"} and m._sess_ia_regra(X_ANT, CFG_IA) == (2, None), "Escala religada: função e regra de volta")
 with m.ff_lock:
@@ -440,13 +440,13 @@ try:
     ok(req("POST", "/fila-fotografo/funcao", {"dia": hoje, "map": {}})[0] == 403, "desligada: POST sem X-Eterna continua 403")
     ftp_envia("yago", [("Y%d.JPG" % i, jpeg(cor())) for i in range(4)])
     g = g_de("yago")
-    ok(g and g["n"] == 4 and g["funcao"] is None and g["ia"]["n"] == 0 and g["ia"]["motivo"] == "sem_funcao", "desligada: grupo novo sem função e sem base de IA: %r" % g)
+    ok(g and g["n"] == 4 and g["funcao"] is None and g["ia"]["n"] == 0 and g["ia"]["motivo"] == "cena_desligada", "desligada: grupo novo sem função e sem base de IA (regra 19 desligada): %r" % g)
     time.sleep(6)                                # pausa de 3 s fecha a sessão; o arquivo do dia grava a cada 2 s
     s, sj, _ = req("GET", "/sessoes?desde=0")
     xs = [x for x in (sj or {}).get("sessoes", []) if x.get("fotografo") == "yago"]
-    ok(len(xs) == 1 and xs[0]["status"] == "fechada" and xs[0]["ia"] == [] and (xs[0].get("ia_regra") or {}).get("motivo") == "sem_funcao"
+    ok(len(xs) == 1 and xs[0]["status"] == "fechada" and xs[0]["ia"] == [] and (xs[0].get("ia_regra") or {}).get("motivo") == "cena_desligada"
        and len(xs[0]["fotos"]) == 4 and xs[0].get("funcao") is None and xs[0].get("ponto") is None,
-       "desligada: sessão nova fecha com ia [], motivo sem_funcao e as 4 fotos à venda: %r" % [(x.get("status"), x.get("ia"), x.get("ia_regra"), len(x.get("fotos") or [])) for x in xs])
+       "desligada: sessão nova fecha com ia [], motivo cena_desligada (18/11) e as 4 fotos à venda: %r" % [(x.get("status"), x.get("ia"), x.get("ia_regra"), len(x.get("fotos") or [])) for x in xs])
     ok(open(fj, "rb").read() == arq0 and os.stat(fj).st_mtime_ns == st0.st_mtime_ns, "desligada: funcao.json intocado depois da sessão")
 finally:
     for p in procs:

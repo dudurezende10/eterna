@@ -19,7 +19,7 @@ try{
     ok(i5.h<=380+64*i5.n,'I5: aba Preços maior que a tabela: '+J({h:i5.h,n:i5.n}));ok(i5.th.includes('Na semana'),'I: cabeçalho "Na semana": '+J(i5.th));
     for(const t of ['precos','checkout','fundos']){await aba(pg,t);const tx=await pg.evaluate(()=>document.querySelector('#main').innerText);ok(!TEC.test(tx),'I3: texto técnico na aba '+t+': '+(tx.match(TEC)||[''])[0]);}
     await aba(pg,'checkout');ok(await pg.$('#busca-janela')&&await pg.$('#loja-fim')&&await pg.$('#main [data-v="calendario"]'),'I: aba Checkout com tempo da tela final, janela da selfie e Calendário');
-    await aba(pg,'fundos');ok((await pg.$$('#cat-fundos [data-act="bg-on"]')).length===3&&await pg.$('#ia-cfg'),'I2: aba Fundos de IA com os 3 fundos e as fotos para os fundos de IA');
+    await aba(pg,'fundos');ok((await pg.$$('#cat-fundos [data-act="bg-on"]')).length===4&&await pg.$('#ia-cfg'),'I2: aba Fundos de IA com os 4 fundos e as fotos para os fundos de IA');
     await aba(pg,'avancado');ok(!(await pg.$('#fundos-modo'))&&await pg.$('[data-act="cartao-lote"]'),'I: aba Avançado com os cartões com QR, sem o painel do modo de montagem (v97: a montagem é sempre local)');
     // ACT_MOD fixo para as ações de Preços e Checkout
     const am=await pg.evaluate(()=>{const A=ETERNA.ACT_MOD;return ['bg-on','cartao-lote','loja-fim','price','price-reset'].map(k=>k+':'+A[k]);});

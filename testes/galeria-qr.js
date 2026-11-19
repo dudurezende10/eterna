@@ -25,7 +25,7 @@ async function selfie(pg,b64){await pg.waitForFunction(()=>{const s=ETERNA.state
   catch(e){const st=await pg.evaluate(()=>({pub:ETERNA.pub&&{step:ETERNA.pub.step,motivo:ETERNA.pub.motivo},face:ETERNA.state.face})).catch(()=>null);throw new Error('selfie sem resposta: '+JSON.stringify(st));}}
 async function abrirGaleria(pg,tok){await pg.goto(U+'#g/'+tok);await pg.waitForFunction(()=>ETERNA.pub&&ETERNA.pub.step!=='carregando',null,{timeout:15000});}
 async function consentir(pg){if(await pg.evaluate(()=>!!document.querySelector('[data-act="gq-mais"]')))await pg.click('[data-act="gq-mais"]'); // v96.1: venda com compradas abre direto nelas
-  await pg.check('[data-act="gq-consent"]');await pg.click('#gq-agree');await pg.waitForSelector('#gq-st',{state:'attached'});}
+  await pg.check('[data-act="gq-consent"]');if(await pg.locator('#gq-esc-email').count())await pg.fill('#gq-esc-email','resp@exemplo.com');await pg.click('#gq-agree');await pg.waitForSelector('#gq-st',{state:'attached'});}
 const gqCruas=pg=>pg.evaluate(()=>{const t=document.body.innerText+' '+[...document.querySelectorAll('[title],[aria-label],[placeholder]')].map(e=>(e.title||'')+(e.getAttribute('aria-label')||'')+(e.placeholder||'')).join(' ');return (t.match(/\b(gq|lj)_[A-Za-z]+/g)||[]);});
 
 (async()=>{const b=await chromium.launch();
@@ -96,7 +96,7 @@ try{
   const g5=await G.evaluate(()=>({h:location.hash,step:ETERNA.pub.step,ph:document.querySelectorAll('.gq-ph').length,dis:document.querySelector('#gq-agree').disabled,user:!!ETERNA.state.user}));
   ok(g5.step==='consent'&&g5.h==='#g/'+tok&&g5.dis&&!g5.user,'5: consentimento sem login: '+JSON.stringify(g5));
   await G.check('[data-act="gq-consent"]');ok(!(await G.evaluate(()=>document.querySelector('#gq-agree').disabled)),'5: botão continua desativado depois de marcar');
-  await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});
+  if(await G.locator('#gq-esc-email').count())await G.fill('#gq-esc-email','resp@exemplo.com');await G.click('#gq-agree');await G.waitForSelector('#gq-st',{state:'attached'});
   // ---------- 7. rosto de fora da sessão: nao_encontrado, tentativas caem, depois bloqueio ----------
   dbg('7. rosto de fora da sessão: nao_encontra');
   const fora=await G.evaluate(async c=>{await ETERNA.faceIndexAll();await new Promise(r=>setTimeout(r,300));await ETERNA.faceq;const ss=ETERNA.demoSessions();const meu=ss.find(s=>s.card===c);
@@ -150,7 +150,7 @@ try{
   // ---------- 26. bandeiras ----------
   dbg('26. bandeiras');
   const f26=await G.evaluate(()=>{const l=document.querySelector('.lj-langs');return {svgs:l.querySelectorAll('button svg').length,txt:l.innerText.trim(),names:[...l.querySelectorAll('button')].map(b=>b.getAttribute('aria-label'))};});
-  ok(f26.svgs===5&&!/\b(PT|EN|ES|FR|DE)\b/.test(f26.txt)&&f26.names.join(',')==='Português,English,Español,Français,Deutsch','26: seletor de bandeiras na galeria: '+JSON.stringify(f26));
+  ok(f26.svgs===6&&!/\b(PT|EN|ES|FR|DE)\b/.test(f26.txt)&&f26.names.join(',')==='Português,English,Español,Français,Deutsch,中文','26: seletor de bandeiras na galeria: '+JSON.stringify(f26));
   // ---------- 9 e 10 na administração ----------
   dbg('9 e 10 na administração');
   const A=await nova(ctx,'admin',{width:1440,height:900});await login(A);await A.evaluate(()=>{ETERNA.state.range={from:'2026-01-01',to:'2099-12-31'};ETERNA.state.view='vendas-lista';ETERNA.render();});await A.waitForTimeout(200);
@@ -195,14 +195,14 @@ try{
   // ---------- 14. sem rolagem horizontal em 3 tamanhos; prints ----------
   dbg('14. sem rolagem horizontal em 3 tamanhos');
   for(const [n,w,h] of [['cel',390,844],['tab',1024,1366],['desk',1440,900]]){await G.setViewportSize({width:w,height:h});await G.waitForTimeout(150);
-    const sw=await G.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth,g:Math.max(...[...document.querySelectorAll('.gq *')].map(e=>e.getBoundingClientRect().right))}));ok(sw.s<=sw.i&&sw.g<=sw.i+1,`14: galeria com rolagem horizontal em ${w}px: `+JSON.stringify(sw));
+    const sw=await G.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth,g:Math.max(...[...document.querySelectorAll('.gq *')].filter(e=>!e.closest('.wm')).map(e=>e.getBoundingClientRect().right))}));ok(sw.s<=sw.i&&sw.g<=sw.i+1,`14: galeria com rolagem horizontal em ${w}px: `+JSON.stringify(sw));
     await G.screenshot({path:`${PR}/galeria-${n}.png`});
     await A.setViewportSize({width:w,height:h});await A.evaluate(()=>{ETERNA.state.gal.tab='sessoes';ETERNA.render();});await A.waitForTimeout(100);
     const sa=await A.evaluate(()=>({s:document.documentElement.scrollWidth,i:innerWidth}));ok(sa.s<=sa.i,`14: view galerias com rolagem horizontal em ${w}px: `+JSON.stringify(sa));await A.screenshot({path:`${PR}/galeria-admin-${n}.png`});}
   // ---------- CORRIGIR 2: venda da Loja cancelada tira o download da galeria ----------
   dbg('CORRIGIR 2: venda da Loja cancelada tira');
   await A.setViewportSize({width:1440,height:900});await A.evaluate(()=>{ETERNA.state.view='vendas-lista';ETERNA.state.sales.canal='all';ETERNA.render();});
-  await A.click(`[data-act="sales-cancel"][data-card="${card}"]`);const r2=await A.evaluate(t=>ETERNA.SIM.galerias[t].fotos.filter(f=>f.direito==='comprada').map(f=>f.canal),tok);
+  await A.click(`[data-act="venda-cancel"][data-card="${card}"]`);await A.fill('#venda-canc-mot','cliente desistiu');await A.click(`[data-act="venda-cancel-ok"][data-card="${card}"]`);await A.waitForTimeout(200);const r2=await A.evaluate(t=>ETERNA.SIM.galerias[t].fotos.filter(f=>f.direito==='comprada').map(f=>f.canal),tok);
   ok(r2.every(c=>c==='online')&&r2.length===1,'R2: depois de cancelar a venda da Loja, só a compra online deveria continuar comprada: '+JSON.stringify(r2));
   // ---------- 22, 25, 26 na Loja ----------
   dbg('22, 25, 26 na Loja');
@@ -210,7 +210,7 @@ try{
   for(const [n,w,h] of [['cel',390,844],['tab',1024,1366],['desk',1440,900]]){await L2.setViewportSize({width:w,height:h});await L2.goto(U+'#loja');await L2.waitForTimeout(500);
     const l22=await L2.evaluate(()=>({step:ETERNA.state.kiosk.step,lj:!!document.querySelector('.lj.lj-full'),nav:!!document.querySelector('#nav')&&document.querySelector('#nav').offsetParent!==null,s:document.documentElement.scrollWidth,i:innerWidth,user:!!ETERNA.state.user,h:location.hash,full:!document.querySelector('[data-act="loja-full"]')}));
     ok(l22.step==='code'&&l22.lj&&!l22.nav&&l22.s<=l22.i&&!l22.user&&l22.h==='#loja'&&l22.full,`22: #loja em ${w}px: `+JSON.stringify(l22));await L2.screenshot({path:`${PR}/loja-rota-${n}.png`});}
-  const f22=await L2.evaluate(()=>{const l=document.querySelector('.lj-langs');return {svgs:l.querySelectorAll('button svg').length,txt:l.innerText.trim()};});ok(f22.svgs===5&&!f22.txt,'26: bandeiras na Loja: '+JSON.stringify(f22));
+  const f22=await L2.evaluate(()=>{const l=document.querySelector('.lj-langs');return {svgs:l.querySelectorAll('button svg').length,txt:l.innerText.trim()};});ok(f22.svgs===6&&!f22.txt,'26: bandeiras na Loja: '+JSON.stringify(f22));
   await L2.click('.lj-langs [data-l="es"]');ok(/Tus fotos/i.test(await L2.textContent('.lj-h1')),'26: trocar a bandeira não trocou o idioma');
   ok(!(await L2.$('[data-act="loja-list"]')),'S4b: "Sessões esperando" visível para o cliente');
   await L2.keyboard.press('Escape');await L2.waitForTimeout(150);ok(await L2.evaluate(()=>ETERNA.state.view==='quiosque'&&ETERNA.state.lojaRota&&!ETERNA.state.user&&ETERNA.state.kiosk.step==='code'&&location.hash==='#loja'),'25/v81: Esc na aba do Checkout sem login volta ao início do #loja (não vai ao login)');

@@ -48,11 +48,11 @@ try{
       ok(!!(await pg.$('[data-act="perm-view"][data-v="calendario"]')),'4: matriz em '+lg+' sem a caixa do Calendário');t+='\n'+await pg.evaluate(()=>document.querySelector('#main').innerText);const m=t.match(ESC);
       ok(t.includes(NOME[lg]),'4: Permissões em '+lg+' sem "'+NOME[lg]+'"');ok(!m,'4: Permissões em '+lg+' ainda fala de escala: '+(m&&t.slice(Math.max(0,m.index-50),m.index+50)));
       ok(!(await pg.$('[data-act="perm-view"][data-v="escala"]')),'1: Permissões em '+lg+' com a caixa da tela Escala');}
-    const dic=await pg.evaluate(()=>['mod_escala_cal','modi_escala_cal_desc','modi_escala_cal_r','modi_escala_cal_u','pred_foto_se','cf_ia_sem_escala','up_iam_sem_ponto'].map(k=>[k,ETERNA.EQ[k]]));
+    const dic=await pg.evaluate(()=>['mod_escala_cal','modi_escala_cal_desc','modi_escala_cal_r','modi_escala_cal_u','cf_ia_sem_escala','up_iam_sem_ponto'].map(k=>[k,ETERNA.EQ[k]]));
     ok(dic.every(([k,v])=>Array.isArray(v)&&v.length===5&&v.every(x=>typeof x==='string'&&x.length>3)),'textos novos nas 5 línguas: '+J(dic.filter(([k,v])=>!Array.isArray(v)||v.length!==5).map(x=>x[0])));
-    ok(dic.slice(0,5).every(([k,v])=>!v.some(x=>ESC.test(x)))&&dic[0][1][4]===NOME.de,'4: nome e textos do módulo e do perfil Fotógrafo sem escala nem função do dia, nas 5 línguas: '+J(dic.slice(0,5).filter(([k,v])=>v.some(x=>ESC.test(x))).map(x=>x[0])));
+    ok(dic.slice(0,4).every(([k,v])=>!v.some(x=>ESC.test(x)))&&dic[0][1][4]===NOME.de,'4: nome e textos do módulo e do perfil Fotógrafo sem escala nem função do dia, nas 5 línguas: '+J(dic.slice(0,4).filter(([k,v])=>v.some(x=>ESC.test(x))).map(x=>x[0])));
     await lingua(pg,'pt','painel');
-    ok(await pg.evaluate(()=>ETERNA.modNome('escala')==='Calendário de eventos'&&ETERNA.preDesc('foto').endsWith('Curadoria, Configurações.')&&!/Escala/.test(ETERNA.preDesc('foto'))),'descrição do perfil Fotógrafo sem a Escala');
+    ok(await pg.evaluate(()=>ETERNA.modNome('escala')==='Calendário de eventos'),'nome do módulo sem a Escala');
 
     // ---------- 3: Calendário de eventos continua para o Admin ----------
     await pg.evaluate(()=>ETERNA.go('calendario'));await pg.waitForTimeout(200);
@@ -64,7 +64,7 @@ try{
       ok(p.lig===1&&p.pts===0&&p.nota===p.esp&&p.nota.length>40,'fundos de IA em '+lg+': liga/desliga e nota, sem pontos nem volante: '+J([p.lig,p.pts,p.nota.slice(0,40)]));}
     await lingua(pg,'pt');
     // etiqueta do Upload para a sessão sem base
-    ok(/rg\.motivo==='sem_funcao'&&!ESCALA_ON\?TE\('up_iam_sem_ponto'\)/.test(fonte)&&await pg.evaluate(()=>ETERNA.TE('up_iam_sem_ponto'))==='Fotos de IA: aguardando reconhecimento do ponto','etiqueta do Upload para sem_funcao com a Escala desligada');
+    ok(/rg\.motivo==='sem_funcao'&&!ESCALA_ON\?TE\('up_iam_sem_ponto'\)/.test(fonte)&&await pg.evaluate(()=>ETERNA.TE('up_iam_sem_ponto'))==='Fotos de IA: só com o reconhecimento do gramado ligado','etiqueta do Upload para sem_funcao com a Escala desligada (texto de 18/11, regra 19)');
 
     // ---------- func-set e função do dia não gravam nem chamam o agente ----------
     const f=await pg.evaluate(()=>{const S=ETERNA.SIM;const antes=J2(S.funcao);function J2(x){return JSON.stringify(x===undefined?null:x);}

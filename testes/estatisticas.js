@@ -118,7 +118,7 @@ try{
     await pg.evaluate(([de,ate])=>{const E=ETERNA;E.state.range={from:de,to:ate};E.state.es.sec='a';E.state.es.rover=false;E.go('estatisticas');},[addD(HOJE,-365),HOJE]);
     const tq=Date.now();for(let i=0;i<80&&!(await pg.evaluate(()=>(ETERNA.state.es.dias||[]).length===366));i++)await pg.waitForTimeout(100);medidas.carga_ms=Date.now()-tq; // espera o agente falso conectar e o /metricas/dia de 366 dias
 
-    const m=await pg.evaluate(()=>{const E=ETERNA;const t={};for(const s of ['a','b','c','d','e','f']){E.state.es.sec=s;const t0=performance.now();E.render();t[s]=Math.round(performance.now()-t0);}E.state.es.sec='a';E.render();
+    const m=await pg.evaluate(()=>{const E=ETERNA;const t={};for(const s of ['a','b','c','d','e','f','u']){E.state.es.sec=s;const t0=performance.now();E.render();t[s]=Math.round(performance.now()-t0);}E.state.es.sec='a';E.render();
       return {t,n:(E.state.es.dias||[]).length,kpi:document.querySelector('.pn-kpi[data-k="fat"] .pn-big').textContent,semdet:(document.querySelector('.es-semdet')||{}).textContent||''};});
     medidas.render_ms=m.t;ok(m.n===366,'27: 366 dias carregados: '+m.n);ok(Math.max(...Object.values(m.t))<300,'27: cada seção desenha em menos de 300 ms: '+J(m.t));
     ok(/366 vendas sem detalhe de produto \(antes da v92\)/.test(m.semdet),'14: nota sem detalhe: '+m.semdet);
@@ -131,25 +131,14 @@ try{
     ok(/Carlos · dia a dia/.test(tb)&&!/presen|falta|atraso|escalad|login às|ponto oficial/i.test(tb),'b: dia a dia sem presença, faltas ou atrasos');
     ok(J(cab)===J(['Fotógrafo','Dias com produção','Sessões','Fotos','Fotos/sessão','Vendas','Conversão','R$/sessão','Faturamento','Clique → Checkout']),'b: só métricas de produção: '+J(cab));
     const dp=await pg.evaluate(()=>{const tr=[...document.querySelectorAll('.es-fotos tbody tr')].find(t=>/Carlos/.test(t.textContent));return tr?tr.children[1].textContent:'';});ok(dp.replace(/\D/g,'')==='366','b: dias com produção = 366: '+dp);
-    // f) movimento sem dados, com import, CSV com colunas extras (23)
-    await pg.click('[data-act="es-sec"][data-s="f"]');await pg.waitForTimeout(150);let tf=await pg.textContent('#main');
-    ok(/Sem dados de entrada ainda\. Quando chegar o arquivo do bip ou das catracas, importe aqui\./.test(tf)&&await pg.$('[data-act="es-importar"]')&&await pg.$('.es-out'),'22: aviso, botão de importar e retrato de outubro à parte');
-    const semC=await pg.evaluate(()=>{const u=ETERNA.state.user;const o=u.perms.estatisticas.c;u.perms.estatisticas.c=false;ETERNA.render();const tem=!!document.querySelector('[data-act="es-importar"]');u.perms.estatisticas.c=o;ETERNA.render();return tem;});
-    ok(!semC,'22: sem estatisticas.c não aparece o botão de importar');
-    const ontem=addD(HOJE,-1);const [y,mo,dd]=ontem.split('-');
-    const csv=['data_hora;origem;ingresso;cpf',...Array.from({length:9},(_,i)=>`${dd}/${mo}/${y} 10:41:0${i};bip;ING-99887${i};123.456.789-0${i}`),`${ontem} 09:01:00;bip;ING-1;111.222.333-44`,`31/02/2026 10:00:00;bip;ING-2;555.666.777-88`].join('\n');
-    await pg.setInputFiles('[data-act="es-importar"]',{name:'bilheteria.csv',mimeType:'text/csv',buffer:Buffer.from(csv)});await pg.waitForTimeout(500);
-    const env=AG.ent.map(e=>e.raw).join('\n');const corpo=AG.ent[0]?JSON.parse(AG.ent[0].raw):{};
-    ok(AG.ent.length===1&&Object.keys(corpo).sort().join()==='arquivo,dia,origem,por,seg'&&!/ING-|\d{3}\.\d{3}\.\d{3}-\d{2}|cpf|ingresso/i.test(env)&&AG.ent[0].h['x-eterna']==='1','23: só origem, dia e segundos (com arquivo e por) saem do navegador: '+env.slice(0,200));
-    ok(corpo.seg&&corpo.seg.length===10&&corpo.dia===ontem,'23: 10 entradas do dia certo: '+J(corpo.seg));
-    const res=await pg.evaluate(()=>(document.getElementById('es-imp-res')||{}).textContent||'');ok(/10 entradas aceitas/.test(res)&&/linha 12: data_hora inválida/.test(res),'23: resumo com as recusadas: '+res);
-    await pg.setInputFiles('[data-act="es-importar"]',{name:'bilheteria.csv',mimeType:'text/csv',buffer:Buffer.from(csv)});await pg.waitForTimeout(400);ok(AG.ent.length===2&&AG.ent[1].raw===AG.ent[0].raw,'24: o mesmo arquivo manda o mesmo dia de novo (o agente substitui)');
-    // 25: pico na tela
-    AG.dias[1]=dia(ontem,{entradas:{fonte:'bip',total:812,por_origem:{bip:812},por_hora:{'09':95,'10':300},pico_min:{hhmm:'10:41',n:9},pico_15:{hhmm:'10:30',n:88},primeira:'09:01',ultima:'16:58',minutos:478,media_min:1.7}});
-    await pg.evaluate(()=>{ETERNA.state.es.chave=null;ETERNA.esPull(true);});await pg.waitForTimeout(600);tf=await pg.textContent('#main');
-    {const bars=await pg.$$eval('#main .es-bar .l',x=>x.map(e=>e.textContent));const pm=await pg.evaluate(()=>[...document.querySelectorAll('#main .tile')].find(t=>/Por minuto aberto/.test(t.textContent)).querySelector('.v').textContent);
-      ok(bars.includes('09h')&&bars.includes('10h')&&/^\d+,\d$/.test(pm),'pessoas por hora e por minuto com uma casa: '+J({bars:bars.slice(0,4),pm}));}
-    ok(/pico 10:41, 9 pessoas/.test(tf)&&/Funil/.test(tf)&&/Últimas importações/.test(tf)&&/bilheteria\.csv/.test(tf),'25: pico 10:41, 9 pessoas e importações: '+tf.slice(0,160));
+    // f) movimento ao vivo pela API do Maraca Acessos (16/11: sai a importação de CSV) e u) funil
+    await ctx.route(ORIG+'/visitantes*',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,total:756,anterior:1180,por_hora:[0,0,0,0,0,0,0,0,0,127,132,130,104,67,95,91,10,0,0,0,0,0,0,0],por_canal:[{canal:'Bilheteria',n:436},{canal:'Online',n:204},{canal:'Grupos',n:116}]})}));
+    await pg.evaluate(()=>{ETERNA.state.es.vis=null;});await pg.click('[data-act="es-sec"][data-s="f"]');await pg.waitForTimeout(400);let tf=await pg.textContent('#main');
+    ok(/756/.test(tf)&&/Bilheteria/.test(tf)&&/1\.180 no período anterior/.test(tf)&&!(await pg.$('[data-act="es-importar"]'))&&!(await pg.$('.es-out')),'f: visitantes ao vivo, por canal, sem importar: '+tf.slice(200,900));
+    {const bars=await pg.$$eval('#main .es-bar .l',x=>x.map(e=>e.textContent));ok(bars[0]==='09h'&&bars.includes('16h'),'f: visitantes por hora: '+J(bars));}
+    await pg.evaluate(()=>{const E=ETERNA;(E.state.es.dias||[]).forEach(d=>{d.pessoas={pessoas:5};d.balcao=4;});});
+    await pg.click('[data-act="es-sec"][data-s="u"]');await pg.waitForTimeout(300);
+    {const fu=await pg.$$eval('#es-funil .es-fun-b',x=>x.map(e=>e.querySelector('b').textContent));ok(fu.length===6&&fu[0]==='756','u: funil com 6 passos, visitantes no topo: '+J(fu));}
     await pg.evaluate(()=>{ETERNA.state.catTab='checkout';ETERNA.go('catalogo');});/* v94-ux (parte I): o atalho do Calendário fica na aba Checkout */ok(!(await pg.$('#turnos'))&&!(await pg.$('[data-act="turno-salvar"]')),'sem horário dos turnos no Painel de controle');
     ok(await pg.$('#main [data-act="view"][data-v="calendario"]'),'D3: atalho do Calendário no Painel de controle');
     // 3: venda de verdade no balcão (caixaConfirm) com a tela em inglês: canal balcao, sem lang
@@ -162,12 +151,6 @@ try{
     // revisão: aviso de fuso diferente do venue
     const fz=await pg.evaluate(()=>{const E=ETERNA;E.state.agent.fuso={tz:'UTC',offset_min:0};E.go('estatisticas');const a=!!document.getElementById('es-fuso');E.state.agent.fuso={tz:'America/Sao_Paulo',offset_min:E.venueOffsetMin()};E.render();return {a,b:!!document.getElementById('es-fuso')};});
     ok(fz.a&&!fz.b,'fuso: avisa só quando o servidor está em outro fuso: '+J(fz));
-    // revisão: importação de vários dias espera o 429 e tenta de novo
-    let n429=0;await ctx.route(ORIG+'/ponto/entradas',r=>{n429++;if(n429===2){r.fulfill({status:429,contentType:'application/json',body:J({error:'muitos pedidos'})});return;}const bd=JSON.parse(r.request().postData());r.fulfill({status:200,contentType:'application/json',body:J({ok:true,aceitas:bd.seg.length,recusadas:0})});});
-    await pg.evaluate(()=>{ETERNA.esImpEspera(200);ETERNA.state.es.sec='f';ETERNA.render();});const d2=addD(HOJE,-2),d3=addD(HOJE,-3);
-    await pg.setInputFiles('[data-act="es-importar"]',{name:'dias.csv',mimeType:'text/csv',buffer:Buffer.from(`data_hora;origem\n${d2} 10:00:00;bip\n${d3} 11:00:00;bip\n${addD(HOJE,-4)} 12:00:00;bip\n`)});
-    for(let i=0;i<40&&!(await pg.evaluate(()=>{const r=ETERNA.state.es.impRes;return r&&r.arquivo==='dias.csv';}));i++)await pg.waitForTimeout(100);
-    const r429=await pg.evaluate(()=>ETERNA.state.es.impRes);ok(n429===4&&r429&&r429.dias===3&&r429.aceitas===3,'importação de 3 dias com um 429 no meio: tenta de novo e grava os 3: '+J({n429,r429}));
     await ctx.close();}
   // Testador 3: a leitura do servidor não apaga o evento que ainda está na fila (nem traz de volta o apagado aqui)
   {const {ctx,pg}=await nova();await entrar(pg,'supervisor@eterna.photo');

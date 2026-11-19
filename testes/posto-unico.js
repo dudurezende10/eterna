@@ -215,7 +215,7 @@ try{
     // 17: só ver
     await personalizado(pg,VEND,{venda:{c:false,r:true,u:false,d:false}},['posto','caixa','checkout']);ok(await entrar(pg,VEND),'personalizado (só ver) não entrou');await pg.evaluate(()=>{const S=ETERNA.SIM;localStorage.setItem('eterna.sim.v1',JSON.stringify(S));});
     for(const v of ['posto','caixa']){await pg.evaluate(v=>ETERNA.go(v),v);await pg.waitForTimeout(200);
-      const p17=await pg.evaluate(()=>({v:ETERNA.state.view,n:document.querySelectorAll('#pend-painel [data-pend]').length,conf:document.querySelectorAll('#main [data-act="din-confirm"],#main [data-act="pend-pos"],#main [data-act="din-cancel"]').length,dis:[...document.querySelectorAll('#main .pend-pkg,#main .pend-meio')].every(x=>x.disabled),cx:!!document.querySelector('#rail-ck [data-v="caixa"]')}));
+      const p17=await pg.evaluate(()=>({v:ETERNA.state.view,n:document.querySelectorAll('#pend-painel [data-pend]').length,conf:document.querySelectorAll('#main [data-act="din-confirm"],#main [data-act="pend-pos-ok"],#main [data-act="din-cancel"]').length,dis:[...document.querySelectorAll('#main .pend-pkg,#main .pend-meio')].every(x=>x.disabled),cx:!!document.querySelector('#rail-ck [data-v="caixa"]')}));
       ok(p17.v===v&&p17.n>=1&&p17.conf===0&&p17.dis&&!p17.cx,`17: só ver no ${v}: `+J(p17));}
     await ctx.close();}
   ok(!errs.length,'erros de página: '+errs.join(' | '));

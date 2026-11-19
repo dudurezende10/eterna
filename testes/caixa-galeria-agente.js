@@ -123,7 +123,7 @@ try{
     ok(await espera(CX,id=>!!document.querySelector(`[data-act="pend-pkg"][data-id="${id}"]`),15000,pend.id),`R${r}: pendência no Caixa`);
     const carregada=await CX.evaluate(c=>{const x=ETERNA.demoSessions().find(s=>s.card===c);return x?x.photos.length:0;},card);
     await CX.click(`[data-act="pend-pkg"][data-id="${pend.id}"]`);await CX.waitForTimeout(100);await CX.click(`[data-act="pend-meio"][data-id="${pend.id}"][data-m="${r%2?'cartao':'pix'}"]`);await CX.waitForTimeout(100);
-    await CX.click(`[data-act="pend-pos"][data-id="${pend.id}"]`);await CX.click(`[data-act="pend-pos-ok"][data-id="${pend.id}"]`);
+    await CX.click(`[data-act="pend-pos-ok"][data-id="${pend.id}"]`);
     ok(await espera(CX,c=>ETERNA.SIM.sessions[c].status==='paga',5000,card),`R${r}: paga no Caixa`);
     const tok=await CX.evaluate(c=>ETERNA.SIM.sessions[c].galVenda||ETERNA.galDaSessao(c),card);const t0=Date.now();let gi=null;
     for(let i=0;i<80;i++){gi=await req(PORTA,'GET','/g/'+tok+'/info');if(gi.s===200)break;await sleep(500);}

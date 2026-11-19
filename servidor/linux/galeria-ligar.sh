@@ -6,11 +6,11 @@
 #   2. confere se a nuvem reconhece o segredo deste servidor (~/Eterna/nuvem-segredo.txt, que não aparece na tela).
 #      Se a nuvem recusar, mostra o SHA-256 do segredo para atualizar a stack eterna-galeria (servidor/galeria-nuvem/README.md);
 #   3. reinicia o Eterna: as galerias abertas que nunca foram para a nuvem entram na fila sozinhas.
-#   sudo bash /opt/eterna/app/servidor/linux/galeria-ligar.sh
+#   sudo bash /opt/eterna/app/servidor/linux/galeria-ligar.sh [endereço da galeria]
 set -Eeuo pipefail
 ENV=/srv/eterna/Eterna/nuvem.env
 SEG=/srv/eterna/Eterna/nuvem-segredo.txt
-API=https://whe2hyve2j.execute-api.us-east-2.amazonaws.com
+API=${1:-https://dxsulr2e9z91t.cloudfront.net}     # 17/11: CloudFront com o firewall (stack eterna-galeria-borda); a API direta é https://whe2hyve2j.execute-api.us-east-2.amazonaws.com
 ok()   { printf '   \033[32mok\033[0m %s\n' "$*"; }
 para() { printf '\n\033[1;31mPAROU: %s\033[0m\n' "$*"; exit 1; }
 trap 'para "erro na linha $LINENO: $BASH_COMMAND"' ERR

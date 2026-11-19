@@ -22,7 +22,7 @@ try{
   await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;ETERNA.go('ativ-venda');});await A.waitForTimeout(300);
   await A.click('[data-act="av-add"][data-id="asteroid"]');await A.click('[data-act="av-add"][data-id="asteroid"]');await A.waitForTimeout(100);
   ok((await A.$$('[data-act="av-pul"]')).length===2&&/Pulseira 1 de 2/.test(await A.textContent('#av-cart')),'dois vídeos, dois campos de pulseira');
-  await A.click('[data-act="av-pag"][data-p="PIX"]');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto='data:image/jpeg;base64,/9j/2Q==';});
+  await A.click('[data-act="av-pag"][data-p="PIX"]');await A.fill('[data-act="av-ing"]','1116AB12CD34');await A.fill('[data-act="av-nome"]','Cliente Teste');await A.evaluate(()=>{ETERNA.state.av.foto='data:image/jpeg;base64,/9j/2Q==';});
   await A.click('[data-act="av-registrar"]');await A.waitForTimeout(150);
   ok(/Leia a pulseira de cada item/.test(await A.textContent('#av-erro'))&&!enviadas.length,'sem pulseira não registra');
   await A.fill('[data-act="av-pul"][data-k="0"]','00123');await A.press('[data-act="av-pul"][data-k="0"]','Enter');await A.waitForTimeout(100);

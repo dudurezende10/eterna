@@ -1,11 +1,12 @@
 // 16/11 (Eduardo): três fundos de IA no Checkout (Mirante do Rio de dia, Arquibancada 1950 toda em preto e branco e Telão do
 // Maracanã com a imagem nova). Noite de campeão, Mirante ao pôr do sol e Saída do túnel vão para o Laboratório, sem apagar.
 // Plano e critérios: docs/planos/2026-11-16-tres-fundos-ia.md. Recorte sintético (nunca foto de cliente).
+// 16/11 18:57 (Eduardo): a Saída do túnel volta com imagem nova como 4º fundo (docs/planos/2026-11-16-tunel-v2.md; o resto do túnel em tunel-v2.js).
 // TRES_FUNDOS_RENDER=pasta grava as montagens de conferência (Telão com os 4 cantos ampliados, Mirante e 1950).
 const {chromium}=require('playwright');const {execFileSync}=require('child_process');const fs=require('fs');const path=require('path');const login=require('./_login.js');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;const RENDER=process.env.TRES_FUNDOS_RENDER||'';
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-const TRINCA=['mirantedia','arq1950','telao'];
+const TRINCA=['mirantedia','arq1950','telao'],QUATRO=[...TRINCA,'tunel'];
 // recorte "meio" (encosta embaixo) e "inteiro" (termina antes da borda): duas pessoas de camisa magenta
 const [MEIO,INTEIRO,MINI]=execFileSync('python3',['-c',`
 import io,base64
@@ -25,7 +26,8 @@ const a=Date.now()/1000;const BASES=['bas000000001','bas000000002'];const FOTOS=
 const FEED=[{card:CARD,dia:hoje,fotografo:'carlos',fonte:'ftp',ponto:'terminal',trilha:'vivo',atrasada:false,status:'fechada',motivo:'pausa',aberta_em:a-900,ultima_chegada:a-850,cap0:a-902,cap1:a-852,fonte_t:'cap',fechada_em:a-790,fechada_por:'pausa',
   fotos:[...BASES,...FOTOS],pend:[],dec:{},sim_abertura:null,fundida_em:null,removida:false,rev:1,ia:BASES.slice(),ia_regra:{n:2,motivo:null}}];
 const ANTIGA=['campeao','mirante','arq1950','tunel','telao'];
-const DOCS={sim:{bgOn:{valor:ANTIGA,rev:1},bgPodioV86:{valor:true,rev:2},bgTelaoV97:{valor:true,rev:3}}};let DREV=3;const POSTS=[];
+// sim/bgOn2 com a trinca gravada antes do túnel v2 (sem a marca bgTunelV2): o Checkout mostra os 4 sem gravar nada
+const DOCS={sim:{bgOn:{valor:ANTIGA,rev:1},bgPodioV86:{valor:true,rev:2},bgTelaoV97:{valor:true,rev:3},bgOn2:{valor:TRINCA.slice(),rev:4}}};let DREV=4;const POSTS=[];
 (async()=>{const b=await chromium.launch();const errs=[];
 try{
   // ================= A. sem agente: catálogo, lista salva, nomes, montagens =================
@@ -35,11 +37,11 @@ try{
 
   // 1: navegador limpo
   const c1=await pg.evaluate(()=>({on:ETERNA.bgOn(),opts:ETERNA.bgOpts().map(o=>o.id),sim2:ETERNA.SIM.bgOn2,sim:ETERNA.SIM.bgOn}));
-  ok(J(c1.on)===J(TRINCA)&&J(c1.opts.slice().sort())===J(TRINCA.slice().sort())&&c1.sim2==null&&c1.sim==null,'1: navegador limpo com a trinca: '+J(c1));
+  ok(J(c1.on)===J(QUATRO)&&J(c1.opts.slice().sort())===J(QUATRO.slice().sort())&&c1.sim2==null&&c1.sim==null,'1: navegador limpo com os 4 (a trinca e o túnel v2): '+J(c1));
 
-  // 2: os três que saíram continuam em DATA.backgrounds, no Laboratório
-  const c2=await pg.evaluate(()=>({total:ETERNA.BGS.length,lab:['campeao2','mirante','tunel'].map(i=>{const x=ETERNA.bgOf(i);return !!x&&x.inativo===true&&!ETERNA.bgAtivo(x);}),arq:['img/bg-campeao-v81.jpg','img/bg-mirantesol.jpg','img/bg-tunel.jpg'].every((f,i)=>ETERNA.bgOf(['campeao2','mirante','tunel'][i]).file===f)}));
-  ok(c2.total>=16&&c2.lab.every(Boolean)&&c2.arq,'2: Campeão, Mirante ao pôr do sol e Túnel seguem no catálogo, inativos: '+J(c2));
+  // 2: os dois que saíram continuam em DATA.backgrounds, no Laboratório (o túnel voltou com imagem nova: tunel-v2.js)
+  const c2=await pg.evaluate(()=>({total:ETERNA.BGS.length,lab:['campeao2','mirante'].map(i=>{const x=ETERNA.bgOf(i);return !!x&&x.inativo===true&&!ETERNA.bgAtivo(x);}),arq:['img/bg-campeao-v81.jpg','img/bg-mirantesol.jpg'].every((f,i)=>ETERNA.bgOf(['campeao2','mirante'][i]).file===f)}));
+  ok(c2.total>=16&&c2.lab.every(Boolean)&&c2.arq,'2: Campeão e Mirante ao pôr do sol seguem no catálogo, inativos: '+J(c2));
   for(const f of ['img/bg-telao.jpg','img/bg-campeao-v81.jpg','img/bg-mirantesol.jpg','img/bg-tunel.jpg','img/fundos-5k/campeao.jpg','img/fundos-5k/mirantesol.jpg','img/fundos-5k/tunel.jpg'])ok(fs.existsSync(path.join(__dirname,'..',f)),'2: arquivo antigo apagado: '+f);
 
   // 7: nomes para o cliente nas 5 línguas
@@ -47,41 +49,42 @@ try{
   ok(J(c7)===J({pt:['Mirante do Rio','Maracanã 1950','Telão do Maracanã'],en:['Rio lookout','Maracanã 1950','Maracanã big screen'],es:['Mirador de Río','Maracanã 1950','Pantalla gigante del Maracanã'],
     fr:['Belvédère de Rio','Maracanã 1950','Écran géant du Maracanã'],de:['Aussichtspunkt über Rio','Maracanã 1950','Maracanã-Großbildleinwand']}),'7: nomes nas 5 línguas: '+J(c7));
 
-  // 3: aparelho com a lista antiga salva (SIM.bgOn): mostra a trinca e não cria bgOn2 sozinho
+  // 3: aparelho com a lista antiga salva (SIM.bgOn): mostra o padrão (os 4) e não cria bgOn2 sozinho
   for(const [nome,lista] of [['5 fundos',['campeao','mirante','arq1950','tunel','telao']],['4 fundos',['campeao','mirante','arq1950','tunel']],['com pódio',['campeao','podio','mirante','arq1950','tunel']],['lista vazia',[]]]){
     await pg.evaluate(l=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');s.bgOn=l;delete s.bgOn2;delete s.bgPodioV86;delete s.bgTelaoV97;localStorage.removeItem('eterna.bgpodio.v');localStorage.removeItem('eterna.bgtelao.v');localStorage.setItem('eterna.sim.v1',JSON.stringify(s));},lista);
     await pg.reload();await pg.waitForTimeout(400);
     const r=await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}');return {on:ETERNA.bgOn(),mem:ETERNA.SIM.bgOn2,salvo2:s.bgOn2,salvo:s.bgOn};});
-    ok(J(r.on)===J(TRINCA)&&r.mem==null&&r.salvo2==null&&J(r.salvo)===J(lista),'3 ('+nome+'): a trinca, sem criar bgOn2 e sem mexer na lista antiga: '+J(r));}
+    ok(J(r.on)===J(QUATRO)&&r.mem==null&&r.salvo2==null&&J(r.salvo)===J(lista),'3 ('+nome+'): o padrão, sem criar bgOn2 e sem mexer na lista antiga: '+J(r));}
 
   // 5: bgOn2 que não é lista de textos não quebra: vale o padrão
   await login(pg);
   for(const v of [1,'telao',{a:1},[1,2],[['telao']],null]){
     const r=await pg.evaluate(v=>{ETERNA.SIM.bgOn2=v;const o={on:ETERNA.bgOn()};try{ETERNA.go('chroma');o.chroma=document.querySelector('#main').innerText.length>100;ETERNA.go('catalogo');o.cat=true;}catch(e){o.err=String(e.message);}return o;},v);
-    ok(J(r.on)===J(TRINCA)&&r.chroma&&r.cat&&!r.err,'5: bgOn2='+J(v)+' vale o padrão e a tela abre: '+J(r));}
+    ok(J(r.on)===J(QUATRO)&&r.chroma&&r.cat&&!r.err,'5: bgOn2='+J(v)+' vale o padrão e a tela abre: '+J(r));}
   // lista com id que não existe ou inativo: fica o que vale; só inválidos: volta ao padrão; vazia de propósito: vazia
-  const c5=await pg.evaluate(()=>{const S=ETERNA.SIM,o=[];S.bgOn2=['telao','naoexiste','mirante'];o.push(ETERNA.bgOn());S.bgOn2=['campeao','tunel'];o.push(ETERNA.bgOn());S.bgOn2=[];o.push(ETERNA.bgOn());delete S.bgOn2;return o;});
-  ok(J(c5)===J([['telao'],TRINCA,[]]),'5: lista com fundo que não vale: '+J(c5));
+  const c5=await pg.evaluate(()=>{const S=ETERNA.SIM,o=[];S.bgOn2=['telao','naoexiste','mirante'];o.push(ETERNA.bgOn());S.bgOn2=['campeao','tunel'];o.push(ETERNA.bgOn());S.bgOn2=['campeao','podio'];o.push(ETERNA.bgOn());S.bgOn2=[];o.push(ETERNA.bgOn());delete S.bgOn2;return o;});
+  ok(J(c5)===J([['telao'],['tunel'],QUATRO,[]]),'5: lista com fundo que não vale: '+J(c5));
 
-  // 12: Painel de controle "3 de 5 ativos"; ligar e desligar grava bgOn2; mover do Laboratório para ativo e histórico
+  // 12: Painel de controle "4 de 5 ativos"; ligar e desligar grava bgOn2; mover do Laboratório para ativo e histórico
   await pg.evaluate(()=>{delete ETERNA.SIM.bgOn2;delete ETERNA.SIM.bgOn;localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));localStorage.removeItem('eterna.users.log.v1');ETERNA.go('catalogo');});await pg.waitForTimeout(200);
   await pg.click('#main [data-act="cat-tab"][data-t="fundos"]');await pg.waitForTimeout(200);
   const p12=await pg.evaluate(()=>({pill:(document.querySelector('#cat-fundos .head .pill')||{}).textContent,n:document.querySelectorAll('#cat-fundos [data-act="bg-on"]').length,on:document.querySelectorAll('#cat-fundos [data-act="bg-on"][aria-pressed="true"]').length}));
-  ok(p12.pill==='3 de 5 ativos'&&p12.n===3&&p12.on===3,'12: Painel de controle com "3 de 5 ativos": '+J(p12));
+  ok(p12.pill==='4 de 5 ativos'&&p12.n===4&&p12.on===4,'12: Painel de controle com "4 de 5 ativos": '+J(p12));
   await pg.click('#cat-fundos [data-act="bg-on"][data-id="telao"]');await pg.waitForTimeout(200);
   const d12=await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));return {s2:s.bgOn2,s1:s.bgOn,on:ETERNA.bgOn(),pill:document.querySelector('#cat-fundos .head .pill').textContent};});
-  ok(J(d12.s2)===J(['mirantedia','arq1950'])&&d12.s1==null&&J(d12.on)===J(d12.s2)&&d12.pill==='2 de 5 ativos','12: desligar grava bgOn2 (e nada em bgOn): '+J(d12));
+  ok(J(d12.s2)===J(['mirantedia','arq1950','tunel'])&&d12.s1==null&&J(d12.on)===J(d12.s2)&&d12.pill==='3 de 5 ativos','12: desligar grava bgOn2 (e nada em bgOn): '+J(d12));
   await pg.click('#cat-fundos [data-act="bg-on"][data-id="telao"]');await pg.waitForTimeout(200);
   const l12=await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));return {s2:s.bgOn2,s1:s.bgOn};});
-  ok(J(l12.s2)===J(['mirantedia','arq1950','telao'])&&l12.s1==null,'12: ligar de novo grava bgOn2: '+J(l12));
+  ok(J(l12.s2)===J(['mirantedia','arq1950','tunel','telao'])&&l12.s1==null,'12: ligar de novo grava bgOn2 (o religado vai para o fim): '+J(l12));
+  await pg.evaluate(()=>{delete ETERNA.SIM.bgOn2;localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
   await pg.evaluate(()=>ETERNA.go('fundos-teste'));await pg.waitForTimeout(300);
-  const t12=await pg.evaluate(()=>({txt:document.querySelector('#main').innerText,bt:['campeao2','mirante','tunel'].map(i=>!!document.querySelector('[data-act="bg-ativar"][data-id="'+i+'"]'))}));
-  ok(/Noite de campeão/.test(t12.txt)&&/Mirante ao pôr do sol/.test(t12.txt)&&/Saída do túnel/.test(t12.txt)&&t12.bt.every(Boolean),'2: os três aparecem em Laboratório › Fundos em teste com Ativar: '+J(t12.bt));
+  const t12=await pg.evaluate(()=>({txt:document.querySelector('#main').innerText,bt:['campeao2','mirante'].map(i=>!!document.querySelector('[data-act="bg-ativar"][data-id="'+i+'"]')),tunel:!!document.querySelector('[data-act="bg-ativar"][data-id="tunel"]')}));
+  ok(/Noite de campeão/.test(t12.txt)&&/Mirante ao pôr do sol/.test(t12.txt)&&t12.bt.every(Boolean)&&!t12.tunel,'2: os dois aparecem em Laboratório › Fundos em teste com Ativar (o túnel não, está ativo): '+J(t12));
   await pg.click('[data-act="bg-ativar"][data-id="campeao2"]');await pg.waitForTimeout(250);
   const m12=await pg.evaluate(()=>{const s=JSON.parse(localStorage.getItem('eterna.sim.v1'));return {on:ETERNA.bgOn(),s2:s.bgOn2,s1:s.bgOn,at:s.bgAtivo,log:ETERNA.auditRead().filter(e=>e.acao==='fundo_ativado'&&e.alvo==='fundo:campeao2').length};});
-  ok(J(m12.on)===J([...TRINCA,'campeao'])&&J(m12.s2)===J(m12.on)&&m12.s1==null&&m12.at.campeao2===true&&m12.log===1,'12: mover do Laboratório para ativo põe no Checkout (bgOn2) e registra no histórico: '+J(m12));
+  ok(J(m12.on)===J([...QUATRO,'campeao'])&&J(m12.s2)===J(m12.on)&&m12.s1==null&&m12.at.campeao2===true&&m12.log===1,'12: mover do Laboratório para ativo põe no Checkout (bgOn2) e registra no histórico: '+J(m12));
   await pg.click('[data-act="bg-lab"][data-id="campeao2"]');await pg.waitForTimeout(250);
-  ok(J(await pg.evaluate(()=>ETERNA.bgOn()))===J(TRINCA),'12: de volta ao Laboratório, a trinca');
+  ok(J(await pg.evaluate(()=>ETERNA.bgOn()))===J(QUATRO),'12: de volta ao Laboratório, os 4');
   await pg.evaluate(()=>{delete ETERNA.SIM.bgOn2;ETERNA.SIM.bgAtivo={};localStorage.setItem('eterna.sim.v1',JSON.stringify(ETERNA.SIM));});
 
   // ---------- montagens (recorte sintético) ----------
@@ -156,7 +159,7 @@ try{
     const res=await ETERNA.printMontar(['campeao2','mirante','tunel','telao'].map(bg=>({k:'ai:'+id+'|'+bg,t:'ai',id,bg})));const root=document.getElementById('print-root');
     o.imp={ok:res.ok.length,falhasIA:res.falhasIA,falhas:res.falhas,pgs:root?root.querySelectorAll('.pr-pg').length:0,fundos:root?[...root.querySelectorAll('img')].map(i=>i.dataset.fundo):[]};if(root)root.remove();document.body.classList.remove('pr-on');return o;},M1);
   ok(Object.values(ant.pre).every(v=>Array.isArray(v)&&v[0]>=2400),'11: prévia com os ids antigos: '+J(ant.pre));
-  ok(ant.imp.ok===4&&!ant.imp.falhasIA.length&&!ant.imp.falhas.length&&ant.imp.pgs===4&&J(ant.imp.fundos)===J(['img/fundos-5k/campeao.jpg','img/fundos-5k/mirantesol.jpg','img/fundos-5k/tunel.jpg','img/bg-telao-v2.jpg']),'11: printMontar com |campeao2, |mirante, |tunel e |telao sem falhasIA: '+J(ant.imp));
+  ok(ant.imp.ok===4&&!ant.imp.falhasIA.length&&!ant.imp.falhas.length&&ant.imp.pgs===4&&J(ant.imp.fundos)===J(['img/fundos-5k/campeao.jpg','img/fundos-5k/mirantesol.jpg','img/fundos-5k/tunel-v2.jpg','img/bg-telao-v2.jpg']),'11: printMontar com |campeao2, |mirante, |tunel (imagem nova) e |telao sem falhasIA: '+J(ant.imp));
 
   // montagens de conferência (critério 9: olhar os 4 cantos)
   if(RENDER){fs.mkdirSync(RENDER,{recursive:true});const b64=u=>Buffer.from(String(u).split(',')[1],'base64');
@@ -196,29 +199,31 @@ m.resize((1288,920),Image.LANCZOS).save(d+'/telao-montagem-1288.jpg',quality=88)
     const col=new URL(q.url()).searchParams.get('col');const m=DOCS[col]||{};r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rev:Math.max(0,...Object.values(m).map(x=>x.rev)),docs:Object.entries(m).filter(([,x])=>x.valor!=null).map(([id,x])=>({id,valor:x.valor}))})});});
   const p2=await cb.newPage();p2.setDefaultTimeout(20000);p2.on('pageerror',e=>errs.push('servidor: '+e.message));
   await login(p2);
-  // 4: a lista antiga do servidor chega (primeira leitura: o servidor vale por cima) e o Checkout segue com a trinca
+  // 4: a lista antiga do servidor chega (primeira leitura: o servidor vale por cima); com a trinca em sim/bgOn2, o Checkout mostra os 4
   ok(await espera(p2,()=>Array.isArray(ETERNA.SIM.bgOn)&&ETERNA.SIM.bgOn.length===5,45000),/* em máquina de 2 núcleos a 1ª leitura chega em 20 a 25 s (as montagens das bases ocupam a página); eram 20 s de espera */'4: a lista antiga do servidor (sim/bgOn) chegou ao aparelho');
   ok(await espera(p2,c=>!!ETERNA.SIM.sessions[c]&&ETERNA.state.agent.on&&ETERNA.state.agent.recorte&&ETERNA.state.agent.recorte.ok,20000,CARD),'6: a sessão do servidor chegou e o recorte está pronto');
   await p2.waitForTimeout(2500);   // tempo de o aparelho mandar o que quisesse mandar
   const s4=await p2.evaluate(()=>({on:ETERNA.bgOn(),mem:ETERNA.SIM.bgOn,mem2:ETERNA.SIM.bgOn2}));
-  const mex=POSTS.filter(d=>d.col==='sim'&&/^(bgOn|bgOn2|bgPodioV86|bgTelaoV97)$/.test(d.id));
-  ok(J(s4.on)===J(TRINCA)&&J(s4.mem)===J(ANTIGA)&&s4.mem2==null,'4: com o sim/bgOn antigo no servidor, o Checkout segue com a trinca: '+J(s4));
-  ok(!mex.length&&J(DOCS.sim.bgOn.valor)===J(ANTIGA)&&DOCS.sim.bgOn2===undefined,'4: o aparelho não apaga nem troca o sim/bgOn do servidor (e não cria bgOn2): '+J(mex));
-  // 6: sessão com 2 bases de IA: 3 montagens na ordem da trinca; 1950 com a 1ª base, as outras com a 2ª
+  const mex=POSTS.filter(d=>d.col==='sim'&&/^(bgOn|bgOn2|bgPodioV86|bgTelaoV97|bgTunelV2)$/.test(d.id));
+  ok(J(s4.on)===J(QUATRO)&&J(s4.mem)===J(ANTIGA)&&J(s4.mem2)===J(TRINCA),'4: com o sim/bgOn antigo e a trinca em sim/bgOn2 no servidor, o Checkout mostra os 4: '+J(s4));
+  ok(!mex.length&&J(DOCS.sim.bgOn.valor)===J(ANTIGA)&&J(DOCS.sim.bgOn2.valor)===J(TRINCA)&&DOCS.sim.bgTunelV2===undefined,'4: o aparelho não grava nada sozinho no servidor (sim/bgOn, sim/bgOn2, marca): '+J(mex));
+  // 6: sessão com 2 bases de IA: 4 montagens na ordem do Checkout; 1950 e túnel com a 1ª base, Mirante do Rio e Telão com a 2ª
   await p2.evaluate(([c,ids])=>{const S=ETERNA.SIM;S.invalid={};ids.forEach(id=>{ETERNA.UP['ag_'+id]={src:location.origin+'/thumb/'+id,name:id};});(S.sessions[c].photos||[]).forEach(p=>delete p.invalid);},[CARD,[...BASES,...FOTOS]]);
   const c6=await p2.evaluate(c=>({ai:ETERNA.lojaAI(c).map(x=>x.bg+'='+x.id+'#'+x.k),items:ETERNA.lojaItems(c).map(x=>x.t+':'+(x.bg||'')+':'+x.id)}),CARD);
   const [b1,b2]=BASES.map(x=>'ag_'+x);
-  ok(J(c6.ai)===J(['mirantedia='+b2+'#ai:'+b2+'|mirantedia','arq1950='+b1+'#ai:'+b1+'|arq1950','telao='+b2+'#ai:'+b2+'|telao']),'6: 3 montagens na ordem Mirante do Rio, 1950, Telão; 1950 com a 1ª base: '+J(c6.ai));
-  ok(c6.items.length===5&&J(c6.items.slice(0,3).map(x=>x.split(':')[1]))===J(TRINCA)&&c6.items.slice(3).every(x=>x.startsWith('ph:')),'6: no Checkout, as 3 montagens primeiro e depois as fotos (bases fora da venda): '+J(c6.items));
-  // 12 no servidor: ligar e desligar manda sim/bgOn2 e nada em sim/bgOn
+  ok(J(c6.ai)===J(['mirantedia='+b2+'#ai:'+b2+'|mirantedia','arq1950='+b1+'#ai:'+b1+'|arq1950','telao='+b2+'#ai:'+b2+'|telao','tunel='+b1+'#ai:'+b1+'|tunel']),'6: 4 montagens na ordem Mirante do Rio, 1950, Telão, Saída do túnel; 1950 e túnel com a 1ª base: '+J(c6.ai));
+  ok(c6.items.length===6&&J(c6.items.slice(0,4).map(x=>x.split(':')[1]))===J(QUATRO)&&c6.items.slice(4).every(x=>x.startsWith('ph:')),'6: no Checkout, as 4 montagens primeiro e depois as fotos (bases fora da venda): '+J(c6.items));
+  // 12 no servidor: ligar e desligar manda sim/bgOn2 (a lista da tela, com o túnel) e a marca bgTunelV2, e nada em sim/bgOn
   await p2.evaluate(()=>ETERNA.go('catalogo'));await p2.waitForTimeout(200);await p2.click('#main [data-act="cat-tab"][data-t="fundos"]');await p2.waitForTimeout(200);
   await p2.click('#cat-fundos [data-act="bg-on"][data-id="arq1950"]');
   const t0=Date.now();while(Date.now()-t0<8000&&!POSTS.some(d=>d.col==='sim'&&d.id==='bgOn2'))await p2.waitForTimeout(150);
-  const g12=POSTS.filter(d=>d.col==='sim'&&/^bgOn/.test(d.id));
-  ok(g12.length>=1&&g12.every(d=>d.id==='bgOn2')&&J(g12[g12.length-1].valor)===J(['mirantedia','telao'])&&J(DOCS.sim.bgOn.valor)===J(ANTIGA),'12: desligar um fundo grava sim/bgOn2 no servidor e deixa o sim/bgOn como estava: '+J(g12));
+  const t1=Date.now();while(Date.now()-t1<8000&&!POSTS.some(d=>d.col==='sim'&&d.id==='bgTunelV2'))await p2.waitForTimeout(150);
+  const g12=POSTS.filter(d=>d.col==='sim'&&/^bgOn/.test(d.id)),k12=POSTS.filter(d=>d.col==='sim'&&d.id==='bgTunelV2');
+  ok(g12.length>=1&&g12.every(d=>d.id==='bgOn2')&&J(g12[g12.length-1].valor)===J(['mirantedia','telao','tunel'])&&J(DOCS.sim.bgOn.valor)===J(ANTIGA),'12: desligar um fundo grava sim/bgOn2 no servidor (com o túnel) e deixa o sim/bgOn como estava: '+J(g12));
+  ok(k12.length>=1&&k12[k12.length-1].valor===true,'12: e grava a marca sim/bgTunelV2 (escolha feita depois do túnel v2): '+J(k12));
   await cb.close();
 }catch(e){fails.push('erro: '+(e.stack||e.message).slice(0,600));}
 finally{await b.close();}
 if(errs.length)fails.push('erros na página: '+errs.slice(0,3).join(' | '));
 if(fails.length){console.log('FALHA tres-fundos: '+fails.join(' | '));process.exit(1);}
-console.log('OK tres-fundos: trinca no Checkout (Mirante do Rio, 1950, Telão), lista em bgOn2 sem migração, antigos no Laboratório e ainda imprimindo, 1950 todo em preto e branco com e sem filter, Telão novo nos 4 cantos');})();
+console.log('OK tres-fundos: quatro fundos no Checkout (Mirante do Rio, 1950, Telão, Saída do túnel), lista em bgOn2 (trinca salva ganha o túnel), antigos no Laboratório e ainda imprimindo, 1950 todo em preto e branco com e sem filter, Telão novo nos 4 cantos');})();

@@ -1,0 +1,31 @@
+[
+  {
+    "Name": "excesso-por-ip",
+    "Priority": 0,
+    "Action": {"Block": {"CustomResponse": {"ResponseCode": 429, "CustomResponseBodyKey": "excesso"}}},
+    "Statement": {"RateBasedStatement": {"Limit": 300, "EvaluationWindowSec": 60, "AggregateKeyType": "IP"}},
+    "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "excesso-por-ip"}
+  },
+  {
+    "Name": "ip-de-ma-fama",
+    "Priority": 1,
+    "OverrideAction": {"Count": {}},
+    "Statement": {"ManagedRuleGroupStatement": {"VendorName": "AWS", "Name": "AWSManagedRulesAmazonIpReputationList"}},
+    "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "ip-de-ma-fama"}
+  },
+  {
+    "Name": "entradas-maliciosas",
+    "Priority": 2,
+    "OverrideAction": {"Count": {}},
+    "Statement": {"ManagedRuleGroupStatement": {"VendorName": "AWS", "Name": "AWSManagedRulesKnownBadInputsRuleSet"}},
+    "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "entradas-maliciosas"}
+  },
+  {
+    "Name": "ataques-comuns",
+    "Priority": 3,
+    "OverrideAction": {"Count": {}},
+    "Statement": {"ManagedRuleGroupStatement": {"VendorName": "AWS", "Name": "AWSManagedRulesCommonRuleSet",
+      "RuleActionOverrides": [{"Name": "SizeRestrictions_BODY", "ActionToUse": {"Count": {}}}]}},
+    "VisibilityConfig": {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "ataques-comuns"}
+  }
+]

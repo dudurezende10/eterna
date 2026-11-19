@@ -37,6 +37,7 @@ ssh srv-viva-maracana 'journalctl -u eterna-backup-originais --no-pager -n 20'  
 ssh srv-viva-maracana 'curl -s http://127.0.0.1:8797/; tail -50 /var/log/eterna-vigia.log'  # deploy: commit no ar, erro
 ssh srv-viva-maracana 'nvidia-smi'                                                     # placa de vídeo (recorte)
 ssh srv-viva-maracana 'ls /srv/eterna-midia/inbox/$(date +%F) | wc -l'                 # fotos de hoje
+ssh srv-viva-maracana 'tail -20 /srv/eterna-midia/diagnostico/selfie/$(date +%F).jsonl'  # últimas buscas por selfie
 ```
 
 | Onde | O quê | Leitura sem sudo |
@@ -45,9 +46,25 @@ ssh srv-viva-maracana 'ls /srv/eterna-midia/inbox/$(date +%F) | wc -l'          
 | `/srv/eterna-midia/inbox/<dia>/` | originais das fotos (HD de 4 TB) | sim |
 | `/srv/eterna-midia/ftp/<login>/` | chegada pelo FTP (vsftpd) antes de entrar no Eterna | sim |
 | `/srv/eterna-midia/recortes/` | recortes da IA (placa de vídeo) | sim |
+| `/srv/eterna-midia/diagnostico/selfie/<dia>.jsonl` | uma linha por busca por selfie (Checkout e galeria pelo QR), 30 dias | sim |
 | `/srv/eterna/Eterna/` | bancos, `nuvem.env`, chaves | não (só o serviço `eterna`) |
 | porta 8765 | o Eterna (a tela abre por `https://posto.eterna.photo`) | — |
 | porta 8797 | situação do deploy, só leitura | sim |
+
+### Selfie não achou as fotos (18/11)
+
+Cada busca por selfie grava uma linha em `/srv/eterna-midia/diagnostico/selfie/<dia>.jsonl` (HD de 4 TB, não o disco do sistema). Nunca guarda imagem nem o vetor do rosto: só números e o id das fotos.
+
+| Campo | O que diz |
+|---|---|
+| `em`, `origem` | hora e de onde veio (`checkout` ou `qr`) |
+| `resultado` | `achou`, `nao_achou`, `sem_rosto`, `varias_pessoas` ou `erro` |
+| `claras`, `duvida`, `melhor` | fotos com semelhança de 0,45 para cima, fotos entre 0,38 e 0,45 (o "é você?") e a maior semelhança |
+| `fila` | fotos que ainda esperavam a leitura de rostos naquela hora (recém-chegadas não são achadas até serem lidas) |
+| `janela_min` | janela da selfie (minutos desde o último clique ou a última chegada da sessão; 0 = dia todo) |
+| `top` | até 10 fotos mais parecidas (`id`, `sim`) |
+
+Como ler: `claras` 0 e `fila` alta = as fotos ainda não tinham sido lidas; `claras` 0, `fila` 0 e `melhor` abaixo de 0,38 = rosto da selfie ruim (de lado, contra a luz) ou foto fora da janela; `resultado` `erro` ou busca que nem aparece = a imagem não chegou inteira ao servidor (no registro do `eterna`, "corpo inválido" com `BrokenPipeError`: o Checkout desistiu antes de terminar de enviar, rede lenta). A pasta `diagnostico` é criada uma vez pelo Ronaldo (`sudo install -d -o eterna -g eterna /srv/eterna-midia/diagnostico`); sem ela o registro do `eterna` mostra "selfie: diagnóstico não gravou" uma vez e a busca segue normal.
 
 ## Publicar uma mudança
 
@@ -74,3 +91,61 @@ Cadastro da equipe por comando (`vendedores.sh`, senha digitada pelo Ronaldo, se
 - Nada de senha, chave ou endereço externo da VPN em commit: o repositório é público.
 - Nuvem e backup: `docs/planos/2026-11-14-servidor-definitivo.md` (seção de 15/11).
 - Galeria online (QR do recibo, selfie e vídeo do cartão fora do estádio): `galeria-ligar.sh` grava `ETERNA_GALERIA_API` no `nuvem.env`, confere se a nuvem reconhece o segredo do servidor (se não, mostra o SHA-256 para a stack `eterna-galeria`) e reinicia; as galerias que ficaram para trás sobem sozinhas. Sem ela o celular abre "Galeria não encontrada" (16/11: o servidor novo veio sem essa linha).
+- Escola pelo voucher: `escola-ligar.sh` pede o token do painel do Viva Parceiros (o mesmo valor de `PARCEIROS_PAINEL_TOKEN` do Render) sem mostrar, confere se o Viva Parceiros aceita, grava `ETERNA_PARCEIROS_TOKEN` no `nuvem.env` e reinicia o Eterna.
+
+## Leitor de cartão do gramado (18/11)
+
+O computador Windows do gramado roda `agente/eterna-leitor.py`: o fotógrafo põe o cartão e as fotos que faltam no servidor sobem sozinhas (plano `docs/planos/2026-11-18-leitor-cartao-gramado.md`).
+
+**No servidor:** o leitor fala só por `https://posto.eterna.photo` (o nginx); pedido direto à porta 8765 é recusado. Nada obrigatório se os computadores do gramado estiverem em `192.168.10.0/24` (o firewall já libera a 443 para essa faixa e o nginx repassa o `X-Real-IP`). Se o gramado ficar em outra rede ou VLAN: gravar `ETERNA_LEITOR_REDES=<faixa>` no `nuvem.env`, liberar a 443 dessa faixa no ufw e reiniciar o `eterna`. Depois do deploy, conferir que o painel **Leitores de cartão** aparece em Painel de controle › Avançado.
+
+**Em cada computador do gramado** (administrador, uma vez):
+
+1. Criar ou escolher um usuário local sem administrador e configurar o logon automático dele.
+2. Desligar a suspensão do computador.
+3. No Eterna, Painel de controle › Avançado › Leitores de cartão: cadastrar "Gramado 1" e anotar o código (10 minutos, uma vez).
+4. Abrir `https://posto.eterna.photo/instalar-leitor` (ou levar `servidor/leitor/instalar-leitor.cmd` num pendrive), botão direito › Executar como administrador e digitar o código. Com outro usuário que não o da tela: `instalar-leitor.cmd -Usuario <usuario>`.
+   O instalador põe o Python 3.12 para todos (winget; sem internet, levar o instalador da python.org num pendrive e marcar "Install for all users" e "tcl/tk"), copia o programa para `C:\Program Files\Eterna Leitor`, cria `C:\ProgramData\Eterna\leitor` só para o usuário do leitor, Administradores e SYSTEM (dono: Administradores), ativa, testa, registra a tarefa agendada "Eterna leitor" (ao entrar no Windows, religa em 1 minuto) e desliga a Reprodução Automática e a indexação de unidades removíveis.
+5. Testar com um cartão de verdade (lista "Só no estádio" no plano).
+6. Reinstalar: **Novo código** no painel e rodar o instalador de novo.
+7. Tirar um computador de uso: **Desativar** no painel e depois, na máquina, `"C:\Program Files\Python312\python.exe" -I "C:\Program Files\Eterna Leitor\eterna-leitor.py" --apagar-fila` (com a tarefa parada).
+
+**Desinstalar** (administrador, no computador do gramado):
+
+1. **Desativar** o leitor no painel.
+2. Parar e tirar a tarefa: `Unregister-ScheduledTask -TaskName 'Eterna leitor' -Confirm:$false` (PowerShell).
+3. Apagar a fila: `"C:\Program Files\Python312\python.exe" -I "C:\Program Files\Eterna Leitor\eterna-leitor.py" --apagar-fila` e digitar `APAGAR`.
+4. Apagar as pastas `C:\Program Files\Eterna Leitor` e `C:\ProgramData\Eterna\leitor`.
+5. Se o computador não for mais usado para cartão, voltar as políticas: apagar `NoDriveTypeAutoRun` e `NoAutorun` em `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer` e `DisableRemovableDriveIndexing` em `HKLM\SOFTWARE\Policies\Microsoft\Windows\Windows Search`.
+
+Recomendação: BitLocker ligado no computador do gramado.
+
+Conferir na máquina: `... eterna-leitor.py --testar` diz se o leitor fala com o servidor. O log fica em `C:\ProgramData\Eterna\leitor\leitor.log` (sem token e sem nome de foto).
+
+## Contas por pessoa, sem conta genérica (18/11)
+
+Decisão do Ronaldo: cada pessoa entra com a própria conta; contas genéricas (Supervisão, Validação, Checkout, Atendimento e venda, testes) são desativadas. Dois comandos no próprio servidor:
+
+- Cadastrar a pessoa, ou mudar o perfil de quem já existe, copiando o perfil de uma conta-modelo (perfil, módulos, menu, tela inicial). A senha vem pela entrada padrão; vazia mantém a senha atual. A conta-modelo pode estar desativada.
+
+  ```
+  printf '%s\n' 'SENHA' | sudo runuser -u eterna -- env HOME=/srv/eterna ETERNA_COMO=supervisor@eterna.photo /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/eterna-agente.py --usuario nome.sobrenome "Nome Sobrenome"
+  ```
+
+  Modelos: `supervisor@eterna.photo` (Supervisão), `ronaldo` (Admin).
+
+- Desativar (não apaga: vendas e registros continuam com o nome; derruba as sessões abertas; postos pareados continuam, revogar é no Painel de controle):
+
+  ```
+  sudo runuser -u eterna -- env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/eterna-agente.py --desativar usuario1 usuario2
+  ```
+
+- Excluir de vez (o mesmo que excluir na tela de Usuários; vendas e registros continuam com o nome; postos pareados continuam):
+
+  ```
+  sudo runuser -u eterna -- env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/eterna-agente.py --excluir usuario1 usuario2
+  ```
+
+  Excluir a conta Supervisão só depois de cadastrar os supervisores: ela é o modelo.
+
+A conta `hello@eterna.photo` do sistema pode ser excluída: o e-mail de nova senha sai pela nuvem (SES, remetente `MailFrom` da stack), sem depender dela.

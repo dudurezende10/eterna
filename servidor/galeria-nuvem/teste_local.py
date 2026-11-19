@@ -17,6 +17,8 @@ class Tabela:
         k = (Key["pk"], Key["sk"]); it = s.d.setdefault(k, dict(Key)); v = ExpressionAttributeValues or {}; n = ExpressionAttributeNames or {}
         if ConditionExpression and "lk" in it and not it["lk"] < v[":agora"]:
             raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
+        if ConditionExpression and "lotes" in ConditionExpression and it.get("lotes", 0) >= v[":agora"]:
+            raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
         if ConditionExpression == "estado <> :p" and it.get("estado") == v[":p"]:
             raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
         if UpdateExpression.startswith("REMOVE"):
@@ -237,6 +239,20 @@ app.COMPRA_ONLINE = True
 imply.CHAVE_SSM, imply.TIPO_PESSOA = "/eterna/imply-chave", "99"
 imply._chave["v"] = "chave-de-teste"
 pessoas, respostas = [], {}
+# corpo real do setPessoa (doc. da Imply 18/11): array de 3 posições, PG 100001, carrinho em informacoes_extras.predefined-cart
+_http0, enviados = imply._http, []
+imply._http = lambda metodo, url, corpo=None: enviados.append((metodo, url, corpo)) or {"id": None, "error": None, "result": "tk-real"}
+tipo0 = imply.TIPO_PESSOA
+imply.TIPO_PESSOA = "100001"
+tk_ = imply.set_pessoa("EP-x", "Cliente Teste", "c@exemplo.com", cpf="529.982.247-25", ref="ON-ABC", itens=[{"sku": SKU["zona"], "qtd": 2}])
+m_, u_, c_ = enviados[-1]
+ok(tk_ == "tk-real" and m_ == "POST" and u_.endswith("/api/OAuth2/v01/setPessoa/") and c_[1] is False and c_[2] == ["de_para"]
+   and c_[0]["tipo_pessoa"] == "100001" and c_[0]["cpf"] == "52998224725"
+   and c_[0]["informacoes_extras"] == {"predefined-cart": {"idreferencia": "ON-ABC", "itens": [{"idproduto": SKU["zona"], "quantidade": 2}]}},
+   "setPessoa: [pessoa, false, [de_para]], PG 100001, carrinho com idreferencia e idproduto: %r" % (c_,))
+imply.set_pessoa("EP-x", "Cliente Teste", "c@exemplo.com", passaporte="AB123456")
+ok("informacoes_extras" not in enviados[-1][2][0] and enviados[-1][2][0]["passaporte"] == "AB123456", "sem carrinho, informacoes_extras não vai (vazio invalida a chamada)")
+imply._http, imply.TIPO_PESSOA = _http0, tipo0
 imply.set_pessoa = lambda *a, **k: pessoas.append((a, k)) or "tk-pessoa"
 imply.situacao = lambda ref: respostas.get(ref, ("pendente", {"bruto": "aguardando"}))
 st, r = chama("POST", "/g/%s/rosto" % tokP, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="5.0.0.1")
@@ -255,11 +271,12 @@ ref = r["ref"]
 q = urllib.parse.parse_qs(urllib.parse.urlparse(r["url"]).query)
 destino = base64.b64decode(q["url"][0]).decode()
 dq = urllib.parse.parse_qs(urllib.parse.urlparse(destino).query)
-carr = json.loads(base64.b64decode(dq["predefined-cart"][0]))
 ok(r["url"].startswith("https://maracanatouradmin.eleventickets.com/OAuth2/external?") and q["token"] == ["tk-pessoa"] and destino.startswith("https://maracanatour.eleventickets.com/pt/checkout?"),
    "endereço: login automático da Imply que cai no checkout")
-ok(carr == {"referencia": ref, "itens": [{"idproduto": SKU["zona"], "quantidade": 1}, {"idproduto": SKU["extra"], "quantidade": 1}]} and dq["urlreturn"] == ["https://eterna.photo/g/"],
-   "predefined-cart com SKU, quantidade e o nosso código; volta para eterna.photo/g/")
+ok(dq["urlreturncheckout"] == ["https://eterna.photo/g/?idpedido=" + ref] and "%3Fidpedido%3D" in destino and q["url"][0] == base64.b64encode(destino.encode()).decode(),
+   "checkout com urlreturncheckout (URL-encode) voltando com o nosso código; o checkout inteiro em Base64 (doc. da Imply 18/11)")
+ok(pessoas[-1][1].get("ref") == ref and [(i["sku"], i["qtd"]) for i in pessoas[-1][1].get("itens") or []] == [(SKU["zona"], 1), (SKU["extra"], 1)],
+   "setPessoa leva o carrinho do pedido (referência e itens)")
 (pa, pk_) = pessoas[-1]
 ok(pa[0].startswith("EP-") and pa[1:3] == ("Cliente Teste", "cliente@exemplo.com") and pk_["cpf"] == "52998224725", "setPessoa com de_para, nome, e-mail e CPF")
 ok("cpf" not in json.dumps(T.d[("PED#" + ref, "M")]).lower() and "52998224725" not in json.dumps({k[0]: v for k, v in T.d.items()}), "CPF não fica guardado na Nuvem")
@@ -372,4 +389,86 @@ ok(chama("GET", "/g/codigo/XXXX-YYYY")[0] == 404, "encerrar o primeiro solta o c
 # v99.24: cartão com código de 12 letras
 ok(chama("POST", "/ponto/galerias", {"manifesto": dict(manV, token="K" * 22, codigo="ABCD-EFGH-JKLM", encerrada=False)}, {"x-eterna-ponto": seg})[0] == 200
    and chama("GET", "/g/codigo/abcd-efgh-jklm")[1].get("token") == "K" * 22, "código de 12 letras do cartão abre o vídeo")
+# 17/11: borda com firewall (borda.yaml)
+import hashlib as _h
+ev0 = {"headers": {"cloudfront-viewer-address": "177.10.20.30:51234"}, "requestContext": {"http": {"sourceIp": "130.176.1.1"}}}
+app.ORIGEM_SHA256 = _h.sha256(b"origem-secreta-com-mais-de-32-letras").hexdigest()
+ok(app.ip_do_pedido(ev0) == "130.176.1.1", "sem o segredo da borda, o IP do celular escrito no pedido não vale")
+ev0["headers"]["x-eterna-origem"] = "origem-secreta-com-mais-de-32-letras"
+ok(app.ip_do_pedido(ev0) == "177.10.20.30", "pela borda, vale o IP do celular")
+ev0["headers"]["cloudfront-viewer-address"] = "2804:14c:1::5:443"
+ok(app.ip_do_pedido(ev0) == "2804:14c:1::5", "IPv6 pela borda")
+app.EXIGIR_BORDA = True
+ok(chama("GET", "/g/%s/info" % ("K" * 22))[0] == 403, "exigindo a borda, pedido direto à API é recusado")
+ok(chama("GET", "/g/%s/info" % ("K" * 22), cab={"x-eterna-origem": "origem-secreta-com-mais-de-32-letras"})[0] == 200, "exigindo a borda, pela borda abre")
+app.EXIGIR_BORDA = False
+
+# 17/11: escola pelo voucher. O localizador abre a galeria da visita; leitura em lotes paralelos; uma foto grátis por criança,
+# até as pessoas do voucher; registros com voucher e escola.
+tokS = "S" * 22
+manS = {"token": tokS, "codigo": "SSSS-TTTT", "tipo": "evento", "menor": True, "nome": "EE Teste", "expira": exp, "precos": {"dig": 39, "todas": 250},
+        "voucher": {"localizador": "1112abcd1234", "escola": "EE Teste", "dia": "2026-11-12", "horarios": ["09:15"], "pessoas": 2},
+        "fotos": [{"id": "ag_%s%05x" % (k, i), "direito": "venda", "sessao": "LP" + k} for k in "cde" for i in range(10)]}
+ok(chama("POST", "/ponto/galerias", {"manifesto": manS}, {"x-eterna-ponto": seg})[0] == 200, "escola: galeria do voucher publicada")
+ok(app.teto_fotos(app.manifesto(tokS)) == 10000 and app.teto_fotos(man) == app.LIMITE_FOTOS_GALERIA, "escola: teto de 10 mil fotos só na galeria do voucher")
+st, r = chama("GET", "/g/codigo/1112abcd1234")
+ok(st == 200 and r.get("token") == tokS and r["escola"] == {"nome": "EE Teste", "dia": "2026-11-12"}, "escola: o localizador no campo do código abre a galeria e diz a escola")
+ok(chama("GET", "/g/codigo/ZZZZ99999999")[0] == 404, "escola: localizador sem galeria (não é escola) dá não encontrado, sem motivo")
+sel = lambda k: base64.b64encode(("rosto-%s" % k).encode()).decode()
+invocacoes.clear()
+n0 = R.indexadas
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("c"), "consentimento": True}, ip="8.0.0.1")
+lotes = [json.loads(x["Payload"]) for x in invocacoes]
+ok(st == 503 and r["motivo"] == "processando" and len(lotes) == app.ESCOLA_LOTES and R.indexadas == n0, "escola: a 1ª autorização dispara %d leituras em paralelo e responde processando" % app.ESCOLA_LOTES)
+invocacoes.clear()
+chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("c"), "consentimento": True}, ip="8.0.0.1")
+ok(not invocacoes, "escola: outra selfie durante a leitura não dispara de novo")
+for p in lotes:
+    app.handler(p, ctx)
+ok(R.indexadas - n0 == 30 and not app.faltam(tokS, app.manifesto(tokS)), "escola: os lotes leram as 30 fotos, cada uma uma vez só")
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("c"), "consentimento": True}, ip="8.0.0.1")
+ok(st == 200 and len(r["galeria"]["fotos"]) == 10 and r["galeria"]["escola"]["pode_escolher"] and r["galeria"]["escola"]["cortesia"] is None, "escola: a criança vê só as fotos dela e pode escolher a grátis")
+aC = r["acesso"]
+ok(not any(f["original"] for f in r["galeria"]["fotos"]), "escola: antes da escolha nenhuma foto sai sem marca")
+ok(chama("POST", "/g/%s/cortesia" % tokS, {"acesso": aC, "foto": "ag_c00003", "email": "x"})[1].get("motivo") == "email", "escola: e-mail obrigatório")
+ok(chama("POST", "/g/%s/cortesia" % tokS, {"acesso": aC, "foto": "ag_d00000", "email": "pai@x.com"})[1].get("motivo") == "foto", "escola: só foto em que a criança aparece")
+st, r = chama("POST", "/g/%s/cortesia" % tokS, {"acesso": aC, "foto": "ag_c00003", "email": "pai@x.com"}, ip="8.0.0.1")
+fs = {f["pid"]: f for f in r["galeria"]["fotos"]}
+ok(st == 200 and r["foto"] == "ag_c00003" and fs["ag_c00003"]["direito"] == "cortesia" and fs["ag_c00003"]["original"]
+   and not fs["ag_c00004"]["original"] and not r["galeria"]["escola"]["pode_escolher"], "escola: a escolhida sai sem marca; as outras continuam à venda")
+ok(any(k[0].startswith("LEAD#") and v.get("email") == "pai@x.com" for k, v in T.d.items()), "escola: e-mail guardado como lead")
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("c"), "consentimento": True}, ip="8.0.0.9")
+aC2 = r["acesso"]
+ok(r["galeria"]["escola"]["cortesia"] == "ag_c00003", "escola: a mesma criança em outro aparelho já vê a grátis que foi escolhida")
+st, r = chama("POST", "/g/%s/cortesia" % tokS, {"acesso": aC2, "foto": "ag_c00005", "email": "mae@x.com"}, ip="8.0.0.9")
+ok(st == 200 and r.get("repetida") and r["foto"] == "ag_c00003", "escola: outro e-mail com a mesma criança não ganha outra foto")
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("d"), "consentimento": True}, ip="8.0.0.2")
+ok(chama("POST", "/g/%s/cortesia" % tokS, {"acesso": r["acesso"], "foto": "ag_d00001", "email": "d@x.com"}, ip="8.0.0.2")[1].get("foto") == "ag_d00001", "escola: a segunda criança escolhe a dela")
+st, r = chama("POST", "/g/%s/rosto" % tokS, {"imagem": sel("e"), "consentimento": True}, ip="8.0.0.3")
+ok(r["galeria"]["escola"]["pode_escolher"] is False, "escola: com as 2 pessoas do voucher atendidas, a terceira não pode escolher")
+st, r2 = chama("POST", "/g/%s/cortesia" % tokS, {"acesso": r["acesso"], "foto": "ag_e00001", "email": "e@x.com"}, ip="8.0.0.3")
+ok(st == 409 and r2["motivo"] == "esgotada", "escola: acabou a cortesia do voucher; o resto fica à venda")
+ok(chama("POST", "/g/%s/evento" % tokS, {"acesso": aC, "tipo": "foto_baixada", "foto": "ag_c00003"})[0] == 200, "escola: download registrado")
+ok(chama("POST", "/g/%s/evento" % tokS, {"acesso": aC, "tipo": "foto_baixada", "foto": "ag_d00001"})[0] == 400, "escola: download de foto de outra criança não é aceito")
+evs = [v for k, v in T.d.items() if k[0] == "EVT#" + tokS]
+tipos = {v["tipo"] for v in evs}
+ok({"voucher_digitado", "selfie_ok", "cortesia_escolhida", "cortesia_repetida", "cortesia_esgotada", "foto_baixada"} <= tipos
+   and all(v.get("voucher") == "1112ABCD1234" and v.get("escola") == "EE Teste" for v in evs if v["tipo"] in ("voucher_digitado", "selfie_ok", "cortesia_escolhida", "cortesia_repetida", "cortesia_esgotada", "foto_baixada")), "escola: cada passo registrado com voucher e escola")
+app.TABELA.put_item(Item={"pk": "PED#ESC1", "sk": "M", "token": tokS, "pids": json.dumps(["ag_c00004", "ag_c00005"]), "total": "78", "email": "pai@x.com"})
+app.evento(tokS, "pedido_pago", "", ref="ESC1", total=78.0)
+ok(chama("GET", "/ponto/escolas", None, q={"tokens": tokS})[0] == 401, "escola: números só para o ponto")
+st, r = chama("GET", "/ponto/escolas", None, {"x-eterna-ponto": seg}, q={"tokens": tokS + "," + tok})
+E = (r.get("escolas") or {}).get(tokS) or {}
+F = E.get("funil") or {}
+ok(st == 200 and set(r["escolas"]) == {tokS} and E["voucher"] == "1112ABCD1234" and E["pessoas"] == 2 and E["fotos"] == 30 and E["lidas"] == 30,
+   "escola: números da galeria do voucher (só ela): %s" % {k: E.get(k) for k in ("voucher", "pessoas", "fotos", "lidas")})
+ok(F.get("digitado") == 1 and F.get("criancas") == 2 and F.get("repetidas") == 1 and F.get("esgotadas") == 1 and F.get("baixadas") == 1
+   and F.get("aparelhos") == 4, "escola: funil do voucher: %s" % F)
+C = {c["foto"]: c for c in E.get("criancas") or []}
+ok(C.get("ag_c00003", {}).get("baixou") is True and C.get("ag_d00001", {}).get("baixou") is False and C["ag_c00003"]["fotos"] == 10,
+   "escola: cada criança com a foto grátis e se baixou: %s" % C)
+ok(F.get("compras") == 1 and F.get("fotos_compradas") == 2 and F.get("valor") == 78.0 and C["ag_c00003"]["comprou"] and C["ag_c00003"]["comprador"] == "p***@x.com"
+   and not C["ag_d00001"]["comprou"], "escola: a compra entra no funil e na criança, com o comprador mascarado")
+chama("POST", "/ponto/galerias", {"manifesto": dict(manS, encerrada=True)}, {"x-eterna-ponto": seg})
+ok(not [k for k in T.d if k[0] == "IDX#" + tokS], "escola: encerrar apaga o progresso de todos os lotes")
 print("\ntudo certo")

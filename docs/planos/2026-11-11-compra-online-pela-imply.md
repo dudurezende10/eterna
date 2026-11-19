@@ -186,3 +186,25 @@ como **"Venda Externa"** (`idformapag` informado por e-mail, guardado fora do re
 o Eterna, por um meio de pagamento próprio, e depois a Nuvem chama `ConfirmacaoCompra` com o localizador, a referência
 do pagamento (`codigo_referencia`) e a forma "Venda Externa". É o mesmo modelo dos parceiros (ICD, Clubinho, C2RIO).
 Decisão pendente (Ronaldo): qual meio de pagamento (PIX e cartão) e em nome de quem a conta é aberta.
+
+## Documentação do setPessoa, versão de 18/11 (Maurício, P&D da Imply)
+
+Ronaldo (18/11): a ideia é que essa documentação permita o checkout das fotos online, seja para escolas, seja para galeria online, Drone etc.: tudo que for online.
+
+O que mudou e já está no código (`servidor/galeria-nuvem/imply.py`, `app.py`, `template.yaml`, teste em `teste_local.py`):
+- **tipo_pessoa:** para comprador de fotos é **100001 (Público Geral/PG)**. O código de AGÊNCIA não é para foto. Isso substitui a decisão de 11/11 ("entra como agência"). O padrão do template passou a ser 100001.
+- **Carrinho:** vai **dentro do setPessoa**, em `informacoes_extras.predefined-cart` = `{idreferencia: <ON-...>, itens: [{idproduto|depara, quantidade}]}`. Não vai no endereço. A Imply grava a referência em `pdv_produto_mov.idreferencia`. Chamada repetida com a mesma referência e o mesmo produto não duplica. Sem `idapresentacao`, a Imply escolhe a próxima apresentação futura. O produto vai pelo `idproduto` (o SKU do catálogo); `ImplyProdutoCampo=depara` troca para o depara de `pdv_produto`.
+- **Checkout:** `https://maracanatour.eleventickets.com/pt/checkout?urlreturncheckout=<volta?idpedido=ON-...>`. A volta vai com URL-encode e o checkout inteiro em Base64 no `url` do `/OAuth2/external`. A volta agora leva o nosso código. Antes ia `urlreturn` sem o `idpedido`, e a galeria não saberia qual pedido conferir.
+- `informacoes_extras` só vai quando há carrinho (string vazia invalida a chamada); `end_numero`, se um dia for enviado, é inteiro.
+
+Ainda falta da Imply:
+1. **Seção 7, consulta de status pela referência.** O documento a cita duas vezes, mas ela não veio. Sem ela nenhum pedido é liberado (`ImplyConsulta` vazio).
+2. Lista dos produtos online com `idproduto` ou `depara`, incluindo os de escola e do Drone (vídeo), se forem vendidos online.
+3. Quanto tempo vale o token e se é de uso único.
+4. Aviso automático (webhook) de pago, cancelado ou estornado.
+
+Escopo "tudo que for online": hoje o pedido online sai da galeria de fotos do Tour (`POST /g/<token>/pedido`). Escola (hoje com o texto de contato por e-mail) e vídeo do Drone usam a mesma galeria da Nuvem; falta para cada um:
+- o catálogo online no manifesto (produtos com SKU da Imply);
+- a tela de compra no lugar do contato.
+
+O pedido, o setPessoa, o checkout e a conferência são os mesmos.

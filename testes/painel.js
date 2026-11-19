@@ -46,10 +46,9 @@ try{
   ok(J(dashV)===J(['painel','estatisticas','bandeiras','estoque','impfila','fotografos','vendas','vendas-lista','ativ-resumo','galerias','calendario']),'1: ordem do Dashboard '+J(dashV));ok(!(await pg.$('#nav [data-v="semana"]')),'1: Semana ainda no menu');
   await pg.click('#rail-brand');await pg.waitForTimeout(120);ok(await view(pg)==='perfis','2: logo deveria abrir o Início');
   await pg.evaluate(()=>{location.hash='#semana';});await pg.waitForTimeout(200);ok(await view(pg)==='painel','4: #semana deveria abrir o Painel: '+await view(pg));
-  // FTP sem o agente: o cartão aparece no Painel de controle, desligado, com a pílula e a nota
-  await pg.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.go('catalogo');});await pg.waitForTimeout(120); // v94-ux (parte I): o FTP fica na aba Avançado de Preços e Checkout
-  const fo=await pg.evaluate(()=>{const p=document.querySelector('.rftp-off');return p&&{t:p.textContent,dis:[...p.querySelectorAll('input')].every(i=>i.disabled),save:!!p.querySelector('[data-act="rf-save"]')};});
-  ok(fo&&/Servidor FTP do estádio/.test(fo.t)&&/agente desconectado/.test(fo.t)&&/Abra o Eterna pelo agente do ponto \(http:\/\/127\.0\.0\.1:8765\) neste computador para configurar o FTP\. A senha fica só nesse computador\./.test(fo.t)&&fo.dis&&!fo.save,'FTP sem agente: '+J(fo&&{dis:fo.dis,save:fo.save}));
+  // 16/11: o cartão do FTP do estádio saiu de Preços e Checkout (as fotos chegam pela pasta vigiada do servidor)
+  await pg.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.go('catalogo');});await pg.waitForTimeout(120);
+  ok(!/Servidor FTP do estádio/.test(await pg.textContent('#main'))&&!(await pg.$('[data-act="rf-save"]')),'FTP: o cartão do FTP do estádio ainda aparece');
   // 27: Vendas e caixa só com vendedores e o link para o Painel; o Painel sem a tabela de vendedores
   await pg.evaluate(()=>{ETERNA.state.range={from:'2026-10-07',to:'2026-10-15'};ETERNA.state.view='vendas';ETERNA.render();});await pg.waitForTimeout(120);
   const vh=await pg.$$eval('#main h2',e=>e.map(x=>x.textContent.trim()));ok(vh.includes('Vendedores')&&!vh.includes('Pagamentos')&&!vh.includes('Produtos'),'27: Vendas e caixa '+J(vh));ok(await pg.$('#main [data-act="view"][data-v="painel"]'),'27: Vendas e caixa sem o link para o Painel');
@@ -224,17 +223,10 @@ try{
       // app aberto pelo agente: livePoll lê /roverpix/status e /roverpix/data
       const {ctx:c6,pg:p6}=await nova(b,1280,900);await S.noNavegador(c6,porta,[CK]);await p6.goto(`http://127.0.0.1:${porta}/index.html`);let lv=false;for(let i=0;i<40&&!lv;i++){await sleep(250);lv=await p6.evaluate(()=>!!(window.ETERNA&&ETERNA.live)).catch(()=>false);}
       ok(lv,'25: app aberto em 127.0.0.1 não carregou o LIVE pelo livePoll');
-      // v80: o cartão do FTP do estádio fica em Configurações › Painel de controle (configuracao.r para ver, .u para alterar), não no Upload
+      // 16/11: nem o admin vê mais o cartão do FTP do estádio
       const UA=`http://127.0.0.1:${porta}/index.html`;const ent=async e=>{await p6.evaluate(()=>localStorage.removeItem('eterna.session'));await p6.goto(UA);await p6.waitForTimeout(500);await entrarTeste(p6,e);};
-      await ent('eduardo@eduardorezende.com');await p6.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.go('catalogo');});let ft=null;for(let i=0;i<20&&!ft;i++){await sleep(250);ft=await p6.$('[data-act="rf-save"]');}
-      const tc=await p6.textContent('#main');ok(ft&&/Servidor FTP do estádio/.test(tc)&&/Preços e Checkout/.test(tc),'FTP: admin deveria ver o FTP em Preços e Checkout'); // v94-ux: o Painel de controle virou Preços e Checkout
-      await p6.evaluate(()=>ETERNA.go('importar'));await sleep(600);ok(!/Servidor FTP do estádio/.test(await p6.textContent('#main')),'FTP: o cartão do FTP ainda está no Upload automático');
-      // só configuracao.r: vê o FTP sem poder alterar
-      await p6.evaluate(()=>{const n=x=>({c:false,r:false,u:false,d:false,...x});const U0=JSON.parse(JSON.stringify(ETERNA.USERS));U0['cfgler@eterna.photo']={v:2,mv:83,email:'cfgler@eterna.photo',name:'Só ver config',preset:'custom',key:null,perms:{configuracao:n({r:true}),catalogo:n({r:true})},menu:['catalogo','repo'],inicio:null,active:true,createdAt:'2026-10-27T10:00:00.000Z',createdBy:'teste',lastLogin:null};localStorage.setItem('eterna.users.v1',JSON.stringify(U0));});
-      await ent('cfgler@eterna.photo');await p6.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.state.view='catalogo';ETERNA.render();});let vi=false;for(let i=0;i<20&&!vi;i++){await sleep(250);vi=await p6.evaluate(()=>{ETERNA.render();return /Servidor FTP do estádio/.test(document.querySelector('#main').textContent)&&!document.querySelector('.rftp-off');});} // espera o agente conectar (sem ele o cartão aparece desligado)
-      const ro=await p6.evaluate(()=>({save:!!document.querySelector('[data-act="rf-save"]'),dis:['rf-host','rf-user','rf-pass'].every(i=>{const e=document.getElementById(i);return e&&e.disabled;}),pill:/somente leitura/.test(document.querySelector('#main').textContent)}));
-      ok(vi&&!ro.save&&ro.dis&&ro.pill,'revisão 11: FTP com só configuracao.r deveria ser só leitura '+J({vi,...ro}));
-      await ent('loja@eterna.photo');await p6.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.state.view='catalogo';ETERNA.render();});await sleep(800);await p6.evaluate(()=>ETERNA.render());ok(!/Servidor FTP do estádio/.test(await p6.textContent('#main')),'FTP: atendimento (sem configuracao.r) vê o FTP');
+      await ent('eduardo@eduardorezende.com');await p6.evaluate(()=>{ETERNA.state.catTab='avancado';ETERNA.go('catalogo');});await sleep(1500);
+      const tc=await p6.textContent('#main');ok(!/Servidor FTP do estádio/.test(tc)&&/Preços e Checkout/.test(tc)&&!(await p6.$('[data-act="rf-save"]')),'FTP: admin não deveria ver o FTP do estádio');
       await c6.close();}}
 }catch(e){fails.push('erro: '+e.message.split('\n')[0]);}
 if(agente)agente.kill('SIGKILL');try{fs.rmSync(home,{recursive:true,force:true});}catch(e){}

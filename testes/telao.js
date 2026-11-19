@@ -19,7 +19,7 @@ try{const ctx=await b.newContext({viewport:{width:1366,height:900}});
   const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();});await pg.reload();await pg.waitForTimeout(500);
   const d=await pg.evaluate(()=>{const t=ETERNA.bgOf('telao'),p=ETERNA.bgOf('podio');return {t:t&&{file:t.file,quad:t.telao&&t.telao.quad,w:t.telao&&t.telao.w,ativo:ETERNA.bgAtivo(t)},podio:ETERNA.bgAtivo(p),on:ETERNA.bgOn(),
     nomes:['pt','en','es','fr','de'].map(l=>{ETERNA.state.lang=l;try{localStorage.setItem('eterna.lang',l);}catch(e){}return ETERNA.bgNomeCli(t);})};});
-  ok(d.t&&d.t.file==='img/bg-telao-v2.jpg'&&d.t.w===4096&&J(d.t.quad)===J([[884,181],[3485,525],[3582,1931],[848,1681]])&&d.t.ativo&&!d.podio&&J(d.on)===J(['mirantedia','arq1950','telao']),'Telão ativo no lugar do Pódio (Laboratório): '+J(d));
+  ok(d.t&&d.t.file==='img/bg-telao-v2.jpg'&&d.t.w===4096&&J(d.t.quad)===J([[884,181],[3485,525],[3582,1931],[848,1681]])&&d.t.ativo&&!d.podio&&J(d.on)===J(['mirantedia','arq1950','telao','tunel']),'Telão ativo no lugar do Pódio (Laboratório): '+J(d));
   const i18=require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8').match(/bgTelao:\[([^\]]*)\]/);
   ok(i18&&i18[1].split("','").length===5&&/Telão do Maracanã/.test(i18[1]),'nome para o cliente nas 5 línguas: '+(i18&&i18[1]));
   // homografia: o retângulo vai exatamente para os 4 cantos medidos

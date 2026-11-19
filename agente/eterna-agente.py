@@ -31,7 +31,7 @@ import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket
 import array, itertools, operator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
-import unicodedata
+import unicodedata, ipaddress
 import urllib.request, urllib.error, urllib.parse, mimetypes, re, base64
 
 # imagem pequena em bytes mas enorme em pixels não pode fazer o OpenCV reservar gigas de memória
@@ -101,10 +101,10 @@ APP_ESSENCIAIS = ["index.html", "vendor/qrcode/qrcode.min.js", "vendor/jsqr/jsQR
                   "vendor/ort/ort.min.js", "vendor/ort/ort-wasm-simd.wasm", "vendor/ort/ort-wasm.wasm",
                   "vendor/rostos/face_detection_yunet_2023mar.onnx", "vendor/rostos/face_recognition_sface_2021dec.onnx",
                   "vendor/faceapi/indice-exemplos.json"]
-# os fundos de IA ativos no Checkout (BG_DEF do app; 16/11: Mirante do Rio, Maracanã 1950 e Telão): sem eles a família
+# os fundos de IA ativos no Checkout (BG_DEF do app; 16/11: Mirante do Rio, Maracanã 1950, Telão e Saída do túnel v2): sem eles a família
 # fica sem as montagens quando a rede cai. Manter igual ao app; o teste testes/app_offline_agente.py confere com o index.html.
 # Imagem nova entra com nome de arquivo novo (o disco guarda o arquivo e só revê uma vez por partida).
-APP_FUNDOS_ATIVOS = ["img/bg-mirantedia.jpg", "img/bg-maracana1950.jpg", "img/bg-telao-v2.jpg"]
+APP_FUNDOS_ATIVOS = ["img/bg-mirantedia.jpg", "img/bg-maracana1950.jpg", "img/bg-telao-v2.jpg", "img/bg-tunel-v2.jpg"]
 app_disco_lock = threading.Lock()
 APP_FORA_SEG = 45                           # origem fora: por este tempo ninguém tenta a rede de novo (502 ou disco na hora)
 app_fora = {"ate": 0.0}
@@ -368,6 +368,14 @@ try:                                       # fotos novas por dia por esta rota, 
     FOTO_ENVIO_TETO_DIA = max(1, int(os.environ.get("ETERNA_ENVIO_TETO_DIA") or 20000))
 except ValueError:
     FOTO_ENVIO_TETO_DIA = 20000
+try:                                       # 18/11: leitores de cartão do gramado têm vagas e teto do dia próprios (não dividem com o envio pela tela)
+    LEITOR_VAGAS_TOTAL = max(1, int(os.environ.get("ETERNA_LEITOR_VAGAS") or 2))
+except ValueError:
+    LEITOR_VAGAS_TOTAL = 2
+try:
+    LEITOR_TETO_DIA = max(1, int(os.environ.get("ETERNA_LEITOR_TETO_DIA") or 20000))
+except ValueError:
+    LEITOR_TETO_DIA = 20000
 FOTO_ENVIO_MIN = 1024                      # bytes: menor que isto não é foto de câmera
 FOTO_ENVIO_LADO_MIN = 64                   # px no lado menor
 _re_envio_nome = re.compile(r"^[A-Za-z0-9_-]{1,80}\.(jpg|jpeg|JPG|JPEG)$")
@@ -532,36 +540,58 @@ def metricas_carrega(dias=3):
 
 metricas_carrega()
 state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None},
-         "envio": {"novas": 0, "repetidas": 0, "recusadas": 0}}
+         "envio": {"novas": 0, "repetidas": 0, "recusadas": 0}, "leitor": {"novas": 0, "repetidas": 0, "recusadas": 0}}
 envio_sem = threading.BoundedSemaphore(FOTO_ENVIO_SIMULT)
+leitor_sem = threading.BoundedSemaphore(LEITOR_VAGAS_TOTAL)   # 18/11: gravações ao mesmo tempo de todos os leitores de cartão
 envio_ips = {}                              # ip -> gravações em curso (com o lock)
 envio_dia = {"dia": "", "n": 0}             # fotos novas de hoje pelo envio da tela (com o lock)
 ENVIO_DIA_ARQ = os.path.join(HOME, "envio-dia.json")   # só o dia e o número: o teto do dia vale depois de reiniciar
 
 
-def envio_dia_n():
-    """Fotos novas de hoje pela rota (com o lock na mão). Virou o dia, zera; na primeira vez lê o que ficou gravado."""
+def _conta_dia_n(c, arq):
+    """Contador do dia (com o lock na mão). Virou o dia, zera; na primeira vez lê o que ficou gravado em arq."""
     hoje = time.strftime("%Y-%m-%d")
-    if envio_dia["dia"] != hoje:
+    if c["dia"] != hoje:
         n = 0
         try:
-            with open(ENVIO_DIA_ARQ) as f:
+            with open(arq) as f:
                 j = json.load(f)
             if j.get("dia") == hoje:
                 n = max(0, int(j.get("n") or 0))
         except Exception:
             pass
-        envio_dia.update(dia=hoje, n=n)
-    return envio_dia["n"]
+        c.update(dia=hoje, n=n)
+    return c["n"]
+
+
+def _conta_dia_soma(c, arq):
+    _conta_dia_n(c, arq)
+    c["n"] += 1
+    try:
+        _grava_privado(arq, json.dumps(c))
+    except Exception:
+        pass
+
+
+def envio_dia_n():
+    """Fotos novas de hoje pela rota (com o lock na mão)."""
+    return _conta_dia_n(envio_dia, ENVIO_DIA_ARQ)
 
 
 def envio_dia_soma():
-    envio_dia_n()
-    envio_dia["n"] += 1
-    try:
-        _grava_privado(ENVIO_DIA_ARQ, json.dumps(envio_dia))
-    except Exception:
-        pass
+    _conta_dia_soma(envio_dia, ENVIO_DIA_ARQ)
+
+
+leitor_dia = {"dia": "", "n": 0}            # 18/11: fotos novas de hoje pelos leitores de cartão (com o lock)
+LEITOR_DIA_ARQ = os.path.join(HOME, "leitor-dia.json")
+
+
+def leitor_dia_n():
+    return _conta_dia_n(leitor_dia, LEITOR_DIA_ARQ)
+
+
+def leitor_dia_soma():
+    _conta_dia_soma(leitor_dia, LEITOR_DIA_ARQ)
 
 
 if os.path.exists(INDEX):
@@ -752,6 +782,19 @@ def jpeg_envio_erro(path, size):
 def jpeg_de_verdade(path, size):
     """v96-ux: foto mandada pela tela é um JPEG inteiro (jpeg_envio_erro). O jpeg_completo geral não muda."""
     return jpeg_envio_erro(path, size) is None
+
+
+ENVIO_ORIGEM = "tela:envio"   # 18/11: origem das fotos do envio manual; nunca é um fotógrafo (o dono vem da câmera)
+
+
+def envio_mt(v):
+    """18/11: a data do arquivo no cartão mandada pela tela (lastModified em segundos). Só número entre 2000 e amanhã; o resto
+    é None (a foto entra sem mt)."""
+    try:
+        mt = float(str(v or "")[:20])
+    except ValueError:
+        return None
+    return mt if 946684800 <= mt <= time.time() + 86400 else None
 
 
 def envio_nome(nome):
@@ -1302,7 +1345,8 @@ def buscar_vetor(me, dias=1, janela=None, agora=None):
                 melhor[pid] = (s_, float(L[i]))
     fotos = sorted(({"id": k, "sim": round(v[0], 3), "principal": bool(v[1] >= ROSTO_PRINCIPAL * (mx.get(k) or 0))}
                     for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
-    return {"rosto": True, "fotos": fotos, "limite": LIMITE, "janela_min": jan}
+    # 18/11: fila = fotos ainda esperando a leitura de rostos (recém-chegadas); o Checkout espera e tenta de novo em vez de dizer "não achamos"
+    return {"rosto": True, "fotos": fotos, "limite": LIMITE, "janela_min": jan, "fila": fila_rostos.qsize()}
 
 
 def medir(sessoes):
@@ -1611,6 +1655,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
                 time.strftime("%Y-%m-%d %H:%M:%S"), nome or "-", pid, sessao or "-", posto or "-", quem or "-"))
             md = {"pid": pid, "nome": nome, "apagada": time.time(), "motivo": "lgpd", "sessao": sessao or None, "posto": posto or None, "por": quem or None}
             metricas.append(md); metrica_grava(md)
+    falhas += treino_lgpd(alvo)             # 16/11: marcações do treino e ajuste, aviso, descarte e treino antigo do estado.db
     try:
         sess_esquecer_disco(apagados_sess)   # v91 (S14): o pid sai também dos arquivos de sessão dos dias anteriores
     except Exception as ex:
@@ -1981,9 +2026,20 @@ except Exception:
     lgpd_excluidas = set()
 
 
-def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False):
+def _por_campos(por):
+    """{"por": login} ou {"por": login, "por_assumido": quem assumiu}; nada sem por."""
+    usuario, assumido = (por if isinstance(por, tuple) else (por, None))
+    return {**({"por": str(usuario)} if usuario else {}), **({"por_assumido": str(assumido)} if assumido else {})}
+
+
+def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False, sem_mt=False, por=None, extra=None):
     """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou).
-    v96-ux: quieto=True (envio pela tela) não põe o nome do arquivo no console; o fluxo é o mesmo."""
+    v96-ux: quieto=True (envio pela tela) não põe o nome do arquivo no console; o fluxo é o mesmo.
+    18/11: sem_mt=True (envio pela tela sem a data do arquivo) não grava o mt: a data do temporário é a da chegada.
+    18/11 (segurança): por = login de quem mandou a foto pela tela, ou (login, quem assumiu pelo "ver como"); vai para o
+    meta (por, por_assumido) e para a linha de métrica, só no índice e no backup privado. Nunca sai para os navegadores
+    (/biblioteca e /events montam os campos à mão; /metricas tira o por).
+    18/11: extra (leitor de cartão: {"ap": nome do leitor, "api": id}) entra no meta da foto e no evento "photo"."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
     if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo (a câmera recebe "ok" e não reenvia)
@@ -2030,15 +2086,16 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
     with lock:
         seen[h] = pid
         lib[pid] = {"file": dst, "thumb": thumb}
-        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), "mt": st.st_mtime, **exif_info(dst)}
+        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), **({} if sem_mt else {"mt": st.st_mtime}), **exif_info(dst), **_por_campos(por), **(extra or {})}
         mm = dict(meta[pid])
         save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
                        "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb,
-                       "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
+                       "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", ""),
+                       **(extra or {})})
         state["copied"] += 1
         m = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(),
-             "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha}
+             "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha, **_por_campos(por)}
         metricas.append(m); metricas_por_pid[pid] = m
     metrica_grava(m)
     try:                                # v91: sessão montada aqui (fora do lock); a Fila do fotógrafo deriva dela (S12)
@@ -2050,6 +2107,10 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
     except Exception as ex:
         print("  fila do fotógrafo (rostos): %s" % str(ex)[:80])
     rostos_enfileira(pid, dst, 0, time.time())   # S11: foto nova na frente do atraso do boot
+    try:
+        cena_enfileira(pid, thumb, 0)            # 18/11 (regra 19): reconhecer o ponto (nada com o interruptor desligado)
+    except Exception as ex:
+        print("  cena: %s" % str(ex)[:80])
     nuvem_enfileira(pid, dst)
     if not quieto:
         print(f"  + {fn}  ({st.st_size/1e6:.1f} MB)  via {src_kind} {origin}")
@@ -3261,13 +3322,13 @@ def multipart(fields, files):
 # para o campeao2 esse arquivo é o fundo antigo, com a taça. Prévia (2400 px) e impressão (5000 px, img/fundos-5k/).
 # Todos os fundos de DATA.backgrounds (os 5 ativos, com o Pódio de campeão da v86, e os do Laboratório, que podem ser ativados), com o mesmo arquivo do app.
 FUNDOS_PREVIA = {"campeao2": "img/bg-campeao-v81.jpg", "mirante": "img/bg-mirantesol.jpg", "mirantedia": "img/bg-mirantedia.jpg",
-                 "arq1950": "img/bg-maracana1950.jpg", "tunel": "img/bg-tunel.jpg", "podio": "img/bg-podio.jpg",
+                 "arq1950": "img/bg-maracana1950.jpg", "tunel": "img/bg-tunel-v2.jpg", "podio": "img/bg-podio.jpg",
                  "imprensa": "img/bg-imprensa.jpg", "noite": "img/bg-noite.jpg", "terraco": "img/bg-terraco.jpg",
                  "campeaoarg": "img/bg-campeaoarg.jpg", "campeaocol": "img/bg-campeaocol.jpg",
                  "gramado1950": "img/bg-gramado1950.jpg", "alto1950": "img/bg-alto1950.jpg",
                  "escanteio1950": "img/bg-escanteio1950.jpg", "asadelta": "img/bg-asadelta.jpg"}
 FUNDOS_IMPRESSAO = {"campeao2": "img/fundos-5k/campeao.jpg", "mirante": "img/fundos-5k/mirantesol.jpg", "mirantedia": "img/fundos-5k/mirantedia.jpg",
-                    "arq1950": "img/fundos-5k/maracana1950.jpg", "tunel": "img/fundos-5k/tunel.jpg",
+                    "arq1950": "img/fundos-5k/maracana1950.jpg", "tunel": "img/fundos-5k/tunel-v2.jpg",
                     "podio": "img/fundos-5k/podio.jpg"}
 PR_LADO_MAX = 5000  # teto de W e H no /photoroom/compose
 
@@ -3469,6 +3530,7 @@ def rec_pose_ok():
 
 
 REC_FALSO_SEG = None     # v93 (segurança S2): só os testes ligam (m.REC_FALSO_SEG = s): o "recorte" copia a foto e demora s
+REC_FALSO_INFO = None    # 18/11: só os testes: pid -> medidas do recorte falso (trunc, borda, luz, sem_pessoa)
 
 
 def _rec_falso():
@@ -3551,7 +3613,7 @@ def _rec_pids_ler():
 
 def _rec_pids_gravar():
     with rec_filhos_lock:
-        lst = [{"pid": f["p"].pid, "agente": os.getpid(), "criado": f.get("criado")} for f in rec_filhos.values()
+        lst = [{"pid": f["p"].pid, "agente": os.getpid(), "criado": f.get("criado")} for f in list(rec_filhos.values()) + [cena_filho]
                if f.get("p") is not None and f["p"].poll() is None]
     try:
         os.makedirs(os.path.dirname(REC_PIDS), exist_ok=True)
@@ -3869,11 +3931,16 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
         os.makedirs(RECORTES, exist_ok=True)
         if not os.path.exists(cheio):
             time.sleep(falso)
+            info = REC_FALSO_INFO(pid) if callable(REC_FALSO_INFO) else None
+            if info and info.get("sem_pessoa"):
+                cena_rec(pid, {"sem_pessoa": True})
+                raise ValueError("sem_pessoa")
             shutil.copyfile(origem, cheio + ".f.tmp")
             os.chmod(cheio + ".f.tmp", 0o600)
             os.replace(cheio + ".f.tmp", cheio)
             with rec_lock:
                 rec["feitos"] += 1
+            cena_rec(pid, info or {"trunc": True, "borda": [], "luz": {"med": 120.0, "p95": 200.0, "fonte": "pessoa"}, "joelho": None, "pernas": False})
         if destino != cheio:
             shutil.copyfile(cheio, destino + ".f.tmp")
             os.chmod(destino + ".f.tmp", 0o600)
@@ -3882,7 +3949,13 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
     if not os.path.exists(cheio):
         t0 = time.time()
         os.makedirs(RECORTES, exist_ok=True)
-        rec_filho_recortar(pid, origem, cheio, getattr(_rec_tl, "i", 0))   # MAX_PIXELS, EXIF, 3000 px, RGB zerado fora, 600: no filho
+        try:
+            j = rec_filho_recortar(pid, origem, cheio, getattr(_rec_tl, "i", 0))   # MAX_PIXELS, EXIF, 3000 px, RGB zerado fora, 600: no filho
+        except ValueError as ex:
+            if str(ex) == "sem_pessoa":
+                cena_rec(pid, {"sem_pessoa": True})   # 18/11 (regra 19): a próxima de gramado vira base
+            raise
+        cena_rec(pid, j)                             # 18/11 (regra 19): trunc, borda, luz, joelho e pernas para a escolha da base
         ms = int((time.time() - t0) * 1000)
         with rec_lock:
             rec["feitos"] += 1
@@ -4069,25 +4142,13 @@ def rec_pedir(pid, origem, lado=REC_LADO_MAX, espera=180, prio=REC_PRIO_CHECKOUT
 
 
 def rec_pre_escolha(fotos, x=None, sem_pessoa=()):
-    """Só as fotos que o Checkout vai mostrar com fundo de IA. v93 (plano dos cliques de IA, A14): as bases de IA da
-    sessão (x["ia"]) quando ela tem; senão as 2 primeiras da sessão. O extra por pessoa (até 10 recortes por sessão) saiu:
-    desde a v91 B a selfie mostra a sessão inteira; menor ou escola pede o recorte na hora, com prioridade.
-    v97: com o recorte na CPU (lento: 45 a 75 s por foto), só as bases; sem as 2 normais do plano B (a fila não cresce
-    sem fim). Leva cuja visita já tem as bases (D4): nada (o Checkout monta com as bases da visita). Leva sem bases por
-    outro motivo (poucas fotos, volante): as 2 primeiras, como antes."""
-    if x is not None and (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
+    """Só as fotos que o Checkout vai mostrar com fundo de IA: as bases de IA da leva (x["ia"]). 18/11 (segurança, regra 19,
+    sem plano B): leva sem bases não recorta nada (antes, as 2 primeiras fotos de qualquer ponto) e as 2 fotos normais a mais
+    saíram (eram o plano B do Checkout, lojaAIAntigo). Leva cuja visita já tem as bases (D4): nada. Usada na CPU; na placa de
+    vídeo o rec_pre_loop recorta toda foto com gente, no próprio servidor."""
+    if x is None or (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
         return []
-    with rec_lock:
-        cpu = rec.get("provedor") == "cpu"
-    if x is not None and x.get("ia") and cpu:
-        return list(x["ia"])
-    if x is not None and x.get("ia"):
-        # revisão (A14): as bases e, com a prioridade mais baixa, as 2 primeiras fotos normais, o plano B do Checkout quando as
-        # duas bases são ruins (lojaAIAntigo); só usa a máquina livre
-        ia = list(x["ia"])
-        return ia + [p for p in fotos if p not in ia and p not in sem_pessoa][:2]
-    # 14/11: foto sem pessoa (chão, teste, céu) não conta; segue para a próxima da sessão, que é a que o Checkout vai usar
-    return [p for p in fotos if p not in sem_pessoa][:2]
+    return [p for p in (x.get("ia") or []) if isinstance(p, str)]
 
 
 def rec_pre_loop():
@@ -4207,7 +4268,9 @@ def rec_ia_loop():
                     break                                # em ordem de prioridade: as seguintes não têm vaga também
                 del pend[pid]
                 if os.path.exists(rec_arquivo(pid)) and os.path.exists(rec_arquivo(pid, 2400)):
-                    continue
+                    if not (cena_regra19() and cena_rec_falta(pid)):
+                        continue
+                    rec_apagar(pid)                  # 18/11: recorte de antes desta versão, sem as medidas: refaz
                 with lock:
                     e = lib.get(pid)
                     u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
@@ -5403,10 +5466,12 @@ def gal_validar(m):
             except (TypeError, ValueError):
                 pass
     codigo = m.get("codigo") if isinstance(m.get("codigo"), str) and _re_codigo.match(m.get("codigo")) else None
+    vo = escola_voucher_ok(m.get("voucher")) if m["tipo"] == "evento" else None
     return {"v": 1, "token": m["token"], "codigo": codigo, "tipo": m["tipo"], "venue": str(m.get("venue") or "")[:40],
             "nome": (str(m["nome"])[:120] if m.get("nome") else None), "sessoes": [str(s)[:40] for s in (m.get("sessoes") or [])[:200]],
             "menor": bool(m.get("menor")), "criada": str(m.get("criada") or _iso())[:40], "expira": gal_expira_ok(m.get("expira")),
-            "precos": precos, "catalogo": catalogo, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"}}
+            "precos": precos, "catalogo": catalogo, "moeda": "BRL", "fotos": fotos, "envio": {"compradas": "pendente", "vitrine": "pendente"},
+            **({"voucher": vo} if vo else {})}
 
 
 def gal_mesclar(novo, velho):
@@ -5429,6 +5494,247 @@ def gal_mesclar(novo, velho):
     if velho.get("menor"):
         novo["menor"] = True                     # grupo de menor marcado no servidor não é desmarcado pelo navegador
     return novo
+
+
+# ---------- Escola pelo voucher da Imply (plano docs/planos/2026-11-17-escola-pelo-voucher.md) ----------
+# O Viva Parceiros lê a tela Vouchers da Imply de hora em hora. Daqui, de 10 em 10 min, o agente pega os vouchers confirmados
+# com [Escola] na descrição e, quando acaba a janela da visita, monta a galeria `evento` com as sessões começadas na janela.
+# O responsável digita o localizador no campo do código; a cortesia (uma foto por criança) é da nuvem.
+ESCOLA_URL = os.environ.get("ETERNA_PARCEIROS_GRUPOS", "https://parceiros.vivamaracana.com.br/api/painel/grupos")
+ESCOLA_TOKEN = os.environ.get("ETERNA_PARCEIROS_TOKEN", "")
+ESCOLA_ANTES, ESCOLA_DEPOIS = 15 * 60, 150 * 60          # janela: 15 min antes do horário do voucher até 2h30 depois
+ESCOLA_DIAS = 7                                          # vouchers com visita nos últimos 7 dias
+ESCOLA_MAX_FOTOS = 10000                                 # dimensionamento de 17/11: até 10 mil fotos numa janela
+ESCOLA_INTERVALO = 600
+ESCOLA_ARQ = os.path.join(GALERIAS, "escolas.json")      # localizador -> {token, codigo, sessoes, em}
+_re_escola = re.compile(r"\[\s*(escola|gratuidade)\s*\]", re.I)   # 17/11: [Gratuidade] vale como [Escola] (Ronaldo)
+_re_localizador = re.compile(r"^[A-Za-z0-9]{6,20}$")
+_re_hhmm = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+escola_estado = {"ligado": bool(ESCOLA_TOKEN), "ultima": None, "erro": None, "vouchers": 0, "galerias": 0}
+
+
+def escola_voucher_ok(v):
+    """Bloco `voucher` do manifesto: só campos conhecidos, com tipos e tamanhos checados."""
+    if not isinstance(v, dict) or not _re_localizador.match(str(v.get("localizador") or "")) or not _re_dia.match(str(v.get("dia") or "")):
+        return None
+    try:
+        pessoas = max(0, min(2000, int(v.get("pessoas") or 0)))
+    except (TypeError, ValueError):
+        pessoas = 0
+    return {"localizador": str(v["localizador"]).upper(), "escola": str(v.get("escola") or "")[:120], "dia": v["dia"],
+            "horarios": sorted({h for h in (v.get("horarios") or [])[:12] if isinstance(h, str) and _re_hhmm.match(h)}), "pessoas": pessoas}
+
+
+def escola_vouchers(grupos):
+    """Grupos do Viva Parceiros -> vouchers de escola confirmados, um por localizador (um voucher pode ter vários horários)."""
+    out = {}
+    for g in grupos if isinstance(grupos, list) else []:
+        if not isinstance(g, dict) or g.get("status") != "confirmado" or g.get("teste"):
+            continue
+        if not _re_escola.search(str(g.get("descricao") or "")):
+            continue                                   # só a etiqueta [Escola]: corporativo e empresa ficam de fora
+        loc = str((g.get("voucher") or {}).get("localizador") or "").strip().upper()
+        dia, hora = str(g.get("visitaDia") or ""), str(g.get("visitaHora") or "")
+        if not _re_localizador.match(loc) or not _re_dia.match(dia) or not _re_hhmm.match(hora):
+            continue
+        v = out.setdefault(loc, {"localizador": loc, "escola": str(g.get("instituicao") or "")[:120], "dia": dia, "horarios": [], "pessoas": 0})
+        if hora not in v["horarios"]:
+            v["horarios"].append(hora)
+        try:
+            v["pessoas"] += max(0, int(g.get("pessoas") or 0))
+        except (TypeError, ValueError):
+            pass
+    for v in out.values():
+        v["horarios"].sort()
+    return out
+
+
+def escola_janelas(v):
+    """[(início, fim)] em epoch, no fuso do agente (o do venue), uma por horário do voucher."""
+    js = []
+    for h in v["horarios"]:
+        t = time.mktime(time.strptime(v["dia"] + " " + h, "%Y-%m-%d %H:%M"))
+        js.append((t - ESCOLA_ANTES, t + ESCOLA_DEPOIS))
+    return js
+
+
+def escola_sessoes(v):
+    """Sessões (não removidas) que começaram dentro de uma janela do voucher: da memória (hoje e ontem) e do arquivo do dia."""
+    js = escola_janelas(v)
+    dentro = lambda x: any(a <= (_num(x.get("cap0")) or _num(x.get("aberta_em"))) <= b for a, b in js)
+    achadas = {}
+    try:
+        with open(os.path.join(SESS_DIR, v["dia"] + ".json"), encoding="utf8") as fh:
+            for x in json.load(fh).get("sessoes") or []:
+                if isinstance(x, dict) and x.get("card") and not x.get("removida") and dentro(x):
+                    achadas[x["card"]] = {"card": x["card"], "fotos": list(x.get("fotos") or []), "ia": set(x.get("ia") or [])}
+    except (OSError, ValueError):
+        pass
+    with sess_lock:
+        for x in sess.values():
+            if x.get("dia") == v["dia"] and not x.get("removida") and dentro(x):
+                achadas[x["card"]] = {"card": x["card"], "fotos": list(x.get("fotos") or []), "ia": set(x.get("ia") or [])}
+    return [achadas[c] for c in sorted(achadas)]
+
+
+def escola_precos():
+    """Preços e catálogo online da galeria mais recente publicada pelo app (o agente não guarda o catálogo)."""
+    melhor = None
+    for t in REPO.listar():
+        m = REPO.ler_manifesto(t)
+        if m and m.get("tipo") == "sessao" and isinstance(m.get("precos"), dict) and (melhor is None or str(m.get("criada")) > str(melhor.get("criada"))):
+            melhor = m
+    return (melhor.get("precos"), melhor.get("catalogo") or []) if melhor else (None, [])
+
+
+def escola_codigo(usados):
+    while True:
+        c = "".join(GAL_ALFA[b % 32] for b in os.urandom(8))
+        c = c[:4] + "-" + c[4:]
+        if c not in usados:
+            return c
+
+
+def escola_ler():
+    try:
+        d = json.load(open(ESCOLA_ARQ, encoding="utf8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def escola_gravar(d):
+    os.makedirs(GALERIAS, exist_ok=True)
+    with open(ESCOLA_ARQ + ".tmp", "w", encoding="utf8") as fh:
+        json.dump(d, fh)
+    os.replace(ESCOLA_ARQ + ".tmp", ESCOLA_ARQ)
+
+
+def escola_montar(v, reg, agora=None):
+    """Monta (ou atualiza) a galeria do voucher depois da janela. Devolve o token, ou None se ainda não é hora ou não há foto."""
+    agora = agora or time.time()
+    if agora < max(b for a, b in escola_janelas(v)):
+        return None
+    ses = escola_sessoes(v)
+    cards = [x["card"] for x in ses]
+    if reg and reg.get("sessoes") == cards:
+        return reg.get("token")                        # nada mudou desde a última montagem
+    fotos = []
+    for x in ses:
+        for p in x["fotos"]:
+            if p not in x["ia"] and len(fotos) < ESCOLA_MAX_FOTOS:
+                fotos.append({"id": "ag_" + p, "sessao": x["card"], "direito": "venda", "canal": None})
+    if not fotos:
+        return None
+    precos, catalogo = escola_precos()
+    if not precos:
+        print("  escola: sem preço de galeria publicada ainda; %s espera" % v["localizador"])
+        return None
+    token = (reg or {}).get("token") or base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("=")
+    codigo = (reg or {}).get("codigo") or escola_codigo(set(codigos))
+    novo = gal_validar({"token": token, "codigo": codigo, "tipo": "evento", "venue": "maracana", "nome": v["escola"] or v["localizador"],
+                        "sessoes": cards, "menor": True, "criada": (reg or {}).get("criada") or _iso(agora), "precos": precos, "catalogo": catalogo,
+                        "fotos": fotos, "voucher": v})
+    with gal_lock:
+        m = gal_mesclar(novo, REPO.ler_manifesto(token))
+        REPO.salvar_manifesto(token, m)
+        codigos[m["codigo"]] = token
+    gal_fila.put(token)
+    nuvem_galeria_enfileira(token)
+    vis_protege_manifesto(m)
+    return {"token": token, "codigo": codigo, "sessoes": cards, "criada": novo["criada"], "fotos": len(fotos), "em": _iso(agora),
+            "escola": v["escola"], "dia": v["dia"], "horarios": v["horarios"], "pessoas": v["pessoas"]}
+
+
+def escola_tick(grupos, agora=None):
+    agora = agora or time.time()
+    vs = escola_vouchers(grupos)
+    hoje = time.strftime("%Y-%m-%d", time.localtime(agora))
+    desde = time.strftime("%Y-%m-%d", time.localtime(agora - ESCOLA_DIAS * 86400))
+    reg = escola_ler()
+    mudou = 0
+    for loc, v in vs.items():
+        if not (desde <= v["dia"] <= hoje):
+            continue
+        try:
+            r = escola_montar(v, reg.get(loc), agora)
+        except Exception as ex:
+            print("  escola: %s não montou (%s)" % (loc, str(ex)[:80]))
+            continue
+        if isinstance(r, dict):
+            reg[loc] = r
+            mudou += 1
+            print("  escola: galeria de %s (%s) com %d fotos em %d sessões" % (v["escola"] or loc, loc, r["fotos"], len(r["sessoes"])))
+    if mudou:
+        escola_gravar(reg)
+    escola_estado.update(ultima=_iso(agora), erro=None, vouchers=len(vs), galerias=len(reg))
+    return mudou
+
+
+ESCOLA_NUM_ARQ = os.path.join(GALERIAS, "escolas-numeros.json")
+ESCOLA_NUM_DIAS = 60
+
+
+def escola_numeros_pull(agora=None):
+    """Traz da nuvem o funil de cada galeria de escola dos últimos 60 dias (painel Escolas). Devolve quantas vieram."""
+    if not NUVEM_API:
+        return 0
+    agora = agora or time.time()
+    lim = time.strftime("%Y-%m-%d", time.localtime(agora - ESCOLA_NUM_DIAS * 86400))
+    toks = {r["token"]: loc for loc, r in escola_ler().items() if isinstance(r, dict) and token_ok(str(r.get("token") or ""))
+            and str(r.get("dia") or "9999") >= lim}
+    lista, out = sorted(toks), {}
+    for i in range(0, len(lista), 30):
+        rq = urllib.request.Request(NUVEM_API + "/ponto/escolas?" + urllib.parse.urlencode({"tokens": ",".join(lista[i:i + 30])}),
+                                    headers={"X-Eterna-Ponto": nuvem_segredo(), "User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(rq, timeout=30) as r:
+            j = json.loads(r.read().decode("utf8"))
+        for t, n in (j.get("escolas") or {}).items():
+            if t in toks and isinstance(n, dict):
+                out[toks[t]] = n
+    os.makedirs(GALERIAS, exist_ok=True)
+    with open(ESCOLA_NUM_ARQ + ".tmp", "w", encoding="utf8") as fh:
+        json.dump({"em": _iso(agora), "escolas": out}, fh)
+    os.replace(ESCOLA_NUM_ARQ + ".tmp", ESCOLA_NUM_ARQ)
+    return len(out)
+
+
+def escola_painel():
+    """GET /escolas: cada visita de escola (mais nova em cima) com o funil trazido da nuvem. O token não sai daqui."""
+    try:
+        nd = json.load(open(ESCOLA_NUM_ARQ, encoding="utf8"))
+    except (OSError, ValueError):
+        nd = {}
+    ns = nd.get("escolas") or {}
+    es = [{"localizador": loc, "escola": r.get("escola"), "dia": r.get("dia"), "horarios": r.get("horarios") or [], "pessoas": r.get("pessoas"),
+           "fotos": r.get("fotos"), "criada": r.get("criada"), "numeros": ns.get(loc)}
+          for loc, r in escola_ler().items() if isinstance(r, dict)]
+    es.sort(key=lambda x: (str(x["dia"] or ""), x["localizador"]), reverse=True)
+    return {"ok": True, "ligado": bool(ESCOLA_TOKEN), "ultima": escola_estado.get("ultima"), "erro": escola_estado.get("erro"),
+            "numeros_em": nd.get("em"), "escolas": es[:200]}
+
+
+def escola_loop():
+    if not ESCOLA_TOKEN:
+        return
+    print("  Escola pelo voucher: ligada (%s)" % ESCOLA_URL)
+    while True:
+        try:
+            rq = urllib.request.Request(ESCOLA_URL, headers={"Authorization": "Bearer " + ESCOLA_TOKEN, "User-Agent": "eterna-agente"})
+            with urllib.request.urlopen(rq, timeout=30) as r:
+                j = json.loads(r.read().decode("utf8"))
+            if j.get("disponivel") is False:
+                escola_estado.update(erro="sem dados no Viva Parceiros")
+            else:
+                escola_tick(j.get("grupos"))
+        except Exception as ex:
+            escola_estado.update(erro=str(ex)[:120])
+            print("  escola: Viva Parceiros sem resposta (%s)" % str(ex)[:80])
+        try:
+            escola_numeros_pull()
+        except Exception as ex:
+            print("  escola: números da nuvem sem resposta (%s)" % str(ex)[:80])
+        time.sleep(ESCOLA_INTERVALO)
 
 
 codigos = {}           # código curto -> token (para quem digita o código quando o QR falha)
@@ -5849,8 +6155,11 @@ def _ff_hoje(t=None):
 
 
 def ff_quem(o, autor, dono, serie, s="", cad=None):
-    """(fotógrafo|None, fonte). Regra D2 da v85: 1) a origem, se cadastrada; 2) o autor ou o dono gravado na câmera, se
-    cadastrado; 3) nenhum, e a fonte diz de onde veio (nunca o nome de subpasta não cadastrada nem a série completa)."""
+    """(fotógrafo|None, fonte). Regra D2 da v85, com a decisão do Eduardo de 18/11 para o cartão:
+    FTP: 1) a origem (login ou subpasta), se cadastrada; 2) o autor ou o dono gravado na câmera, se cadastrado.
+    Cartão (s == "cartao": envio manual pela tela, cartão lido no servidor, leitor do gramado): 1) o autor ou o dono gravado
+    na câmera; 2) a origem (rótulo do cartão), só quando a câmera não identifica ninguém. É a ordem do camWho do app.
+    Nenhum: a fonte diz de onde veio (nunca o nome de subpasta não cadastrada nem a série completa)."""
     return ff_quem_como(o, autor, dono, serie, s, cad)[:2]
 
 
@@ -5859,12 +6168,20 @@ def ff_quem_como(o, autor, dono, serie, s="", cad=None):
     cad = cad if cad is not None else ff_cadastrados()
     via = "cartão" if s == "cartao" else "ftp"
     k = fotografo_chave(o, inteiro=True)              # origem (login, pasta): só o nome inteiro, nunca o primeiro nome
-    if k and k in cad:
-        return k, via, "origem"
+    origem = k if k and k in cad else None
+    if origem and s != "cartao":
+        return origem, via, "origem"
     for nome, como in ((autor, "autor_da_camera"), (dono, "dono_da_camera")):
         k = fotografo_chave(nome)                    # "Klacius", "KLACIUS", "Klacius Ank Guarino" = klassius
-        if k and (k in cad or k.split()[0] in cad):
-            return (k if k in cad else k.split()[0]), via, como
+        if not k:
+            continue
+        p1 = k.split()[0]
+        p2 = "".join(ch for ch in p1 if ch.isalnum())   # 18/11: "Marcio," e "Samuel." = marcio e samuel (o p1 do keyByName do app)
+        for c in (k, p1, p2):
+            if c and c in cad:
+                return c, via, como
+    if origem:                                       # cartão: a câmera não disse quem é
+        return origem, via, "origem"
     serie = re.sub(r"\D", "", str(serie or ""))
     if serie:
         return None, "câmera ···" + serie[-4:], None
@@ -6050,8 +6367,10 @@ def _sess_publico(x, disco=False):
 
 
 def sess_pids_janela(desde):
-    """pids das sessões (hoje e ontem em memória) cuja última foto (cap1, hora do clique corrigida; sem ela, a última
-    chegada) é de desde em diante, com as pendentes. None se não há sessão nenhuma em memória (agente sem sessões)."""
+    """pids das sessões (hoje e ontem em memória) cuja última foto é de desde em diante, com as pendentes. None se não há
+    sessão nenhuma em memória (agente sem sessões). 18/11 (selfie da Izabelle, Ronaldo: "a selfie independentemente de tudo
+    tem q trazer as fotos da pessoa"): vale o mais recente entre o clique (cap1) e a chegada ao servidor. Câmera com o relógio
+    atrasado ou cartão descarregado depois punha a sessão recém-chegada fora da janela e a pessoa não achava as próprias fotos."""
     with sess_lock:
         if not sess:
             return None
@@ -6059,7 +6378,7 @@ def sess_pids_janela(desde):
         for x in sess.values():
             if x.get("removida"):
                 continue
-            fim = _num(x.get("cap1")) or _num(x.get("ultima_chegada"))
+            fim = max(_num(x.get("cap1")), _num(x.get("ultima_chegada")))
             if fim >= desde:
                 ok.update(x.get("fotos") or ())
                 ok.update(x.get("pend") or ())
@@ -6142,6 +6461,12 @@ def _sess_ia_regra(x, cfg=None):
     cfg = cfg or ia_cfg_mem()
     if not cfg.get("ligada"):
         return 0, "desligada"
+    if not FUNCAO_DIA_ON:
+        # 18/11 (regra 19): sem a Escala, as bases são as fotos de gramado reconhecidas pela imagem (treino_cfg_mem: sem banco)
+        p = treino_cfg_mem().get("ponto")
+        if p == "ligada":
+            return int(cfg.get("cliques") or 2), None
+        return 0, ("cena_medir" if p == "medir" else "cena_desligada")
     f = x.get("funcao") if FUNCAO_DIA_ON else None   # desligada: nem a função guardada em sessão aberta antes do deploy vale
     if not x.get("fotografo") or not isinstance(f, dict):
         return 0, "sem_funcao"                       # A4: sem função do dia ou sem cadastro, nada some da venda
@@ -6154,9 +6479,62 @@ def _sess_ia_regra(x, cfg=None):
     return int(cfg["cliques"]), None
 
 
+def _sess_ia_base_de(p, lv):
+    """Uma foto como base (regra 19): "base", "pula", "rec" (gramado válido esperando o recorte) ou "pendente" (sem
+    classificação da versão ligada). Só memória (cena_mem)."""
+    c = cena_mem.get(p)
+    if c is not None and c.get("r") == CENA_NAO:
+        return "pula"                                # recusada pelo processo de cena: nunca base, não trava
+    if c is None or c.get("v") != lv:
+        return "pendente"
+    if not c.get("g"):
+        return "pula"
+    ok = base_rec_ok(c.get("rec"))
+    return "rec" if ok is None else ("base" if ok else "pula")
+
+
+def _sess_ia_bases(x, n):
+    """18/11 (regra 19): as bases da leva = as N primeiras fotos de gramado que passam na regra (gramado da versão ligada com
+    conf >= CENA_LIMIAR e os vetos, recorte com gente, sem corte na lateral nem no alto e com luz boa), em ordem de clique.
+    -> (bases, "ok" | "pendente" | "sem_gramado"). Para no primeiro "pendente". 1 base sem nada pendente antes = ok (D9).
+    Com o sess_lock; só memória."""
+    lv = treino_cfg_mem().get("ponto_versao")
+    ts = x.get("_t") or {}
+    bases = []
+    for p in sorted(x["fotos"], key=lambda p: ts.get(p, (0, 0))):
+        e = _sess_ia_base_de(p, lv)
+        if e in ("pendente", "rec"):
+            return bases, "pendente"
+        if e == "base":
+            bases.append(p)
+            if len(bases) >= n:
+                break
+    return bases, ("ok" if bases else "sem_gramado")
+
+
+def _sess_ia_pede_rec(x, n):
+    """Leva já fechada esperando (cena_pendente): as fotos de gramado válidas que ainda esperam o recorte vão para a fila de
+    IA (o _sess_ia_cand só olha as abertas). Com o sess_lock."""
+    lv = treino_cfg_mem().get("ponto_versao")
+    ts = x.get("_t") or {}
+    vistos = x.setdefault("_ia_vistos", set())
+    boas = 0
+    for p in sorted(x["fotos"], key=lambda p: ts.get(p, (0, 0))):
+        e = _sess_ia_base_de(p, lv)
+        if e == "rec" and p not in vistos:
+            vistos.add(p)
+            sess_ia_novos.append((p, REC_PRIO_IA))
+        elif e == "base":
+            boas += 1
+            if boas >= n:
+                break
+
+
 def _sess_ia_cand(x):
     """v93: com a sessão ainda não fechada, os N primeiros cliques (fotos + pendentes, pela hora do clique corrigida) que
-    ainda não foram pedidos vão para a fila de recorte de IA. Com o sess_lock."""
+    ainda não foram pedidos vão para a fila de recorte de IA. Com o sess_lock.
+    18/11 (regra 19): as candidatas são as fotos de gramado válidas (fotos + pend, em ordem de clique) ainda não descartadas
+    pelo recorte, até N boas mais as que esperam o recorte."""
     if x.get("status") == "fechada" or x.get("removida"):
         return
     n, _ = _sess_ia_regra(x)
@@ -6165,6 +6543,21 @@ def _sess_ia_cand(x):
     ts = x["_t"]
     vistos = x.setdefault("_ia_vistos", set())
     pr = 2 if x.get("atrasada") else 1
+    if cena_regra19():
+        lv = treino_cfg_mem().get("ponto_versao")
+        boas = 0
+        for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0))):
+            e = _sess_ia_base_de(p, lv)
+            if e not in ("base", "rec"):
+                continue
+            if p not in vistos:
+                vistos.add(p)
+                sess_ia_novos.append((p, pr))
+            if e == "base":
+                boas += 1
+                if boas >= n:
+                    break
+        return
     for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n]:
         if p not in vistos:
             vistos.add(p)
@@ -6180,6 +6573,16 @@ def _sess_ia_fecha(x):
     if n and not mot and len(fs) > n and _vis_ja_tem_ia(x["card"]):
         x["ia"] = []
         x["ia_regra"] = {"n": n, "motivo": "visita_ja_tem"}
+        return
+    if cena_regra19() and n and not mot and len(fs) > n:
+        # 18/11 (regra 19): só as fotos de gramado que passam na regra; sem nenhuma, sem montagem (nunca as 2 primeiras de
+        # qualquer ponto); classificação ou recorte ainda faltando: cena_pendente (o cena_completa termina depois)
+        bases, est = _sess_ia_bases(x, n)
+        x["ia"] = list(bases) if est == "ok" else []
+        x["ia_regra"] = {"n": n, "motivo": None if est == "ok" else ("sem_gramado" if est == "sem_gramado" else "cena_pendente")}
+        if est == "pendente":
+            cena_pend[x["card"]] = time.time()
+            _sess_ia_pede_rec(x, n)
         return
     x["ia"] = list(fs[:n]) if n and len(fs) > n else []
     x["ia_regra"] = {"n": n, "motivo": mot or ("poucas_fotos" if n and len(fs) <= n else None)}
@@ -6209,7 +6612,7 @@ def sess_ia_hoje(agora=None):
             if x.get("status") != "fechada":
                 out.update(x.get("_ia_vistos") or ())
                 n, _ = _sess_ia_regra(x)
-                if n:
+                if n and not cena_regra19():             # 18/11: na regra 19 as candidatas já estão em _ia_vistos
                     ts = x.get("_t") or {}
                     out.update(sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n])
     return out
@@ -6827,32 +7230,73 @@ def _sess_faces_db(pids):
     return out
 
 
+SESS_DONO_HIST = 5               # correções anteriores guardadas em dono_corrigido.anterior
+
+
+def _sess_de_cartao(x, metas):
+    """A sessão é de cartão: fonte "cartão", ou trilha atrasada com todas as fotos de cartão (s == "cartao")."""
+    if x.get("fonte") == "cartão":
+        return True
+    pids = list(x.get("fotos") or []) + list(x.get("pend") or [])
+    return bool(x.get("atrasada")) and bool(pids) and all((metas.get(p) or {}).get("s") == "cartao" for p in pids)
+
+
+def _sess_vendas_pagas(dias):
+    """Cards com venda paga (criar com o card ou entre as sessões juntadas pela selfie, e pagar), lidos dos eventos dos
+    dias. Falha na leitura: None (não se sabe)."""
+    try:
+        vs = {}
+        for d in dias:
+            for e in _ev_ler(d):
+                v = vs.setdefault(e["venda"], {"cards": set(), "paga": False})
+                dd = e.get("dados") or {}
+                if e["tipo"] == "criar":
+                    if dd.get("card"):
+                        v["cards"].add(dd["card"])
+                    v["cards"].update(c for c in (dd.get("sessoes") or []) if isinstance(c, str))
+                elif e["tipo"] == "pagar":
+                    v["paga"] = True
+        return {c for v in vs.values() if v["paga"] for c in v["cards"]}
+    except Exception as ex:
+        print("  sessões: vendas para a correção do fotógrafo indisponíveis (%s)" % type(ex).__name__)
+        return None
+
+
 def sess_dono_corrigir(agora=None):
     """15/11 (grafia Klacius): sessão fechada SEM fotógrafo cujas fotos resolvem TODAS para o mesmo fotógrafo cadastrado, pela
     regra única (ff_quem: a origem, o autor ou o dono gravado na câmera, tudo por fotografo_chave), recebe a chave dele, com
     rev novo para os navegadores atualizarem a cópia. Fotos de donos diferentes, alguma foto sem dono ou sem registro no
-    índice: fica como está. Sessão que já tem fotógrafo, aberta ou removida nunca é tocada.
+    índice: fica como está.
+    18/11 (Eduardo, "quem manda é a câmera"): também a sessão fechada DE CARTÃO (fonte "cartão", ou atrasada com todas as
+    fotos de cartão) que já tem fotógrafo passa a outro, quando todas as fotos resolvem, pela regra nova do ff_quem (no
+    cartão a câmera vem antes da origem), para um mesmo fotógrafo cadastrado diferente do atual. Caso do envio manual de
+    18/11: fotos da câmera do Márcio que entraram como do Samuel (o seletor da tela). Sessão de FTP com fotógrafo, aberta ou
+    removida nunca é tocada. Sessão com venda paga também é corrigida (a venda passa à estatística do fotógrafo certo, como no
+    caso sem fotógrafo); a marca venda_paga diz que havia venda (None: os eventos não puderam ser lidos).
     Janela: só as sessões em memória, de hoje e de ontem. São os dias que o metricas_loop refaz (o resumo do dia lê o
     arquivo de sessões) e que o /sessoes entrega (hoje sempre; ontem com ?ontem=1, que o app pede uma vez a cada partida do
     agente, srvOntem); dia mais antigo fica como está, porque refazer o resumo dele perderia números que já saíram por prazo
     (rostos). A correção fica registrada na própria sessão (dono_corrigido: quem, quando, de, para e o motivo = o caminho que
-    valeu: origem, autor_da_camera ou dono_da_camera, juntos por "+" quando as fotos resolveram por caminhos diferentes), que
-    vai para o arquivo do dia e para o backup. A fonte nova é a via da primeira foto. Rodar de novo não muda nada. Trabalho
-    de memória: não lê arquivo.
-    As travas são pegas uma de cada vez (sess_lock, lock, sess_lock), nunca uma dentro da outra. Devolve [(card, dia, chave)]."""
+    valeu: origem, autor_da_camera ou dono_da_camera, juntos por "+" quando as fotos resolveram por caminhos diferentes; as
+    correções anteriores ficam na lista "anterior", a mais nova primeiro, até SESS_DONO_HIST), que vai para o arquivo do dia e para o backup. A fonte nova é a via da
+    primeira foto. Rodar de novo não muda nada. Só lê arquivo (eventos das vendas) quando há o que corrigir.
+    As travas são pegas uma de cada vez (sess_lock, lock, sess_lock; o ev_lock do _ev_ler fora delas), nunca uma dentro da
+    outra. Devolve [(card, dia, chave)]."""
     agora = time.time() if agora is None else agora
     with sess_lock:
-        cands = {x["card"]: list(x["fotos"]) + list(x["pend"]) for x in sess.values()
-                 if x.get("status") == "fechada" and not x.get("removida") and not x.get("fotografo")}
-    cands = {c: p for c, p in cands.items() if p}
+        cands = {x["card"]: (list(x["fotos"]) + list(x["pend"]), x.get("fotografo") or None, dict(x)) for x in sess.values()
+                 if x.get("status") == "fechada" and not x.get("removida")}
+    cands = {c: v for c, v in cands.items() if v[0]}
     if not cands:
         return []
-    quer = {p for pids in cands.values() for p in pids}
+    quer = {p for pids, _, _ in cands.values() for p in pids}
     with lock:
         metas = {p: dict(meta[p]) for p in quer if isinstance(meta.get(p), dict)}
     cad = ff_cadastrados()
     acha = {}
-    for card, pids in cands.items():
+    for card, (pids, atual, x) in cands.items():
+        if atual and not _sess_de_cartao(x, metas):
+            continue                                 # sessão de FTP com fotógrafo: a regra de hoje vale
         chaves, comos, via1 = set(), set(), None
         for p in pids:
             mm = metas.get(p)
@@ -6863,20 +7307,53 @@ def sess_dono_corrigir(agora=None):
             if k is None or len(chaves) > 1:
                 break
         if len(chaves) == 1 and None not in chaves:
-            acha[card] = (chaves.pop(), via1, "+".join(sorted(comos)), pids)
-    feitas = []
+            k = chaves.pop()
+            if k != atual:
+                acha[card] = (k, via1, "+".join(sorted(comos)), pids, atual)
+    if not acha:
+        return []
+    pagas = _sess_vendas_pagas(sorted({_ff_hoje(agora - 86400), _ff_hoje(agora)} | {cands[c][2].get("dia") for c in acha if cands[c][2].get("dia")}))
+    feitas, avisos = [], []
     with sess_lock:
-        for card, (k, via, como, pids) in acha.items():
+        for card, (k, via, como, pids, atual) in acha.items():
             x = sess.get(card)
-            if (x is None or x.get("fotografo") or x.get("removida") or x.get("status") != "fechada"
+            if (x is None or (x.get("fotografo") or None) != atual or x.get("removida") or x.get("status") != "fechada"
                     or list(x["fotos"]) + list(x["pend"]) != pids):
                 continue
-            x["dono_corrigido"] = {"em": _iso(agora), "por": "servidor", "de": None, "para": k, "fonte_antes": x.get("fonte"),
-                                   "motivo": como}
+            dc = {"em": _iso(agora), "por": "servidor", "de": atual, "para": k, "fonte_antes": x.get("fonte"), "motivo": como,
+                  "venda_paga": None if pagas is None else card in pagas}
+            ant = x.get("dono_corrigido")
+            if isinstance(ant, dict):                # histórico: a mais nova primeiro, no máximo SESS_DONO_HIST
+                velhas = ant.get("anterior")
+                velhas = [velhas] if isinstance(velhas, dict) else [a for a in (velhas or []) if isinstance(a, dict)]
+                dc["anterior"] = ([{kk: v for kk, v in ant.items() if kk != "anterior"}] + velhas)[:SESS_DONO_HIST]
+            x["dono_corrigido"] = dc
             x["fotografo"], x["fonte"] = k, via
             _sess_toca(x)
             feitas.append((card, x["dia"], k))
+            if dc["venda_paga"]:
+                avisos.append((card, x["dia"], atual, k, dc["em"]))
+    if avisos:                                       # fora do sess_lock: grava no estado.db
+        sess_dono_avisa_venda(avisos)
     return feitas
+
+
+def sess_dono_avisa_venda(avisos):
+    """18/11 (segurança): sessão com venda paga que mudou de fotógrafo vira uma linha no histórico do servidor (usuarios_log,
+    acao "dono_venda_paga": card, dia, de, para), que chega aos navegadores com permissão pelo estado e aparece em Alertas
+    para o Admin. Id fixo por card e hora da correção: gravar de novo não duplica. Falha aqui não impede a correção."""
+    try:
+        docs = []
+        for card, dia, de, para, em in avisos:
+            lid = "Lsrv-dono-" + hashlib.sha256(("%s|%s" % (card, em)).encode("utf8")).hexdigest()[:12]
+            docs.append({"col": "usuarios_log", "id": lid, "valor": {
+                "id": lid, "em": em, "por": "servidor", "alvo": card, "acao": "dono_venda_paga", "card": card, "dia": dia,
+                "mudancas": [{"campo": "fotografo", "de": de, "para": para}],
+                "motivo": "a câmera diz outro fotógrafo; a sessão tinha venda paga", "venue": "maracana", "origem": "agente"}})
+        estado_gravar({"docs": docs}, "servidor")
+        print("  sessões: %d com venda paga mudaram de fotógrafo (registrado em Alertas)" % len(docs))
+    except Exception as ex:
+        print("  sessões: aviso da venda paga não gravado (%s)" % type(ex).__name__)
 
 
 def sess_carregar(agora=None):
@@ -6939,6 +7416,12 @@ def sess_carregar(agora=None):
             if x["status"] != "fechada":
                 _sess_fecha_uma(x, agora, "reinicio")
         hoje = sum(1 for x in sess.values() if x["dia"] == dias[1] and not x.get("removida"))
+        # 18/11 (revisão, regra 19): a leva de hoje que fechou esperando o reconhecimento (cena_pendente) antes de o agente
+        # reiniciar volta para o cena_completa, com o prazo contado de quando fechou (nunca fica presa sem bases nem motivo final)
+        for x in sess.values():
+            if x["dia"] == dias[1] and x.get("status") == "fechada" and not x.get("removida") and not x.get("ia") \
+                    and (x.get("ia_regra") or {}).get("motivo") == "cena_pendente":
+                cena_pend[x["card"]] = _num(x.get("fechada_em")) or agora
         _vis_carregar(dias, agora)                   # v97: arestas relidas, visitas refeitas (critério 31)
         for d in dias:
             _vis_recalc(d)
@@ -6946,10 +7429,10 @@ def sess_carregar(agora=None):
         vis_idx_boot(agora)
     except Exception as ex:
         print("  visitas: rostos do boot indisponíveis (%s)" % str(ex)[:80])
-    try:                                             # 15/11: sessão fechada sem fotógrafo que é toda de um cadastrado
+    try:                                             # 15/11 e 18/11: sessão fechada que é toda de um cadastrado pela câmera
         feitas = sess_dono_corrigir(agora)           # nunca impede a partida; o metricas_loop refaz o resumo de hoje e ontem
         if feitas:
-            print("  sessões: %d sem fotógrafo passaram ao dono das fotos (autor ou dono da câmera)" % len(feitas))
+            print("  sessões: %d passaram ao dono das fotos (sem fotógrafo, ou de cartão com outro nome)" % len(feitas))
     except Exception as ex:
         print("  sessões: dono das fotos não conferido (%s)" % type(ex).__name__)
     sess_gravar()
@@ -7380,7 +7863,19 @@ def _vis_ia_reabre(cards, motivo):
         fs = x["fotos"]
         if not n or len(fs) <= n:
             continue
-        x["ia"] = list(fs[:n])
+        if cena_regra19():
+            # 18/11 (regra 19): Separar reabre só com as fotos de gramado da leva, nunca as 2 primeiras de qualquer ponto
+            bases, est = _sess_ia_bases(x, n)
+            if est != "ok":
+                x["ia_regra"] = {"n": n, "motivo": "sem_gramado" if est == "sem_gramado" else "cena_pendente"}
+                if est == "pendente":
+                    cena_pend[c] = time.time()
+                _sess_toca(x)
+                out.append(c)
+                continue
+            x["ia"] = list(bases)
+        else:
+            x["ia"] = list(fs[:n])
         x["ia_regra"] = {"n": n, "motivo": None, "reaberta": motivo}
         for p in x["ia"]:
             sess_ia_novos.append((p, REC_PRIO_IA))
@@ -8119,6 +8614,13 @@ def imp_fila_postos(agora=None):
             dnp_txt = (d.get("dnp") or {}).get("texto") if int((d.get("dnp") or {}).get("status") or 0) >= 1000 else None
             if d.get("resultado") == "ok":
                 j.update(estado="impresso", feitas=j["fotos"], fim=t, inicio=t)
+            elif d.get("resultado") == "imprimindo":
+                # 18/11: o posto avisa quando manda as fotos para a DNP; até o "ok" a venda fica em "Imprimindo agora". Sem resposta
+                # em 10 min (posto desligou no meio), volta a esperar na fila como um "Não saiu".
+                if agora - t < 600:
+                    j.update(estado="imprimindo", inicio=t)
+                elif agora - t >= IMP_NAO_SAIU_S:
+                    continue
             elif dnp_txt and int((dnp.get(v["posto"], (None, {}))[1] or {}).get("status") or 0) >= 1000:
                 # erro da DNP só enquanto a DNP do posto continua parada (a última leitura dela); voltou ao normal, segue a regra abaixo
                 j.update(estado="erro", fim=t, erro="não saiu · " + str(dnp_txt))
@@ -8316,7 +8818,8 @@ def imprimir_fila(ps1, arqs, venda, ms, job):
 #   POST /ponto/docs {docs:[{col,id,valor}]}  valor null apaga.        -> {ok, rev}
 # O navegador guarda uma cópia e uma fila do que ainda não subiu (sem rede); o servidor é o dono. Backup no S3 com as vendas.
 ESTADO_DB = os.path.join(HOME, "ponto", "estado.db")
-ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda", "ativ")
+ESTADO_COLS = ("usuarios", "usuarios_login", "usuarios_log", "diario", "treino", "config", "reviews", "bandeiras", "funcao", "sim", "agenda", "ativ",
+               "perfis")     # 17/11: perfis criados ou editados pela equipe (Permissões › Perfis)
 ESTADO_MAX = 512 * 1024              # um registro (um usuário, um ajuste de foto) nunca passa disto
 estado_lock = threading.Lock()
 
@@ -8349,12 +8852,25 @@ def auth_db():
     c.execute("create table if not exists credencial (usuario text primary key, hash text, sal text, n integer,"
               " provisoria integer, erros integer default 0, bloqueado_ate real default 0, atualizada real)")
     c.execute("create table if not exists sessao_login (token text primary key, usuario text, expira real)")
+    try:                                                # 16/11: "ver como" (admin assume a visão de outra pessoa); por = o admin
+        c.execute("alter table sessao_login add column por text")
+    except sqlite3.OperationalError:
+        pass
     c.execute("create table if not exists login_log (em real, usuario text, acao text, por text, ip text)")
     c.execute("create table if not exists reset_senha (usuario text primary key, hash text, sal text, n integer, expira real, pedido real)")
     # posto pareado: cada aparelho (Checkout, caixa, TV) recebe um cookie próprio; aqui fica só o SHA-256 do token
     c.execute("create table if not exists posto (id text primary key, nome text, num integer, hash text unique, criado_por text, criado_em real,"
               " ultimo_uso real, ip_ultimo text, revogado_em real)")
     c.execute("create table if not exists posto_convite (hash text primary key, nome text, expira real, usado real)")
+    # 18/11: leitor de cartão do gramado (um por computador); aqui fica só o SHA-256 do token e do código de ativação
+    c.execute("create table if not exists leitor (id text primary key, nome text, hash text, criado_por text, criado_em real, ativado_em real,"
+              " maquina text, ultimo_contato real, ip_ultimo text, revogado_em real)")
+    c.execute("create table if not exists leitor_convite (hash text primary key, leitor_id text, expira real, usado real)")
+    for col in ("fila_n integer", "fila_mb real", "fila_em real"):      # último tamanho da fila do leitor (vale depois de reiniciar)
+        try:
+            c.execute("alter table leitor add column " + col)
+        except sqlite3.OperationalError:
+            pass
     return c
 
 
@@ -8508,9 +9024,9 @@ def auth_perms(cad):
     pelo perfil): sem isto, o admin cadastrado antes de um módulo novo não consegue dar esse módulo a ninguém, nem a si mesmo."""
     perms = dict((cad or {}).get("perms") or {})
     if (cad or {}).get("preset") == "admin":
-        for m in AUTH_MODULOS_NOVOS:                    # só os módulos que surgiram depois; módulo antigo fora do cadastro continua sem acesso
-            if not isinstance(perms.get(m), dict):
-                perms[m] = {"c": True, "r": True, "u": True, "d": True}
+        # 18/11 (Ronaldo): "o admin não pode ter menos que o vendedor, tem que ser tudo". Admin tem todos os módulos inteiros,
+        # o que estiver gravado no cadastro dele não tira nada (antes só os módulos novos eram completados).
+        return {m: {"c": True, "r": True, "u": True, "d": True} for m in AUTH_MODULOS}
     return perms
 
 
@@ -8587,13 +9103,14 @@ def auth_trocar(usuario, nova, ip=""):
             db.close()
 
 
-def auth_sessao_nova(usuario):
+def auth_sessao_nova(usuario, por=None, dur=None):
     token = secrets.token_urlsafe(32)
     with estado_lock:
         db = auth_db()
         try:
             db.execute("delete from sessao_login where expira < ?", (time.time(),))
-            db.execute("insert into sessao_login values (?, ?, ?)", (hashlib.sha256(token.encode()).hexdigest(), usuario, time.time() + AUTH_SESSAO))
+            db.execute("insert into sessao_login (token, usuario, expira, por) values (?, ?, ?, ?)",
+                       (hashlib.sha256(token.encode()).hexdigest(), usuario, time.time() + (dur or AUTH_SESSAO), por))
             db.commit()
         finally:
             db.close()
@@ -8607,13 +9124,73 @@ def auth_quem(token):
     with estado_lock:
         db = auth_db()
         try:
-            r = db.execute("select usuario from sessao_login where token=? and expira > ?", (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
+            r = db.execute("select usuario, por from sessao_login where token=? and expira > ?", (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
             if not r:
                 return None
             cad = auth_cadastro(db, r[0])
+            adm = auth_cadastro(db, r[1]) if r[1] else None
         finally:
             db.close()
-    return {"usuario": r[0], "cadastro": cad} if auth_ativo(cad) else None
+    if not auth_ativo(cad):
+        return None
+    if r[1]:                                            # "ver como": vale só enquanto quem assumiu segue Admin e ativo
+        if not (auth_ativo(adm) and adm.get("preset") == "admin"):
+            return None
+        return {"usuario": r[0], "cadastro": cad, "assumido_por": r[1], "assumido_nome": adm.get("name") or r[1]}
+    return {"usuario": r[0], "cadastro": cad}
+
+
+# 16/11 (Ronaldo): "ver como". Admin (Ronaldo, Eduardo) entra na visão de outra pessoa para conferir o que ela vê. Só olha:
+# o servidor recusa toda gravação nessa sessão (ASSUMIR_LIVRES fora), o início e o fim ficam no login_log e a sessão dura
+# ASSUMIR_S. A sessão do admin fica guardada no cookie ASSUMIR_COOKIE e volta com /auth/voltar.
+ASSUMIR_S = 4 * 3600
+ASSUMIR_COOKIE = "eterna_sessao_adm"
+ASSUMIR_LIVRES = ("/auth/voltar", "/auth/sair")
+
+
+def auth_assumir_recusa(eu, usuario):
+    """O motivo de recusar que eu veja como usuario, ou None."""
+    if not eu or eu.get("assumido_por"):
+        return "sem_sessao"
+    if (eu["cadastro"] or {}).get("preset") != "admin":
+        return "sem_permissao"
+    if not AUTH_ID.match(usuario or "") or usuario == eu["usuario"]:
+        return "usuario"
+    cad, _ = auth_ler_cadastro(usuario)
+    if not auth_ativo(cad):
+        return "sem_cadastro"
+    # 18/11 (Ronaldo): "Ver como" é só olhar (o servidor recusa toda gravação na sessão), então o Admin vê qualquer pessoa que
+    # não seja Admin, mesmo com acesso que o cadastro dele não marca (vendedores "Atendimento e venda" davam "alvo_maior")
+    if cad.get("preset") == "admin":
+        return "alvo_maior"
+    return None
+
+
+def auth_sessao_apaga(token):
+    if not token:
+        return
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("delete from sessao_login where token=?", (hashlib.sha256(token.encode()).hexdigest(),))
+            db.commit()
+        finally:
+            db.close()
+
+
+def auth_registra(usuario, acao, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            auth_log(db, usuario, acao, por, ip)
+            db.commit()
+        finally:
+            db.close()
+
+
+def auth_quem_cadastro(usuario):
+    cad, _ = auth_ler_cadastro(usuario)
+    return {"usuario": usuario, "cadastro": cad}
 
 
 def auth_ler_cadastro(usuario):
@@ -8644,6 +9221,7 @@ AUTH_MODULOS_NOVOS = ("ativvenda", "ativentrega")     # v99.17 e v99.23.2 (entre
 AUTH_CAMPOS_CADASTRO, AUTH_CAMPOS_ACESSO = ("name", "email", "contato", "key", "active"), ("perms", "menu", "preset", "inicio")
 AUTH_IDIOMAS = (None, "", "pt", "en", "es", "fr")
 AUTH_EMAIL = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$")
+AUTH_FOTO = re.compile(r"^data:image/jpeg;base64,[A-Za-z0-9+/]{100,60000}={0,2}$")   # 17/11: foto do perfil, 160 px
 
 
 def auth_cadastro_recusa(quem, id_doc, antes, depois):
@@ -8668,6 +9246,10 @@ def auth_cadastro_recusa(quem, id_doc, antes, depois):
             return "sem_permissao"                      # é para onde a senha provisória vai: mudar o e-mail vale tanto quanto gerar outra senha
     if depois is not None and depois.get("idioma") not in AUTH_IDIOMAS:
         return "sem_permissao"
+    if depois is not None and depois.get("foto") is not None and not (isinstance(depois["foto"], str) and AUTH_FOTO.match(depois["foto"])):
+        return "invalido"
+    if antes is not None and depois is not None and antes.get("foto") != depois.get("foto") and antes.get("email") != ed.get("email") and not auth_pode(ed, "usuarios", "u"):
+        return "sem_permissao"                          # a própria foto cada um troca; a de outra pessoa pede Alterar em Cadastro de usuários
     if antes is not None and depois is not None and antes.get("idioma") != depois.get("idioma") and antes.get("email") != ed.get("email") and not auth_pode(ed, "usuarios", "u"):
         return "sem_permissao"                          # o próprio idioma cada um troca; o de outra pessoa pede Alterar em Cadastro de usuários
     novos = auth_acessos(depois) - auth_acessos(antes)
@@ -8681,7 +9263,19 @@ def auth_cadastro_recusa(quem, id_doc, antes, depois):
 # Quem grava cada coleção de /ponto/docs (fora usuarios, que tem a regra acima): o módulo, com Criar ou Alterar para gravar
 # e Excluir ou Alterar para apagar. Na coleção "sim", pelo começo do id; id desconhecido é recusado.
 DOC_COL_MOD = {"diario": "diario", "treino": "qualidade", "reviews": "qualidade", "bandeiras": "estoque", "funcao": "escala",
-               "agenda": "escala", "config": "configuracao"}
+               "agenda": "escala", "config": "configuracao", "perfis": "permissoes"}
+PERFIL_ID = re.compile(r"^[a-z0-9_-]{1,40}$")
+
+
+def perfil_recusa(ed, id_doc, v):
+    """Gravação em perfis: id válido (o Admin não muda) e nenhum acesso que quem grava não tem."""
+    if not PERFIL_ID.match(id_doc) or id_doc in ("admin", "custom") or not isinstance(v, dict) or v.get("id") != id_doc:
+        return "invalido"
+    if v.get("deleted") is True:
+        return None
+    if not isinstance(v.get("name"), str) or not v["name"].strip() or not isinstance(v.get("perms"), dict) or not isinstance(v.get("menu"), list):
+        return "invalido"
+    return "sem_poder" if auth_acessos({"perms": v["perms"]}) - auth_acessos(ed) else None
 DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("stock|", ("estoque", "venda")),          # o rolo de papel do posto baixa na impressão, feita no caixa
            ("flags|", ("estoque",)), ("flagList", ("estoque",)),
@@ -8691,7 +9285,7 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
            ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("bgOn2", ("configuracao",)), ("fundosModo", ("configuracao",)),
            ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
-           ("bgPodioV86", ("configuracao",)), ("bgTelaoV97", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
+           ("bgPodioV86", ("configuracao",)), ("bgTelaoV97", ("configuracao",)), ("bgTunelV2", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
 
 
 ATIV_VENDA_CAMPOS = ("origem", "id", "tipo", "dia", "criado", "itens", "valor", "pagamento", "vendedor", "vendedor_n", "pessoas", "videos",
@@ -8752,7 +9346,12 @@ def ativ_importar(linhas):
 ATIV_TABLET_COLS = (("usuario", "text"), ("sugerido", "real"), ("situacao", "text"), ("cortesia_motivo", "text"), ("cortesia_nota", "text"),
                     ("agendada", "text"), ("cancel_motivo", "text"), ("cancel_por", "text"), ("cancel_em", "text"), ("enviado_por", "text"),
                     ("recebido_em", "text"), ("recebido_por", "text"), ("voo_em", "text"), ("voo_por", "text"), ("itens_entregues", "text"),
-                    ("cliente_nome", "text"), ("foto_busca", "integer"), ("tour_token", "text"), ("tour_n", "integer"))
+                    ("cliente_nome", "text"), ("foto_busca", "integer"), ("tour_token", "text"), ("tour_n", "integer"),
+                    ("ingresso", "text"), ("ingresso_meio", "text"))
+# 16/11 (Ronaldo): o ingresso do cliente (localizador da Imply, lido do QR ou digitado) liga a ativação à venda original.
+# Formato do localizador: MMDD + 8 letras e números. Venda sem ingresso válido (tablet com página antiga) é gravada assim mesmo,
+# com o campo vazio: o tablet vende sem rede e a venda não pode se perder.
+_re_ingresso = re.compile(r"^(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])[A-Z0-9]{8}$")
 # Nome e foto do cliente (Ronaldo, 12/11): só para quem entrega o vídeo reconhecer a pessoa no campo, a quase 1 km do foyer
 # onde ela comprou. Servem só a isso (LGPD, finalidade): a foto fica em arquivo no servidor do ponto (não vai ao banco nem à
 # nuvem) e os dois saem sozinhos um dia depois da entrega, ou dois dias depois da venda, o que vier primeiro.
@@ -8829,6 +9428,8 @@ def ativ_venda_tablet(v):
     ag = v.get("agendada") or ""
     if ag and not _re_agendada.match(str(ag)):
         return None
+    ing = str(v.get("ingresso") or "").strip().upper()[:20]
+    ing = ing if _re_ingresso.match(ing) else ""
     foto = None
     if v.get("cliente_foto"):
         f = str(v["cliente_foto"])
@@ -8848,7 +9449,8 @@ def ativ_venda_tablet(v):
             "usuario": v.get("usuario") or "", "sugerido": v.get("sugerido") or 0, "situacao": "ativa", "cortesia_motivo": v.get("cortesia_motivo") or "",
             "cortesia_nota": v.get("cortesia_nota") or "", "agendada": ag, "cliente_nome": (v.get("cliente_nome") or "").strip(), "_foto": foto,
             # v99.22: o cliente aceitou, na venda, que a foto dele procure as fotos do Tour (só vale com a foto)
-            "foto_busca": 1 if foto and v.get("cliente_foto_busca") is True else 0, "_pulseiras": pulseiras}
+            "foto_busca": 1 if foto and v.get("cliente_foto_busca") is True else 0, "_pulseiras": pulseiras,
+            "ingresso": ing, "ingresso_meio": (v.get("ingresso_meio") if v.get("ingresso_meio") in ("camera", "digitado") else "digitado") if ing else ""}
 
 
 def ativ_cliente_foto(vid):
@@ -8894,12 +9496,18 @@ def ativ_clientes_limpa(agora=None):
     return max(n, len(sai))
 
 
+# perfil que vende só parte das ativações (o tablet mostra só essas abas; aqui a mesma regra)
+ATIV_PERFIL_CATS = {"snap": ("snap",)}
+
+
 def ativ_receber(vendas, enviado_por):
     """POST /ativ/venda: grava as vendas da caixa de saída do tablet. Venda que já está no banco conta como recebida e não é
     regravada (o tablet reenvia até ouvir o ok). -> {recebidas:[id], recusadas:[{id, motivo}]}"""
     out = {"recebidas": [], "recusadas": []}
     agora = time.strftime("%Y-%m-%dT%H:%M:%S")
-    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome", "foto_busca"]
+    so = ATIV_PERFIL_CATS.get(((auth_ler_cadastro(enviado_por)[0] if enviado_por else None) or {}).get("preset"))
+    cols = list(ATIV_VENDA_CAMPOS) + ["usuario", "sugerido", "situacao", "cortesia_motivo", "cortesia_nota", "agendada", "cliente_nome", "foto_busca",
+                                     "ingresso", "ingresso_meio"]
     with ev_lock:
         c = vendas_db()
         try:
@@ -8911,6 +9519,9 @@ def ativ_receber(vendas, enviado_por):
                 d = ativ_venda_tablet(v)
                 if not d:
                     out["recusadas"].append({"id": vid, "motivo": "formato"})
+                    continue
+                if so and (d.get("tipo") not in so or any(it.get("cat") and it["cat"] not in so for it in d["itens"])):
+                    out["recusadas"].append({"id": vid, "motivo": "categoria"})
                     continue
                 vals = [json.dumps(d["itens"], ensure_ascii=False) if k == "itens" else d.get(k) for k in cols]
                 c.execute("insert into ativ_venda (" + ",".join(cols) + ", importado_em, enviado_por) values (" + ",".join("?" * (len(cols) + 2)) + ")",
@@ -9509,7 +10120,7 @@ def ativ_video_checa(vid, qr):
         return "dados", None
     c = vendas_db()
     try:
-        r = c.execute("select situacao, itens from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+        r = c.execute("select situacao, itens, tipo from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
         if not r:
             return "nao_achou", None
         if (r[0] or "ativa") != "ativa":
@@ -9521,8 +10132,9 @@ def ativ_video_checa(vid, qr):
             return e, None
         prev = ativ_videos_previstos(json.loads(r[1] or "[]"))
         n = c.execute("select count(*) from ativ_entrega where venda=? and apagado_em is null", (vid,)).fetchone()[0]
-        if n >= prev:
-            return "sem_video" if not prev else "completa", None
+        # 18/11 (Ronaldo): no Chute a Gol o vídeo é opcional; mesmo sem vídeo vendido a equipe pode entregar um (não conta como pendente)
+        if n >= max(prev, 1 if r[2] == "chute" else 0):
+            return "sem_video" if not prev and r[2] != "chute" else "completa", None
     finally:
         c.close()
     try:
@@ -10302,6 +10914,10 @@ def doc_recusa(db, quem, d):
         return "colecao"
     if col == "ativ" and not apaga and not ativ_valido(id_doc, d.get("valor")):
         return "invalido"
+    if col == "perfis" and not apaga and auth_pode(quem["cadastro"], "permissoes", "u"):
+        motivo = perfil_recusa(quem["cadastro"], id_doc, d.get("valor"))
+        if motivo:
+            return motivo
     existe = db.execute("select 1 from doc where col=? and id=? and valor is not null", (col, id_doc)).fetchone() is not None
     if col == "usuarios_login":
         return None if id_doc == quote(quem["usuario"], safe="-_.!~*'()") else "sem_permissao"
@@ -10399,8 +11015,10 @@ _P = lambda c, r, u, d: {"c": bool(c), "r": bool(r), "u": bool(u), "d": bool(d)}
 PERFIS_CLI = {
     "ativ": {"perms": {"ativvenda": _P(1, 1, 0, 0), "ativentrega": _P(1, 1, 1, 0)}, "menu": ["ativ-venda", "ativ-entrega"],
              "inicio": "ativ-venda", "rotulo": "vendedor e entrega das ativações"},
+    "snap": {"perms": {"ativvenda": _P(1, 1, 0, 0), "ativentrega": _P(1, 1, 1, 0)}, "menu": ["ativ-venda", "ativ-entrega"],
+             "inicio": "ativ-venda", "rotulo": "vendedor e entrega só do Snap Pop"},
     "venda": {"perms": {"venda": _P(1, 1, 1, 0), "quiosque": _P(1, 1, 1, 0), "catalogo": _P(0, 1, 0, 0), "filafoto": _P(0, 1, 0, 0)},
-              "menu": ["quiosque", "checkout", "fila", "caixa", "posto", "catalogo", "fotofila"], "inicio": "posto",
+              "menu": ["quiosque", "checkout", "fila", "caixa", "posto"], "inicio": "posto",
               "rotulo": "atendimento e venda das fotos (Checkout)"},
 }
 
@@ -10413,7 +11031,11 @@ def auth_criar_vendedor(usuario, nome, perfil="ativ"):
     if perfil not in PERFIS_CLI:
         print("Perfil inválido: use " + " ou ".join(PERFIS_CLI))
         return 1
-    pf = PERFIS_CLI[perfil]
+    pf = dict(PERFIS_CLI[perfil])
+    for d in estado_col("perfis")["docs"]:            # 17/11: perfil pronto editado em Permissões › Perfis: vale o do banco
+        v = d.get("valor")
+        if d.get("id") == perfil and isinstance(v, dict) and not v.get("deleted") and isinstance(v.get("perms"), dict):
+            pf.update(perms=v["perms"], menu=v.get("menu") or pf["menu"], inicio=v.get("inicio") or pf["inicio"])
     usuario = usuario.strip().lower()
     if not AUTH_ID.match(usuario):
         print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
@@ -10436,6 +11058,99 @@ def auth_criar_vendedor(usuario, nome, perfil="ativ"):
     print("ok %s (%s): %s" % (usuario, cad["name"], pf["rotulo"]))
     return 0
 
+
+
+# 18/11 (Ronaldo): contas por pessoa, sem conta genérica. Dois comandos de linha, iguais no notebook de teste e no servidor do estádio:
+#   ETERNA_COMO=<modelo> python eterna-agente.py --usuario <usuário> "<nome>"   (senha pela entrada padrão; vazia = mantém a atual)
+#     cadastra a pessoa, ou muda quem já existe, para o mesmo perfil do modelo: perfil, módulos, menu, tela inicial e as marcas de
+#     atualização do cadastro. O modelo pode estar desativado (serve a conta genérica antiga como molde).
+#   python eterna-agente.py --desativar <usuário> [<usuário> ...]
+#     desativa (não apaga: o histórico de vendas e registros continua com o nome) e derruba as sessões abertas. Os postos que a
+#     conta pareou continuam pareados: revogar posto é no Painel de controle.
+def _usu_marca(k):
+    return k == "mv" or bool(re.match(r"^m[a-z]+[0-9]+$", k))
+
+
+def auth_cli_usuario(usuario, nome, modelo):
+    usuario, modelo = usuario.strip().lower(), (modelo or "").strip().lower()
+    if not AUTH_ID.match(usuario):
+        print("Usuário inválido: use letras minúsculas, números, ponto ou hífen.")
+        return 1
+    mod, _ = auth_ler_cadastro(modelo) if modelo else (None, False)
+    if not mod or not isinstance(mod.get("perms"), dict):
+        print("Modelo %r não encontrado: diga em ETERNA_COMO o usuário que já tem o perfil desejado." % modelo)
+        return 1
+    senha = sys.stdin.readline().rstrip(chr(13) + chr(10))
+    atual, tem = auth_ler_cadastro(usuario)
+    if senha and len(senha) < 8:
+        print("Senha curta (mínimo 8).")
+        return 1
+    if not senha and not tem:
+        print("%s ainda não tem senha: informe uma." % usuario)
+        return 1
+    cad = {k: v for k, v in (atual or {}).items() if not _usu_marca(k)}
+    cad.update({k: v for k, v in mod.items() if _usu_marca(k)})
+    cad.update(v=2, email=usuario, name=nome or cad.get("name") or usuario, preset=mod.get("preset") or "custom",
+               perms={k: dict(v) for k, v in mod["perms"].items()}, menu=list(mod.get("menu") or []), inicio=mod.get("inicio") or "painel",
+               active=True, createdBy=cad.get("createdBy") or "servidor", updatedBy="servidor",
+               updatedAt=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()))
+    cad.pop("deleted", None)
+    cad.setdefault("createdAt", cad["updatedAt"])
+    estado_gravar({"docs": [{"col": "usuarios", "id": quote(usuario, safe="-_.!~*'()"), "valor": cad}]})
+    if senha:
+        if not tem:
+            auth_criar(usuario, "servidor")
+        auth_trocar(usuario, senha)
+    print("ok %s (%s): perfil %s, igual a %s%s" % (usuario, cad["name"], cad["preset"], modelo, ", senha nova" if senha else ""))
+    return 0
+
+
+def auth_cli_desativar(usuarios):
+    erro = 0
+    for u in usuarios:
+        u = u.strip().lower()
+        cad, _ = auth_ler_cadastro(u)
+        if not cad:
+            print("%s: não existe" % u)
+            erro = 1
+            continue
+        cad = dict(cad, active=False, updatedBy="servidor", updatedAt=time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()))
+        estado_gravar({"docs": [{"col": "usuarios", "id": quote(u, safe="-_.!~*'()"), "valor": cad}]})
+        with estado_lock:
+            db = auth_db()
+            try:
+                db.execute("delete from sessao_login where usuario=?", (u,))
+                db.execute("delete from reset_senha where usuario=?", (u,))
+                db.commit()
+            finally:
+                db.close()
+        print("ok %s (%s): desativado" % (u, cad.get("name") or u))
+    return erro
+
+
+def auth_cli_excluir(usuarios):
+    """python eterna-agente.py --excluir <usuário> [...]: o mesmo que excluir na tela de Usuários (cadastro marcado como apagado,
+    senha e sessões saem). Vendas e registros continuam com o nome. Os postos que a conta pareou continuam (revogar é no Painel)."""
+    erro = 0
+    for u in usuarios:
+        u = u.strip().lower()
+        cad, _ = auth_ler_cadastro(u)
+        if not cad or cad.get("deleted"):
+            print("%s: não existe" % u)
+            erro = 1
+            continue
+        estado_gravar({"docs": [{"col": "usuarios", "id": quote(u, safe="-_.!~*'()"),
+                                 "valor": {"email": u, "deleted": True, "at": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())}}]})
+        with estado_lock:
+            db = auth_db()
+            try:
+                for t in ("credencial", "sessao_login", "reset_senha"):
+                    db.execute("delete from %s where usuario=?" % t, (u,))
+                db.commit()
+            finally:
+                db.close()
+        print("ok %s (%s): excluído" % (u, cad.get("name") or u))
+    return erro
 
 # ---------- Postos pareados ----------
 # O Admin pareia cada aparelho uma vez (Painel de controle, ou o link de uso único do comando --parear-posto). O aparelho guarda
@@ -10638,6 +11353,302 @@ def posto_parear_cli(nome):
     return 0
 
 
+# ---------- Leitor de cartão do gramado (18/11, plano docs/planos/2026-11-18-leitor-cartao-gramado.md) ----------
+# Cada computador do gramado roda agente/eterna-leitor.py: lê o cartão da câmera e manda ao servidor só as fotos que faltam.
+# O aparelho é cadastrado por quem tem Painel de controle (Alterar), que recebe um código de uso único (10 min); o instalador
+# troca esse código por um token de 256 bits que fica só no aparelho (aqui só o SHA-256). As rotas /leitor/* só aceitam a rede
+# do ponto e a VPN (ETERNA_LEITOR_REDES; vazia vale ETERNA_POSTO_REDE), sem Origin, com X-Eterna: 1 e Authorization: Bearer.
+LEITOR_CONVITE_S = 600              # validade do código de ativação
+LEITOR_VIVO_S = 90                  # sem pulso há mais que isto: "desligado"
+LEITOR_FOTO_TAXA = 300              # fotos por minuto por leitor
+LEITOR_VAGAS = 2                    # gravações ao mesmo tempo por leitor (além das FOTO_ENVIO_SIMULT do agente inteiro)
+LEITOR_TEM_TAXA = 60                # consultas /leitor/tem por minuto por leitor
+LEITOR_TEM_MAX = 500                # hashes por consulta
+LEITOR_PULSO_TAXA = 6               # pulsos por minuto por leitor
+LEITOR_ATIVAR_TAXA = 10             # tentativas de ativação por minuto por IP
+LEITOR_ATIVAR_ERROS = 20            # códigos errados em 1 hora (todas as origens) param a ativação por 15 min
+LEITOR_ATIVAR_PARADA_S = 900
+LEITOR_ERROS = ("disco", "rede", "certificado", "recusado", "cartao")
+LEITOR_CODIGO_ABC = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # sem 0/O e 1/I: o Ronaldo pode digitar o código (20 letras = 100 bits)
+_re_leitor_rotulo = re.compile(r"^[A-Za-z0-9 _-]{1,32}$")
+_re_hex64 = re.compile(r"^[0-9a-f]{64}$")
+_re_leitor_versao = re.compile(r"^[0-9A-Za-z._-]{1,20}$")
+_re_leitor_maquina = re.compile(r"^[A-Za-z0-9 ._-]{0,40}$")
+leitor_lock = threading.Lock()
+leitores_pulso = {}                 # id -> {"em": quando chegou, "ip": ..., "d": pulso validado} (só em memória)
+leitor_uso = {}                     # id -> última gravação de ultimo_contato (no máximo uma por minuto)
+leitor_ativar_falhas = []           # instantes dos códigos errados (todas as origens)
+leitor_ativar_parada = {"ate": 0.0}
+
+
+def leitor_redes():
+    """ETERNA_LEITOR_REDES (faixas separadas por vírgula); vazia vale ETERNA_POSTO_REDE; sem as duas, a rede do ponto 192.168.10.0/24."""
+    import ipaddress
+    txt = os.environ.get("ETERNA_LEITOR_REDES", "").strip() or os.environ.get("ETERNA_POSTO_REDE", "").strip() or "192.168.10.0/24"
+    redes = []
+    for x in txt.split(","):
+        try:
+            if x.strip():
+                redes.append(ipaddress.ip_network(x.strip(), strict=False))
+        except ValueError:
+            pass
+    return redes
+
+
+def leitor_ip_ok(ip, redes=None, proxy=False):
+    """O próprio servidor (loopback, só em pedido direto: proxy=False) ou um IP dentro das redes do leitor. A VPN chega como o IP do
+    firewall (192.168.10.1), dentro da faixa. proxy=True: o pedido trouxe X-Real-IP ou X-Forwarded-Proto."""
+    import ipaddress
+    try:
+        a = ipaddress.ip_address(str(ip).split("%")[0])
+        if a.version == 6 and a.ipv4_mapped:
+            a = a.ipv4_mapped
+    except ValueError:
+        return False
+    if a.is_loopback:
+        return not proxy
+    return any(a.version == r.version and a in r for r in (leitor_redes() if redes is None else redes))
+
+
+def leitor_codigo():
+    return "-".join("".join(secrets.choice(LEITOR_CODIGO_ABC) for _ in range(4)) for _ in range(5))
+
+
+def leitor_codigo_norm(codigo):
+    """O código como foi digitado ou colado (espaços, hífens, minúsculas) -> só as letras, ou "" se o formato não serve."""
+    c = re.sub(r"[\s-]", "", str(codigo or "")).upper()
+    return c if 16 <= len(c) <= 32 and all(ch in LEITOR_CODIGO_ABC for ch in c) else ""
+
+
+def leitor_nome_ok(nome, ignora=None):
+    """O nome do leitor limpo, ou None. Recusa nome de fotógrafo cadastrado ou apelido (o leitor nunca é confundido com o dono
+    das fotos) e nome de outro leitor ativo."""
+    n = posto_nome_ok(nome)
+    if not n:
+        return None
+    k = fotografo_chave(n, inteiro=True)
+    if k in ff_cadastrados() or k in ftp_cadastrados() or k in FOTOGRAFO_APELIDO or k in FOTOGRAFO_APELIDO.values():
+        return None
+    for lt in leitor_lista(True):
+        if not lt.get("revogado_em") and lt["id"] != ignora and sem_acento(lt["nome"]).strip() == sem_acento(n).strip():
+            return None
+    return n
+
+
+def _leitor_convite_novo(db, lid):
+    codigo = leitor_codigo()
+    db.execute("delete from leitor_convite where expira < ?", (time.time() - 86400,))
+    db.execute("update leitor_convite set usado=? where leitor_id=? and usado is null", (time.time(), lid))
+    expira = time.time() + LEITOR_CONVITE_S
+    db.execute("insert into leitor_convite values (?, ?, ?, ?)", (_sha(leitor_codigo_norm(codigo)), lid, expira, None))
+    return codigo, expira
+
+
+def leitor_criar(nome, por="", ip=""):
+    """-> ({id, nome}, código, expira). O código sai só aqui, para a tela de quem cadastrou; no banco fica o SHA-256."""
+    lid = "l_" + secrets.token_hex(4)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("insert into leitor (id, nome, hash, criado_por, criado_em) values (?, ?, ?, ?, ?)", (lid, nome, None, por, time.time()))
+            codigo, expira = _leitor_convite_novo(db, lid)
+            auth_log(db, "leitor:" + lid, "leitor_criado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return {"id": lid, "nome": nome}, codigo, expira
+
+
+def leitor_codigo_novo(lid, por="", ip=""):
+    """Novo código para um leitor que não foi desativado (reinstalar). -> (código, expira) ou None."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            if not db.execute("select 1 from leitor where id=? and revogado_em is null", (str(lid),)).fetchone():
+                return None
+            codigo, expira = _leitor_convite_novo(db, str(lid))
+            auth_log(db, "leitor:" + str(lid), "leitor_codigo", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return codigo, expira
+
+
+def leitor_ativar(codigo, maquina="", ip=""):
+    """Gasta o código (uma vez, dentro de 10 min) e troca o token do leitor. -> (token, {id, nome}) ou None.
+    Ativar de novo derruba o token anterior: só o aparelho instalado por último envia."""
+    c = leitor_codigo_norm(codigo)
+    if not c:
+        return None
+    token = secrets.token_urlsafe(32)
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select leitor_id, expira from leitor_convite where hash=? and usado is null", (_sha(c),)).fetchone()
+            if not r or r[1] < time.time():
+                return None
+            db.execute("update leitor_convite set usado=? where hash=?", (time.time(), _sha(c)))
+            lt = db.execute("select id, nome from leitor where id=? and revogado_em is null", (r[0],)).fetchone()
+            if not lt:
+                db.commit()
+                return None
+            db.execute("update leitor set hash=?, ativado_em=?, maquina=?, ultimo_contato=?, ip_ultimo=? where id=?",
+                       (_sha(token), time.time(), maquina, time.time(), ip, lt[0]))
+            auth_log(db, "leitor:" + lt[0], "leitor_ativado " + maquina if maquina else "leitor_ativado", "", ip)
+            db.commit()
+        finally:
+            db.close()
+    leitores_pulso.pop(lt[0], None)
+    return token, {"id": lt[0], "nome": lt[1]}
+
+
+def leitor_quem(token, ip=""):
+    """O leitor deste token, se não foi desativado; senão None. Grava o último contato no máximo uma vez por minuto."""
+    if not token or len(token) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select id, nome from leitor where hash=? and revogado_em is null", (_sha(token),)).fetchone()
+            if r and time.time() - leitor_uso.get(r[0], 0) > 60:
+                leitor_uso[r[0]] = time.time()
+                db.execute("update leitor set ultimo_contato=?, ip_ultimo=? where id=?", (time.time(), ip, r[0]))
+                db.commit()
+        finally:
+            db.close()
+    return {"id": r[0], "nome": r[1]} if r else None
+
+
+def leitor_revogar(lid, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            n = db.execute("update leitor set revogado_em=? where id=? and revogado_em is null", (time.time(), str(lid))).rowcount
+            if n:
+                db.execute("update leitor_convite set usado=? where leitor_id=? and usado is null", (time.time(), str(lid)))
+                auth_log(db, "leitor:" + str(lid), "leitor_revogado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return bool(n)
+
+
+def leitor_fila_grava(lid, fila):
+    """Último tamanho da fila do leitor no banco (o painel mostra mesmo depois de reiniciar o agente ou de desativar o leitor)."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("update leitor set fila_n=?, fila_mb=?, fila_em=? where id=?", (fila["n"], fila["mb"], time.time(), lid))
+            db.commit()
+        finally:
+            db.close()
+
+
+def leitor_lista(completa=True):
+    """Leitores com a situação (ligado, desligado, aguardando, revogado) e o último pulso. completa=False (quem só tem Upload,
+    set.r): sem IP, máquina, quem cadastrou, versão e espaço livre, e sem os desativados."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            cols = ("id", "nome", "hash", "criado_por", "criado_em", "ativado_em", "maquina", "ultimo_contato", "ip_ultimo", "revogado_em", "fila_n", "fila_mb", "fila_em")
+            linhas = [dict(zip(cols, r)) for r in db.execute("select %s from leitor order by criado_em" % ", ".join(cols))]
+        finally:
+            db.close()
+    agora = time.time()
+    out = []
+    for x in linhas:
+        p = leitores_pulso.get(x["id"]) or {}
+        d = p.get("d") or {}
+        if x["revogado_em"]:
+            sit = "revogado"
+        elif not x["hash"]:
+            sit = "aguardando"
+        elif p and agora - p["em"] < LEITOR_VIVO_S:
+            sit = "ligado"
+        else:
+            sit = "desligado"
+        if not completa and sit == "revogado":
+            continue
+        cartao = d.get("cartao")
+        fila = d.get("fila") or ({"n": x["fila_n"], "mb": x["fila_mb"] or 0, "parada_s": None, "em": x["fila_em"]} if x["fila_n"] is not None else None)
+        y = {"id": x["id"], "nome": x["nome"], "situacao": sit, "ultimo_contato": max(x["ultimo_contato"] or 0, p.get("em") or 0) or None,
+             "cartao": cartao, "fila": fila, "erro": d.get("erro")}
+        if completa:
+            y.update(versao=d.get("versao"), livre_gb=d.get("livre_gb"), maquina=d.get("maquina") or x["maquina"], ip_ultimo=p.get("ip") or x["ip_ultimo"],
+                     criado_por=x["criado_por"], criado_em=x["criado_em"], ativado_em=x["ativado_em"], revogado_em=x["revogado_em"])
+        else:
+            y["cartao"] = {k: cartao.get(k) for k in ("rotulo", "estado", "em", "total", "copiadas")} if cartao else None
+            y["fila"] = {"n": fila.get("n"), "parada_s": fila.get("parada_s")} if fila else None
+        out.append(y)
+    return out
+
+
+def _leitor_int(v, teto):
+    return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= teto
+
+
+def _leitor_num(v, teto):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= teto
+
+
+def leitor_pulso_valida(b):
+    """Pulso do leitor em formato fechado. -> o dicionário limpo, ou None (campo desconhecido ou fora do formato)."""
+    if not isinstance(b, dict) or set(b) - {"v", "versao", "maquina", "livre_gb", "fila", "cartao", "erro"} or b.get("v") != 1:
+        return None
+    d = {"v": 1}
+    if not isinstance(b.get("versao"), str) or not _re_leitor_versao.match(b["versao"]):
+        return None
+    d["versao"] = b["versao"]
+    m = b.get("maquina", "")
+    if not isinstance(m, str) or not _re_leitor_maquina.match(m):
+        return None
+    d["maquina"] = m
+    if b.get("livre_gb") is not None and not _leitor_num(b.get("livre_gb"), 1e7):
+        return None
+    d["livre_gb"] = round(b["livre_gb"], 1) if b.get("livre_gb") is not None else None
+    f = b.get("fila")
+    if not isinstance(f, dict) or set(f) - {"n", "mb", "parada_s"} or not _leitor_int(f.get("n"), 10 ** 7) \
+            or not _leitor_num(f.get("mb"), 1e8) or (f.get("parada_s") is not None and not _leitor_int(f.get("parada_s"), 10 ** 9)):
+        return None
+    d["fila"] = {"n": f["n"], "mb": round(f["mb"], 1), "parada_s": f.get("parada_s")}
+    c = b.get("cartao")
+    if c is not None:
+        if not isinstance(c, dict) or set(c) - {"rotulo", "estado", "total", "copiadas", "ja_tinha", "enviadas", "sem_dono", "puladas", "em"}:
+            return None
+        if c.get("estado") not in ("sem", "lendo", "pronto", "erro") or not (c.get("rotulo") in ("", None) or (isinstance(c.get("rotulo"), str) and _re_leitor_rotulo.match(c["rotulo"]))):
+            return None
+        for k in ("total", "copiadas", "ja_tinha", "enviadas", "sem_dono", "puladas"):
+            if not _leitor_int(c.get(k, 0), 10 ** 6):
+                return None
+        if c.get("em") is not None and not _leitor_num(c.get("em"), 1e11):
+            return None
+        d["cartao"] = {"rotulo": c.get("rotulo") or "", "estado": c["estado"], **{k: c.get(k, 0) for k in ("total", "copiadas", "ja_tinha", "enviadas", "sem_dono", "puladas")},
+                       "em": c.get("em")}
+    else:
+        d["cartao"] = None
+    if b.get("erro") is not None and b.get("erro") not in LEITOR_ERROS:
+        return None
+    d["erro"] = b.get("erro")
+    return d
+
+
+def leitor_ativar_pode(agora=None):
+    """False enquanto a ativação está parada por códigos errados demais (todas as origens)."""
+    agora = time.time() if agora is None else agora
+    with leitor_lock:
+        return agora >= leitor_ativar_parada["ate"]
+
+
+def leitor_ativar_falhou(agora=None):
+    agora = time.time() if agora is None else agora
+    with leitor_lock:
+        leitor_ativar_falhas[:] = [t for t in leitor_ativar_falhas if agora - t < 3600] + [agora]
+        if len(leitor_ativar_falhas) >= LEITOR_ATIVAR_ERROS:
+            leitor_ativar_parada["ate"] = agora + LEITOR_ATIVAR_PARADA_S
+            leitor_ativar_falhas.clear()
+            print("  leitor de cartão: ativação parada por 15 min (códigos errados demais)")
+
+
 def estado_revs():
     with estado_lock:
         db = estado_db()
@@ -10753,6 +11764,9 @@ def estado_gravar(body, quem=""):
                         continue                                # teto da agenda (revisão)
                 if d["col"] == "config" and d["id"] == "visitas":   # B1: o interruptor só muda pela rota /visitas/config
                     print("  config/visitas recusada pela sincronização (só POST /visitas/config) · de %s" % (quem or "?"))
+                    continue
+                if d["col"] == "config" and d["id"] == "treino":    # 16/11: o interruptor da análise só pela rota /treino/config
+                    print("  config/treino recusada pela sincronização (só POST /treino/config) · de %s" % (quem or "?"))
                     continue
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
                     if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
@@ -10904,11 +11918,45 @@ def vendas_db():
     return c
 
 
+# 18/11 (selfie da Izabelle, Ronaldo): diagnóstico de cada busca por selfie, uma linha JSON por busca, no HD de mídia (não no
+# disco do sistema). Arquivo por dia: <pasta>/AAAA-MM-DD.jsonl. Campos: em, origem (checkout, qr), resultado, ms, claras e duvida
+# (fotos acima de LIMITE e entre LIMITE_TALVEZ e LIMITE), melhor (maior semelhança), janela_min, fila (fotos sem leitura de rosto
+# na hora) e top (até 10 {id, sim} das fotos mais parecidas: id da foto, nunca imagem nem vetor do rosto). Fica RETENCAO_DIAS dias.
+# Pasta: ETERNA_SELFIE_LOG ou, sem ela, diagnostico/selfie ao lado da pasta real do inbox (no estádio: /srv/eterna-midia/diagnostico/selfie).
+SELFIE_LOG_DIR = os.environ.get("ETERNA_SELFIE_LOG") or os.path.join(os.path.dirname(os.path.realpath(INBOX)), "diagnostico", "selfie")
+_selfie_log_aviso = [False]
+
+
+def selfie_diagnostico(origem, r, t0, res):
+    try:
+        fotos = r.get("fotos") or []
+        agora = time.time()
+        linha = {"em": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), "origem": origem, "resultado": res,
+                 "ms": int((agora - t0) * 1000), "claras": sum(1 for f in fotos if f.get("sim", 0) >= LIMITE),
+                 "duvida": sum(1 for f in fotos if f.get("sim", 0) < LIMITE), "melhor": max((f.get("sim", 0) for f in fotos), default=None),
+                 "janela_min": r.get("janela_min"), "fila": r.get("fila"), "erro": r.get("error"),
+                 "top": [{"id": f.get("id"), "sim": f.get("sim")} for f in fotos[:10]]}
+        os.makedirs(SELFIE_LOG_DIR, exist_ok=True)
+        with open(os.path.join(SELFIE_LOG_DIR, time.strftime("%Y-%m-%d", time.localtime(agora)) + ".jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(linha, ensure_ascii=False) + "\n")
+        if random.random() < 0.01:
+            limite = time.time() - RETENCAO_DIAS * 86400
+            for fn in os.listdir(SELFIE_LOG_DIR):
+                p = os.path.join(SELFIE_LOG_DIR, fn)
+                if fn.endswith(".jsonl") and os.path.getmtime(p) < limite:
+                    os.remove(p)
+    except Exception as ex:
+        if not _selfie_log_aviso[0]:
+            _selfie_log_aviso[0] = True
+            print("  selfie: diagnóstico não gravou em %s: %s" % (SELFIE_LOG_DIR, str(ex)[:120]))
+
+
 def selfie_registra(origem, r, t0):
     """Conta uma selfie para o BI. Falha aqui nunca atrapalha a busca do cliente."""
     try:
         r = r or {}
         res = "erro" if r.get("error") else "varias_pessoas" if r.get("varias") else "sem_rosto" if not r.get("rosto") else "achou" if r.get("fotos") else "nao_achou"
+        selfie_diagnostico(origem, r, t0, res)
         agora = time.time()
         with ev_lock:
             db = vendas_db()
@@ -11016,7 +12064,7 @@ def _ev_limpo(e):
           "vendedor": txt((d.get("vendedor") or {}).get("nome") if isinstance(d.get("vendedor"), dict) else None),
           "resultado": txt(d.get("resultado"), 12), "n": num(d.get("n")), "reimpressao": bool(d.get("reimpressao")),
           "tempos": {k: txt(v, 30) for k, v in (d.get("tempos") if isinstance(d.get("tempos"), dict) else {}).items() if k in ("inicio", "escolha") and v} or None,
-          "motivo": txt(d.get("motivo"), 40), "semFoto": num(d.get("semFoto")), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
+          "motivo": txt(d.get("motivo"), 40), "obs": txt(d.get("obs"), 200), "semFoto": num(d.get("semFoto")), "ref": txt(d.get("ref"), 12), "capacidade": num(d.get("capacidade")),
           # impressão: as fotos impressas; impressão e rolo: a leitura da DNP pelo programa de impressão do posto (auditoria do rolo)
           "fotos": lista(d.get("fotos")) if e.get("tipo") == "impressao" else [], "dnp": _ev_dnp(d.get("dnp")),
           "galeria": (txt((d.get("galeria") or {}).get("codigo"), 12) if isinstance(d.get("galeria"), dict) else None)}
@@ -11074,6 +12122,29 @@ def ev_fila(job):
             db.close()
 
 
+def ev_dias_refaz(vendas):
+    """18/11: cancelamento de venda de dia antigo: refaz o resumo do dia em que a venda foi feita (o metricas_loop só refaz hoje e ontem)."""
+    if not vendas:
+        return
+    with ev_lock:
+        db = vendas_db()
+        try:
+            dias = {r[0] for r in db.execute("select distinct dia from evento where tipo = 'criar' and venda in (%s)" % ",".join("?" * len(vendas)),
+                                             list(vendas))}
+        finally:
+            db.close()
+    recentes = {_ff_hoje(time.time()), _ff_hoje(time.time() - 86400)}
+    for d in dias - recentes:
+        threading.Thread(target=lambda d=d: _ev_refaz_um(d), daemon=True).start()
+
+
+def _ev_refaz_um(dia):
+    try:
+        metricas_gravar(dia)
+    except Exception as ex:
+        print("  métricas do dia %s (cancelamento):" % dia, str(ex)[:160])
+
+
 def ev_receber(body):
     evs = body.get("eventos") if isinstance(body.get("eventos"), list) else []
     posto = _txt_chave(body.get("posto") or "", 40) or ""
@@ -11086,6 +12157,7 @@ def ev_receber(body):
         if isinstance(d.get("selected"), list):
             sel.update(pid_lib(str(p)[:60]) for p in d["selected"][:200])
     ia_sel = sess_ia_de(sel) if sel else set()
+    canc = set()
     with ev_lock:
         db = vendas_db()
         try:
@@ -11102,9 +12174,15 @@ def ev_receber(body):
                                  (x["idem"], x["venda"], x["seq"], x["tipo"], x["em"], _ev_dia(x["em"]), x["posto"] or posto,
                                   x["por"], json.dumps(x["dados"], ensure_ascii=False), _iso()))
                 res.append({"idem": x["idem"], "s": "ok" if cur.rowcount else "ja"})
+                if cur.rowcount and x["tipo"] == "cancelar":
+                    canc.add(x["venda"])
             db.commit()                                      # só confirma ao caixa depois de gravado no disco
         finally:
             db.close()
+    try:
+        ev_dias_refaz(canc)
+    except Exception as ex:
+        print("  cancelamento: resumo do dia não refeito:", str(ex)[:160])
     return {"ok": True, "resultados": res}
 
 
@@ -11113,7 +12191,8 @@ def metricas_dia(dia):
     (ponto/eventos) e vendas online (galerias/vendas-online.jsonl). Por fotógrafo, vendedor, posto e meio de pagamento."""
     m = {"dia": dia, "gerado": _iso(), "fotos": 0, "fotos_com_rosto": 0, "rostos": 0, "sessoes": 0, "sessoes_com_venda": 0,
          "vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0, "fotos_ia_vendidas": 0, "impressoes": 0, "impressoes_falhas": 0,
-         "canceladas": 0, "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0}, "rolo": {},
+         "canceladas": 0, "estornos": {"vendas": 0, "valor": 0.0, "fotos": 0}, "cancelamentos": [],
+         "online": {"vendas": 0, "faturamento": 0.0, "fotos": 0}, "rolo": {},
          "por_fotografo": {}, "por_vendedor": {}, "por_posto": {}, "por_meio": {}}
     try:
         db = rostos_db()
@@ -11149,11 +12228,12 @@ def metricas_dia(dia):
         v = vendas.setdefault(e["venda"], {"criar": None, "paga": False, "cancelada": False, "posto": e.get("posto")})
         d = e.get("dados") or {}
         if e["tipo"] == "criar":
-            v["criar"] = d
+            v["criar"], v["dia"] = d, _ev_dia(e["em"])
         elif e["tipo"] == "pagar":
             v["paga"] = True
         elif e["tipo"] == "cancelar":
             v["cancelada"] = True
+            v["canc"] = {"em": e.get("em"), "por": e.get("por"), "motivo": d.get("obs") or None, "tipo": d.get("motivo")}
         elif e["tipo"] == "impressao":
             if d.get("resultado") == "ok":
                 m["impressoes"] += int(d.get("n") or 0)
@@ -11185,9 +12265,13 @@ def metricas_dia(dia):
         r["diferenca"] = r["folhas_dnp"] - r["folhas_eterna"]
         r.pop("_vr", None)
     com_venda = set()
-    for v in vendas.values():
+    for vid, v in vendas.items():
         c = v["criar"]
         if not c:
+            continue
+        # 18/11 (Ronaldo): a venda conta no dia em que foi feita. Antes, um evento em outro dia (o pagar depois da meia-noite,
+        # um cancelamento dias depois) fazia a venda contar também naquele dia.
+        if v.get("dia") and v["dia"] != dia:
             continue
         if v["cancelada"] and not v["paga"]:
             m["canceladas"] += 1
@@ -11195,6 +12279,17 @@ def metricas_dia(dia):
         if not v["paga"]:
             continue
         tot, nph, nai = float(c.get("total") or 0), int(c.get("nPh") or 0), int(c.get("nAI") or 0)
+        # 18/11 (Ronaldo): venda paga e depois cancelada sai do faturamento e entra nos estornos e no relatório de cancelamentos
+        if v["cancelada"]:
+            m["canceladas"] += 1
+            m["estornos"]["vendas"] += 1
+            m["estornos"]["valor"] += tot
+            m["estornos"]["fotos"] += nph
+            k = v.get("canc") or {}
+            m["cancelamentos"].append({"venda": vid, "no": c.get("saleNo"), "valor": tot, "fotos": nph,
+                                       "vendedor": c.get("vendedor"), "posto": v.get("posto"), "meio": c.get("meio"),
+                                       "em": k.get("em"), "por": k.get("por"), "motivo": k.get("motivo")})
+            continue
         m["vendas"] += 1
         m["faturamento"] += tot
         m["fotos_vendidas"] += nph
@@ -11226,6 +12321,7 @@ def metricas_dia(dia):
     m["conversao_sessoes"] = round(m["sessoes_com_venda"] / m["sessoes"], 4) if m["sessoes"] else None
     m["conversao_fotos"] = round(m["fotos_vendidas"] / m["fotos"], 4) if m["fotos"] else None
     m["ticket_medio"] = round(m["faturamento"] / m["vendas"], 2) if m["vendas"] else None
+    m["cancelamentos"].sort(key=lambda x: str(x.get("em") or ""))
     for pf in m["por_fotografo"].values():
         pf["conversao"] = round(pf["sessoes_com_venda"] / pf["sessoes"], 4) if pf["sessoes"] else None
     return met_v2_junta(m, met_v2(dia, ss, evs))
@@ -11367,7 +12463,7 @@ def backup_loop():
             backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
             print("  backup na nuvem (arquivos):", str(ex)[:160])
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB, TREINO_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
             if not bancos:
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
@@ -11547,6 +12643,8 @@ def met_v2(dia, ss, evs):
     out["entradas"] = entradas_dia(dia)
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     out["selfies"] = selfies_dia(dia)
+    out["pessoas"] = pessoas_dia(dia)
+    out["balcao"] = balcao_dia(dia, evs)
     return out
 
 
@@ -11653,6 +12751,248 @@ MONT_TERMINAIS_MAX = 40
 MONT_VISTAS_MAX = 20000
 _re_mont_term = re.compile(r"^[a-z0-9]{8,16}$")
 mont_recusadas = {"n": 0}
+
+
+def balcao_dia(dia, evs):
+    """16/11 (funil): sessões que chegaram ao balcão no dia: as de um pedido do Checkout (pago ou não; os pedidos moram no
+    servidor desde 15/11) somadas às de uma venda registrada. Antes de 15/11 só as vendas existem: devolve None."""
+    cards = set()
+    for e in evs or []:
+        if e.get("tipo") == "criar":
+            d = e.get("dados") or {}
+            cards.update(str(c) for c in ([d.get("card")] + list(d.get("sessoes") or [])) if c)
+    if dia < "2026-11-15":
+        return None
+    try:
+        with estado_lock:
+            db = pedidos_db()
+            try:
+                rows = db.execute("select valor from pedido where substr(criada, 1, 10) between ? and ?",
+                                  (_ff_hoje(time.mktime(time.strptime(dia, "%Y-%m-%d")) - 86400), dia)).fetchall()
+            finally:
+                db.close()
+        for (txt,) in rows:
+            r = json.loads(txt)
+            try:
+                from datetime import datetime
+                quando = _ff_hoje(datetime.fromisoformat(str(r.get("criada")).replace("Z", "+00:00")).timestamp())
+            except Exception:
+                quando = str(r.get("criada") or "")[:10]
+            if quando == dia:
+                cards.update(str(c) for c in ([r.get("card")] + list(r.get("sessoes") or [])) if c)
+    except Exception:
+        pass
+    return len(cards)
+
+
+# 16/11 (Ronaldo): visitantes do Tour em tempo real, da API pública do Maraca Acessos (as catracas; só totais, sem código de
+# ingresso). Substitui a importação de CSV de entradas. Sem internet ou com o Maraca Acessos fora, responde sem os números.
+ACESSOS_API = os.environ.get("ETERNA_ACESSOS_API", "https://maraca-acessos.onrender.com").rstrip("/")
+_acessos_cache = {}
+
+
+def visitantes(de, ate):
+    if not (_re_dia.match(de or "") and _re_dia.match(ate or "")) or de > ate:
+        return None
+    k = de + "|" + ate
+    c = _acessos_cache.get(k)
+    hoje = _ff_hoje()
+    if c and time.time() - c[0] < (60 if ate >= hoje else 3600):
+        return c[1]
+    try:
+        rq = urllib.request.Request(ACESSOS_API + "/api/stats?" + urllib.parse.urlencode({"de": de, "ate": ate}),
+                                    headers={"User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(rq, timeout=25) as r:
+            j = json.loads(r.read(400000).decode("utf8"))
+        ph = (j.get("por_hora") or {})
+        out = {"ok": True, "de": de, "ate": ate, "total": int(j.get("total_hoje") or 0), "anterior": int(j.get("total_ontem") or 0),
+               "por_hora": [int(x or 0) for x in (ph.get("hoje") or [])][:24],
+               "por_canal": [{"canal": str(x.get("canal") or "")[:40], "n": int(x.get("n") or 0)} for x in (j.get("por_canal") or [])][:10],
+               "atualizado": j.get("atualizado_em"), "fonte": "Maraca Acessos"}
+    except Exception as ex:
+        if c:
+            return c[1]
+        return {"ok": False, "erro": str(ex)[:120]}
+    if len(_acessos_cache) > 60:
+        _acessos_cache.clear()
+    _acessos_cache[k] = (time.time(), out)
+    return out
+
+
+PESSOA_PERTO = 80   # largura do rosto (px na foto lida, lado 1600) a partir da qual a pessoa está em primeiro plano, não ao fundo
+
+
+# 16/11 (v2, conferência do Ronaldo nos rostos de 15/11: muita gente repetida). A v1 agrupava todos os rostos pelo limite
+# da selfie e cada rosto de perfil, de costas, tapado (câmera, taça, mão) ou pequeno virava uma pessoa nova. Agora:
+#  1. Só rosto bom cria pessoa: frontal e nítido (tabela rosto_q) e com pelo menos PESSOA_SEMENTE px.
+#  2. Os rostos bons se juntam por média do grupo (não pelo melhor par), com PESSOA_JUNTA; dois rostos da mesma foto nunca.
+#  3. Os outros rostos (perfil, pequenos) não criam pessoa: entram na pessoa mais parecida da MESMA sessão (a família que
+#     estava junto) com PESSOA_SESSAO, ou de qualquer sessão com LIMITE; sem par, ficam como "sem identificar".
+#  4. Quem aparece em PESSOA_EQUIPE sessões ou mais é a equipe (fotógrafo, guia, supervisor), contada à parte.
+PESSOA_SEMENTE = 60
+PESSOA_JUNTA = 0.40
+PESSOA_SESSAO = 0.25
+PESSOA_EQUIPE = 4
+
+
+def _pessoas_sessoes(dia):
+    """{pid: card} das sessões do dia."""
+    out = {}
+    try:
+        a = os.path.join(SESS_DIR, dia + ".json")
+        for x in (json.load(open(a, encoding="utf8")).get("sessoes") or []) if os.path.exists(a) else []:
+            if isinstance(x, dict) and x.get("card"):
+                for p in list(x.get("fotos") or []) + list(x.get("pend") or []):
+                    if isinstance(p, str):
+                        out[p] = x["card"]
+    except Exception:
+        pass
+    return out
+
+
+def _pessoas_agrupa(rows, np, boas=None, sess=None):
+    """rows = [(pid, largura, emb)]; boas = set de emb (bytes) frontais e nítidos; sess = {pid: card}.
+    -> lista de pessoas {pids:set, cards:set, maior, rep:(pid, vetor), equipe} e quantos rostos ficaram sem identificar."""
+    boas = boas or set()
+    sess = sess or {}
+    M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128).copy()
+    M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
+    larg = [float(r[1] or 0) for r in rows]
+    sem = [i for i in range(len(rows)) if rows[i][2] in boas and larg[i] >= PESSOA_SEMENTE]
+    resto = [i for i in range(len(rows)) if i not in set(sem)]
+    # 2. agrupamento por média (aglomerativo): começa cada rosto bom sozinho e junta o par de grupos mais parecido
+    G = [{"m": [i], "pids": {rows[i][0]}} for i in sem]
+    while len(G) > 1:
+        C = np.stack([M[g["m"]].mean(axis=0) for g in G])
+        C /= np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
+        S = C @ C.T
+        np.fill_diagonal(S, -1)
+        for a in range(len(G)):
+            for b in range(a + 1, len(G)):
+                if G[a]["pids"] & G[b]["pids"]:
+                    S[a, b] = S[b, a] = -1
+        a, b = np.unravel_index(int(np.argmax(S)), S.shape)
+        if S[a, b] < PESSOA_JUNTA:
+            break
+        a, b = min(a, b), max(a, b)
+        G[a]["m"] += G[b]["m"]; G[a]["pids"] |= G[b]["pids"]
+        G.pop(b)
+    # 3. rostos que não criam pessoa: na mais parecida da mesma sessão, ou de qualquer uma pelo limite da selfie
+    sem_id = 0
+    if G:
+        C = np.stack([M[g["m"]].mean(axis=0) for g in G])
+        C /= np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
+        cards = [{sess.get(rows[k][0]) for k in g["m"]} - {None} for g in G]
+        for i in sorted(resto, key=lambda k: -larg[k]):
+            sv = C @ M[i]
+            pid, cd = rows[i][0], sess.get(rows[i][0])
+            alvo = -1
+            for k in np.argsort(-sv):
+                if pid in G[k]["pids"]:
+                    continue
+                if (cd and cd in cards[k] and sv[k] >= PESSOA_SESSAO) or sv[k] >= LIMITE:
+                    alvo = int(k)
+                break
+            if alvo < 0:
+                sem_id += 1
+                continue
+            G[alvo]["m"].append(i); G[alvo]["pids"].add(pid)
+            if cd:
+                cards[alvo].add(cd)
+    else:
+        sem_id = len(resto)
+    out = []
+    for g in G:
+        r0 = max(g["m"], key=lambda k: larg[k])
+        cs = {sess.get(rows[k][0]) for k in g["m"]} - {None}
+        out.append({"pids": g["pids"], "cards": cs, "maior": max(larg[k] for k in g["m"]), "rep": (rows[r0][0], M[r0]),
+                    "equipe": len(cs) >= PESSOA_EQUIPE})
+    out.sort(key=lambda p: -p["maior"])
+    return out, sem_id
+
+
+def _pessoas_le(dia):
+    import numpy as np
+    db = rostos_db()
+    try:
+        rows = db.execute("select pid, larg, emb from rosto where dia = ?", (dia,)).fetchall()
+        boas = {b for (b,) in db.execute("select emb from rosto_q where dia = ?", (dia,))}
+    finally:
+        db.close()
+    return np, rows, boas
+
+
+def pessoas_rostos(dia):
+    """16/11 (Ronaldo, conferir a contagem): um recorte pequeno do maior rosto de cada pessoa do dia, com quantas fotos ela
+    tem. Só leitura, só para a gestão (qualidade.r), não grava nada e não sai do servidor por outro caminho."""
+    try:
+        np, rows, boas = _pessoas_le(dia)
+    except Exception:
+        return None
+    if not rows:
+        return {"ok": True, "dia": dia, "pessoas": []}
+    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia))
+    rep = [p["rep"] for p in P]
+    cv2 = _cv["cv2"]
+    out = []
+    with _busca_lock:
+        if not _busca["m"]:
+            _busca["m"] = leitor()
+        det, rec = _busca["m"]
+        for n, (pid, v) in enumerate(rep):
+            img_b64 = None
+            with lock:
+                e = lib.get(pid)
+            try:
+                img = cv2.imread(e["file"]) if e else None
+                if img is not None:
+                    h, w = img.shape[:2]
+                    k = min(1.0, LADO / max(h, w))
+                    if k < 1:
+                        img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
+                    det.setInputSize((img.shape[1], img.shape[0]))
+                    _, f = det.detect(img)
+                    melhor, ms = None, -1.0
+                    for r in (f if f is not None else []):
+                        e2 = rec.feature(rec.alignCrop(img, r)).flatten().astype("float32")
+                        sv = float((e2 / (np.linalg.norm(e2) or 1)) @ v)
+                        if sv > ms:
+                            melhor, ms = r, sv
+                    if melhor is not None:
+                        x, y, bw, bh = [float(t) for t in melhor[:4]]
+                        m = 0.35
+                        x0, y0 = max(0, int(x - m * bw)), max(0, int(y - m * bh))
+                        x1, y1 = min(img.shape[1], int(x + bw * (1 + m))), min(img.shape[0], int(y + bh * (1 + m)))
+                        cr = img[y0:y1, x0:x1]
+                        if cr.size:
+                            cr = cv2.resize(cr, (140, int(140 * cr.shape[0] / max(1, cr.shape[1]))), interpolation=cv2.INTER_AREA)
+                            ok, buf = cv2.imencode(".jpg", cr, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                            if ok:
+                                img_b64 = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
+            except Exception:
+                img_b64 = None
+            out.append({"n": n + 1, "fotos": len(P[n]["pids"]), "sessoes": len(P[n]["cards"]), "equipe": P[n]["equipe"],
+                        "larg": round(P[n]["maior"]), "rosto": img_b64})
+    return {"ok": True, "dia": dia, "pessoas": out, "sem_identificar": sem_id}
+
+
+def pessoas_dia(dia):
+    """16/11 (Ronaldo: quantas pessoas abordamos?): quantas pessoas diferentes aparecem nas fotos do dia, agrupando os rostos
+    lidos com o mesmo critério da busca por selfie (LIMITE). Só contagens: nenhuma imagem, rosto ou identificação sai daqui.
+    Agrupamento guloso, do rosto maior para o menor, pelo centro de cada grupo; dois rostos da mesma foto nunca são a mesma
+    pessoa. É estimativa: a mesma pessoa de perfil ou muito de longe pode virar duas, e a equipe aparece junto."""
+    try:
+        np, rows, boas = _pessoas_le(dia)
+    except Exception:
+        return None
+    vazio = {"v": 2, "rostos": 0, "fotos_com_rosto": 0, "pessoas": 0, "equipe": 0, "sem_identificar": 0, "pessoas_perto": 0, "uma_foto": 0, "duas_ou_mais": 0}
+    if not rows:
+        return vazio
+    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia))
+    cli = [p for p in P if not p["equipe"]]
+    return {"v": 2, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli), "equipe": len(P) - len(cli),
+            "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
+            "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2)}
 
 
 def selfies_dia(dia):
@@ -11923,11 +13263,1784 @@ def agenda_valida(doc_id, v):
     return out
 
 
+# ---------- Treino da IA (16/11, Curadoria › Treino da IA, plano "Curadoria › Treino da IA", fatia F1) ----------
+# A equipe (Admin e Supervisora) marca fotos reais do servidor para ensinar a IA, sem nenhuma foto sair do servidor: a tela
+# mostra a miniatura pelo /thumb/ de sempre e aqui só moram os rótulos (texto). ~/Eterna/ponto/treino.db (vai para o backup):
+#   rotulo       um por foto (o último), com quem e quando (carimbados aqui pela sessão de login, nunca pelo navegador)
+#   rotulo_hist  só acrescenta: cada gravação, para refazer a história de uma marcação
+#   lote, medida vazias nesta entrega (marcação em lote e medidas de exposição e do ponto, nas próximas fatias)
+# Amostra do dia (GET /treino/amostra): das sessões fechadas de ~/Eterna/ponto/sessoes/<dia>.json, fotos em ordem de clique,
+# com semente fixa por dia e modo (todos os aparelhos recebem a mesma ordem). Modos: "ia" (1ª a 4ª foto de cada sessão,
+# espalhadas pelas horas), "qualidade" (sorteio por hora proporcional ao volume) e "misto" (padrão, 60/40).
+# Interruptor da análise (Eduardo, 16/11: "um LIGA E DESLIGA"): estado.db config/treino {ponto, exposicao}, cada um
+# "desligada" | "medir" | "ligada", padrão desligada. Desligada = o servidor não analisa nada; medir = analisa e só mostra na
+# tela de treino; ligada = aplica. Só pela rota POST /treino/config (Painel de controle em Alterar); o estado_gravar recusa.
+# Nesta entrega nenhuma análise roda ainda: a chave existe para a medida de exposição e o reconhecimento do ponto obedecerem.
+TREINO_DB = os.path.join(HOME, "ponto", "treino.db")
+treino_lock = threading.Lock()
+TREINO_PONTOS = ("gramado", "arquibancada", "trofeu", "chute", "outro")
+TREINO_NIVEIS = ("boa", "ajustar", "fraca", "nao_vai")
+TREINO_QUAL_MOTIVOS = ("desfocada", "olhos", "cortada", "semrosto", "estourada", "escura", "chuva", "expressao", "torta",
+                       "repetida", "fundo", "outro")
+TREINO_CAMPOS = frozenset(("pid", "v", "ponto", "ia", "qual", "duvida", "obs", "base_em"))
+TREINO_MODOS = ("misto", "ia", "qualidade", "duvidas")   # 18/11: duvidas = as mais perto do limiar do reconhecimento
+TREINO_ANALISE = ("desligada", "medir", "ligada")
+TREINO_CFG_PADRAO = {"ponto": "desligada", "exposicao": "desligada"}
+TREINO_DIAS = 60
+TREINO_OBS_MAX = 200
+_re_treino_slug = re.compile(r"^[a-z][a-z0-9_]{0,23}$")
+_re_treino_quem = re.compile(r"^[a-z0-9][a-z0-9._@+-]{0,99}$")
+_treino_cache = collections.OrderedDict()   # dia -> {"t", "mt", "fotos", "idx", "sessoes"} (até 4 dias inteiros na memória)
+_treino_conta = {}                          # dia -> (mtime, fotos, sessoes): só os números, para /treino/dias
+_treino_cfg = {"t": 0.0, "v": None}
+_treino_n = {"t": 0.0, "n": 0}
+
+
+def treino_db():
+    """Conexão ao treino.db (chamar com o treino_lock)."""
+    os.makedirs(os.path.dirname(TREINO_DB), exist_ok=True)
+    c = sqlite3.connect(TREINO_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("pragma synchronous=full")
+    c.execute("create table if not exists rotulo (pid text primary key, v integer, dia text, fotografo text, card text, ordem integer,"
+              " dados text, por text, em text, origem text, lote text)")
+    c.execute("create index if not exists rotulo_dia on rotulo(dia)")
+    c.execute("create table if not exists rotulo_hist (pid text, dados text, por text, em text)")
+    c.execute("create index if not exists rotulo_hist_pid on rotulo_hist(pid)")
+    c.execute("create table if not exists lote (id text primary key, dados text, por text, em text)")
+    c.execute("create table if not exists medida (pid text, tipo text, valor text, em text, primary key (pid, tipo))")
+    return c
+
+
+def _treino_em():
+    """Hora da gravação com milissegundos (o base_em do conflito compara este texto)."""
+    t = time.time()
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t)) + ".%03d" % int((t % 1) * 1000)
+
+
+def _treino_rostos(dia):
+    """{pid: rostos lidos} do dia (rostos.db do Ronaldo); {} sem o banco (agente sem OpenCV). Nunca cria o banco."""
+    if not os.path.exists(ROSTOS_DB):
+        return {}
+    try:
+        db = sqlite3.connect(ROSTOS_DB, timeout=5)
+        try:
+            return {p: n for p, n in db.execute("select pid, count(*) from rosto where dia = ? group by pid", (dia,))}
+        finally:
+            db.close()
+    except Exception:
+        return {}
+
+
+def _treino_ler_dia(dia):
+    """-> (fotos, sessoes) das sessões FECHADAS do dia: [{pid, card, fotografo, t, ordem, n_sessao, rostos}], fotos de cada
+    sessão em ordem de clique (cap da câmera; sem ele, data do arquivo; sem ela, chegada)."""
+    a = os.path.join(SESS_DIR, dia + ".json")
+    try:
+        lista = json.load(open(a, encoding="utf8")).get("sessoes") or []
+    except Exception:
+        return [], 0
+    ses = [x for x in lista if isinstance(x, dict) and x.get("status") == "fechada" and not x.get("removida") and isinstance(x.get("card"), str)]
+    pids = {p for x in ses for p in (x.get("fotos") or []) if isinstance(p, str)}
+    with lock:
+        tm = {p: (_num((meta.get(p) or {}).get("cap")) or _num((meta.get(p) or {}).get("mt")) or _num((meta.get(p) or {}).get("u")),
+                  _num((meta.get(p) or {}).get("u"))) for p in pids}
+    rostos = _treino_rostos(dia)
+    fotos = []
+    for x in ses:
+        fs = [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+        fs.sort(key=lambda p: tm.get(p, (0.0, 0.0)))
+        quem = x.get("fotografo") if isinstance(x.get("fotografo"), str) else None
+        for i, p in enumerate(fs):
+            fotos.append({"pid": p, "card": x["card"], "fotografo": quem, "t": round(tm.get(p, (0.0,))[0] or 0.0, 1), "ordem": i + 1,
+                          "n_sessao": len(fs), "rostos": rostos.get(p)})
+    return fotos, len(ses)
+
+
+def treino_fotos_dia(dia):
+    """Cache de 60 s do arquivo do dia (o de hoje muda; o mtime vale para os outros)."""
+    a = os.path.join(SESS_DIR, dia + ".json")
+    try:
+        mt = os.path.getmtime(a)
+    except OSError:
+        return {"fotos": [], "idx": {}, "sessoes": 0}
+    agora = time.time()
+    with treino_lock:
+        c = _treino_cache.get(dia)
+        if c and (agora - c["t"] < 60 or c["mt"] == mt):
+            _treino_cache.move_to_end(dia)
+            return c
+    fotos, n = _treino_ler_dia(dia)
+    c = {"t": agora, "mt": mt, "fotos": fotos, "idx": {f["pid"]: f for f in fotos}, "sessoes": n}
+    with treino_lock:
+        _treino_cache[dia] = c
+        _treino_cache.move_to_end(dia)
+        while len(_treino_cache) > 4:
+            _treino_cache.popitem(last=False)
+        _treino_conta[dia] = (mt, len(fotos), n)
+    return c
+
+
+def _treino_hora(f):
+    return time.localtime(f["t"]).tm_hour if f.get("t") else -1
+
+
+def _treino_ordem_ia(fotos, rnd):
+    """1ª a 4ª foto de cada sessão, uma hora de cada vez (espalhadas pelo dia)."""
+    por = {}
+    for f in fotos:
+        if f["ordem"] <= 4:
+            por.setdefault(_treino_hora(f), []).append(f)
+    for h in sorted(por):
+        rnd.shuffle(por[h])
+    out, horas = [], sorted(por)
+    while horas:
+        for h in list(horas):
+            out.append(por[h].pop(0))
+            if not por[h]:
+                horas.remove(h)
+    return out
+
+
+def _treino_ordem_qualidade(fotos, rnd):
+    """Sorteio por hora proporcional ao volume (amostra estratificada: cada hora entra na proporção das fotos dela)."""
+    por = {}
+    for f in fotos:
+        por.setdefault(_treino_hora(f), []).append(f)
+    chave = []
+    for h in sorted(por):
+        lst = por[h]
+        rnd.shuffle(lst)
+        chave += [((j + rnd.random()) / len(lst), f["pid"], f) for j, f in enumerate(lst)]
+    chave.sort(key=lambda x: (x[0], x[1]))
+    return [x[2] for x in chave]
+
+
+def treino_semente(dia, modo):
+    return hashlib.sha256(("treino|%s|%s" % (dia, modo)).encode()).hexdigest()[:12]
+
+
+def treino_ordem(fotos, dia, modo):
+    rnd = random.Random(int(treino_semente(dia, modo), 16))
+    if modo == "ia":
+        return _treino_ordem_ia(fotos, rnd)
+    if modo == "qualidade":
+        return _treino_ordem_qualidade(fotos, rnd)
+    ia, ql = _treino_ordem_ia(fotos, rnd), _treino_ordem_qualidade(fotos, rnd)
+    out, vistos, i, j = [], set(), 0, 0
+    while i < len(ia) or j < len(ql):            # misto: 3 de IA para 2 de qualidade (60/40)
+        for fonte in ("ia", "ia", "ia", "q", "q"):
+            while True:
+                if fonte == "ia":
+                    if i >= len(ia):
+                        break
+                    f, i = ia[i], i + 1
+                else:
+                    if j >= len(ql):
+                        break
+                    f, j = ql[j], j + 1
+                if f["pid"] not in vistos:
+                    vistos.add(f["pid"])
+                    out.append(f)
+                    break
+    return out
+
+
+def treino_ordem_duvidas(fotos):
+    """18/11: modo "duvidas": as fotos classificadas com a confiança mais perto de CENA_LIMIAR, as previstas gramado ou
+    chute primeiro; as sem classificação no fim (na ordem de clique)."""
+    pids = [f["pid"] for f in fotos]
+    cl = {}
+    if pids and os.path.exists(CENA_DB):
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                for i in range(0, len(pids), 500):
+                    b = pids[i:i + 500]
+                    cl.update({p: (r, c) for p, r, c in db.execute("select pid, rotulo, conf from cena where rotulo is not null and pid in (%s)"
+                                                                     % ",".join("?" * len(b)), b)})
+            finally:
+                db.close()
+
+    def chave(f):
+        x = cl.get(f["pid"])
+        if not x:
+            return (2, 9.0, f["pid"])
+        return (0 if x[0] in ("gramado", "chute") else 1, abs(float(x[1] or 0) - CENA_LIMIAR), f["pid"])
+    return sorted(fotos, key=chave)
+
+
+def treino_vazio(doc):
+    """Marcação sem nada (o "desfazer" da tela grava assim a primeira marcação desfeita): conta como não marcada."""
+    if not isinstance(doc, dict):
+        return True
+    ia, qual = doc.get("ia") or {}, doc.get("qual") or {}
+    return not (doc.get("ponto") or doc.get("duvida") or doc.get("obs") or qual.get("nivel") or qual.get("motivos") or qual.get("ajuste")
+                or ia.get("motivos") or ia.get("serve") is not None or ia.get("frente") is not None)
+
+
+def treino_rotulos(dia):
+    """{pid: documento} das marcações do dia."""
+    with treino_lock:
+        db = treino_db()
+        try:
+            rows = db.execute("select pid, dados from rotulo where dia = ?", (dia,)).fetchall()   # vazias vêm também (o desfazer)
+        finally:
+            db.close()
+    out = {}
+    for p, d in rows:
+        try:
+            out[p] = json.loads(d)
+        except ValueError:
+            pass
+    return out
+
+
+def treino_amostra(dia, fotografo=None, modo="misto", n=150, marcadas=False):
+    """GET /treino/amostra: fotos do dia para marcar, na mesma ordem para todo mundo. Pula as já marcadas (com marcadas=True,
+    traz também essas, com o rótulo) e as que saíram da biblioteca (LGPD, prazo)."""
+    c = treino_fotos_dia(dia)
+    with lock:
+        fotos = [f for f in c["fotos"] if f["pid"] in lib]
+    rot = treino_rotulos(dia)
+    itens = []
+    for f in (treino_ordem_duvidas(fotos) if modo == "duvidas" else treino_ordem(fotos, dia, modo)):
+        if fotografo and f["fotografo"] != fotografo:
+            continue
+        r = rot.get(f["pid"])
+        if r is not None and treino_vazio(r):
+            r = None
+        if r is not None and not marcadas:
+            continue
+        itens.append(dict(f, rotulo=r))
+        if len(itens) >= n:
+            break
+    return {"v": 1, "dia": dia, "modo": modo, "semente": treino_semente(dia, modo), "total_dia": len(fotos), "itens": itens}
+
+
+def treino_dias():
+    """GET /treino/dias: os últimos 60 dias com sessão, com fotos, sessões fechadas e quantas já foram marcadas."""
+    try:
+        nomes = sorted((x[:-5] for x in os.listdir(SESS_DIR) if x.endswith(".json") and _re_dia.match(x[:-5])), reverse=True)[:TREINO_DIAS]
+    except OSError:
+        nomes = []
+    with treino_lock:
+        db = treino_db()
+        try:
+            rot = {}
+            for d_, dados in db.execute("select dia, dados from rotulo"):
+                try:
+                    if not treino_vazio(json.loads(dados)):
+                        rot[d_] = rot.get(d_, 0) + 1
+                except ValueError:
+                    pass
+        finally:
+            db.close()
+    out = []
+    for d in nomes:
+        try:
+            mt = os.path.getmtime(os.path.join(SESS_DIR, d + ".json"))
+        except OSError:
+            continue
+        with treino_lock:
+            cn = _treino_conta.get(d)
+        if not cn or cn[0] != mt:
+            c = treino_fotos_dia(d)
+            cn = (mt, len(c["fotos"]), c["sessoes"])
+            with treino_lock:
+                _treino_conta[d] = cn
+                for k in [k for k in _treino_conta if k not in nomes]:
+                    _treino_conta.pop(k, None)
+        if cn[1]:
+            out.append({"dia": d, "fotos": cn[1], "sessoes": cn[2], "rotuladas": rot.get(d, 0)})
+    return {"v": 1, "dias": out}
+
+
+def treino_pid_info(pid):
+    """A foto (pid da biblioteca) numa sessão fechada: {pid, card, fotografo, ordem, ...} e o dia; None se não está."""
+    with lock:
+        e = lib.get(pid)
+    if not e:
+        return None, None
+    dias = []
+    with sess_lock:
+        x = sess.get(sess_pid.get(pid) or "")
+        if x is not None and x.get("dia"):
+            dias.append(x["dia"])
+    d0 = os.path.basename(os.path.dirname(e.get("file") or ""))
+    if _re_dia.match(d0):
+        try:
+            t0 = time.mktime(time.strptime(d0, "%Y-%m-%d")) + 43200
+            dias += [d0, _ff_hoje(t0 - 86400), _ff_hoje(t0 + 86400)]
+        except Exception:
+            pass
+    for d in dict.fromkeys(dias):
+        f = treino_fotos_dia(d)["idx"].get(pid)
+        if f:
+            return f, d
+    return None, None
+
+
+def _treino_bool(v):
+    return v is None or isinstance(v, bool)
+
+
+def _treino_lista(v, permitido=None, maximo=12):
+    if not isinstance(v, list) or len(v) > maximo or len(set(map(str, v))) != len(v):
+        return False
+    return all(isinstance(x, str) and (x in permitido if permitido else bool(_re_treino_slug.match(x))) for x in v)
+
+
+def treino_valida(corpo):
+    """Formato fechado do POST /treino/rotulo. -> (campos, None) ou (None, nome do campo recusado)."""
+    if not isinstance(corpo, dict):
+        return None, "campo"
+    for k in corpo:
+        if k not in TREINO_CAMPOS:
+            return None, "campo"
+    if corpo.get("v") != 1 or isinstance(corpo.get("v"), bool):
+        return None, "v"
+    if not pid_ok(corpo.get("pid")):
+        return None, "pid"
+    ponto = corpo.get("ponto")
+    if ponto is not None and ponto not in TREINO_PONTOS:
+        return None, "ponto"
+    ia = corpo.get("ia") if corpo.get("ia") is not None else {}
+    if not isinstance(ia, dict) or set(ia) - {"serve", "motivos", "frente"} or not _treino_bool(ia.get("serve")) or not _treino_bool(ia.get("frente")) \
+            or not _treino_lista(ia.get("motivos", []), None, 8):
+        return None, "ia"
+    qual = corpo.get("qual") if corpo.get("qual") is not None else {}
+    if not isinstance(qual, dict) or set(qual) - {"nivel", "motivos", "ajuste"} or (qual.get("nivel") is not None and qual.get("nivel") not in TREINO_NIVEIS) \
+            or not _treino_lista(qual.get("motivos", []), TREINO_QUAL_MOTIVOS, 12) or not _treino_lista(qual.get("ajuste", []), None, 8):
+        return None, "qual"
+    if not isinstance(corpo.get("duvida", False), bool):
+        return None, "duvida"
+    obs = corpo.get("obs", "")
+    if obs is None:
+        obs = ""
+    if not isinstance(obs, str) or len(obs) > TREINO_OBS_MAX:
+        return None, "obs"
+    obs = "".join(ch for ch in obs if ch >= " " and ch != "\x7f").strip()
+    base = corpo.get("base_em")
+    if base is not None and (not isinstance(base, str) or len(base) > 40):
+        return None, "base_em"
+    return {"pid": pid_lib(corpo["pid"]), "ponto": ponto,
+            "ia": {"serve": ia.get("serve"), "motivos": list(ia.get("motivos", [])), "frente": ia.get("frente")},
+            "qual": {"nivel": qual.get("nivel"), "motivos": list(qual.get("motivos", [])), "ajuste": list(qual.get("ajuste", []))},
+            "duvida": corpo.get("duvida", False), "obs": obs, "base_em": base}, None
+
+
+def treino_gravar(quem, corpo):
+    """POST /treino/rotulo. quem = usuário da sessão de login (por e em são daqui, nunca do navegador). -> (status, resposta).
+    Outra pessoa marcou depois da versão que o aparelho tinha (base_em velho): 409 outro_marcou com o documento atual."""
+    v, campo = treino_valida(corpo)
+    if v is None:
+        return 400, {"ok": False, "error": "campo", "campo": campo}
+    if not isinstance(quem, str) or not _re_treino_quem.match(quem):
+        return 403, {"ok": False, "error": "sem_permissao"}
+    f, dia = treino_pid_info(v["pid"])
+    if not f:
+        return 404, {"ok": False, "error": "pid"}
+    doc = {"v": 1, "pid": v["pid"], "dia": dia, "fotografo": f["fotografo"], "card": f["card"], "ordem": f["ordem"],
+           "ponto": v["ponto"], "ia": v["ia"], "qual": v["qual"], "duvida": v["duvida"], "obs": v["obs"],
+           "por": quem, "em": None, "origem": "mao", "lote": None}
+    with treino_lock:
+        db = treino_db()
+        try:
+            r = db.execute("select dados, por, em from rotulo where pid = ?", (v["pid"],)).fetchone()
+            if r and r[1] != quem and r[2] != v["base_em"]:
+                try:
+                    atual = json.loads(r[0])
+                except ValueError:
+                    atual = None
+                return 409, {"ok": False, "error": "outro_marcou", "doc": atual}
+            em = _treino_em()
+            if r and r[2] and em <= r[2]:
+                em = r[2][:-3] + "%03d" % min(999, int(r[2][-3:]) + 1)   # mesma hora no relógio: a versão nova vem depois
+            doc["em"] = em
+            txt = json.dumps(doc, ensure_ascii=False)
+            db.execute("insert into rotulo values (?,?,?,?,?,?,?,?,?,?,?) on conflict(pid) do update set v = excluded.v, dia = excluded.dia,"
+                       " fotografo = excluded.fotografo, card = excluded.card, ordem = excluded.ordem, dados = excluded.dados, por = excluded.por,"
+                       " em = excluded.em, origem = excluded.origem, lote = excluded.lote",
+                       (v["pid"], 1, dia, f["fotografo"], f["card"], f["ordem"], txt, quem, em, "mao", None))
+            db.execute("insert into rotulo_hist values (?,?,?,?)", (v["pid"], txt, quem, em))
+            db.commit()
+        finally:
+            db.close()
+    _treino_n["t"] = 0.0
+    _cena_base_t[0] = time.time()          # 18/11: rótulo novo muda a versão do Só medir (o Ligada usa o congelado)
+    return 200, {"ok": True, "doc": doc}
+
+
+def treino_lgpd(pids):
+    """LGPD: as marcações e medidas das fotos apagadas saem do treino.db, e os documentos do estado.db ligados à foto (ajuste,
+    aviso da validação, descarte e o treino antigo) viram apagados com rev novo (os navegadores tiram a cópia). -> falhas"""
+    falhas = []
+    pids = [p for p in pids if pid_ok(p)]
+    if not pids:
+        return falhas
+    try:
+        with treino_lock:
+            db = treino_db()
+            try:
+                for p in pids:
+                    for tab in ("rotulo", "rotulo_hist", "medida"):
+                        db.execute("delete from %s where pid = ?" % tab, (p,))
+                db.commit()
+            finally:
+                db.close()
+        _treino_n["t"] = 0.0
+        cena_lgpd(pids)                    # 18/11: vetor e classificação da foto (cena.db, memória e fila)
+        with treino_lock:
+            for c in _treino_cache.values():
+                c["idx"] = {k: x for k, x in c["idx"].items() if k not in set(pids)}
+                c["fotos"] = [x for x in c["fotos"] if x["pid"] not in set(pids)]
+    except Exception as ex:
+        falhas.append("treino: " + str(ex)[:80])
+    if not os.path.exists(ESTADO_DB):
+        return falhas
+    ids = [("sim", "%s|ag_%s" % (k, p)) for p in pids for k in ("edits", "invalid", "discarded")] + \
+          [("treino", x) for p in pids for x in ("ag_" + p, p)]
+    try:
+        with estado_lock:
+            db = estado_db()
+            try:
+                rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0]
+                for col, i in ids:
+                    if db.execute("select 1 from doc where col = ? and id = ? and valor is not null", (col, i)).fetchone():
+                        rev += 1
+                        db.execute("update doc set valor = null, rev = ?, em = ? where col = ? and id = ?", (rev, _iso(), col, i))
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        falhas.append("estado: " + str(ex)[:80])
+    return falhas
+
+
+def treino_cfg_valida(j):
+    """config/treino: {ponto, exposicao}, cada um desligada | medir | ligada (por e em são de auditoria). Outro formato = None.
+    18/11: ponto_versao (a versão congelada do reconhecimento, ^c1-[a-z0-9-]{1,80}$) só existe no documento gravado pelo
+    servidor (cena_congelar); o POST /treino/config não aceita o campo e o estado_gravar recusa config/treino inteiro."""
+    if not isinstance(j, dict) or j.get("ponto") not in TREINO_ANALISE or j.get("exposicao") not in TREINO_ANALISE:
+        return None
+    pv = j.get("ponto_versao")
+    if pv is not None and not (isinstance(pv, str) and _re_cena_versao.match(pv)):
+        return None
+    return {"ponto": j["ponto"], "exposicao": j["exposicao"], "ponto_versao": pv if j["ponto"] == "ligada" else None}
+
+
+_re_cena_versao = re.compile(r"^c1-[a-z0-9-]{1,80}$")
+
+
+def _treino_cfg_escreve(v):
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "treino", json.dumps(v, ensure_ascii=False), rev, _iso()))
+            db.commit()
+        finally:
+            db.close()
+
+
+def treino_cfg():
+    """O interruptor da análise (estado.db config/treino), relido a cada 3 s. Sem documento ou ilegível: tudo desligado."""
+    agora = time.time()
+    if agora - _treino_cfg["t"] < 3 and _treino_cfg["v"] is not None:
+        return _treino_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'treino' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                j = json.loads(r[0])
+                v = treino_cfg_valida(j)
+                if v is not None:
+                    v = {**v, "por": j.get("por"), "em": j.get("em")}
+    except Exception:
+        v = _treino_cfg["v"]
+    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None)
+    # 18/11 (Eduardo): o "Ligada" gravado antes desta versão não comandava nada. Sem um modelo congelado que passou no critério,
+    # Ligada vira Só medir sozinho (e fica no log); a exposição ainda não tem medida: Ligada vira Só medir também.
+    mig = []
+    if v["ponto"] == "ligada" and cena_modelo_existe(v.get("ponto_versao")) is False:
+        mig.append(("ponto", v.get("ponto_versao")))
+        v = dict(v, ponto="medir", ponto_versao=None)
+    if v["exposicao"] == "ligada":
+        mig.append(("exposicao", None))
+        v = dict(v, exposicao="medir")
+    if mig:
+        v = dict(v, por="servidor", em=_iso())
+        try:
+            _treino_cfg_escreve(v)
+            for k, ver in mig:
+                print("  treino: %s Ligada sem modelo que passou no critério%s -> Só medir (migração da regra 19)"
+                      % ("reconhecer o ponto" if k == "ponto" else "medir a exposição", " (%s)" % ver if ver else ""))
+        except Exception as ex:
+            print("  treino: migração do interruptor não gravou (%s)" % str(ex)[:80])
+    _treino_cfg.update(t=agora, v=v)
+    return v
+
+
+def treino_cfg_gravar(corpo, quem):
+    """POST /treino/config {ponto?, exposicao?}: muda uma das análises (ou as duas). por = usuário da sessão. -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"ponto", "exposicao"}:
+        return 400, {"ok": False, "error": "campo"}
+    de = treino_cfg()
+    novo = {"ponto": corpo.get("ponto", de["ponto"]), "exposicao": corpo.get("exposicao", de["exposicao"])}
+    if treino_cfg_valida(novo) is None:
+        return 400, {"ok": False, "error": "valor"}
+    if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 18/11: ainda não existe a medida da exposição
+        return 409, {"ok": False, "error": "criterio", "falta": [{"k": "exposicao_sem_modelo", "tem": 0, "precisa": 1}]}
+    pv = de.get("ponto_versao") if novo["ponto"] == "ligada" else None
+    if corpo.get("ponto") == "ligada":
+        # 18/11 (D4, D10): Ligada só acima do critério, com os rótulos de agora congelados (ligada -> ligada = recongelar)
+        crit, base_ok = cena_criterio_agora()
+        if not crit.get("passa"):
+            return 409, {"ok": False, "error": "criterio", "falta": crit.get("falta") or []}
+        pv = cena_congelar(quem, base_ok, de.get("ponto_versao") if de["ponto"] == "ligada" else None)
+        if not pv:                                    # rótulo novo entre a medida e o congelamento: mede de novo
+            return 409, {"ok": False, "error": "criterio", "falta": [{"k": "versao_mudou", "tem": 0, "precisa": 1}]}
+    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": _iso()}
+    _treino_cfg_escreve(v)
+    _treino_cfg.update(t=time.time(), v=dict(v))
+    _cena_base_t[0] = time.time()
+    print("  treino: análise do ponto %s -> %s%s, da exposição %s -> %s · por %s" % (de["ponto"], v["ponto"], " (%s)" % pv if pv else "",
+                                                                                    de["exposicao"], v["exposicao"], v["por"] or "?"))
+    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"]}
+    if pv:
+        r["ponto_versao"] = pv
+    return 200, r
+
+
+def treino_status():
+    """/status.treino: quantas marcações, o interruptor e o que ainda não existe (modelo do ponto, ajuste de exposição)."""
+    agora = time.time()
+    if agora - _treino_n["t"] > 30:
+        n = _treino_n["n"]
+        try:
+            if os.path.exists(TREINO_DB):
+                with treino_lock:
+                    db = treino_db()
+                    try:
+                        n = sum(1 for (d_,) in db.execute("select dados from rotulo") if not treino_vazio(json.loads(d_)))
+                    finally:
+                        db.close()
+            else:
+                n = 0
+        except Exception:
+            pass
+        _treino_n.update(t=agora, n=n)
+    c = treino_cfg()
+    return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": cena_status(), "ajuste": None}
+
+
+# ---------- Cena: reconhecer o ponto pela imagem (regra 19, 18/11; plano "bases dos fundos de IA só com foto do gramado") ----------
+# Um processo filho (o mesmo eterna-recorte.py com --modo cena) tira de cada miniatura um vetor do CLIP ViT-B/32 (512 números,
+# L2) e 4 medidas baratas (verde fora da coluna central, flash na pessoa, cadeiras atrás, dourado do troféu). O agente decide
+# por vizinhos (k = CENA_K, voto pesado pela semelhança de cosseno) contra as fotos marcadas no Treino da IA. Tudo local:
+# nada sai do servidor, nenhum serviço externo classifica. O cena.db fica FORA do backup (tudo nele se refaz das fotos); o
+# vetor de foto sem rótulo some em CENA_VET_DIAS e a linha em CENA_DIAS. Interruptor: config/treino.ponto
+#   desligada  nada roda (o filho nem abre); o Checkout fica sem fundos de IA (D1)
+#   medir      classifica e mostra na aba Medição; o Checkout fica sem fundos de IA
+#   ligada     só com o critério (cena_criterio) e com os rótulos CONGELADOS no momento de ligar (D10, tabela modelo)
+# Locks: cena_lock nunca junto do sess_lock; quem está com o sess_lock só lê cena_mem (dict trocado por item) e cena_pend
+# (mexido só com o sess_lock). treino_cfg_mem() nunca abre banco.
+CENA_DB = os.path.join(HOME, "ponto", "cena.db")
+CENA_NOME = "clip-b32"
+CENA_ARQ = "clip-vit-b32-visao.onnx"      # em ~/Eterna/modelos (MODELOS); baixado pelo instalar-recorte-modelos.py
+# SHA-256 do arquivo (página do arquivo no Hugging Face, commit 6ef1ebc, licença MIT; conferido em 18/11), o mesmo do
+# CENA_SHA do instalar-recorte-modelos.py. Vazio = sem modelo
+# (falha fechada: nada é reconhecido e o Checkout fica sem fundos de IA). Ver docs/fundos-ia-regras.md, regra 19.
+CENA_SHA = "fd6e1402a588279d1723c7534d4bcba5bc0b14b47dfab0e46f8c47b8270d7d40"
+CENA_FALSO = None          # só os testes: caminho de um filho falso (testes/_cena_filho_falso.py); pula a conferência do SHA
+CENA_K = 7
+CENA_LIMIAR = 0.70
+CENA_SIM_PISO = 0.80       # provisório: o valor certo vem da medição
+CENA_FILA_MAX = 5000
+CENA_LOTE = 16
+CENA_VET_DIAS = 2
+CENA_DIAS = 60
+CENA_PEND_MAX = 900        # s: sessão fechada esperando a classificação; depois disso, cena_indisponivel (tudo à venda)
+CENA_MEM_MIN_GB = 1.5
+CENA_VETO_N = 30           # gramados marcados para calibrar os vetos (verde, flash); abaixo disso ficam em 0 (desligados)
+CENA_ERRO_SEG = 60         # o filho de cena morto reabre depois disto; para na CENA_MORTES_MAX-ésima morte seguida
+CENA_MORTES_MAX = 3
+CENA_ESPERA_SEG = 120      # prazo de uma mensagem (lote) no filho
+CENA_CARGA_SEG = 180
+CENA_MEDIDA_MAX = 20000    # teto de rótulos no cálculo da medida (matriz em blocos)
+CENA_MEDIDA_SEG = 10       # no máximo 1 cálculo da medida a cada 10 s (por versão e método)
+CENA_CLASSES = TREINO_PONTOS
+# Critério para Ligada (D4, seção 10 do plano): mínimos de rótulos por classe, 3 dias, 3 fotógrafos, precisão e cobertura do
+# gramado como base na validação sem a própria sessão, nenhum "outro" como gramado e o prospectivo
+CENA_META = {"gramado": 150, "arquibancada": 40, "trofeu": 40, "chute": 60, "outro": 40}
+CENA_CRIT = {"dias": 3, "fotografos": 3, "precisao": 0.98, "cobertura": 0.85, "outro_fp": 0, "prosp_n": 100, "prosp_precisao": 0.97}
+# Base boa (Eduardo, 18/11): gramado reconhecido, pessoa sem corte na lateral nem no alto e luz boa. Limites a calibrar no estádio.
+BASE_LUZ_MED_MIN = 40.0    # mediana da luminância (0 a 255) na pessoa abaixo disto: escura demais
+BASE_LUZ_P95_MAX = 254.0   # p95 da luminância no rosto (sem rosto, na pessoa) a partir disto: estourada
+CENA_SINAIS = ("verde", "flash", "cadeiras", "dourado")
+CENA_SINAL_ALVO = {"verde": ("gramado", None), "flash": ("gramado", "chute"), "cadeiras": ("arquibancada", None), "dourado": ("trofeu", None)}
+
+cena_lock = threading.Lock()               # estado, fila e contadores
+cena_db_lock = threading.Lock()
+cena_filho_lock = threading.Lock()
+cena = {"erro": None, "erro_em": 0.0, "espera_s": CENA_ERRO_SEG, "mortes": 0, "parado": None, "provedor": None, "carregado": False,
+        "carga_ms": None, "reinicios": 0, "abriu": False, "feitas_dia": "", "feitas_hoje": 0, "ms_total": 0, "ms_n": 0, "ultimo": None}
+cena_filho = {"p": None, "fila": None, "seq": 0, "criado": None}
+cena_q = collections.OrderedDict()         # pid -> (prio, seq, thumb, dia); a mais antiga sai acima de CENA_FILA_MAX
+_cena_seq = itertools.count()
+cena_mem = {}                              # pid -> {"r", "c", "v", "g", "rec", "dia"} de hoje e ontem
+cena_pend = {}                             # card -> hora em que fechou com cena_pendente (só com o sess_lock)
+cena_parar = threading.Event()             # só os testes ligam: o cena_loop termina
+_cena_base = {}                            # chave -> {"t", "base"}
+_cena_base_t = [0.0]                       # o treino_gravar zera o cache da base de medir
+_cena_med = {}                             # (versao, metodo) -> {"t", "r"}
+_cena_crit = {"versao": None, "passa": False, "t": 0.0}
+_cena_ok = {}                              # (caminho, tamanho, mtime) -> SHA confere
+_cena_cache_lock = threading.Lock()        # 18/11 (revisão): _cena_base e _cena_med trocados por mais de uma thread
+_cena_vendas = {"chave": None, "v": frozenset()}   # bases vendidas de hoje e ontem, relidas só quando o vendas.db muda
+_cena_rec_mem = collections.OrderedDict()  # pid -> medidas do recorte (corrida entre cena_rec e cena_gravar)
+CENA_NAO = "nao_classificavel"             # foto que o processo de cena recusou (caminho, imagem grande, ilegível): pula
+
+
+def cena_db():
+    """Conexão ao cena.db (chamar com o cena_db_lock)."""
+    os.makedirs(os.path.dirname(CENA_DB), exist_ok=True)
+    c = sqlite3.connect(CENA_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("create table if not exists cena (pid text primary key, dia text, vet blob, verde real, sinais text, rec text, prev0 text,"
+              " rotulo text, conf real, g integer, versao text, em text)")
+    c.execute("create index if not exists cena_dia on cena(dia)")
+    c.execute("create table if not exists modelo (versao text primary key, rotulos text, params text, por text, em text)")
+    c.execute("create table if not exists meta (k text primary key, v text)")
+    return c
+
+
+def cena_sha_confere(sha):
+    """18/11 (revisão de segurança): o SHA do modelo que gerou os vetores fica no cena.db. Modelo trocado = todos os vetores
+    (e as classificações feitas com eles) saem, e as versões congeladas (tabela modelo) também: o Ligada vira Só medir pela
+    migração do treino_cfg e só volta passando no critério. As medidas do recorte e o prev0 ficam. A varredura refaz as de hoje."""
+    if not isinstance(sha, str) or not sha:
+        return False
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            r = db.execute("select v from meta where k = 'sha'").fetchone()
+            if r and r[0] == sha:
+                return False
+            mudou = r is not None
+            if mudou:
+                db.execute("update cena set vet = null, rotulo = null, conf = null, g = 0, versao = null")
+                db.execute("delete from modelo")      # revisão: o conjunto congelado era do modelo velho; Ligada passa pelo critério de novo
+            db.execute("insert into meta values ('sha', ?) on conflict(k) do update set v = excluded.v", (sha,))
+            db.commit()
+        finally:
+            db.close()
+    if mudou:
+        cena_mem.clear()
+        with _cena_cache_lock:
+            _cena_base.clear()
+            _cena_med.clear()
+        _cena_base_t[0] = time.time()
+        print("  cena: o modelo mudou (SHA novo): vetores, classificações e versões congeladas apagados; as fotos de hoje são refeitas")
+        _treino_cfg["t"] = 0.0
+        try:
+            treino_cfg()                              # sem modelo congelado, Ligada vira Só medir na hora (migração, com linha no log)
+        except Exception as ex:
+            print("  cena: interruptor não relido depois da troca do modelo (%s)" % str(ex)[:80])
+    return mudou
+
+
+def treino_cfg_mem():
+    """O último interruptor lido (sem abrir o banco): para quem está com o sess_lock na mão. Atualizado a cada 3 s pelo
+    treino_cfg_loop."""
+    v = _treino_cfg["v"]
+    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None)
+
+
+def treino_cfg_loop():
+    """Mantém treino_cfg_mem e ia_cfg_mem frescos (3 s) fora de qualquer lock de sessão."""
+    while True:
+        try:
+            treino_cfg()
+            ia_cfg()
+        except Exception as ex:
+            print("  treino: interruptor %s" % str(ex)[:80])
+        time.sleep(3)
+
+
+def cena_regra19():
+    """A regra 19 (bases só de gramado) vale: Escala desligada (a regra 15 volta com ETERNA_FUNCAO_DIA=1, D11)."""
+    return not FUNCAO_DIA_ON
+
+
+def cena_modelo_ok():
+    """(ok, erro) do arquivo do modelo de cena: presente e com o SHA-256 fixado (cache por tamanho e data). Teste: CENA_FALSO."""
+    if CENA_FALSO:
+        return True, None
+    if not re.fullmatch(r"[0-9a-f]{64}", CENA_SHA or ""):
+        return False, "sem_modelo"
+    p = os.path.join(MODELOS, CENA_ARQ)
+    try:
+        st = os.stat(p)
+    except OSError:
+        return False, "sem_modelo"
+    k = (p, st.st_size, st.st_mtime)
+    v = _cena_ok.get(k)
+    if v is None:
+        try:
+            h = hashlib.sha256()
+            with open(p, "rb") as f:
+                for b in iter(lambda: f.read(1 << 20), b""):
+                    h.update(b)
+            v = h.hexdigest() == CENA_SHA
+        except OSError:
+            v = False
+        _cena_ok.clear()
+        _cena_ok[k] = v
+    return (True, None) if v else (False, "sem_modelo")
+
+
+def cena_enfileira(pid, thumb, prio=1, dia=None):
+    """Põe a miniatura na fila de cena (0 = foto nova, 1 = varredura, 2 = rótulo sem vetor). Nada com o ponto desligado.
+    Acima de CENA_FILA_MAX sai o mais antigo (a varredura recoloca as de hoje)."""
+    if treino_cfg_mem().get("ponto") == "desligada" or not pid_ok(pid) or not thumb:
+        return False
+    if dia and dia < _ff_hoje(time.time() - CENA_DIAS * 86400):
+        return False                                  # revisão: foto mais velha que o corte do cena_limpa não volta à fila
+    with cena_lock:
+        ant = cena_q.get(pid)
+        if ant is not None and ant[0] <= prio:
+            return True
+        cena_q[pid] = (prio, next(_cena_seq), thumb, dia or _ff_hoje())
+        while len(cena_q) > CENA_FILA_MAX:
+            cena_q.popitem(last=False)
+    return True
+
+
+def _cena_pegar(n):
+    with cena_lock:
+        if not cena_q:
+            return []
+        esc = sorted(cena_q.items(), key=lambda kv: (kv[1][0], kv[1][1]))[:n]
+        for p, _ in esc:
+            cena_q.pop(p, None)
+    return [(p, v[2], v[3]) for p, v in esc]
+
+
+def _cena_espera():
+    with cena_lock:
+        if cena["parado"]:
+            return False, "parado"
+        if cena["erro"] and time.time() - cena["erro_em"] < cena["espera_s"]:
+            return False, cena["erro"]
+    return True, None
+
+
+def _cena_erro(motivo, morte=False):
+    with cena_lock:
+        cena.update(erro=motivo, erro_em=time.time(), carregado=False, espera_s=CENA_ERRO_SEG)
+        if morte:
+            cena["mortes"] += 1
+            if cena["mortes"] >= CENA_MORTES_MAX:
+                cena["parado"] = "parado"
+                print("  cena: o processo do reconhecimento do ponto parou %d vezes seguidas; fica parado até reiniciar o agente" % cena["mortes"])
+
+
+def _cena_matar():
+    p = cena_filho.get("p")
+    cena_filho["p"] = None
+    if p is not None:
+        try:
+            p.kill()
+        except Exception:
+            pass
+        try:
+            p.wait(timeout=5)
+        except Exception:
+            pass
+
+
+def _cena_abrir():
+    """Com o cena_filho_lock: o filho vivo, ou abre um novo. Exceção com o motivo se não deu."""
+    f = cena_filho
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:                           # morreu entre um lote e outro
+        f["p"] = None
+        _cena_erro("filho", morte=True)
+        raise RuntimeError("filho")
+    ok, mot = _cena_espera()
+    if not ok:
+        raise RuntimeError(mot)
+    ok, mot = cena_modelo_ok()
+    if not ok:
+        _cena_erro(mot)
+        raise RuntimeError(mot)
+    if _vis_np() is None:
+        _cena_erro("sem_numpy")
+        raise RuntimeError("sem_numpy")
+    livre = rec_mem_livre_gb()
+    if livre is not None and livre < CENA_MEM_MIN_GB:
+        _cena_erro("memoria")
+        raise RuntimeError("memoria")
+    script = CENA_FALSO or REC_FILHO
+    try:
+        p = subprocess.Popen([sys.executable, script, "--modo", "cena", "--inbox", INBOX, "--thumbs", THUMBS, "--modelos", MODELOS,
+                              "--cena-arq", CENA_ARQ, "--cena-sha", CENA_SHA or "-"],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1, encoding="utf-8",
+                             env=rec_env(), close_fds=True)
+    except Exception as ex:
+        _cena_erro("filho")
+        raise RuntimeError("filho: %s" % str(ex)[:80])
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila, criado=time.time())
+    _rec_pids_gravar()
+    try:
+        j = fila.get(timeout=CENA_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "filho"}
+    if j is None or not j.get("pronto"):
+        erro = (j or {}).get("erro") if j else None
+        _cena_matar()
+        if erro == "sem_modelo":
+            _cena_erro("sem_modelo")
+        elif erro and "memória" in str(erro):
+            _cena_erro("memoria", morte=True)
+        else:
+            _cena_erro("filho", morte=True)
+        raise RuntimeError(cena["erro"] or "filho")
+    prov = j.get("provedor") if j.get("provedor") in ("cuda", "cpu", "directml") else "cpu"
+    try:
+        if cena_sha_confere(j.get("sha") or CENA_SHA or None):
+            cena_varre()
+    except Exception as ex:
+        print("  cena: SHA do modelo não conferido no cena.db (%s)" % str(ex)[:80])
+    with cena_lock:
+        if cena["abriu"]:
+            cena["reinicios"] += 1
+        cena.update(carregado=True, erro=None, provedor=prov, carga_ms=j.get("carga_ms"), abriu=True)
+    print("  cena: modelo do reconhecimento do ponto aberto em %.1f s (%s)" % ((j.get("carga_ms") or 0) / 1000.0, "placa de vídeo" if prov == "cuda" else prov))
+    return f
+
+
+def cena_fechar():
+    """Ponto desligado: o filho de cena sai da memória (e da placa)."""
+    with cena_filho_lock:
+        if cena_filho.get("p") is not None:
+            _cena_matar()
+            with cena_lock:
+                cena["carregado"] = False
+            _rec_pids_gravar()
+
+
+def cena_mandar(itens):
+    """[(pid, origem)] -> lista res do filho. Exceção se o filho morreu, demorou ou não abriu."""
+    with cena_filho_lock:
+        f = _cena_abrir()
+        f["seq"] += 1
+        mid = "c.%d" % f["seq"]
+        try:
+            f["p"].stdin.write(json.dumps({"id": mid, "tipo": "cena", "itens": [{"pid": p, "origem": o} for p, o in itens]}) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            _cena_matar()
+            _cena_erro("filho", morte=True)
+            raise RuntimeError("filho")
+        fim = time.time() + CENA_ESPERA_SEG
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _cena_matar()
+                _cena_erro("filho", morte=True)
+                raise RuntimeError("tempo")
+            if j is None:
+                f["p"] = None
+                _cena_erro("filho", morte=True)
+                raise RuntimeError("filho")
+            if j.get("id") == mid:
+                break
+    if not j.get("ok"):
+        raise RuntimeError(str(j.get("erro") or "erro")[:80])
+    with cena_lock:
+        cena["mortes"] = 0
+        ms = (j.get("ms") or {}).get("total")
+        if isinstance(ms, (int, float)) and itens:
+            cena["ms_total"] += int(ms)
+            cena["ms_n"] += len(itens)
+    return [r for r in (j.get("res") or []) if isinstance(r, dict)]
+
+
+def _cena_vet(blob):
+    np = _vis_np()
+    v = np.frombuffer(blob, dtype="<f2").astype(np.float32)
+    n = float(np.linalg.norm(v))
+    return v / n if n > 0 else v
+
+
+def cena_rotulos():
+    """Os rótulos que valem para o reconhecimento: com ponto, sem dúvida e não vazios. -> [(pid, ponto, card, dia, fotografo, em)]"""
+    if not os.path.exists(TREINO_DB):
+        return []
+    with treino_lock:
+        db = treino_db()
+        try:
+            rows = db.execute("select pid, dados, card, dia, fotografo, em from rotulo").fetchall()
+        finally:
+            db.close()
+    out = []
+    for pid, dados, card, dia, quem, em in rows:
+        try:
+            d = json.loads(dados)
+        except ValueError:
+            continue
+        if treino_vazio(d) or d.get("duvida") or d.get("ponto") not in CENA_CLASSES:
+            continue
+        out.append((pid, d["ponto"], card or "", dia or "", quem or "", em or ""))
+    return out
+
+
+def _cena_vetores(pids):
+    """{pid: (vet, verde, sinais, prev0, dia)} das linhas com vetor."""
+    out = {}
+    if not pids or not os.path.exists(CENA_DB):
+        return out
+    pids = list(pids)
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            for i in range(0, len(pids), 500):
+                bloco = pids[i:i + 500]
+                for pid, vet, verde, sinais, prev0, dia in db.execute(
+                        "select pid, vet, verde, sinais, prev0, dia from cena where vet is not null and pid in (%s)" % ",".join("?" * len(bloco)), bloco):
+                    out[pid] = (vet, verde, sinais, prev0, dia)
+        finally:
+            db.close()
+    return out
+
+
+def _cena_versao(pares):
+    h = hashlib.sha256("\n".join(sorted("%s:%s" % pp for pp in pares)).encode()).hexdigest()[:8]
+    return "c1-%s-k%d-l%03d-p%03d-%s" % (CENA_NOME, CENA_K, round(CENA_LIMIAR * 100), round(CENA_SIM_PISO * 100), h)
+
+
+def _cena_sinais(txt):
+    try:
+        s = json.loads(txt or "{}")
+        return s if isinstance(s, dict) else {}
+    except ValueError:
+        return {}
+
+
+def _cena_vetos(verdes, flashes):
+    """Vetos do gramado como base: metade do menor valor entre os gramados marcados; 0 (desligado) com menos de CENA_VETO_N."""
+    if len(verdes) < CENA_VETO_N:
+        return {"verde": 0.0, "flash": 0.0}
+    return {"verde": round(0.5 * min(verdes), 4), "flash": round(0.5 * min(flashes), 4) if flashes else 0.0}
+
+
+def cena_base(modo="medir"):
+    """A matriz de rótulos com vetor. medir: os rótulos de agora (cache até o próximo treino_gravar, até 60 s); ligada: os
+    congelados na tabela modelo (ligada_versao). Rótulo sem vetor vai para a fila (prioridade baixa) ou conta em sem_vetor."""
+    np = _vis_np()
+    if np is None:
+        return None
+    lv = treino_cfg_mem().get("ponto_versao") if modo == "ligada" else None
+    chave = ("ligada", lv) if modo == "ligada" else ("medir",)
+    agora = time.time()
+    with _cena_cache_lock:
+        c = _cena_base.get(chave)
+    if c and c["t"] >= _cena_base_t[0] and agora - c["t"] < 60:
+        return c["base"]
+    if modo == "ligada":
+        if not lv:
+            return None
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                r = db.execute("select rotulos from modelo where versao = ?", (lv,)).fetchone()
+            finally:
+                db.close()
+        if not r:
+            return None
+        rot = [tuple(x) for x in json.loads(r[0])]
+    else:
+        corte = _ff_hoje(agora - CENA_DIAS * 86400)   # revisão: o mesmo corte do cena_limpa (senão a foto volta à fila de hora em hora)
+        rot = [r for r in cena_rotulos() if (r[3] or "") >= corte]
+    vs = _cena_vetores([x[0] for x in rot])
+    sem, X, y, ps, cards, dias, quem, verde, sinais, ems, prev0 = 0, [], [], [], [], [], [], [], [], [], []
+    for pid, ponto, card, dia, fot, em in rot[:CENA_MEDIDA_MAX]:
+        v = vs.get(pid)
+        if v is None:
+            with lock:
+                e = lib.get(pid)
+            if e and modo != "ligada":
+                th = e.get("thumb") or e.get("file")
+                if th and os.path.exists(th):
+                    cena_enfileira(pid, th, 2, dia)
+            sem += 1
+            continue
+        X.append(_cena_vet(v[0]))
+        y.append(CENA_CLASSES.index(ponto))
+        ps.append(pid)
+        cards.append(card)
+        dias.append(dia)
+        quem.append(fot)
+        verde.append(float(v[1] or 0))
+        sinais.append(_cena_sinais(v[2]))
+        ems.append(em)
+        prev0.append(v[3])
+    gi = [i for i, k in enumerate(y) if CENA_CLASSES[k] == "gramado"]
+    vetos = _cena_vetos([verde[i] for i in gi], [float(sinais[i].get("flash") or 0) for i in gi if sinais[i].get("flash") is not None])
+    base = {"versao": lv if modo == "ligada" else _cena_versao([(p, CENA_CLASSES[k]) for p, k in zip(ps, y)]), "modo": modo,
+            "X": np.stack(X).astype(np.float32) if X else np.zeros((0, 512), np.float32), "y": np.array(y, dtype=np.int32),
+            "pids": ps, "cards": cards, "dias": dias, "fotografos": quem, "verde": verde, "sinais": sinais, "em": ems, "prev0": prev0,
+            "vetos": vetos, "sem_vetor": sem, "total": len(rot)}
+    with _cena_cache_lock:
+        _cena_base[chave] = {"t": agora, "base": base}
+        if len(_cena_base) > 6:
+            for k in sorted(_cena_base, key=lambda k: _cena_base[k]["t"])[:-6]:
+                _cena_base.pop(k, None)
+    return base
+
+
+def _cena_voto(sims, ys):
+    """sims e ys dos k vizinhos -> (rótulo, conf). Vizinho mais parecido abaixo do piso = "fora" (outro lugar, nunca gramado)."""
+    np = _vis_np()
+    if not len(sims):
+        return None, 0.0
+    if float(sims.max()) < CENA_SIM_PISO:
+        return "fora", 0.0
+    w = np.maximum(sims, 0.0)
+    votos = np.bincount(ys, weights=w, minlength=len(CENA_CLASSES))
+    tot = float(votos.sum())
+    k = int(np.argmax(votos))
+    return CENA_CLASSES[k], (round(float(votos[k]) / tot, 4) if tot > 0 else 0.0)
+
+
+def cena_base_ok(r, c, verde, sinais, vetos):
+    """Gramado como base: previsto gramado, conf >= CENA_LIMIAR e os vetos calibrados (verde e flash)."""
+    return r == "gramado" and c >= CENA_LIMIAR and float(verde or 0) >= vetos.get("verde", 0) and float((sinais or {}).get("flash") or 0) >= vetos.get("flash", 0)
+
+
+def cena_classificar(V, verdes, sinais, base):
+    """V: m x 512 (L2). -> [(rotulo, conf, g)] (None, 0, False sem base)."""
+    np = _vis_np()
+    if base is None or not len(base["y"]) or not len(V):
+        return [(None, 0.0, False)] * len(V)
+    S = V @ base["X"].T
+    k = min(CENA_K, S.shape[1])
+    idx = np.argpartition(-S, k - 1, axis=1)[:, :k]
+    out = []
+    for i in range(len(V)):
+        r, c = _cena_voto(S[i, idx[i]], base["y"][idx[i]])
+        out.append((r, c, cena_base_ok(r, c, verdes[i], sinais[i], base["vetos"])))
+    return out
+
+
+def _cena_modo_ativo():
+    p = treino_cfg_mem().get("ponto")
+    return p if p in ("medir", "ligada") else None
+
+
+def cena_gravar(res, dias):
+    """Grava o que o filho devolveu (vet, verde, sinais), classifica com a base do modo ativo e atualiza cena_mem.
+    -> pids gravados."""
+    np = _vis_np()
+    with lock:
+        vivas = {r.get("pid") for r in res if r.get("pid") in lib}
+    res = [r for r in res if r.get("pid") in vivas]          # LGPD no meio do lote: a foto que saiu não volta ao cena.db
+    recusadas = [r["pid"] for r in res if r.get("erro") and pid_ok(r.get("pid"))]
+    if recusadas:
+        cena_nao_classificavel(recusadas, dias)
+    ok = [r for r in res if r.get("vet") and pid_ok(r.get("pid"))]
+    if not ok or np is None:
+        return recusadas
+    modo = _cena_modo_ativo() or "medir"
+    base = cena_base(modo)
+    V = np.stack([_cena_vet(base64.b64decode(r["vet"])) for r in ok])
+    verdes = [float(r.get("verde") or 0) for r in ok]
+    sinais = [r.get("sinais") if isinstance(r.get("sinais"), dict) else {} for r in ok]
+    cl = cena_classificar(V, verdes, sinais, base)
+    em = _iso()
+    versao = base["versao"] if base else None
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            for r, (rot, conf, g), v in zip(ok, cl, V):
+                p = r["pid"]
+                prev0 = json.dumps({"r": rot, "c": conf, "g": g, "v": versao, "em": em}) if rot else None
+                db.execute("insert into cena (pid, dia, vet, verde, sinais, prev0, rotulo, conf, g, versao, em) values (?,?,?,?,?,?,?,?,?,?,?)"
+                           " on conflict(pid) do update set vet = excluded.vet, verde = excluded.verde, sinais = excluded.sinais,"
+                           " prev0 = coalesce(cena.prev0, excluded.prev0), rotulo = excluded.rotulo, conf = excluded.conf, g = excluded.g,"
+                           " versao = excluded.versao, em = excluded.em",
+                           (p, dias.get(p) or _ff_hoje(), v.astype("<f2").tobytes(), verdes[ok.index(r)], json.dumps(r.get("sinais") or {}),
+                            prev0, rot, conf, int(bool(g)), versao if rot else None, em))
+            db.commit()
+            recs = dict(db.execute("select pid, rec from cena where pid in (%s)" % ",".join("?" * len(ok)), [r["pid"] for r in ok]).fetchall())
+        finally:
+            db.close()
+    hoje = _ff_hoje()
+    for r, (rot, conf, g) in zip(ok, cl):
+        p = r["pid"]
+        if rot:
+            rec_ = _cena_rec_json(recs.get(p)) or _cena_rec_mem.get(p) or (cena_mem.get(p) or {}).get("rec")
+            cena_mem[p] = {"r": rot, "c": conf, "v": versao, "g": bool(g), "rec": rec_, "dia": dias.get(p) or hoje}
+    with cena_lock:
+        if cena["feitas_dia"] != hoje:
+            cena.update(feitas_dia=hoje, feitas_hoje=0)
+        cena["feitas_hoje"] += len(ok)
+        cena["ultimo"] = time.time()
+    return [r["pid"] for r in ok] + recusadas
+
+
+def cena_nao_classificavel(pids, dias=None):
+    """18/11 (revisão): foto que o processo de cena recusou (caminho, imagem grande, ilegível) fica como "não classificável":
+    nunca é base e não trava a leva (o _sess_ia_bases pula)."""
+    dias = dias or {}
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            for p in pids:
+                db.execute("insert into cena (pid, dia, rotulo, conf, g, em) values (?,?,?,0,0,?) on conflict(pid) do update set"
+                           " rotulo = excluded.rotulo, conf = 0, g = 0, versao = null", (p, dias.get(p) or _ff_hoje(), CENA_NAO, _iso()))
+            db.commit()
+        finally:
+            db.close()
+    for p in pids:
+        cena_mem[p] = {"r": CENA_NAO, "c": 0.0, "v": "*", "g": False, "rec": None, "dia": dias.get(p) or _ff_hoje()}
+
+
+def _cena_rec_json(txt):
+    if not txt:
+        return None
+    try:
+        j = json.loads(txt)
+        return j if isinstance(j, dict) else None
+    except ValueError:
+        return None
+
+
+def cena_reclassifica(base):
+    """Fotos de hoje e de ontem com vetor e de outra versão: classificadas de novo com a base (sem GPU). prev0 fica."""
+    np = _vis_np()
+    if base is None or np is None or not os.path.exists(CENA_DB):
+        return 0
+    dias = (_ff_hoje(), _ff_hoje(time.time() - 86400))
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            rows = db.execute("select pid, vet, verde, sinais, rec, dia, prev0 from cena where vet is not null and dia in (?, ?)"
+                              " and (versao is null or versao != ?)", dias + (base["versao"],)).fetchall()
+        finally:
+            db.close()
+    if not rows:
+        return 0
+    em = _iso()
+    for i in range(0, len(rows), 512):
+        bl = rows[i:i + 512]
+        V = np.stack([_cena_vet(r[1]) for r in bl])
+        cl = cena_classificar(V, [float(r[2] or 0) for r in bl], [_cena_sinais(r[3]) for r in bl], base)
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                for r, (rot, conf, g) in zip(bl, cl):
+                    prev0 = r[6] or (json.dumps({"r": rot, "c": conf, "g": g, "v": base["versao"], "em": em}) if rot else None)
+                    db.execute("update cena set rotulo = ?, conf = ?, g = ?, versao = ?, prev0 = ? where pid = ?",
+                               (rot, conf, int(bool(g)), base["versao"] if rot else None, prev0, r[0]))
+                db.commit()
+            finally:
+                db.close()
+        for r, (rot, conf, g) in zip(bl, cl):
+            if rot:
+                cena_mem[r[0]] = {"r": rot, "c": conf, "v": base["versao"], "g": bool(g), "rec": _cena_rec_json(r[4]), "dia": r[5]}
+    return len(rows)
+
+
+def base_rec_ok(rec):
+    """Recorte que serve de base (Eduardo, 18/11): com gente, sem corte na lateral nem no alto e com luz boa. Corpo inteiro
+    serve (D8 novo): a montagem corta do joelho para cima (fiaJoelho no app). None = ainda não recortada."""
+    if not isinstance(rec, dict):
+        return None
+    if rec.get("sem_pessoa"):
+        return False
+    if rec.get("borda"):
+        return False
+    luz = rec.get("luz") or {}
+    med, p95 = luz.get("med"), luz.get("p95")
+    if isinstance(med, (int, float)) and med < BASE_LUZ_MED_MIN:
+        return False
+    if isinstance(p95, (int, float)) and p95 >= BASE_LUZ_P95_MAX:
+        return False
+    return True
+
+
+def cena_rec(pid, info):
+    """O recorte terminou (rec_fazer): guarda trunc, borda, luz, joelho e pernas (ou sem_pessoa) para a escolha da base. Fora
+    dos locks de sessão."""
+    if not pid_ok(pid) or not isinstance(info, dict):
+        return
+    info = {k: info.get(k) for k in ("trunc", "borda", "luz", "joelho", "pernas", "sem_pessoa") if k in info}
+    txt = json.dumps(info)
+    try:
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                db.execute("insert into cena (pid, dia, rec) values (?,?,?) on conflict(pid) do update set rec = excluded.rec",
+                           (pid, _ff_hoje(), txt))
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  cena: recorte %s" % str(ex)[:80])
+        return
+    _cena_rec_mem[pid] = info
+    while len(_cena_rec_mem) > 5000:
+        _cena_rec_mem.popitem(last=False)
+    c = cena_mem.get(pid)
+    if c is not None:
+        cena_mem[pid] = dict(c, rec=info)
+    cena_chegou([pid])
+
+
+def cena_rec_falta(pid):
+    """Candidata de gramado sem as medidas do recorte (recorte feito antes desta versão)."""
+    c = cena_mem.get(pid)
+    return c is not None and c.get("g") and c.get("rec") is None
+
+
+def cena_chegou(pids):
+    """Classificação ou recorte novo: as sessões (abertas) dessas fotos revêem as candidatas a base (sess_pid já cobre as
+    fotos que ainda esperam o rosto, em pend)."""
+    if not cena_regra19() or treino_cfg_mem().get("ponto") != "ligada":
+        return
+    with sess_lock:
+        vistos = set()
+        for p in pids:
+            c = sess_pid.get(p)
+            x = sess.get(c or "")
+            if x is not None and c not in vistos:
+                vistos.add(c)
+                _sess_ia_cand(x)
+
+
+def cena_lgpd(pids):
+    """LGPD: a linha da foto sai do cena.db, de cena_mem e da fila (o modelo congelado guarda só pids: o vizinho apagado
+    some da próxima classificação)."""
+    pids = [p for p in pids if pid_ok(p)]
+    if not pids:
+        return
+    with cena_lock:
+        for p in pids:
+            cena_q.pop(p, None)
+    for p in pids:
+        cena_mem.pop(p, None)
+    if os.path.exists(CENA_DB):
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                for p in pids:
+                    db.execute("delete from cena where pid = ?", (p,))
+                db.commit()
+            finally:
+                db.close()
+    _cena_base_t[0] = time.time()
+    with _cena_cache_lock:
+        _cena_base.clear()
+        _cena_med.clear()
+
+
+def cena_varre():
+    """A cada 5 min e na partida: as fotos de hoje sem vetor voltam para a fila (a fila tem teto)."""
+    if treino_cfg_mem().get("ponto") == "desligada":
+        return 0
+    hoje = _ff_hoje()
+    with lock:
+        cand = [(p, e.get("thumb") or e.get("file")) for p, e in lib.items()
+                if isinstance(meta.get(p), dict) and _ff_hoje(_num(meta[p].get("u"))) == hoje]
+    if not cand:
+        return 0
+    feitos = set(_cena_vetores([p for p, _ in cand]))
+    n = 0
+    for p, th in cand:
+        if p not in feitos and th and cena_enfileira(p, th, 1, hoje):
+            n += 1
+    return n
+
+
+def cena_limpa(agora=None):
+    """De hora em hora: vetor de foto sem rótulo (e fora do modelo congelado) com mais de CENA_VET_DIAS some; a linha com
+    mais de CENA_DIAS some; foto fora da biblioteca: a linha some. Nunca toca no vetor de foto rotulada nem do modelo."""
+    if not os.path.exists(CENA_DB):
+        return 0
+    agora = agora or time.time()
+    lim_vet = _ff_hoje(agora - CENA_VET_DIAS * 86400)
+    lim_lin = _ff_hoje(agora - CENA_DIAS * 86400)
+    # 18/11 (revisão, retenção): o vetor de foto rotulada fica enquanto o rótulo é dos últimos CENA_DIAS ou a foto está numa
+    # das versões guardadas em modelo (a ligada e a anterior); fora disso a linha sai como as outras
+    guardar = {r[0] for r in cena_rotulos() if (r[3] or "") >= lim_lin}
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            for (rot,) in db.execute("select rotulos from modelo"):
+                try:
+                    guardar.update(x[0] for x in json.loads(rot))
+                except (ValueError, TypeError, IndexError):
+                    pass
+            rows = db.execute("select pid, dia, vet is not null from cena").fetchall()
+            with lock:
+                vivas = {p for p, _, _ in rows if p in lib}
+            n = 0
+            for p, dia, tem in rows:
+                if p not in vivas:
+                    db.execute("delete from cena where pid = ?", (p,))
+                    n += 1
+                elif p in guardar:
+                    continue
+                elif (dia or "") < lim_lin:
+                    db.execute("delete from cena where pid = ?", (p,))
+                    n += 1
+                elif tem and (dia or "") < lim_vet:
+                    db.execute("update cena set vet = null where pid = ?", (p,))
+                    n += 1
+            db.commit()
+        finally:
+            db.close()
+    ontem = _ff_hoje(agora - 86400)
+    for p in [p for p, c in list(cena_mem.items()) if (c.get("dia") or "") < ontem]:
+        cena_mem.pop(p, None)
+    return n
+
+
+def cena_carregar():
+    """Na partida (antes das sessões): cena_mem de hoje e de ontem, do cena.db."""
+    if not os.path.exists(CENA_DB):
+        return 0
+    dias = (_ff_hoje(), _ff_hoje(time.time() - 86400))
+    try:
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                rows = db.execute("select pid, rotulo, conf, versao, g, rec, dia from cena where dia in (?, ?) and rotulo is not null", dias).fetchall()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  cena: não li o cena.db (%s)" % str(ex)[:80])
+        return 0
+    for pid, r, c, v, g, rec, dia in rows:
+        cena_mem[pid] = {"r": r, "c": float(c or 0), "v": "*" if r == CENA_NAO else v, "g": bool(g) and r != CENA_NAO, "rec": _cena_rec_json(rec), "dia": dia}
+    return len(rows)
+
+
+def _cena_auc(pos, neg):
+    """Área sob a curva (Mann-Whitney) de um sinal separando pos de neg; None sem os dois lados."""
+    if not pos or not neg:
+        return None
+    todos = sorted([(v, 1) for v in pos] + [(v, 0) for v in neg])
+    soma, i = 0.0, 0
+    while i < len(todos):
+        j = i
+        while j < len(todos) and todos[j][0] == todos[i][0]:
+            j += 1
+        rank = (i + j + 1) / 2.0
+        soma += rank * sum(1 for x in todos[i:j] if x[1])
+        i = j
+    return round((soma - len(pos) * (len(pos) + 1) / 2.0) / (len(pos) * len(neg)), 3)
+
+
+def _cena_tabelas(marc, prev, conf, g):
+    """Matriz (marcado x previsto, com a coluna "fora"), acerto por classe e o gramado como base."""
+    cols = list(CENA_CLASSES) + ["fora"]
+    mx = {a: {b: 0 for b in cols} for a in CENA_CLASSES}
+    for a, b in zip(marc, prev):
+        if a in mx and b in mx[a]:
+            mx[a][b] += 1
+    classe = {}
+    for c in CENA_CLASSES:
+        n = sum(mx[c].values())
+        prev_n = sum(mx[a][c] for a in CENA_CLASSES)
+        classe[c] = {"n": n, "precisao": round(mx[c][c] / prev_n, 4) if prev_n else None, "cobertura": round(mx[c][c] / n, 4) if n else None}
+    vp = sum(1 for a, gg in zip(marc, g) if gg and a == "gramado")
+    fp = sum(1 for a, gg in zip(marc, g) if gg and a != "gramado")
+    fn = sum(1 for a, gg in zip(marc, g) if not gg and a == "gramado")
+    gb = {"vp": vp, "fp": fp, "fn": fn, "precisao": round(vp / (vp + fp), 4) if vp + fp else None,
+          "cobertura": round(vp / (vp + fn), 4) if vp + fn else None, "outro_como_gramado": sum(1 for a, gg in zip(marc, g) if gg and a == "outro")}
+    return mx, classe, gb
+
+
+def _cena_sessao(base):
+    """Validação deixando de fora os vizinhos da mesma sessão e da mesma visita. -> (prev, conf, g, g_sem_veto)."""
+    np = _vis_np()
+    X, y = base["X"], base["y"]
+    n = len(y)
+    with sess_lock:
+        grp = [vis_de.get(c) or c for c in base["cards"]]
+    gid = {}
+    gi = np.array([gid.setdefault(x, len(gid)) for x in grp], dtype=np.int64)
+    prev, conf, g, g0 = [], [], [], []
+    for i0 in range(0, n, 256):
+        S = X[i0:i0 + 256] @ X.T
+        S[gi[i0:i0 + 256][:, None] == gi[None, :]] = -np.inf
+        k = min(CENA_K, n)
+        idx = np.argpartition(-S, k - 1, axis=1)[:, :k]
+        for j in range(S.shape[0]):
+            ii = idx[j][np.isfinite(S[j, idx[j]])]
+            r, c = _cena_voto(S[j, ii], y[ii]) if len(ii) else ("fora", 0.0)
+            i = i0 + j
+            prev.append(r)
+            conf.append(c)
+            g.append(cena_base_ok(r, c, base["verde"][i], base["sinais"][i], base["vetos"]))
+            g0.append(r == "gramado" and c >= CENA_LIMIAR)
+    return prev, conf, g, g0
+
+
+def cena_medida(metodo="sessao", forcar=False):
+    """GET /treino/medida: a medida do contrato (seção 6 do plano), com o critério. Nunca traz vetor nem caminho. Cache por
+    versão e método; fora o forcar (POST /treino/config), no máximo 1 cálculo a cada CENA_MEDIDA_SEG."""
+    if _vis_np() is None:
+        return {"v": 1, "metodo": metodo, "erro": "sem_numpy"}
+    base = cena_base("medir")
+    with _cena_cache_lock:
+        c = _cena_med.get((base["versao"], metodo))
+        if c is None and not forcar:
+            velho = [x for k, x in _cena_med.items() if k[1] == metodo]
+            if velho and time.time() - max(x["t"] for x in velho) < CENA_MEDIDA_SEG:
+                c = max(velho, key=lambda x: x["t"])
+        falta = [m_ for m_ in ("sessao", "prospectivo") if (base["versao"], m_) not in _cena_med] if c is None else []
+    if c is None:
+        for m_ in falta:                              # o critério usa as duas (calculadas fora do lock)
+            _cena_medida_calc(m_, base)
+        _cena_crit_atualiza(base)
+        with _cena_cache_lock:
+            c = _cena_med[(base["versao"], metodo)]
+    r = dict(c["r"])
+    r["criterio"] = _cena_crit["r"] if _cena_crit.get("versao") == r.get("versao") and _cena_crit.get("r") else {"passa": False, "falta": []}
+    r["ligada_versao"] = treino_cfg_mem().get("ponto_versao") if treino_cfg_mem().get("ponto") == "ligada" else None
+    return r
+
+
+def _cena_medida_calc(metodo, base):
+    t0 = time.time()
+    cfg = treino_cfg_mem()
+    marc = [CENA_CLASSES[k] for k in base["y"]]
+    if metodo == "prospectivo":
+        prev, conf, g = [], [], []
+        idx = []
+        for i, p0 in enumerate(base["prev0"]):
+            try:
+                j = json.loads(p0) if p0 else None
+            except ValueError:
+                j = None
+            if j and j.get("r") and str(j.get("em") or "") < str(base["em"][i] or ""):
+                idx.append(i)
+                prev.append(j["r"])
+                conf.append(float(j.get("c") or 0))
+                g.append(bool(j.get("g")))
+        marc_m = [marc[i] for i in idx]
+        g0 = g
+    else:
+        idx = list(range(len(marc)))
+        prev, conf, g, g0 = _cena_sessao(base) if marc else ([], [], [], [])
+        marc_m = marc
+    mx, classe, gb = _cena_tabelas(marc_m, prev, conf, g)
+    erros = []
+    for k, i in enumerate(idx):
+        if marc_m[k] != prev[k]:
+            erros.append({"pid": base["pids"][i], "dia": base["dias"][i], "card": base["cards"][i], "marcado": marc_m[k], "previsto": prev[k], "conf": conf[k]})
+    erros.sort(key=lambda e: -e["conf"])
+    rot = {c_: 0 for c_ in CENA_CLASSES}
+    for m_ in marc:
+        rot[m_] += 1
+    sinais = {}
+    for s in CENA_SINAIS:
+        val = [float(base["verde"][i] if s == "verde" else (base["sinais"][i].get(s) or 0)) for i in range(len(marc))]
+        alvo, contra = CENA_SINAL_ALVO[s]
+        pos = [v for v, m_ in zip(val, marc) if m_ == alvo]
+        neg = [v for v, m_ in zip(val, marc) if (m_ == contra if contra else m_ != alvo)]
+        media = {c_: (round(sum(v for v, m_ in zip(val, marc) if m_ == c_) / rot[c_], 4) if rot[c_] else None) for c_ in CENA_CLASSES}
+        o = {"alvo": alvo, "contra": contra or "resto", "auc": _cena_auc(pos, neg), "media": media, "veto": None}
+        if s in ("verde", "flash") and metodo == "sessao":
+            lim = base["vetos"].get(s, 0)
+            fora = [v < lim for v in val]
+            o["veto"] = {"min": lim, "ligado": lim > 0,
+                         "tira_fp": sum(1 for i in range(len(marc)) if g0[i] and marc[i] != "gramado" and fora[i]),
+                         "perde_vp": sum(1 for i in range(len(marc)) if g0[i] and marc[i] == "gramado" and fora[i])}
+        sinais[s] = o
+    r = {"v": 1, "metodo": metodo, "versao": base["versao"], "ligada_versao": cfg.get("ponto_versao") if cfg.get("ponto") == "ligada" else None,
+         "classes": list(CENA_CLASSES), "rotulos": rot, "sem_vetor": base["sem_vetor"], "metas": dict(CENA_META),
+         "faltam": {c_: max(0, CENA_META[c_] - rot[c_]) for c_ in CENA_CLASSES},
+         "params": {"k": CENA_K, "limiar": CENA_LIMIAR, "sim_piso": CENA_SIM_PISO, "verde_min": base["vetos"]["verde"], "flash_min": base["vetos"]["flash"]},
+         "n": len(prev), "matriz": mx, "classe": classe, "gramado_base": gb, "sinais": sinais, "erros": erros[:200],
+         "em": _iso(), "ms": int((time.time() - t0) * 1000)}
+    with _cena_cache_lock:
+        _cena_med[(base["versao"], metodo)] = {"t": time.time(), "r": r}
+        if len(_cena_med) > 8:
+            for k in sorted(_cena_med, key=lambda k: _cena_med[k]["t"])[:-8]:
+                _cena_med.pop(k, None)
+    return r
+
+
+def cena_criterio(ms, mp):
+    """{passa, falta:[{k, classe?, tem, precisa}]} com os números do plano (seção 10)."""
+    falta = []
+    for c in CENA_CLASSES:
+        tem = (ms.get("rotulos") or {}).get(c, 0)
+        if tem < CENA_META[c]:
+            falta.append({"k": "n", "classe": c, "tem": tem, "precisa": CENA_META[c]})
+    base = cena_base("medir")
+    nd, nf = len({d for d in base["dias"] if d}), len({f for f in base["fotografos"] if f})
+    if nd < CENA_CRIT["dias"]:
+        falta.append({"k": "dias", "tem": nd, "precisa": CENA_CRIT["dias"]})
+    if nf < CENA_CRIT["fotografos"]:
+        falta.append({"k": "fotografos", "tem": nf, "precisa": CENA_CRIT["fotografos"]})
+    gb = ms.get("gramado_base") or {}
+    if (gb.get("precisao") or 0) < CENA_CRIT["precisao"]:
+        falta.append({"k": "precisao", "tem": gb.get("precisao") or 0, "precisa": CENA_CRIT["precisao"]})
+    if (gb.get("cobertura") or 0) < CENA_CRIT["cobertura"]:
+        falta.append({"k": "cobertura", "tem": gb.get("cobertura") or 0, "precisa": CENA_CRIT["cobertura"]})
+    if (gb.get("outro_como_gramado") or 0) > CENA_CRIT["outro_fp"]:
+        falta.append({"k": "outro_fp", "tem": gb.get("outro_como_gramado"), "precisa": CENA_CRIT["outro_fp"]})
+    gp = mp.get("gramado_base") or {}
+    pn = (gp.get("vp") or 0) + (gp.get("fp") or 0)
+    if pn < CENA_CRIT["prosp_n"]:
+        falta.append({"k": "prosp_n", "tem": pn, "precisa": CENA_CRIT["prosp_n"]})
+    if (gp.get("precisao") or 0) < CENA_CRIT["prosp_precisao"]:
+        falta.append({"k": "prosp_precisao", "tem": gp.get("precisao") or 0, "precisa": CENA_CRIT["prosp_precisao"]})
+    return {"passa": not falta, "falta": falta}
+
+
+def _cena_crit_atualiza(base):
+    """Critério da versão de agora, com as duas medidas em cache (sem recalcular a que já existe)."""
+    with _cena_cache_lock:
+        ms = (_cena_med.get((base["versao"], "sessao")) or {}).get("r")
+        mp = (_cena_med.get((base["versao"], "prospectivo")) or {}).get("r")
+    if ms is None or mp is None:
+        return
+    r = cena_criterio(ms, mp)
+    _cena_crit.update(versao=base["versao"], passa=r["passa"], r=r, t=time.time())
+
+
+def cena_criterio_agora():
+    """As duas medidas da versão de agora (calcula o que falta) e o critério. Para o POST /treino/config e o cena_loop."""
+    base = cena_base("medir")
+    if base is None:
+        return {"passa": False, "falta": [{"k": "sem_numpy", "tem": 0, "precisa": 1}]}, None
+    cena_medida("sessao", forcar=True)
+    _cena_crit_atualiza(base)                         # com os números de agora (as medidas da versão ficam em cache)
+    return (_cena_crit.get("r") if _cena_crit.get("versao") == base["versao"] else None) or {"passa": False, "falta": []}, base
+
+
+def cena_congelar(quem, base=None, anterior=None):
+    """Liga: grava os rótulos (pid, ponto, card, dia, fotógrafo, em) da base que passou no critério (a mesma que foi medida) na
+    tabela modelo. 18/11 (revisão de segurança): se os rótulos mudaram entre a medida e o congelamento, None (o POST responde
+    409). Retenção: ficam só a versão ligada agora e a anterior (anterior). -> versão ou None."""
+    atual = cena_base("medir")
+    base = base or atual
+    if base is None or atual is None or atual["versao"] != base["versao"]:
+        return None
+    rot = [[p, CENA_CLASSES[k], c, d, f, e] for p, k, c, d, f, e in zip(base["pids"], base["y"], base["cards"], base["dias"], base["fotografos"], base["em"])]
+    params = {"k": CENA_K, "limiar": CENA_LIMIAR, "sim_piso": CENA_SIM_PISO, "vetos": base["vetos"], "modelo": CENA_NOME, "sha": CENA_SHA or None}
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            db.execute("insert into modelo values (?,?,?,?,?) on conflict(versao) do update set por = excluded.por, em = excluded.em",
+                       (base["versao"], json.dumps(rot), json.dumps(params), str(quem or "")[:100] or None, _iso()))
+            fica = [base["versao"]] + ([anterior] if anterior and anterior != base["versao"] else [])
+            db.execute("delete from modelo where versao not in (%s)" % ",".join("?" * len(fica)), fica)
+            db.commit()
+        finally:
+            db.close()
+    return base["versao"]
+
+
+def cena_modelo_existe(versao):
+    """True/False; None quando não deu para ler o cena.db (erro passageiro: quem chama não rebaixa nada)."""
+    if not versao or not os.path.exists(CENA_DB):
+        return False
+    try:
+        with cena_db_lock:
+            db = cena_db()
+            try:
+                return db.execute("select 1 from modelo where versao = ?", (versao,)).fetchone() is not None
+            finally:
+                db.close()
+    except Exception:
+        return None
+
+
+def cena_status():
+    """/status.treino.modelo_ponto (contrato da seção 6)."""
+    cfg = treino_cfg_mem()
+    ok, erro_mod = cena_modelo_ok()
+    with cena_lock:
+        c = dict(cena)
+        fila = len(cena_q)
+    p = cena_filho.get("p")
+    vivo = p is not None and p.poll() is None
+    erro = "parado" if c["parado"] else (None if cfg.get("ponto") == "desligada" else (erro_mod if not ok else c["erro"]))
+    if erro is None and cfg.get("ponto") != "desligada" and _vis_np() is None:
+        erro = "sem_numpy"
+    hoje = _ff_hoje()
+    with _cena_cache_lock:
+        base = (_cena_base.get(("medir",)) or {}).get("base")
+    return {"v": 1, "pronto": bool(vivo and c["carregado"] and not erro), "erro": erro, "provedor": c["provedor"], "modelo": CENA_NOME,
+            "versao": base["versao"] if base else None,
+            "ligada_versao": cfg.get("ponto_versao") if cfg.get("ponto") == "ligada" else None,
+            "fila": fila, "feitas_hoje": c["feitas_hoje"] if c["feitas_dia"] == hoje else 0,
+            "ms_medio": int(c["ms_total"] / c["ms_n"]) if c["ms_n"] else None,
+            "criterio_passa": bool(_cena_crit.get("passa") and base and _cena_crit.get("versao") == base["versao"])}
+
+
+def cena_vendas_pagas():
+    """Bases e fotos das vendas pagas de hoje e de ontem (as levas em cena_pendente são de hoje). 18/11 (revisão): o
+    cena_completa roda a cada 5 s; o vendas.db só é relido quando muda (data do banco e do -wal) e o ev_lock fica só na
+    consulta, que usa o índice do dia. Erro de leitura sobe para quem chama (nada é preenchido)."""
+    if not os.path.exists(VENDAS_DB):
+        return frozenset()
+    hoje, ontem = _ff_hoje(), _ff_hoje(time.time() - 86400)
+    chave = (hoje,) + tuple(os.stat(p).st_mtime_ns if os.path.exists(p) else 0 for p in (VENDAS_DB, VENDAS_DB + "-wal"))
+    if _cena_vendas["chave"] == chave:
+        return _cena_vendas["v"]
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rs = db.execute("select dados from evento where tipo = 'criar' and dia in (?, ?) and venda in"
+                            " (select venda from evento where tipo = 'pagar' and dia in (?, ?))", (hoje, ontem, hoje, ontem)).fetchall()
+        finally:
+            db.close()
+    out = set()
+    for (dados,) in rs:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            continue
+        ids = [str(x) for x in d.get("selected") or []] + [re.sub(r"^ai:", "", str(k)).split("|")[0] for k in d.get("aiSel") or []]
+        out.update(pid_lib(i) for i in ids if pid_ok(i))
+    _cena_vendas.update(chave=chave, v=frozenset(out))
+    return _cena_vendas["v"]
+
+
+def cena_completa(agora=None):
+    """A cada 5 s (cena_loop): as levas fechadas com cena_pendente revêem as bases. ok, sem base vendida e sem a visita já ter
+    bases: ia = bases (reaberta "cena", o app adota pelo srvIaCompleta); sem_gramado; passou de CENA_PEND_MAX:
+    cena_indisponivel (tudo à venda). As vendas pagas são lidas fora do sess_lock."""
+    with sess_lock:
+        if not cena_pend:
+            return 0
+    agora = agora or time.time()
+    try:
+        pagas = cena_vendas_pagas()
+    except Exception:
+        pagas = None                                  # sem ler as vendas: não preenche nada (tenta de novo em 5 s)
+    n = 0
+    with sess_lock:
+        for card, t0 in list(cena_pend.items()):
+            x = sess.get(card)
+            r = (x or {}).get("ia_regra") or {}
+            if x is None or x.get("removida") or x["status"] != "fechada" or x.get("ia") or r.get("motivo") != "cena_pendente":
+                cena_pend.pop(card, None)
+                continue
+            nn = r.get("n") or 0
+            bases, est = _sess_ia_bases(x, nn)
+            if est == "pendente" and agora - t0 <= CENA_PEND_MAX:
+                _sess_ia_pede_rec(x, nn)
+                continue
+            if est == "ok" and pagas is None:
+                continue
+            cena_pend.pop(card, None)
+            if est == "ok" and not (set(bases) & pagas) and not _vis_ja_tem_ia(card):
+                x["ia"] = list(bases)
+                x["ia_regra"] = {"n": nn, "motivo": None, "reaberta": "cena"}
+                for p in bases:
+                    sess_ia_novos.append((p, REC_PRIO_IA))
+            elif est == "ok" and _vis_ja_tem_ia(card):
+                x["ia_regra"] = {"n": nn, "motivo": "visita_ja_tem"}
+            elif est == "sem_gramado":
+                x["ia_regra"] = {"n": nn, "motivo": "sem_gramado"}
+            else:                                     # passou do prazo, ou uma das bases já foi vendida como foto
+                x["ia_regra"] = {"n": nn, "motivo": "cena_indisponivel"}
+            _sess_toca(x)
+            n += 1
+    return n
+
+
+def cena_loop():
+    """A thread do reconhecimento do ponto: junta até CENA_LOTE, manda ao filho, grava e classifica. Desligada: dorme sem
+    consumir (e fecha o filho). Varredura a cada 5 min, limpeza de hora em hora, reclassificação quando a versão muda."""
+    t_varre, t_limpa, t_comp, t_crit, ver = 0.0, time.time(), 0.0, 0.0, None
+    while not cena_parar.is_set():                    # só os testes param (antes de apagar o HOME temporário)
+        try:
+            agora = time.time()
+            modo = treino_cfg_mem().get("ponto")
+            if agora - t_comp >= 5:
+                t_comp = agora
+                cena_completa()
+            if agora - t_limpa >= 3600:
+                t_limpa = agora
+                cena_limpa()
+            if modo not in ("medir", "ligada"):
+                cena_fechar()
+                time.sleep(1)
+                continue
+            if agora - t_varre >= 300:
+                t_varre = agora
+                cena_varre()
+            base = cena_base(modo)
+            if base is not None and base["versao"] != ver:
+                n = cena_reclassifica(base)
+                if n:
+                    print("  cena: %d foto(s) de hoje e ontem reclassificadas (%s)" % (n, base["versao"]))
+                    cena_chegou([p for p, c in list(cena_mem.items()) if c.get("v") == base["versao"]])
+                ver = base["versao"]
+            if agora - t_crit >= 60:
+                t_crit = agora
+                cena_criterio_agora()
+            ok, _ = _cena_espera()
+            okm, _ = cena_modelo_ok()
+            if not ok or not okm:
+                if not okm:
+                    _cena_erro("sem_modelo")
+                time.sleep(2)
+                continue
+            lote = _cena_pegar(CENA_LOTE)
+            if not lote:
+                time.sleep(0.5)
+                continue
+            dias = {p: d for p, _, d in lote}
+            try:
+                res = cena_mandar([(p, th) for p, th, _ in lote])
+            except Exception:
+                for p, th, d in lote:                    # volta para a fila (a varredura também recoloca)
+                    cena_enfileira(p, th, 1, d)
+                time.sleep(1)
+                continue
+            feitos = cena_gravar(res, dias)
+            if feitos:
+                rotulados = {p for p in feitos} & set(base["pids"] if base else [])
+                if rotulados or (base and base["sem_vetor"]):
+                    _cena_base_t[0] = time.time()        # rótulo ganhou vetor: a base muda
+                cena_chegou(feitos)
+        except Exception as ex:
+            print("  cena: %s" % str(ex)[:160])
+            time.sleep(2)
+
+
 # Quem pode cada rota do agente. Nada abre sem estar aqui: rota fora da tabela responde 404 sem tocar o disco.
 #   publica          qualquer um: o app, o /status mínimo, a galeria do cliente (/g/) e o webhook do adquirente
 #   posto_ou_sessao  aparelho pareado (cookie eterna_posto) ou pessoa conectada com um dos módulos (vazio = qualquer pessoa)
 #   sessao           pessoa conectada com um dos módulos (vazio = qualquer pessoa conectada; a rota confere o resto)
 #   teste            só com ETERNA_TESTE_CARGA=1 e pessoa com Painel de controle (Alterar)
+#   leitor           18/11: leitor de cartão do gramado (H.leitor_autoriza): Host do agente, sem Origin, X-Eterna: 1, IP da rede do
+#                    leitor (leitor_ip_ok) e Authorization: Bearer <token do aparelho>. Cookie de pessoa ou de posto não serve.
 # Caminho terminado em "/" vale como prefixo. Fora das públicas: Host do agente, Origin conhecida e, em POST, X-Eterna: 1.
 FOTOS_LER = ("venda.r", "quiosque.r", "set.r", "estoque.r", "galerias.r", "qualidade.r")        # ver fotos e sessões
 VENDER = ("venda.c", "quiosque.c", "galerias.c")                                          # o que o Checkout faz numa venda
@@ -11942,10 +15055,18 @@ ROTAS = (
     ("POST", "/auth/esqueci", "publica", ()),
     ("GET", "/auth/eu", "sessao", ()), ("GET", "/auth/senhas", "sessao", ()),
     ("POST", "/auth/senha/gerar", "sessao", ()), ("POST", "/auth/senha/cancelar", "sessao", ()),
+    ("POST", "/auth/assumir", "sessao", ()), ("POST", "/auth/voltar", "publica", ()),
     ("GET", "/postos/eu", "publica", ()),                       # a rota confere Host e responde 401 sem_posto
     ("GET", "/ftp/contas", "sessao", ("configuracao.r",)),
     ("GET", "/postos", "sessao", ("configuracao.r",)),
     ("POST", "/postos/parear", "sessao", ("configuracao.u",)), ("POST", "/postos/revogar", "sessao", ("configuracao.u",)),
+    # 18/11: leitor de cartão do gramado. /leitor/ativar: o código de uso único (10 min) é a credencial; a rota confere Host, rede,
+    # Origin, X-Eterna e limite. As outras /leitor/*: tipo "leitor" (rede do ponto, sem Origin, X-Eterna e o token do aparelho).
+    ("POST", "/leitor/ativar", "publica", ()), ("GET", "/instalar-leitor", "publica", ()),
+    ("POST", "/leitor/pulso", "leitor", ()), ("POST", "/leitor/tem", "leitor", ()), ("POST", "/leitor/foto", "leitor", ()),
+    ("GET", "/leitores", "sessao", ("configuracao.r", "set.r")),            # só set.r: resposta reduzida (sem IP, máquina e versão)
+    ("POST", "/leitores/criar", "sessao", ("configuracao.u",)), ("POST", "/leitores/codigo", "sessao", ("configuracao.u",)),
+    ("POST", "/leitores/revogar", "sessao", ("configuracao.u",)),
     # o que o Checkout usa: posto pareado ou pessoa conectada com o módulo
     ("GET", "/thumb/", "posto_ou_sessao", FOTOS_LER), ("GET", "/file/", "posto_ou_sessao", FOTOS_LER),
     ("GET", "/sessoes", "posto_ou_sessao", FOTOS_LER),
@@ -11968,7 +15089,7 @@ ROTAS = (
     # só a equipe, pelo módulo
     ("GET", "/biblioteca", "sessao", ("set.r", "estoque.r")), ("GET", "/events", "sessao", ("set.r", "estoque.r")),
     ("POST", "/fotos/enviar", "sessao", ("set.c",)),
-    ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")),
+    ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/visitantes", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/pessoas/rostos", "sessao", ("qualidade.r",)),
     ("GET", "/ativ/vendas", "sessao", ("estatisticas.r", "financeiro.r", "relatorios.r")),   # v100: resumo das ativações
     ("POST", "/ativ/venda", "sessao", ("ativvenda.c",)), ("GET", "/ativ/minhas", "sessao", ("ativvenda.r",)),   # v100: venda no tablet
     ("POST", "/ativ/cancelar", "sessao", ("ativvenda.d", "financeiro.u")),
@@ -11997,9 +15118,16 @@ ROTAS = (
     ("GET", "/impressao/fila", "sessao", ("venda.r",)), ("GET", "/impressao/miniatura", "sessao", ("venda.r",)),
     ("POST", "/imprimir", "sessao", ("venda.c", "venda.u")), ("POST", "/impressao/acao", "sessao", ("venda.u",)),
     ("GET", "/galerias/vendas", "sessao", ("galerias.r",)), ("GET", "/galerias/status", "sessao", ("galerias.r",)),
+    ("GET", "/escolas", "sessao", ("estatisticas.r",)),          # 17/11: painel Escolas (funil do voucher)
     ("POST", "/galerias/encerrar", "sessao", ("galerias.d",)),
     ("POST", "/lgpd/excluir", "sessao", ("galerias.d",)),
     ("POST", "/rostos/medir", "sessao", ("qualidade.r",)),
+    # 16/11: Treino da IA (Curadoria). Ler: Qualidade e IA em Ver; marcar: em Alterar (a rota confere origem, limite e corpo);
+    # o interruptor da análise do servidor é do Painel de controle em Alterar (muda o que o servidor faz com toda foto)
+    ("GET", "/treino/dias", "sessao", ("qualidade.r",)), ("GET", "/treino/amostra", "sessao", ("qualidade.r",)),
+    ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
+    ("POST", "/treino/config", "sessao", ("configuracao.u",)),
+    ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -12783,7 +15911,126 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/montagens/pedir", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
+
+
+# 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
+# - Excesso: mais de ESCUDO_LIMITE pedidos no mesmo minuto bloqueia o IP por 15 min; repetindo, 1 h, 6 h e 1 dia. Quem está
+#   conectado (sessão) ou é posto pareado não é bloqueado por excesso: a tela da equipe carrega muitas fotos de uma vez.
+# - Varredura: 2 pedidos de endereço que só robô procura (ESCUDO_ISCA: wp-login, .env, .git...) em 1 hora bloqueiam por 1 dia;
+#   repetindo, 3 dias e 1 semana. O nível volta ao começo depois de 7 dias sem bloqueio.
+# O próprio servidor (127.0.0.1) e a rede interna nunca são bloqueados (18/11, Ronaldo: a operação não pode parar). Pela VPN todos
+# chegam com o IP do firewall (192.168.10.1): bloquear esse IP trancava a equipe inteira. A proteção vale para endereço de fora. Bloqueios ficam no banco (tabela escudo) e no login_log, e valem depois de reiniciar.
+ESCUDO_LIMITE = int(os.environ.get("ETERNA_LIMITE_MINUTO", "300"))
+ESCUDO_ESCALA = {"excesso": (15 * 60, 3600, 6 * 3600, 86400), "varredura": (86400, 3 * 86400, 7 * 86400)}
+ESCUDO_ISCA = re.compile(r"(?i)(wp-login|wp-admin|wp-content|wp-includes|xmlrpc\.php|/\.env|/\.git(/|$)|/\.aws|/\.ssh|/\.htaccess|"
+                         r"phpmyadmin|/cgi-bin/|phpunit|\.php(\?|$)|/actuator|/boaform|/hnap1|/server-status|/\.ds_store)")
+ESCUDO_INTERNA = tuple(ipaddress.ip_network(r) for r in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "127.0.0.0/8", "::1/128", "fc00::/7"))
+escudo_lock = threading.Lock()
+_escudo = {"pronto": False, "conta": {}, "isca": {}, "bloq": {}, "nivel": {}}
+
+
+def escudo_ini():
+    """Lê do banco os bloqueios ainda valendo e os níveis (uma vez por processo)."""
+    if _escudo["pronto"]:
+        return
+    _escudo["pronto"] = True
+    try:
+        with estado_lock:
+            db = auth_db()
+            try:
+                db.execute("create table if not exists escudo (ip text, motivo text, ate real, nivel integer, em real, primary key (ip, motivo))")
+                linhas = db.execute("select ip, motivo, ate, nivel, em from escudo").fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return
+    agora = time.time()
+    with escudo_lock:
+        for ip, motivo, ate, nivel, em in linhas:
+            _escudo["nivel"][(ip, motivo)] = (nivel, em)
+            if ate > agora and ate > _escudo["bloq"].get(ip, (0, ""))[0]:
+                _escudo["bloq"][ip] = (ate, motivo)
+
+
+def escudo_bloqueia(ip, motivo):
+    """Bloqueia o IP pelo tempo do nível atual do motivo e sobe o nível. Devolve os segundos."""
+    agora = time.time()
+    with escudo_lock:
+        nivel, em = _escudo["nivel"].get((ip, motivo), (0, 0))
+        if agora - em > 7 * 86400:
+            nivel = 0
+        esc = ESCUDO_ESCALA[motivo]
+        dur = esc[min(nivel, len(esc) - 1)]
+        _escudo["nivel"][(ip, motivo)] = (nivel + 1, agora)
+        _escudo["bloq"][ip] = (agora + dur, motivo)
+    try:
+        with estado_lock:
+            db = auth_db()
+            try:
+                db.execute("create table if not exists escudo (ip text, motivo text, ate real, nivel integer, em real, primary key (ip, motivo))")
+                db.execute("insert or replace into escudo values (?, ?, ?, ?, ?)", (ip, motivo, agora + dur, nivel + 1, agora))
+                auth_log(db, "ip:" + ip, "ip_bloqueado:%s:%dmin" % (motivo, dur // 60), "", ip)
+                db.commit()
+            finally:
+                db.close()
+    except Exception:
+        pass
+    return dur
+
+
+def escudo_avalia(ip, path, confiavel):
+    """None se o pedido segue; senão (código, segundos até liberar). confiavel() só é chamada quando o IP passa do limite ou está bloqueado."""
+    try:
+        if not ip or any(ipaddress.ip_address(ip) in r for r in ESCUDO_INTERNA):
+            return None
+    except ValueError:
+        pass
+    escudo_ini()
+    agora = time.time()
+    with escudo_lock:
+        b = _escudo["bloq"].get(ip)
+    # Bloqueio por excesso não barra quem está conectado ou é posto. Varredura barra tudo.
+    if b and b[0] > agora:
+        if b[1] != "varredura" and confiavel():
+            return None
+        return (403 if b[1] == "varredura" else 429, int(b[0] - agora) + 1)
+    with escudo_lock:
+        isca = bool(ESCUDO_ISCA.search(path or ""))
+        if isca:
+            l = [t for t in _escudo["isca"].get(ip, []) if agora - t < 3600] + [agora]
+            _escudo["isca"][ip] = l
+            if len(_escudo["isca"]) > 5000:
+                _escudo["isca"] = {k: v for k, v in _escudo["isca"].items() if v and agora - v[-1] < 3600}
+        minuto = int(agora // 60)
+        c = _escudo["conta"].get(ip)
+        if not c or c[0] != minuto:
+            if len(_escudo["conta"]) > 5000:
+                _escudo["conta"] = {k: v for k, v in _escudo["conta"].items() if v[0] == minuto}
+            c = _escudo["conta"][ip] = [minuto, 0, False]
+        c[1] += 1
+        passou = c[1] > ESCUDO_LIMITE and not c[2]
+    if isca and len(l) >= 2:
+        return (403, escudo_bloqueia(ip, "varredura"))
+    if passou:
+        if confiavel():
+            with escudo_lock:
+                c[2] = True                 # conectado ou posto: este minuto não conta mais
+            return None
+        return (429, escudo_bloqueia(ip, "excesso"))
+    return None
+
+
+# 17/11 (Ronaldo): cabeçalhos de segurança em toda resposta. Nenhum site de fora embute o Eterna (frame-ancestors e X-Frame-Options),
+# o navegador não adivinha tipo de arquivo (nosniff), o endereço não vaza para outros sites (Referrer-Policy) e câmera só na própria
+# página; microfone, localização e pagamento pelo navegador desligados (o Eterna não usa).
+SEG_CABECALHOS = (
+    ("X-Frame-Options", "SAMEORIGIN"),
+    ("Content-Security-Policy", "frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'"),
+    ("X-Content-Type-Options", "nosniff"),
+    ("Referrer-Policy", "strict-origin-when-cross-origin"),
+    ("Permissions-Policy", "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"),
+)
 
 
 class H(BaseHTTPRequestHandler):
@@ -12792,19 +16039,36 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    def end_headers(self):
+        for k, v in SEG_CABECALHOS:
+            self.send_header(k, v)
+        super().end_headers()
+
     def parse_request(self):
         """Atrás do proxy com certificado (nginx no próprio servidor, servidor/linux/certificado.sh) todo pedido chega do IP do
         proxy. Só quando o pedido vem de ETERNA_PROXY_IP, o IP do aparelho é o X-Real-IP que o proxy escreve (o proxy apaga o que o
         aparelho mandou). Assim limites por IP, posto automático e registros veem o aparelho, não o proxy."""
         ok = super().parse_request()
+        self._via_proxy = False
         if ok and PROXY_IP and self.client_address and self.client_address[0] == PROXY_IP:
             real = (self.headers.get("X-Real-IP") or "").strip()
             try:
                 import ipaddress
                 ipaddress.ip_address(real)
                 self.client_address = (real, self.client_address[1])
+                self._via_proxy = True
             except ValueError:
                 pass
+        if ok:
+            r = escudo_avalia(self.client_address[0] if self.client_address else "", urlparse(self.path).path,
+                              lambda: bool(self.sessao() or self.posto_atual()))
+            if r:
+                self.close_connection = True
+                self.send_response(r[0])
+                self.send_header("Retry-After", str(r[1]))
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return False
         return ok
 
     def origens_ok(self, path):
@@ -12836,6 +16100,8 @@ class H(BaseHTTPRequestHandler):
     def cors(self):
         """CORS aberto (*) só na galeria do cliente (/g/); as outras rotas só para as origens aceitas, sem cabeçalho livre."""
         path = urlparse(self.path).path
+        if path.startswith("/leitor/"):                # leitor de cartão: programa, nunca navegador (sem CORS, nem no preflight)
+            return
         if path.startswith("/g/"):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
@@ -12885,6 +16151,8 @@ class H(BaseHTTPRequestHandler):
         tipo, mods = regra
         if tipo == "publica":
             return True
+        if tipo == "leitor":
+            return self.leitor_autoriza()
         if tipo == "teste" and not os.environ.get("ETERNA_TESTE_CARGA"):
             self.js({"error": "not found"}, 404)       # fora do teste de carga, a rota não existe
             return False
@@ -12906,6 +16174,47 @@ class H(BaseHTTPRequestHandler):
             self.js({"erro": "sem_sessao"}, 401, True)
         return False
 
+    def leitor_proxy(self):
+        """O pedido passou pelo proxy com certificado (ou traz os cabeçalhos dele)."""
+        return bool(getattr(self, "_via_proxy", False) or self.headers.get("X-Real-IP") or self.headers.get("X-Forwarded-Proto"))
+
+    def leitor_origem_ok(self):
+        """Host do agente, nenhum Origin, X-Eterna: 1 e só pelo proxy com certificado (X-Forwarded-Proto: https). Fora do proxy,
+        só o próprio servidor em pedido direto, sem os cabeçalhos do proxy (os testes falam assim com o agente)."""
+        if not host_ok((self.headers.get("Host") or "").lower()) or self.headers.get("Origin") is not None or self.headers.get("X-Eterna") != "1":
+            return False
+        if getattr(self, "_via_proxy", False):
+            return (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
+        import ipaddress
+        try:
+            a = ipaddress.ip_address(str(self.client_address[0]).split("%")[0])
+            a = a.ipv4_mapped or a if a.version == 6 else a
+        except ValueError:
+            return False
+        return a.is_loopback and not self.leitor_proxy()
+
+    def leitor_autoriza(self):
+        """Rotas do leitor de cartão (tipo "leitor" em ROTAS): Host do agente, nenhum Origin (programa, não página), X-Eterna: 1, IP
+        da rede do leitor e o token do aparelho em Authorization: Bearer. Grava self._leitor = {id, nome}."""
+        self.__dict__.pop("_leitor", None)
+        ip = self.client_address[0]
+        erro = None
+        if not self.leitor_origem_ok():
+            erro = ({"erro": "origem"}, 403)
+        elif not leitor_ip_ok(ip, proxy=self.leitor_proxy()):
+            erro = ({"erro": "rede"}, 403)
+        else:
+            a = (self.headers.get("Authorization") or "").strip()
+            lt = leitor_quem(a[7:].strip(), ip) if a[:7].lower() == "bearer " else None
+            if not lt:
+                erro = ({"erro": "sem_leitor"}, 401)
+        if erro:
+            self.close_connection = True           # o corpo não foi lido
+            self.js(erro[0], erro[1], True)
+            return False
+        self._leitor = lt
+        return True
+
     def do_OPTIONS(self):
         p = urlparse(self.path).path
         self.send_response(204 if rota_regra("GET", p) or rota_regra("POST", p) else 404)
@@ -12921,8 +16230,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         if nostore:
             self.send_header("Cache-Control", "no-store")
-        cookie = self.__dict__.pop("cookie_novo", None)
-        if cookie is not None:
+        for cookie in self.__dict__.pop("cookie_novo", []):
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
@@ -12939,7 +16247,7 @@ class H(BaseHTTPRequestHandler):
 
     def auth_cookie(self, token, idade, nome=AUTH_COOKIE):
         https = (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
-        self.cookie_novo = "%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (nome, token, idade, "; Secure" if https else "")
+        self.__dict__.setdefault("cookie_novo", []).append("%s=%s; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d%s" % (nome, token, idade, "; Secure" if https else ""))
 
     def sessao(self):
         """A pessoa conectada neste pedido (cookie eterna_sessao), lida uma vez por pedido."""
@@ -12960,8 +16268,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        cookie = self.__dict__.pop("cookie_novo", None)
-        if cookie is not None:
+        for cookie in self.__dict__.pop("cookie_novo", []):
             self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
@@ -13099,17 +16406,33 @@ class H(BaseHTTPRequestHandler):
         ip = self.client_address[0]
         usuario = str(b.get("usuario") or "").strip().lower()
         if u.path == "/auth/sair":
-            token = self.auth_token()
-            if token:
-                with estado_lock:
-                    db = auth_db()
-                    try:
-                        db.execute("delete from sessao_login where token=?", (hashlib.sha256(token.encode()).hexdigest(),))
-                        db.commit()
-                    finally:
-                        db.close()
+            auth_sessao_apaga(self.auth_token())
             self.auth_cookie("", 0)
+            if self.cookie_val(ASSUMIR_COOKIE):                # saiu durante o "ver como": a sessão do admin também acaba
+                auth_sessao_apaga(self.cookie_val(ASSUMIR_COOKIE))
+                self.auth_cookie("", 0, ASSUMIR_COOKIE)
             return self.js({"ok": True}, 200, True)
+        if u.path == "/auth/assumir":
+            eu = auth_quem(self.auth_token())
+            motivo = auth_assumir_recusa(eu, usuario)
+            if motivo:
+                return self.js({"erro": motivo}, {"sem_sessao": 401, "sem_permissao": 403, "alvo_maior": 403, "sem_cadastro": 404}.get(motivo, 400), True)
+            self.auth_cookie(auth_sessao_nova(usuario, eu["usuario"], ASSUMIR_S), ASSUMIR_S)
+            self.auth_cookie(self.auth_token(), AUTH_SESSAO, ASSUMIR_COOKIE)
+            auth_registra(usuario, "ver_como", eu["usuario"], ip)
+            return self.js(dict(auth_quem_cadastro(usuario), ok=True, assumido_por=eu["usuario"], assumido_nome=(eu["cadastro"] or {}).get("name") or eu["usuario"]), 200, True)
+        if u.path == "/auth/voltar":
+            eu = auth_quem(self.auth_token())
+            adm_tok = self.cookie_val(ASSUMIR_COOKIE)
+            adm = auth_quem(adm_tok)
+            if not adm or adm.get("assumido_por") or (adm["cadastro"] or {}).get("preset") != "admin":
+                return self.js({"erro": "sem_assumir"}, 401, True)
+            if eu and eu.get("assumido_por"):
+                auth_sessao_apaga(self.auth_token())
+                auth_registra(eu["usuario"], "ver_como_fim", adm["usuario"], ip)
+            self.auth_cookie(adm_tok, AUTH_SESSAO)
+            self.auth_cookie("", 0, ASSUMIR_COOKIE)
+            return self.js(dict(adm, ok=True), 200, True)
         if u.path == "/auth/esqueci":
             if AUTH_ID.match(usuario):                  # em segundo plano: a resposta e o tempo são os mesmos para qualquer usuário
                 threading.Thread(target=auth_esqueci, args=(usuario, ip), daemon=True).start()
@@ -13339,6 +16662,62 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, 200, nostore=True)
 
+    def treino_get(self, u):
+        """16/11: GET /treino/dias, /treino/amostra?dia=&fotografo=&modo=&n= e /treino/rotulos?dia= (só texto: a foto vem
+        pelo /thumb/ de sempre e não sai do servidor por aqui)."""
+        if not self.origem_local():
+            return self.js({"error": "origem não autorizada"}, 403)
+        q = parse_qs(u.query)
+        um = lambda k: (q.get(k) or [""])[0]
+        try:
+            if u.path == "/treino/dias":
+                return self.js(treino_dias(), nostore=True)
+            if u.path == "/treino/medida":
+                quem_ = (self.sessao() or {}).get("usuario") or ""
+                if not limite_ok("u:" + quem_, "treino_medida", 10):
+                    return self.js({"error": "limite"}, 429)
+                metodo = um("metodo") or "sessao"
+                if metodo not in ("sessao", "prospectivo"):
+                    return self.js({"error": "metodo"}, 400)
+                return self.js(cena_medida(metodo), nostore=True)
+            dia = um("dia")
+            if not _re_dia.match(dia):
+                return self.js({"error": "dia"}, 400)
+            if u.path == "/treino/rotulos":
+                return self.js({"v": 1, "dia": dia, "rotulos": list(treino_rotulos(dia).values())}, nostore=True)
+            modo = um("modo") or "misto"
+            quem = um("fotografo")
+            n = um("n") or "150"
+            if modo not in TREINO_MODOS or (modo == "duvidas" and treino_cfg_mem().get("ponto") == "desligada"):
+                return self.js({"error": "modo"}, 400)
+            if quem and not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,39}", quem):
+                return self.js({"error": "fotografo"}, 400)
+            if not n.isdigit() or not 1 <= int(n) <= 400:
+                return self.js({"error": "n"}, 400)
+            return self.js(treino_amostra(dia, quem or None, modo, int(n), um("marcadas") == "1"), nostore=True)
+        except Exception as ex:
+            print("  treino: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500)
+
+    def treino_post(self, path):
+        """16/11: POST /treino/rotulo (qualidade.u) e /treino/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
+        (conferido no autoriza), 120 por minuto por pessoa e corpo até 4 KB. O console nunca imprime o corpo."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        eu = self.sessao() or {}
+        quem = eu.get("usuario") or ""
+        if not limite_ok("u:" + quem, "treino", 120):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        try:
+            st, r = treino_gravar(quem, body) if path == "/treino/rotulo" else treino_cfg_gravar(body, quem)
+        except Exception as ex:
+            print("  treino: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        return self.js(r, st, nostore=True)
+
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
         Mesma guarda do /ponto/entradas (posto + origem + X-Eterna + 30 por minuto), corpo até 1 KB. O console nunca imprime o corpo."""
@@ -13502,9 +16881,13 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def fotos_enviar_post(self):
-        """v96-ux: POST /fotos/enviar?nome=&quem=: uma foto do cartão (o JPEG é o corpo) mandada pela tela Minhas fotos quando o
+        """v96-ux: POST /fotos/enviar?nome=&mt=: uma foto do cartão (o JPEG é o corpo) mandada pela tela Minhas fotos quando o
         leitor não reconheceu o cartão. Posto + origem local + X-Eterna: 1 e pessoa conectada com Upload (set.c, também em ROTAS).
-        O fotógrafo manda no próprio nome; Admin e Supervisora escolhem no seletor. Entra pelo ingest_file como foto de cartão."""
+        Entra pelo ingest_file como foto de cartão, com a origem fixa ENVIO_ORIGEM.
+        18/11 (Eduardo): ninguém escolhe o fotógrafo. Quem manda é a câmera (ff_quem: autor ou dono gravado nela); sem isso a
+        foto fica sem fotógrafo. O quem que ainda vier (app antigo) é ignorado; a pessoa logada só vale para a permissão.
+        mt = data do arquivo no cartão (lastModified do navegador, em segundos): vira a data do arquivo gravado, como no cartão
+        lido no servidor (copy2). Sem mt válido, a foto entra sem mt, para a sessão não tomar a hora da chegada como clique."""
         q = parse_qs(urlparse(self.path).query)
         tam = self.headers.get("Content-Length")
         ip = self.client_address[0]
@@ -13530,41 +16913,95 @@ class H(BaseHTTPRequestHandler):
             erro = ({"erro": "tamanho"}, 411)
         elif n <= 0 or n > FOTO_ENVIO_MAX:
             erro = ({"erro": "tamanho"}, 413)
-        quem = sem_acento((q.get("quem") or [""])[0]).strip()
-        cad = (eu or {}).get("cadastro") or {}
-        if cad.get("key") and cad.get("preset") not in ("admin", "supervisor"):
-            quem = sem_acento(str(cad["key"])).strip()      # o fotógrafo manda sempre no próprio nome (igual à tela, impPreso)
+        mt = envio_mt((q.get("mt") or [""])[0])
         nome = (q.get("nome") or [""])[0]
-        if not erro and (not quem or quem not in ff_cadastrados()):
-            erro = ({"erro": "quem"}, 400)
         if not erro and not nome.endswith(EXT):
             erro = ({"erro": "formato"}, 415)
         if not erro and not limite_ok(ip, "fotos_enviar", FOTO_ENVIO_TAXA):
             erro = ({"erro": "taxa"}, 429)
+
+        def gravar(tmp):
+            if mt:
+                os.utime(tmp, (mt, mt))               # a data do arquivo no cartão, não a da chegada
+            r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), ENVIO_ORIGEM, "cartao", move=True, quieto=True, sem_mt=not mt,
+                            por=(eu["usuario"], eu.get("assumido_por")))   # quem mandou fica no servidor (auditoria); o "ver como" hoje não chega aqui (so_ver)
+            if r == "new":
+                with lock:
+                    envio_dia_soma()
+                    save_index_logo()                  # o índice inteiro não é regravado a cada foto do lote
+            return r, None
+        r = motivo = None
         if not erro:
-            try:
-                livre = shutil.disk_usage(INBOX).free
-            except OSError:
-                livre = 0
-            if livre < FOTO_ENVIO_PISO_GB * 1024 ** 3:
-                erro = ({"erro": "disco"}, 507)
-        if not erro:
-            with lock:
-                if envio_dia_n() >= FOTO_ENVIO_TETO_DIA:
-                    erro = ({"erro": "teto_dia"}, 429)
-        if not erro:
-            with lock:                              # no máximo FOTO_ENVIO_POR_IP vagas por aparelho
-                if envio_ips.get(ip, 0) >= FOTO_ENVIO_POR_IP:
-                    erro = ({"erro": "ocupado"}, 503)
-                elif not envio_sem.acquire(blocking=False):
-                    erro = ({"erro": "ocupado"}, 503)
-                else:
-                    envio_ips[ip] = envio_ips.get(ip, 0) + 1
+            r, motivo, lido = self._foto_corpo_receber(n, ip, FOTO_ENVIO_POR_IP, gravar, "envio pela tela")
+            if not lido:
+                erro, motivo = motivo, None
         if erro:
             self.close_connection = True           # o corpo não foi lido: esta conexão não serve para o próximo pedido
             with lock:
                 state["envio"]["recusadas"] += 1
             return self.js(erro[0], erro[1], True)
+        if r == "excluida":                            # apagada a pedido do cliente: pela tela não entra de novo
+            r = None
+        res = r or "recusada"
+        with lock:
+            state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
+        print("  envio pela tela: %s %.1f MB" % (motivo[0]["erro"] if motivo else res, n / 1e6))
+        if motivo:
+            return self.js(motivo[0], motivo[1], True)
+        return self.js({"ok": bool(r), "resultado": res}, 200, True)
+
+    def _corpo_descartar(self, n):
+        """Lê e descarta o corpo de n bytes, dentro do prazo do envio (FOTO_ENVIO_PRAZO), sem gravar nada."""
+        fim = time.time() + FOTO_ENVIO_PRAZO
+        ler = getattr(self.rfile, "read1", None) or self.rfile.read
+        resto = n
+        try:
+            while resto > 0 and time.time() < fim:
+                self.connection.settimeout(max(0.05, min(20, fim - time.time())))
+                ch = ler(min(1 << 20, resto))
+                if not ch:
+                    break
+                resto -= len(ch)
+        except OSError:
+            pass
+        finally:
+            try:
+                self.connection.settimeout(20)
+            except OSError:
+                pass
+        return resto == 0
+
+    def _foto_corpo_receber(self, n, vaga, por_vaga, gravar, rotulo, sem=None, teto=None, dia_n=None):
+        """Parte comum do envio pela tela (/fotos/enviar) e do leitor de cartão (/leitor/foto), depois das guardas de cada rota:
+        piso de disco, teto do dia, vaga (no máximo por_vaga gravações ao mesmo tempo pela chave vaga, o IP ou "leitor:<id>",
+        e FOTO_ENVIO_SIMULT no agente inteiro), o corpo com prazo de FOTO_ENVIO_PRAZO num temporário, jpeg_envio_erro e, com a
+        foto conferida, gravar(tmp) -> (resultado, motivo). -> (resultado, motivo, lido): lido=False = recusada antes do corpo,
+        com motivo = (corpo, código). O temporário sai sempre, e a vaga volta. sem, teto e dia_n trocam as vagas e o teto do dia
+        (os leitores de cartão têm os próprios)."""
+        sem = envio_sem if sem is None else sem
+        teto = FOTO_ENVIO_TETO_DIA if teto is None else teto
+        dia_n = envio_dia_n if dia_n is None else dia_n
+        erro = None
+        try:
+            livre = shutil.disk_usage(INBOX).free
+        except OSError:
+            livre = 0
+        if livre < FOTO_ENVIO_PISO_GB * 1024 ** 3:
+            erro = ({"erro": "disco"}, 507)
+        if not erro:
+            with lock:
+                if dia_n() >= teto:
+                    erro = ({"erro": "teto_dia"}, 429)
+        if not erro:
+            with lock:                              # no máximo por_vaga vagas por aparelho
+                if envio_ips.get(vaga, 0) >= por_vaga:
+                    erro = ({"erro": "ocupado"}, 503)
+                elif not sem.acquire(blocking=False):
+                    erro = ({"erro": "ocupado"}, 503)
+                else:
+                    envio_ips[vaga] = envio_ips.get(vaga, 0) + 1
+        if erro:
+            return None, erro, False
         tmp = None
         r, motivo = None, None
         try:
@@ -13597,15 +17034,11 @@ class H(BaseHTTPRequestHandler):
             elif erro_jpeg:
                 motivo = ({"erro": "incompleta"}, 400) if erro_jpeg == "incompleta" else ({"erro": "nao_jpeg"}, 415)
             else:
-                r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), quem, "cartao", move=True, quieto=True)
-                if r == "new":
-                    with lock:
-                        envio_dia_soma()
-                        save_index_logo()                  # o índice inteiro não é regravado a cada foto do lote
+                r, motivo = gravar(tmp)
         except Exception as ex:                        # disco, permissão ou falha na entrada da foto: 500 com código fixo
             r, motivo = None, ({"erro": "servidor"}, 500)
             self.close_connection = True
-            print("  envio pela tela: falha no servidor (%s)" % type(ex).__name__)
+            print("  %s: falha no servidor (%s)" % (rotulo, type(ex).__name__))
         finally:
             if tmp and os.path.exists(tmp):
                 try:
@@ -13613,23 +17046,206 @@ class H(BaseHTTPRequestHandler):
                 except OSError:
                     pass
             with lock:
-                envio_ips[ip] = envio_ips.get(ip, 1) - 1
-                if envio_ips[ip] <= 0:
-                    envio_ips.pop(ip, None)
-            envio_sem.release()
+                envio_ips[vaga] = envio_ips.get(vaga, 1) - 1
+                if envio_ips[vaga] <= 0:
+                    envio_ips.pop(vaga, None)
+            sem.release()
             try:
                 self.connection.settimeout(20)
             except OSError:
                 pass
-        if r == "excluida":                            # apagada a pedido do cliente: pela tela não entra de novo
-            r = None
-        res = r or "recusada"
+        return r, motivo, True
+
+    # ---------- leitor de cartão do gramado (18/11, plano docs/planos/2026-11-18-leitor-cartao-gramado.md) ----------
+    def leitor_ativar_post(self):
+        """POST /leitor/ativar {codigo, maquina}: o instalador troca o código de uso único pelo token do aparelho. Rota pública: o
+        código é a credencial. Limites da própria rota: 10 por minuto por IP; 20 códigos errados em 1 hora param a ativação por
+        15 min. Inválido, vencido e usado dão a mesma resposta."""
+        ip = self.client_address[0]
+        if not self.leitor_origem_ok():
+            self.close_connection = True
+            return self.js({"erro": "origem"}, 403, True)
+        if not leitor_ip_ok(ip, proxy=self.leitor_proxy()):
+            self.close_connection = True
+            return self.js({"erro": "rede"}, 403, True)
+        if not limite_ok(ip, "leitor_ativar", LEITOR_ATIVAR_TAXA) or not leitor_ativar_pode():
+            self.close_connection = True
+            return self.js({"erro": "taxa"}, 429, True)
+        b, err = self.corpo(1024)
+        if err:
+            return self.js({"erro": "pedido"}, 400 if err != 413 else 413, True)
+        maquina = b.get("maquina") if isinstance(b.get("maquina"), str) and _re_leitor_maquina.match(b.get("maquina")) else ""
+        r = leitor_ativar(b.get("codigo"), maquina, ip)
+        if not r:
+            leitor_ativar_falhou()
+            return self.js({"erro": "codigo"}, 404, True)
+        token, lt = r
+        print("  leitor de cartão ativado: %s" % lt["nome"])
+        return self.js({"id": lt["id"], "nome": lt["nome"], "token": token}, 200, True)
+
+    def leitor_pulso_post(self):
+        """POST /leitor/pulso: a situação do leitor (cartão, fila, erro), a cada 30 s e a cada mudança. Só em memória."""
+        lt = self._leitor
+        if not limite_ok("leitor:" + lt["id"], "leitor_pulso", LEITOR_PULSO_TAXA):
+            self.close_connection = True
+            return self.js({"erro": "taxa"}, 429, True)
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        d = leitor_pulso_valida(b)
+        if d is None:
+            return self.js({"erro": "campo"}, 400, True)
+        with leitor_lock:
+            antes = (leitores_pulso.get(lt["id"]) or {}).get("d") or {}
+            leitores_pulso[lt["id"]] = {"em": time.time(), "ip": self.client_address[0], "d": d}
+        if (antes.get("fila") or {}).get("n") != d["fila"]["n"] or not antes:
+            leitor_fila_grava(lt["id"], d["fila"])
+        return self.js({"ok": True, "agora": int(time.time())}, 200, True)
+
+    def leitor_tem_post(self):
+        """POST /leitor/tem {h: [quick_hash, ...]}: quais destas fotos o servidor já tem (ou apagou a pedido do cliente, sem dizer
+        qual dos dois). O leitor só copia e envia o resto."""
+        lt = self._leitor
+        if not limite_ok("leitor:" + lt["id"], "leitor_tem", LEITOR_TEM_TAXA):
+            self.close_connection = True
+            return self.js({"erro": "taxa"}, 429, True)
+        b, err = self.corpo(64 * 1024)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        hs = b.get("h")
+        if not isinstance(hs, list) or len(hs) > LEITOR_TEM_MAX or not all(isinstance(h, str) and _re_hex64.match(h) for h in hs):
+            return self.js({"erro": "hash"}, 400, True)
         with lock:
-            state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
-        print("  envio pela tela: %s %s %.1f MB" % (quem, motivo[0]["erro"] if motivo else res, n / 1e6))
+            tem = [h for h in dict.fromkeys(hs) if h in seen or h in lgpd_excluidas]
+        return self.js({"tem": tem}, 200, True)
+
+    def leitor_foto_post(self):
+        """POST /leitor/foto?nome=&rotulo= (o JPEG é o corpo; X-Eterna-Hash = quick_hash, X-Eterna-Sha256 = arquivo inteiro): uma
+        foto do cartão lido no gramado. Entra pelo ingest_file como foto de cartão, com origem = rótulo do cartão (a mesma regra do
+        cartão lido no servidor: o dono sai do ff_quem) e o leitor em "ap". As guardas de disco, teto do dia, vagas e corpo são as
+        do envio pela tela (_foto_corpo_receber)."""
+        lt = self._leitor
+        q = parse_qs(urlparse(self.path).query)
+        tam = self.headers.get("Content-Length")
+        erro = None
+        try:
+            n = int(tam) if tam is not None else -1
+        except ValueError:
+            n, erro = -1, ({"erro": "tamanho"}, 400)
+        nome = (q.get("nome") or [""])[0]
+        rotulo = (q.get("rotulo") or [""])[0]
+        hq = (self.headers.get("X-Eterna-Hash") or "").strip().lower()
+        hs = (self.headers.get("X-Eterna-Sha256") or "").strip().lower()
+        if erro:
+            pass
+        elif (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "image/jpeg":
+            erro = ({"erro": "formato"}, 415)
+        elif tam is None:
+            erro = ({"erro": "tamanho"}, 411)
+        elif n <= 0 or n > FOTO_ENVIO_MAX:
+            erro = ({"erro": "tamanho"}, 413)
+        elif not nome.endswith(EXT) or len(nome) > 200:
+            erro = ({"erro": "formato"}, 415)
+        elif not _re_leitor_rotulo.match(rotulo):
+            erro = ({"erro": "rotulo"}, 400)
+        elif not _re_hex64.match(hq) or not _re_hex64.match(hs):
+            erro = ({"erro": "hash"}, 400)
+        elif not limite_ok("leitor:" + lt["id"], "leitor_foto", LEITOR_FOTO_TAXA):
+            erro = ({"erro": "taxa"}, 429)
+
+        def gravar(tmp):
+            sha = hashlib.sha256()
+            with open(tmp, "rb") as f:
+                for bloco in iter(lambda: f.read(1 << 20), b""):
+                    sha.update(bloco)
+            if quick_hash(tmp, n) != hq or sha.hexdigest() != hs:
+                return None, ({"erro": "hash"}, 400)
+            r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), rotulo, "cartao", move=True, quieto=True, extra={"ap": lt["nome"], "api": lt["id"]})
+            if r == "new":
+                with lock:
+                    leitor_dia_soma()
+                    save_index_logo()
+            if r is None:
+                return None, ({"erro": "servidor"}, 500)
+            return r, None
+        r = motivo = None
+        if not erro:
+            r, motivo, lido = self._foto_corpo_receber(n, "leitor:" + lt["id"], LEITOR_VAGAS, gravar, "leitor de cartão",
+                                                       sem=leitor_sem, teto=LEITOR_TETO_DIA, dia_n=leitor_dia_n)
+            if not lido:
+                erro, motivo = motivo, None
+        if erro:
+            if erro[0].get("erro") in ("ocupado", "teto_dia", "taxa") and 0 < n <= FOTO_ENVIO_MAX:
+                self._corpo_descartar(n)            # o leitor recebe a resposta inteira e tenta de novo depois
+            self.close_connection = True
+            with lock:
+                state["leitor"]["recusadas"] += 1
+            return self.js(erro[0], erro[1], True)
         if motivo:
+            with lock:
+                state["leitor"]["recusadas"] += 1
+            print("  leitor %s: %s %.1f MB" % (lt["nome"], motivo[0]["erro"], n / 1e6))
             return self.js(motivo[0], motivo[1], True)
-        return self.js({"ok": bool(r), "resultado": res}, 200, True)
+        res = "new" if r == "new" else "dup"            # foto que o servidor já tratou (repetida ou apagada) responde igual
+        with lock:
+            mm = dict(meta.get(hq[:12]) or {}) if r == "new" else {}
+            state["leitor"]["novas" if r == "new" else "repetidas"] += 1
+        dono = bool(mm) and ff_quem(mm.get("o"), mm.get("autor"), mm.get("dono"), mm.get("serie"), "cartao")[0] is not None
+        if r == "new":
+            print("  leitor %s: foto nova %.1f MB" % (lt["nome"], n / 1e6))
+        return self.js({"ok": True, "resultado": res, "dono": dono}, 200, True)
+
+    def leitores_get(self):
+        """GET /leitores: os leitores e a situação de cada um. Painel de controle (Ver) vê tudo; só Upload (set.r) vê a forma reduzida."""
+        eu = self.sessao()
+        return self.js({"leitores": leitor_lista(auth_pode(eu["cadastro"], "configuracao", "r"))}, 200, True)
+
+    def leitores_post(self, path):
+        """POST /leitores/criar {nome}, /leitores/codigo {id}, /leitores/revogar {id}: Painel de controle (Alterar). O código de
+        ativação sai só na resposta de quem pediu; nunca vai para log."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"erro": "origem"}, 403, True)
+        eu = self.sessao()
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        ip = self.client_address[0]
+        if path == "/leitores/criar":
+            nome = leitor_nome_ok(b.get("nome"))
+            if not nome:
+                return self.js({"erro": "nome"}, 400, True)
+            lt, codigo, expira = leitor_criar(nome, eu["usuario"], ip)
+            return self.js({"leitor": lt, "codigo": codigo, "expira": expira}, 200, True)
+        if path == "/leitores/codigo":
+            r = leitor_codigo_novo(b.get("id"), eu["usuario"], ip)
+            if not r:
+                return self.js({"erro": "not found"}, 404, True)
+            return self.js({"codigo": r[0], "expira": r[1]}, 200, True)
+        if path == "/leitores/revogar":
+            if not leitor_revogar(b.get("id"), eu["usuario"], ip):
+                return self.js({"erro": "not found"}, 404, True)
+            return self.js({"ok": True}, 200, True)
+        return self.js({"error": "not found"}, 404)
+
+    def instalar_leitor(self):
+        """GET /instalar-leitor: o instalador do leitor de cartão (servidor/leitor/instalar-leitor.cmd), da cópia do repositório que
+        está no ar, sem internet. É o arquivo público do repositório: não tem segredo (o código de ativação é digitado na hora)."""
+        arq = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servidor", "leitor", "instalar-leitor.cmd")
+        try:
+            with open(arq, "rb") as f:
+                d = f.read(INSTALADOR_MAX + 1)
+        except OSError:
+            d = b""
+        if not 0 < len(d) <= INSTALADOR_MAX:
+            return self.js({"error": "instalador_indisponivel"}, 404)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", 'attachment; filename="instalar-leitor.cmd"')
+        self.send_header("Content-Length", str(len(d)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(d)
+        return None
 
     def montagem_get(self, u, q):
         """GET /montagem/<pid>/<fundo>.jpg?t=p|i[&v=<versao>]: a prévia ou o arquivo de impressão que o servidor montou.
@@ -13856,8 +17472,10 @@ class H(BaseHTTPRequestHandler):
         if len(partes) == 4 and partes[2] == "codigo":
             if not limite_ok(ip, "codigo", 30):
                 return self.js({"motivo": "bloqueado"}, 429)
-            c = partes[3].upper()
+            c = urllib.parse.unquote(partes[3]).strip().upper()
             t = codigos.get(c) if _re_codigo.match(c) else None
+            if not t and _re_localizador.match(c):     # 17/11: o localizador do voucher de escola entra no mesmo campo
+                t = (escola_ler().get(c) or {}).get("token")
             m = REPO.ler_manifesto(t) if t and t not in lapides else None
             if not m or gal_expirou(m) or any(v.get("codigo") == c for v in lapides.values()):
                 return self.js({"error": "not found"}, 404)
@@ -14243,16 +17861,22 @@ class H(BaseHTTPRequestHandler):
             return None
         if u.path.startswith("/g/") or u.path in ("/galerias/vendas", "/galerias/status"):
             return self.gal_get(u, q)
+        if u.path == "/escolas":
+            return self.js(escola_painel())
         if u.path in ("/auth/eu", "/auth/senhas"):
             return self.auth_get()
         if u.path in ("/postos", "/postos/eu", "/postos/aceitar"):
             return self.postos_get(u, q)
         if u.path == "/instalar":
             return self.instalar_posto()
+        if u.path == "/instalar-leitor":
+            return self.instalar_leitor()
         if ("GET", u.path) in AGENDA_ROTAS:          # v97
             return self.agenda_rota("GET", u.path)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
+        if u.path == "/leitores":
+            return self.leitores_get()
         if u.path == "/status":
             minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT}
             o = (self.headers.get("Origin") or "").rstrip("/").lower()
@@ -14263,6 +17887,10 @@ class H(BaseHTTPRequestHandler):
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
             mt_ = mtg_status()                         # montagem no servidor: também fora do lock
             ag_ = agenda_status(publico=True)          # v97: sem os 4 últimos da chave e sem quem salvou (CORS aberto)
+            try:
+                tr_ = treino_status()                  # 16/11: Treino da IA (contagem e interruptor), fora do lock
+            except Exception:
+                tr_ = None
             with lock:
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
@@ -14273,7 +17901,7 @@ class H(BaseHTTPRequestHandler):
                            estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
                            app_offline_pronto=app_offline_pronto(), agenda=ag_,
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
-                           pagamento="teste" if compra_online() else "desligado",
+                           pagamento="teste" if compra_online() else "desligado", treino=tr_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
@@ -14306,7 +17934,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/metricas":
             desde = float(q.get("desde", ["0"])[0] or 0)
             with lock:
-                linhas = [dict(m) for m in metricas if m["chegada"] >= desde]
+                linhas = [{k: v for k, v in m.items() if k not in ("por", "por_assumido")} for m in metricas if m["chegada"] >= desde]   # 18/11: quem enviou não sai
             return self.js({"agora": time.time(), "fila_rostos": fila_rostos.qsize(), "maquina": uso_maquina(), "fotos": linhas})
         if u.path == "/roverpix/status":
             c = rover_cfg()
@@ -14458,6 +18086,21 @@ class H(BaseHTTPRequestHandler):
             de, ate = (q.get("de") or [""])[0], (q.get("ate") or [""])[0]
             r = ativ_vendas(de, ate)
             return self.js({"ok": True, "vendas": r, "envio": nuvem_envio_medido(de, ate)}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
+        if u.path in ("/treino/dias", "/treino/amostra", "/treino/rotulos", "/treino/medida"):
+            return self.treino_get(u)
+        if u.path == "/pessoas/rostos":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            dia = (parse_qs(u.query).get("dia") or [""])[0]
+            r = pessoas_rostos(dia) if _re_dia.match(dia) else None
+            return self.js(r if r is not None else {"error": "dia inválido"}, 200 if r is not None else 400, nostore=True)
+        if u.path == "/visitantes":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            q = parse_qs(u.query)
+            hoje = _ff_hoje()
+            r = visitantes((q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0])
+            return self.js(r if r is not None else {"error": "datas inválidas"}, 200 if r is not None else 400, nostore=True)
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -14566,11 +18209,24 @@ class H(BaseHTTPRequestHandler):
         if not self.autoriza("POST"):
             return
         u = urlparse(self.path)
+        if u.path == "/leitor/ativar":                 # 18/11: leitor de cartão do gramado (programa, sem pessoa conectada)
+            return self.leitor_ativar_post()
+        if u.path == "/leitor/pulso":
+            return self.leitor_pulso_post()
+        if u.path == "/leitor/tem":
+            return self.leitor_tem_post()
+        if u.path == "/leitor/foto":
+            return self.leitor_foto_post()
         origin = self.headers.get("Origin") or ""
-        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar"):
+        eu = self.sessao()
+        if eu and eu.get("assumido_por") and u.path not in ASSUMIR_LIVRES:
+            return self.js({"erro": "so_ver"}, 403, True)    # "ver como" só olha: nada se grava em nome da pessoa
+        if u.path in ("/auth/entrar", "/auth/trocar", "/auth/sair", "/auth/esqueci", "/auth/senha/gerar", "/auth/senha/cancelar", "/auth/assumir", "/auth/voltar"):
             return self.auth_post(u)
         if u.path in ("/postos/parear", "/postos/revogar"):
             return self.postos_post(u)
+        if u.path in ("/leitores/criar", "/leitores/codigo", "/leitores/revogar"):
+            return self.leitores_post(u.path)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
         if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
@@ -14595,6 +18251,8 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
             return self.visitas_config_post()
+        if u.path in ("/treino/rotulo", "/treino/config"):
+            return self.treino_post(u.path)
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
@@ -14758,7 +18416,6 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "app_indisponivel"}, 502)
         self.send_response(200)
         self.send_header("Content-Type", APP_TIPOS[os.path.splitext(rel)[1].lower()])
-        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache" if rel == "index.html" else "max-age=3600")
         self.end_headers()
@@ -14791,6 +18448,8 @@ def main():
         print("  ETERNA_ORIGENS: \"%s\" ignorado (falta http:// ou https://, ex.: http://192.168.10.218:%d)" % (x, PORT))
     ff_carregar()                       # v87: grupos de hoje da fila do fotógrafo, refeitos do meta
     try:
+        treino_cfg()                                 # 18/11: interruptor do treino (e a migração do Ligada antigo) antes das sessões
+        cena_carregar()                              # 18/11: classificações de hoje e ontem antes das sessões
         lidas, novas, hoje = sess_carregar()
         print(f"  Sessões: {hoje} hoje (montadas aqui, pausa de {SESS_PAUSA} s e rostos; {novas} fotos agrupadas agora)")
     except Exception as ex:
@@ -14806,6 +18465,7 @@ def main():
     threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=nuvem_loop, daemon=True).start()
     threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
+    threading.Thread(target=escola_loop, daemon=True).start()
     threading.Thread(target=nuvem_videos_loop, daemon=True).start()
     if IMPRESSORA and not os.environ.get("ETERNA_IMPRESSORA_TESTE"):
         imp_retomar()
@@ -14815,6 +18475,8 @@ def main():
     rec_versao_cache()                  # v97: recorte de versão anterior sai antes do recorte antecipado
     threading.Thread(target=rec_pre_loop, daemon=True).start()
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
+    threading.Thread(target=treino_cfg_loop, daemon=True).start()  # 18/11: interruptor do treino em memória (treino_cfg_mem)
+    threading.Thread(target=cena_loop, daemon=True).start()        # 18/11 (regra 19): reconhecer o ponto pela imagem
     mtg_orfaos_encerrar()               # processo de montagem de uma partida anterior
     print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta
     threading.Thread(target=mtg_loop, daemon=True).start()
@@ -14855,6 +18517,12 @@ if __name__ == "__main__":
         sys.exit(auth_criar_admin(sys.argv[2], " ".join(sys.argv[3:])))
     if len(sys.argv) >= 3 and sys.argv[1] == "--criar-vendedor":
         sys.exit(auth_criar_vendedor(sys.argv[2], " ".join(sys.argv[3:]), os.environ.get("ETERNA_PERFIL") or "ativ"))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--usuario":
+        sys.exit(auth_cli_usuario(sys.argv[2], " ".join(sys.argv[3:]), os.environ.get("ETERNA_COMO")))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--desativar":
+        sys.exit(auth_cli_desativar(sys.argv[2:]))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--excluir":
+        sys.exit(auth_cli_excluir(sys.argv[2:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
         sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
     main()

@@ -158,6 +158,16 @@ Mesmo contrato das rotas `/g/*` do agente (`galeria-qr-fase1.md`), para o app n�
 | `EVT#<token>` | `<iso>#<rand>` | evento: `tipo`, `ip` (hash com sal do dia), extras | 90 dias |
 | `CON#<token>` | `<iso>#<rand>` | consentimento: titular ou responsável, versão, idioma | 400 dias |
 
+**Escola pelo voucher (17/11, plano `docs/planos/2026-11-17-escola-pelo-voucher.md`):**
+- O manifesto `evento` pode trazer o bloco `voucher` (`localizador`, `escola`, `dia`, `horarios`, `pessoas`) e até `LIMITE_FOTOS_ESCOLA` (10 mil) fotos. Publicar grava `VOU#<localizador>` → token. `GET /g/codigo/<localizador>` abre a galeria e devolve `escola` (nome e dia). Sem galeria, dá 404 sem motivo e escreve o localizador no log.
+- **Leitura em paralelo:** a primeira autorização dispara `ESCOLA_LOTES` (8) leituras assíncronas (`{"indexar", "lote", "de"}`), cada uma com a sua parte das fotos (`crc32(pid) % de`). O progresso de cada lote fica em `IDX#<token>` `L<n>` e é gravado a cada 20 fotos. `lotes` em `IDX#<token>` `M` impede disparar de novo por 10 min. Enquanto falta foto, a selfie responde 503 `processando`. O cliente do Rekognition usa novas tentativas `adaptive` (10), para respeitar a cota da conta. A busca da escola olha até 4.096 rostos.
+- **Foto grátis:** `POST /g/<token>/cortesia {acesso, foto, email}`. Cada escolha fica em `CRT#<token>` com a foto, a seleção de fotos da selfie (`sel`) e o hash do e-mail. Duas seleções são da mesma criança quando ≥ 60% da menor está na outra: a mesma criança em outro aparelho ou outro e-mail recebe a foto já escolhida (`repetida`). O teto são as `pessoas` do voucher (409 `esgotada`). A escolhida volta como `cortesia`, com original, só para a criança dela. O e-mail vira lead.
+- **Downloads:** `POST /g/<token>/evento {acesso, tipo: "foto_baixada", foto}`.
+- **Galeria:** com voucher, ela traz `escola: {nome, dia, cortesia, pode_escolher}`.
+- **Eventos novos**, com `voucher` e `escola`: `voucher_digitado`, `cortesia_escolhida`, `cortesia_repetida`, `cortesia_esgotada`, `foto_baixada`. `selfie_ok` e `galeria_vista` também levam voucher e escola.
+- **Números para o painel:** `GET /ponto/escolas?tokens=` (até 30, só com `X-Eterna-Ponto`). Para cada galeria com voucher, devolve `voucher`, `escola`, `dia`, `horarios`, `pessoas`, `fotos`, `lidas`, `expira`, `primeiro`/`ultimo` evento e `funil` (`digitado`, `aparelhos` = IPs distintos com `selfie_ok`, `selfies`, `sem_foto`, `criancas`, `repetidas`, `esgotadas`, `baixadas`, `compras`, `fotos_compradas`, `valor`). Também devolve `criancas`, uma linha por `CRT#` com `em`, `foto`, `fotos`, `baixou`, `comprou` (algum `pedido_pago` com foto da seleção dela), `valor` e `comprador`. O comprador é o e-mail do `PED#` mascarado (`p***@dominio`).
+- **Tetos padrão** (template): `LimiteLeiturasDia` 60 mil e `LimiteBuscasDia` 20 mil. Cota do Rekognition na conta: 5/s, com pedido de 50/s aberto em 17/11.
+
 Eventos registrados: `qr_aberto`, `codigo_digitado`, `selfie_ok`, `selfie_nao`, `selfie_sem_rosto`, `selfie_processando`, `selfie_teto`, `galeria_vista`, `compra_tentada`.
 
 Teste local sem AWS e sem custo: `python servidor/galeria-nuvem/teste_local.py servidor/galeria-nuvem` (consentimento, leitura interrompida e retomada, encerrar, limpeza e teto).
@@ -262,7 +272,7 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 | Pasta | O que é | Regra proposta |
 |---|---|---|
 | `alta/`, `vitrine/` | fotos das galerias | apagar com 61 dias (galeria vale até 60, `GAL_DIAS`) |
-| `video/` | vídeos das ativações | apagar com 31 dias (página vale 30, `ATIV_VIDEO_DIAS`) |
+| `video/` | vídeos das ativações | apagar com 30 dias, como as fotos (`servidor/linux/nuvem-aws-cloudshell.sh --so-retencao`, aplicada pelo Ronaldo no CloudShell em 18/11 ~21h; no mesmo dia, `eterna-galeria` atualizada com o contrato da Imply de 18/11 por `aws cloudformation deploy`, que mantém os parâmetros da stack) |
 | `backup/<pc>/dia/` | cópia diária dos bancos (vendas, estado, operação, lotes de cartões) | Glacier Instant Retrieval com 30 dias; apagar com 400 dias (como os pedidos na nuvem) |
 | `backup/<pc>/<banco>`, `metricas/`, `sessoes/` | cópia mais recente | não expira; versionamento ligado, versão antiga apagada com 30 dias |
 | todas | upload interrompido | `AbortIncompleteMultipartUpload` com 1 dia |
@@ -271,7 +281,7 @@ Dependências: `pip install boto3 cryptography` (além de opencv-python-headless
 {"Rules":[
  {"ID":"fotos-61d","Filter":{"Prefix":"alta/"},"Status":"Enabled","Expiration":{"Days":61}},
  {"ID":"vitrine-61d","Filter":{"Prefix":"vitrine/"},"Status":"Enabled","Expiration":{"Days":61}},
- {"ID":"video-31d","Filter":{"Prefix":"video/"},"Status":"Enabled","Expiration":{"Days":31}},
+ {"ID":"video-30d","Filter":{"Prefix":"video/"},"Status":"Enabled","Expiration":{"Days":30}},
  {"ID":"backup-dia","Filter":{"Prefix":"backup/"},"Status":"Enabled","NoncurrentVersionExpiration":{"NoncurrentDays":30}},
  {"ID":"multipart","Filter":{"Prefix":""},"Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}
 ]}
@@ -285,6 +295,12 @@ A regra da cópia diária (`backup/<pc>/dia/`, Glacier e 400 dias) depende do no
 - O `sam deploy` falhava desde 11/11: a descrição de `ImplyTipoPessoa` no `template.yaml` tinha `: ` sem aspas (corrigido em `80adab4`).
 - O primeiro deploy montou os parâmetros com `describe-stacks`, que devolve `****` nos dois `NoEcho` (`SegredoPontoSha256`, `SegredoPontoTesteSha256`). Os dois foram gravados como `****` e a nuvem recusou os servidores (401) por ~25 min. O deploy seguinte passou os SHA-256 de verdade, calculados dos `nuvem-segredo.txt` (estádio: `~/Eterna` do notebook, o mesmo do kit do Eduardo; teste: `Eterna-servidor-local`). Os dois voltaram a responder 200, e a página do vídeo do cartão H7KY-HWGG publicou sozinha na tentativa 29.
 - O `README.md` da galeria agora avisa disso e traz o comando certo.
+
+## 9d. Firewall da galeria (17/11)
+CloudFront com WAF na frente da API (firewall `borda-waf.json` por comando em us-east-1, porque a organização bloqueia CloudFormation lá; CloudFront `borda.yaml` em us-east-2): 300 pedidos por minuto por IP e regras
+prontas da AWS, começando só contando.
+- 17/11: no ar. Firewall `eterna-galeria` (us-east-1, contando), CloudFront `https://dxsulr2e9z91t.cloudfront.net`, API com `OrigemSha256` e `ExigirBorda=0`. App (idiomas-base, producao e main, que publica o eterna.photo), `galeria-ligar.sh` e `instalar.sh` apontam para o CloudFront; o servidor do estádio já publica por ele.
+- Falta: depois de uns dias olhando as métricas, o passo 5 (regras bloqueando e `ExigirBorda=1`). Passo a passo e custo: `servidor/galeria-nuvem/README.md`, seção "Firewall (WAF)".
 
 ## 10. Antes da produção
 As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.

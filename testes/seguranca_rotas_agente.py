@@ -91,6 +91,10 @@ try:
             continue
         st, j, hs = pede(metodo, rota)
         ok(st == (404 if tipo == "teste" else 401), "sem cookie %s %s: %s %s" % (metodo, rota, st, j))
+        if tipo == "leitor":                    # 18/11: leitor de cartão: só o token do aparelho; cookie de pessoa ou de posto não serve
+            for ck in (adm, posto):
+                st, j, hs = pede(metodo, rota, cookie=ck)
+                ok(st == 401 and (j or {}).get("erro") == "sem_leitor" and "access-control-allow-origin" not in hs, "cookie em rota do leitor %s %s: %s %s" % (metodo, rota, st, j))
         ok(hs.get("access-control-allow-headers") != "*", "Allow-Headers * em %s" % rota)
         st, j, _ = pede(metodo, rota, cookie=posto)
         if tipo == "posto_ou_sessao":
@@ -129,17 +133,21 @@ try:
     ok(st == 200 and "calls" in j, "/photoroom/status com só configuracao.r: %s %s" % (st, j))
     # /ftp/contas: Painel de controle (Ver)
     ok(pede("GET", "/ftp/contas", cookie=foto)[0] == 403 and pede("GET", "/ftp/contas", cookie=adm)[0] == 200, "/ftp/contas só com configuracao.r")
+    # 16/11: Treino da IA. Ler com qualidade.r, marcar com qualidade.u (a Supervisora marca), o interruptor com configuracao.u
+    so_ver = S.cookie_sessao(m, "so-ver-rotas", {"qualidade": {"r": True}})
+    ok(pede("GET", "/treino/dias", cookie=so_ver)[0] == 200 and pede("POST", "/treino/rotulo", {"pid": "abc123abc123", "v": 1}, cookie=so_ver)[0] == 403
+       and pede("POST", "/treino/config", {"ponto": "medir"}, cookie=so_ver)[0] == 403, "treino: só ver não marca nem liga a análise")
     # coleção sim por perfil (cópia dos PRESETS do index.html): cada perfil grava o que a tela dele grava
     RW, RO, ALL = {"c": True, "r": True, "u": True}, {"r": True}, {"c": True, "r": True, "u": True, "d": True}
     perfis = {"foto": {"set": RW, "diario": RW, "escala": RO, "filafoto": RO},
               "venda": {"venda": RW, "quiosque": RW, "catalogo": RO, "filafoto": RO},
-              "supervisor": {"relatorios": RO, "desempenho": RO, "financeiro": RO, "diario": ALL, "set": RO, "venda": RW, "qualidade": RO, "estoque": ALL,
+              "supervisor": {"relatorios": RO, "desempenho": RO, "financeiro": RO, "diario": ALL, "set": RO, "venda": RW, "qualidade": {"r": True, "u": True}, "estoque": ALL,
                              "configuracao": RW, "escala": RW, "laboratorio": RO, "catalogo": RO, "galerias": RW, "filafoto": {"r": True, "u": True}}}
     grava = {"foto": ["edits|ag_x1", "discarded|ag_x1", "invalid|ag_x1", "flagUse|br", "autoAj", "autoAjPor", "camDia|2026-11-09"],
              "venda": ["stock|Caixa 1", "ai|ag_x1", "invalid|ag_x2", "flagUse|ar"],
-             "supervisor": ["stock|Caixa 2", "flagUse|pt", "invalid|ag_x3", "bgAtivo|podio", "bgOn", "bgOn2", "bgTelaoV97", "fundosModo", "cortesiaLog|abc"]}
-    # 16/11: a lista dos 3 fundos (bgOn2) é de quem altera Configurações; fotógrafo e vendedor não gravam
-    nao = {"foto": ["prices|zona", "lojaFimSeg", "pagProv", "bgOn2"], "venda": ["prices|zona", "lojaFimSeg", "edits|ag_x9", "bgOn2"], "supervisor": ["prices|zona", "lojaFimSeg", "catalogoV"]}
+             "supervisor": ["stock|Caixa 2", "flagUse|pt", "invalid|ag_x3", "bgAtivo|podio", "bgOn", "bgOn2", "bgTelaoV97", "bgTunelV2", "fundosModo", "cortesiaLog|abc"]}
+    # 16/11: a lista dos fundos (bgOn2) e a marca do túnel v2 (bgTunelV2) são de quem altera Configurações; fotógrafo e vendedor não gravam
+    nao = {"foto": ["prices|zona", "lojaFimSeg", "pagProv", "bgOn2", "bgTunelV2"], "venda": ["prices|zona", "lojaFimSeg", "edits|ag_x9", "bgOn2", "bgTunelV2"], "supervisor": ["prices|zona", "lojaFimSeg", "catalogoV"]}
     for nome, perms in perfis.items():
         ck = S.cookie_sessao(m, "perfil-" + nome, perms)
         st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "sim", "id": i, "valor": 1} for i in grava[nome]]}, cookie=ck)

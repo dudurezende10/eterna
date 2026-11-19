@@ -167,9 +167,9 @@ out.save(sys.argv[2])
   // Mirante: corpo inteiro do joelho para cima, centro em 45%
   const m3=await mont('ag_'+PIDS.inteiro,'mirante');const cx3=(m3.dst.x+m3.dst.w/2)/m3.w;
   ok(m3.modo==='inteiro'&&m3.corte===.62&&near(m3.dst.y+m3.dst.h,m3.h,1)&&(near(cx3,.45,.01)||m3.dst.x<=0.5||near(m3.dst.x+m3.dst.w,m3.w,1)),'4: Mirante joelho e centro 45%: '+J({m3,cx3}));
-  // Túnel: teto de 75% da altura; corpo inteiro no joelho
+  // Túnel (16/11, regra 22, imagem nova): nada acima de 23,4% da altura (a faixa); corpo inteiro no joelho (o resto em tunel-v2.js)
   const m4=await mont('ag_'+PIDS.meio,'tunel'),m4b=await mont('ag_'+PIDS.inteiro,'tunel');
-  ok(m4.modo==='meio'&&m4.dst.h<=.75*m4.h+1&&near(m4.dst.y+m4.dst.h,m4.h,1)&&m4b.corte===.62&&m4b.dst.h<=.75*m4b.h+1,'4: Túnel com teto de 75%: '+J({m4:m4.dst,m4b:m4b.dst,h:m4.h}));
+  ok(m4.modo==='meio'&&m4.dst.y>=.234*m4.h-1&&near(m4.dst.y+m4.dst.h,m4.h,1)&&m4b.corte===.62&&m4b.dst.y>=.234*m4b.h-1,'4: Túnel abaixo da faixa (topo a 23,4% ou mais): '+J({m4:m4.dst,m4b:m4b.dst,h:m4.h}));
   // 1950 (16/11: fundo novo "Maracanã 1950", regra 21): tudo em preto e branco; até 66% da altura (topo a 34%, abaixo do título) e 92% da largura; corpo inteiro do joelho para cima (62%)
   const m5=await mont('ag_'+PIDS.inteiro,'arq1950'),m6=await mont('ag_'+PIDS.meio,'arq1950');
   ok(m5.cinza&&m6.cinza,'4: o 1950 sai inteiro em preto e branco: '+J({m5:m5.cinza,m6:m6.cinza}));
@@ -200,13 +200,13 @@ out.save(sys.argv[2])
   const pex=await pg.evaluate(()=>ETERNA.compose('c00x','campeao2'));ok(pex.pending==='exemplo','4: foto de exemplo (sem pid do agente) não pede recorte: '+J(pex));
 
   // ---------- 5a. Checkout: só oferece fundo de IA com o recorte pronto; carregando nas 5 línguas; item que falhou sai ----------
-  const ck=await pg.evaluate(async([a,b])=>{const S=ETERNA.SIM;const card='LPV84CK';const ids=['ag_'+a,'ag_d84000000004','ag_'+b];S.sessions[card]={key:'carlos',pdv:'Foto Campo 2',time:'10:00',date:'hoje',status:'pronta',selected:[],cart:[],photos:ids.map(id=>({id,sold:0}))};
+  const ck=await pg.evaluate(async([a,b])=>{ETERNA.FIA_ANTIGO_ON=true; /* 18/11: sessão de exemplo sem bases do servidor monta pelo jeito antigo */const S=ETERNA.SIM;const card='LPV84CK';const ids=['ag_'+a,'ag_d84000000004','ag_'+b];S.sessions[card]={key:'carlos',pdv:'Foto Campo 2',time:'10:00',date:'hoje',status:'pronta',selected:[],cart:[],photos:ids.map(id=>({id,sold:0}))};
     ids.forEach(id=>{ETERNA.UP[id]={src:location.origin+'/file/'+id.slice(3),name:id};});const ag=ETERNA.state.agent;
     ag.on=true;ag.recorte={ok:false,motivo:'não instalado: modelos não baixados (x)'};const sem=ETERNA.lojaItems(card).filter(x=>x.t==='ai').length;
     ag.recorte={ok:true};const it=ETERNA.lojaItems(card).filter(x=>x.t==='ai');const ruim={id:'ag_d84000000004',bg:'campeao2',k:'ai:ag_d84000000004|campeao2'};ETERNA.lojaPick(card)[ruim.k]='ok';if(!it.some(x=>x.k===ruim.k))it.push(ruim);
     it.forEach(x=>{const el=document.createElement('span');el.className='compimg';el.dataset.comp=x.id+'|'+x.bg;document.body.appendChild(el);});ETERNA.compHydrate();
     await new Promise(z=>setTimeout(z,2500));ag.on=true;ag.recorte={ok:true};/* o agentPoll da página de teste desliga o agente */const depois=ETERNA.lojaItems(card).filter(x=>x.t==='ai');document.querySelectorAll('body>.compimg').forEach(e=>e.remove());
-    const res=[];for(const x of it)res.push(await ETERNA.compose(x.id,x.bg).then(r=>r.url?'ok':(r.err||r.pending)));return {res,sem,com:it.length,ruim:!!ruim,depois:depois.length,temRuim:depois.some(x=>x.id==='ag_d84000000004'),pick:Object.keys(ETERNA.lojaPick(card)),ruimSet:ETERNA.FIA_RUIM.has('ag_d84000000004')};},[PIDS.meio,PIDS.inteiro]);
+    const res=[];for(const x of it)res.push(await ETERNA.compose(x.id,x.bg).then(r=>r.url?'ok':(r.err||r.pending)));ETERNA.FIA_ANTIGO_ON=false;return {res,sem,com:it.length,ruim:!!ruim,depois:depois.length,temRuim:depois.some(x=>x.id==='ag_d84000000004'),pick:Object.keys(ETERNA.lojaPick(card)),ruimSet:ETERNA.FIA_RUIM.has('ag_d84000000004')};},[PIDS.meio,PIDS.inteiro]);
   ok(ck.sem===0,'5a: sem o recorte pronto, o Checkout não oferece fundo de IA: '+J(ck));
   ok(ck.com>1&&ck.temRuim&&ck.pick.some(k=>/d84000000004/.test(k))&&!ck.ruimSet,'5a (v97, critério 15): 503 do recorte não tira o item da venda nem da escolha: '+J(ck));
   const i18=fs.readFileSync(path.join(RAIZ,'index.html'),'utf8').match(/aiMaking:\[([^\]]*)\]/);ok(i18&&i18[1].split("','").length===5&&/lj-spin/.test(fs.readFileSync(path.join(RAIZ,'index.html'),'utf8')),'5a: "Preparando sua foto especial" nas 5 línguas, com indicador: '+(i18&&i18[1]));

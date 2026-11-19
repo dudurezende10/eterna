@@ -1,21 +1,25 @@
 """Eterna · compra online pela Imply (Eleven Tickets), plano docs/planos/2026-11-11-compra-online-pela-imply.md.
 
 Só a Nuvem fala com a Imply: a chave do usuário de serviço fica num parâmetro SecureString do SSM (IMPLY_CHAVE_SSM) e
-nunca vai ao navegador nem ao repositório. Três chamadas:
-  set_pessoa(...)       POST <admin>/api/OAuth2/v01/setPessoa/  -> token de login da pessoa (documentação de 11/11)
-  checkout(...)         endereço de login automático que abre o checkout com o carrinho pronto (predefined-cart)
+nunca vai ao navegador nem ao repositório. Contrato: documentação "Integração Eleven Tickets – setPessoa" da Imply (P&D,
+versão de 18/11/2026). Três chamadas:
+  set_pessoa(...)       POST <admin>/api/OAuth2/v01/setPessoa/ com o carrinho em informacoes_extras.predefined-cart
+                        (idreferencia = o nosso código do pedido) -> token de login da pessoa
+  checkout(...)         <admin>/OAuth2/external?token=..&url=<Base64 de <loja>/pt/checkout?urlreturncheckout=<volta?idpedido=ref>>
   situacao(ref)         consulta do pedido pelo nosso código -> pago | pendente | cancelado | desconhecido
 
-O formato do predefined-cart e o endereço da consulta ainda não vieram da Imply: ficam em variáveis (IMPLY_CARRINHO,
-IMPLY_CONSULTA) para ajustar sem mexer no código quando a resposta chegar. Ver "O que falta a Imply responder" no plano.
+A consulta (seção 7 da documentação da Imply) ainda não veio: o endereço fica em IMPLY_CONSULTA, para ajustar sem mexer no
+código quando chegar. Sem ela nenhum pedido é liberado.
 """
 import base64, hashlib, hmac, json, os, re, urllib.parse, urllib.request
 
 ADMIN = os.environ.get("IMPLY_ADMIN", "https://maracanatouradmin.eleventickets.com").rstrip("/")
 LOJA = os.environ.get("IMPLY_LOJA", "https://maracanatour.eleventickets.com").rstrip("/")
-TIPO_PESSOA = os.environ.get("IMPLY_TIPO_PESSOA", "")          # código de AGÊNCIA da Eleven (11/11: não há tipo pessoa física)
+# 18/11 (documentação da Imply): comprador de fotos é Público Geral (PG) = 100001; o código de AGÊNCIA não é para foto
+TIPO_PESSOA = os.environ.get("IMPLY_TIPO_PESSOA") or "100001"
 CHAVE_SSM = os.environ.get("IMPLY_CHAVE_SSM", "")              # nome do parâmetro SecureString com a chave
-CARRINHO = os.environ.get("IMPLY_CARRINHO", "json-b64")         # formato do predefined-cart: json-b64 | json
+# o produto vai pelo idproduto (o SKU do catálogo do Eterna) ou pelo depara de pdv_produto, se a Imply passar a lista de depara
+PRODUTO_CAMPO = os.environ.get("IMPLY_PRODUTO_CAMPO") or "idproduto"
 CONSULTA = os.environ.get("IMPLY_CONSULTA", "")                 # ex.: https://.../api/pedido?referencia={ref}
 PAGO = {x.strip().lower() for x in os.environ.get("IMPLY_PAGO", "pago,aprovado,paid,approved,confirmado,finalizado").split(",") if x.strip()}
 CANCELADO = {x.strip().lower() for x in os.environ.get("IMPLY_CANCELADO", "cancelado,estornado,recusado,expirado,canceled,cancelled,refunded,denied,expired").split(",") if x.strip()}
@@ -29,6 +33,12 @@ class ImplyErro(Exception):
 
 def ligada():
     return bool(CHAVE_SSM and TIPO_PESSOA)
+
+
+def carrinho(ref, itens):
+    """predefined-cart (seção 3.3): a referência é o nosso código do pedido, gravada na Imply em pdv_produto_mov.idreferencia."""
+    campo = "depara" if PRODUTO_CAMPO == "depara" else "idproduto"
+    return {"idreferencia": ref, "itens": [{campo: i["sku"], "quantidade": int(i["qtd"])} for i in itens]}
 
 
 def chave():
@@ -62,12 +72,15 @@ def de_para(email, segredo):
     return "EP-" + hmac.new(segredo.encode(), email.lower().encode(), hashlib.sha256).hexdigest()[:20]
 
 
-def set_pessoa(id_pessoa, nome, email, cpf=None, passaporte=None):
+def set_pessoa(id_pessoa, nome, email, cpf=None, passaporte=None, ref=None, itens=None):
+    """Cria/atualiza a pessoa (localizada pelo de_para) e, com ref e itens, monta o carrinho dela. Devolve o token de login."""
     p = {"de_para": id_pessoa, "tipo_pessoa": TIPO_PESSOA, "nome": nome, "email": email}
     if cpf:
         p["cpf"] = re.sub(r"\D", "", cpf)
     elif passaporte:
         p["passaporte"] = passaporte
+    if ref and itens:
+        p["informacoes_extras"] = {"predefined-cart": carrinho(ref, itens)}   # objeto; nunca string vazia (invalida a chamada)
     j = _http("POST", ADMIN + "/api/OAuth2/v01/setPessoa/", [p, False, ["de_para"]])
     if isinstance(j, dict) and j.get("result") and not j.get("error"):
         return str(j["result"])
@@ -75,18 +88,13 @@ def set_pessoa(id_pessoa, nome, email, cpf=None, passaporte=None):
     raise ImplyErro("setPessoa: %s" % (json.dumps(erro)[:160] if erro else "sem token"))
 
 
-def carrinho(ref, itens):
-    """predefined-cart: produto (idproduto = SKU do catálogo), quantidade e o nosso código do pedido."""
-    c = {"referencia": ref, "itens": [{"idproduto": i["sku"], "quantidade": int(i["qtd"])} for i in itens]}
-    txt = json.dumps(c, separators=(",", ":"))
-    return base64.b64encode(txt.encode()).decode() if CARRINHO == "json-b64" else txt
-
-
-def checkout(token_pessoa, ref, itens, volta):
-    """Login automático na Imply que cai no checkout com o carrinho pronto e volta para `volta?idpedido=<ref>`."""
-    destino = "%s/pt/checkout?%s" % (LOJA, urllib.parse.urlencode({"urlreturn": volta, "predefined-cart": carrinho(ref, itens)}))
+def checkout(token_pessoa, ref, volta):
+    """Login automático na Imply que cai no checkout (o carrinho já foi montado no set_pessoa) e volta para `volta?idpedido=<ref>`.
+    Seção 6.2: urlreturncheckout vai com URL-encode; o checkout inteiro vai em Base64 e depois URL-encode no parâmetro url."""
+    volta_ped = volta + ("&" if "?" in volta else "?") + urllib.parse.urlencode({"idpedido": ref})
+    destino = "%s/pt/checkout?urlreturncheckout=%s" % (LOJA, urllib.parse.quote(volta_ped, safe=""))
     url64 = base64.b64encode(destino.encode()).decode()
-    return "%s/OAuth2/external?%s" % (ADMIN, urllib.parse.urlencode({"token": token_pessoa, "url": url64}))
+    return "%s/OAuth2/external?token=%s&url=%s" % (ADMIN, urllib.parse.quote(token_pessoa, safe=""), urllib.parse.quote(url64, safe=""))
 
 
 def _acha(j, chaves):

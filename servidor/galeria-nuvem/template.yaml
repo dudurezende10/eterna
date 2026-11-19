@@ -26,17 +26,26 @@ Parameters:
     Description: nome do parâmetro SecureString do SSM com a chave do usuário de serviço da Imply (ex. /eterna/imply-chave); a chave nunca vai no template
   ImplyTipoPessoa:
     Type: String
-    Default: ""
-    Description: "código tipo_pessoa de AGÊNCIA da Eleven, informado pela Imply (11/11, o cliente online entra como agência, sem tipo pessoa física)"
+    Default: "100001"
+    Description: "código tipo_pessoa da Eleven; comprador de fotos = Público Geral (PG) 100001 (documentação da Imply de 18/11)"
   ImplyConsulta:
     Type: String
     Default: ""
     Description: endereço da consulta do pedido na Imply, com {ref} no lugar do nosso código (vazio = só conferência manual)
-  ImplyCarrinho:
+  ImplyProdutoCampo:
     Type: String
-    Default: json-b64
-    AllowedValues: [json-b64, json]
-    Description: formato do predefined-cart (a confirmar com a Imply)
+    Default: idproduto
+    AllowedValues: [idproduto, depara]
+    Description: como o produto vai no predefined-cart (o SKU do catálogo é o idproduto da Imply)
+  OrigemSha256:
+    Type: String
+    Default: ""
+    Description: SHA-256 do SegredoOrigem da stack eterna-galeria-borda (vazio = sem borda)
+  ExigirBorda:
+    Type: String
+    Default: "0"
+    AllowedValues: ["0", "1"]
+    Description: 1 recusa pedido que não passou pelo CloudFront com o firewall (ligar depois que app e servidor usarem a borda)
   OrigensApp:
     Type: CommaDelimitedList
     Default: "https://eterna.photo,https://www.eterna.photo,http://127.0.0.1:8765,http://localhost:8765,http://192.168.10.218:8765"
@@ -50,12 +59,20 @@ Parameters:
     Description: domínio verificado no Amazon SES (a função só pode enviar por ele)
   LimiteLeiturasDia:
     Type: Number
-    Default: 15000
-    Description: teto de fotos lidas pelo Rekognition por dia (US$ 0,001 cada; 15 mil = um dia inteiro de fotos)
+    Default: 60000
+    Description: teto de fotos lidas pelo Rekognition por dia (US$ 0,001 cada; 17/11 escola - galeria comum mais 4 janelas de escola cheias)
   LimiteBuscasDia:
     Type: Number
-    Default: 10000
+    Default: 20000
     Description: teto de selfies comparadas por dia (US$ 0,001 cada)
+  LimiteFotosEscola:
+    Type: Number
+    Default: 10000
+    Description: teto de fotos lidas numa galeria de escola pelo voucher (uma janela de 2h30 no pico, com folga)
+  EscolaLotes:
+    Type: Number
+    Default: 8
+    Description: leituras em paralelo da galeria de escola (o Rekognition segura o ritmo pela cota da conta)
   EmailOrcamento:
     Type: String
     Default: ""
@@ -115,12 +132,14 @@ Resources:
           TABELA: !Ref Banco
           BUCKET: !Ref Bucket
           SEGREDO_PONTO_SHA256: !Ref SegredoPontoSha256
+          ORIGEM_SHA256: !Ref OrigemSha256
+          EXIGIR_BORDA: !Ref ExigirBorda
           SEGREDO_PONTO_TESTE_SHA256: !Ref SegredoPontoTesteSha256
           COMPRA_ONLINE: !Ref CompraOnline
           IMPLY_CHAVE_SSM: !Ref ImplyChaveParametro
           IMPLY_TIPO_PESSOA: !Ref ImplyTipoPessoa
           IMPLY_CONSULTA: !Ref ImplyConsulta
-          IMPLY_CARRINHO: !Ref ImplyCarrinho
+          IMPLY_PRODUTO_CAMPO: !Ref ImplyProdutoCampo
           VOLTA_URL: https://eterna.photo/g/
           LIMIAR_ADULTO: "85"
           LIMIAR_CRIANCA: "95"
@@ -128,6 +147,8 @@ Resources:
           LIMITE_FOTOS_GALERIA: "600"
           LIMITE_LEITURAS_DIA: !Ref LimiteLeiturasDia
           LIMITE_BUSCAS_DIA: !Ref LimiteBuscasDia
+          LIMITE_FOTOS_ESCOLA: !Ref LimiteFotosEscola
+          ESCOLA_LOTES: !Ref EscolaLotes
           MAIL_FROM: !Ref MailFrom
           MAIL_NOME: "Viva Maracanã · Eterna"
       Policies:
@@ -216,6 +237,12 @@ Resources:
           Properties:
             ApiId: !Ref Api
             Path: /ponto/eventos
+            Method: GET
+        EscolasPonto:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/escolas
             Method: GET
         Acoes:
           Type: HttpApi

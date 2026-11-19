@@ -123,6 +123,20 @@ achou = lambda r_: {f["id"] for f in r_["fotos"] if f["sim"] >= m.LIMITE}
 r = m.buscar_vetor(alvo, 1, 90)
 if achou(r) != set(ids[6:]) or r["janela_min"] != 90:
     falhas.append("janela 90 min: esperava só as 6 fotos de 80 min atrás: %d %r" % (len(achou(r)), r.get("janela_min")))
+# 18/11: câmera com o relógio 3 h atrasado e fotos chegando agora: a selfie acha (vale a chegada ao servidor)
+m.sess["LPRELOGIO"] = {"card": "LPRELOGIO", "dia": dia, "cap1": agora - 3 * 3600, "ultima_chegada": agora - 60, "fotos": ids[:6], "pend": [], "status": "aberta"}
+if achou(m.buscar_vetor(alvo, 1, 90)) != set(ids):
+    falhas.append("relógio da câmera atrasado: a selfie devia achar as fotos que acabaram de chegar")
+del m.sess["LPRELOGIO"]
+# 18/11: diagnóstico da busca numa linha JSON por dia, na pasta do HD de mídia; sem imagem nem vetor
+import tempfile as _tf
+m.SELFIE_LOG_DIR = os.path.join(_tf.mkdtemp(), "diagnostico", "selfie")
+r_ = m.buscar_vetor(alvo, 1, 90)
+m.selfie_registra("checkout", r_, time.time() - 0.05)
+_arq = os.path.join(m.SELFIE_LOG_DIR, time.strftime("%Y-%m-%d") + ".jsonl")
+_l = json.loads(open(_arq, encoding="utf-8").read().splitlines()[-1]) if os.path.exists(_arq) else {}
+if _l.get("resultado") != "achou" or _l.get("claras") != 6 or "fila" not in _l or _l.get("janela_min") != 90 or not 6 <= len(_l.get("top") or []) <= 10 or "vetor" in str(_l):
+    falhas.append("diagnóstico da selfie: %r" % {k: _l.get(k) for k in ("resultado", "claras", "fila", "janela_min")})
 if not set(ids) <= achou(m.buscar_vetor(alvo, 1, 0)):
     falhas.append("janela 0 (dia todo): esperava as 12 fotos")
 ts = []
