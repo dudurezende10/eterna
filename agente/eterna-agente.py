@@ -4315,7 +4315,8 @@ MTG_ESPERA_FILHO = 60    # s numa montagem; acima disso o filho é reiniciado
 MTG_CARGA_SEG = 60       # s para o filho abrir (numpy, Pillow, OpenCV)
 MTG_ERRO_SEG = 60
 MTG_MORTES_MAX = 3
-MTG_ERRO_DE_NOVO = 600   # s: montagem que deu erro só volta sozinha depois disto (o pedido do Checkout tenta na hora)
+MTG_ERRO_DE_NOVO = 600   # s: montagem que deu erro só volta sozinha depois disto (o pedido do Checkout tenta antes, ver MTG_ERRO_RECENTE)
+MTG_ERRO_RECENTE = 30    # s: erro do motor tão recente que as rotas respondem "erro" sem pôr na fila (a mesma janela no GET e no pedir)
 MTG_P_PEDIDO, MTG_P_VIVO, MTG_P_RESERVA, MTG_P_IMPRESSAO, MTG_P_REFAZER = 0, 1, 2, 3, 4
 MTG_MODOS = ("desligada", "sombra", "ligada")
 # os fundos com montagem local: o mesmo conteúdo de FUNDOS do eterna-montagem.py e de DATA.backgrounds do app (caminhos do
@@ -4514,13 +4515,15 @@ def mtg_pagas():
     chave = tuple(os.stat(p).st_mtime_ns if os.path.exists(p) else 0 for p in (VENDAS_DB, VENDAS_DB + "-wal"))
     if _mtg_pagas["chave"] == chave:
         return _mtg_pagas["v"]
-    with ev_lock:
-        db = vendas_db()
-        try:
-            rs = db.execute("select dados from evento where tipo = 'criar' and venda in"
-                            " (select venda from evento where tipo = 'pagar')").fetchall()
-        finally:
-            db.close()
+    # conexão própria, só de leitura e sem o ev_lock: o WAL deixa ler junto com a gravação, então o registro de vendas
+    # nunca espera por esta leitura (o pior caso é ler a fotografia de um instante antes)
+    db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=2, check_same_thread=False)
+    try:
+        db.execute("pragma query_only=1")
+        rs = db.execute("select dados from evento where tipo = 'criar' and venda in"
+                        " (select venda from evento where tipo = 'pagar')").fetchall()
+    finally:
+        db.close()
     out = set()
     for (dados,) in rs:
         try:
@@ -17369,8 +17372,10 @@ class H(BaseHTTPRequestHandler):
         if not mtg_base_ok(pid, fundo):                # regra 19: montagem nova só de base de IA (mesmo 404 de foto desconhecida)
             return self.js(nf, 404, True)
         ruim = mtg_ruins.get((pid, fundo))
-        if ruim and ruim[0] == versao and time.time() - ruim[2] < MTG_ERRO_DE_NOVO:
-            return self.js({"estado": "erro"}, 422, True)  # a montagem desta versão acabou de falhar no motor: estado final, sem fila
+        with mtg_lock:
+            na_fila = (pid, fundo) in mtg_jobs
+        if ruim and ruim[0] == versao and time.time() - ruim[2] < MTG_ERRO_RECENTE and not na_fila:
+            return self.js({"estado": "erro"}, 422, True)  # acabou de falhar no motor: estado final, sem fila (depois da janela, tenta de novo)
         job, erro = mtg_enfileirar(pid, fundo, (t,), MTG_P_PEDIDO)
         if erro == "fila_cheia":
             return self.js({"error": "muitos pedidos"}, 429, True)
@@ -17383,6 +17388,8 @@ class H(BaseHTTPRequestHandler):
         as que faltam, um pedido com a prioridade 0 (passa na frente de tudo que o servidor monta sozinho)."""
         if mtg_cfg()["modo"] == "desligada":
             return self.js({"error": "montagem_desligada"}, 503, True)
+        if not limite_ok(self.client_address[0], "montagens-pedir-todos", 2 * MTG_TAXA):
+            return self.js({"error": "muitos pedidos"}, 429, True)   # conta geral antes de ler o corpo; a de cada tipo vem depois
         body, err = self.corpo(2048)
         if err:
             return self.js({"error": "corpo inválido"}, err, True)
@@ -17415,8 +17422,8 @@ class H(BaseHTTPRequestHandler):
                     estado = "sem_pessoa"
                 elif not base:
                     estado = "nao_base"                      # regra 19: só as bases de IA viram montagem
-                elif ruim and ruim[0] == versao and time.time() - ruim[2] < 30:
-                    estado = "erro"                          # acabou de falhar: o pedido seguinte (30 s) tenta de novo
+                elif ruim and ruim[0] == versao and time.time() - ruim[2] < MTG_ERRO_RECENTE and (pid, fundo) not in mtg_jobs:
+                    estado = "erro"                          # acabou de falhar: depois da janela o pedido seguinte tenta de novo
                 else:
                     job, erro = mtg_enfileirar(pid, fundo, [t for t in tipos if not tem[t]], MTG_P_PEDIDO)
                     if erro == "fila_cheia":
