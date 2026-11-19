@@ -91,6 +91,10 @@ try:
             continue
         st, j, hs = pede(metodo, rota)
         ok(st == (404 if tipo == "teste" else 401), "sem cookie %s %s: %s %s" % (metodo, rota, st, j))
+        if tipo == "leitor":                    # 18/11: leitor de cartão: só o token do aparelho; cookie de pessoa ou de posto não serve
+            for ck in (adm, posto):
+                st, j, hs = pede(metodo, rota, cookie=ck)
+                ok(st == 401 and (j or {}).get("erro") == "sem_leitor" and "access-control-allow-origin" not in hs, "cookie em rota do leitor %s %s: %s %s" % (metodo, rota, st, j))
         ok(hs.get("access-control-allow-headers") != "*", "Allow-Headers * em %s" % rota)
         st, j, _ = pede(metodo, rota, cookie=posto)
         if tipo == "posto_ou_sessao":

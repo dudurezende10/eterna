@@ -368,6 +368,14 @@ try:                                       # fotos novas por dia por esta rota, 
     FOTO_ENVIO_TETO_DIA = max(1, int(os.environ.get("ETERNA_ENVIO_TETO_DIA") or 20000))
 except ValueError:
     FOTO_ENVIO_TETO_DIA = 20000
+try:                                       # 18/11: leitores de cartão do gramado têm vagas e teto do dia próprios (não dividem com o envio pela tela)
+    LEITOR_VAGAS_TOTAL = max(1, int(os.environ.get("ETERNA_LEITOR_VAGAS") or 2))
+except ValueError:
+    LEITOR_VAGAS_TOTAL = 2
+try:
+    LEITOR_TETO_DIA = max(1, int(os.environ.get("ETERNA_LEITOR_TETO_DIA") or 20000))
+except ValueError:
+    LEITOR_TETO_DIA = 20000
 FOTO_ENVIO_MIN = 1024                      # bytes: menor que isto não é foto de câmera
 FOTO_ENVIO_LADO_MIN = 64                   # px no lado menor
 _re_envio_nome = re.compile(r"^[A-Za-z0-9_-]{1,80}\.(jpg|jpeg|JPG|JPEG)$")
@@ -532,36 +540,58 @@ def metricas_carrega(dias=3):
 
 metricas_carrega()
 state = {"started": time.time(), "card": None, "copied": 0, "dups": 0, "ftp": {"port": None, "ip": None, "users": [], "received": 0, "last_user": None},
-         "envio": {"novas": 0, "repetidas": 0, "recusadas": 0}}
+         "envio": {"novas": 0, "repetidas": 0, "recusadas": 0}, "leitor": {"novas": 0, "repetidas": 0, "recusadas": 0}}
 envio_sem = threading.BoundedSemaphore(FOTO_ENVIO_SIMULT)
+leitor_sem = threading.BoundedSemaphore(LEITOR_VAGAS_TOTAL)   # 18/11: gravações ao mesmo tempo de todos os leitores de cartão
 envio_ips = {}                              # ip -> gravações em curso (com o lock)
 envio_dia = {"dia": "", "n": 0}             # fotos novas de hoje pelo envio da tela (com o lock)
 ENVIO_DIA_ARQ = os.path.join(HOME, "envio-dia.json")   # só o dia e o número: o teto do dia vale depois de reiniciar
 
 
-def envio_dia_n():
-    """Fotos novas de hoje pela rota (com o lock na mão). Virou o dia, zera; na primeira vez lê o que ficou gravado."""
+def _conta_dia_n(c, arq):
+    """Contador do dia (com o lock na mão). Virou o dia, zera; na primeira vez lê o que ficou gravado em arq."""
     hoje = time.strftime("%Y-%m-%d")
-    if envio_dia["dia"] != hoje:
+    if c["dia"] != hoje:
         n = 0
         try:
-            with open(ENVIO_DIA_ARQ) as f:
+            with open(arq) as f:
                 j = json.load(f)
             if j.get("dia") == hoje:
                 n = max(0, int(j.get("n") or 0))
         except Exception:
             pass
-        envio_dia.update(dia=hoje, n=n)
-    return envio_dia["n"]
+        c.update(dia=hoje, n=n)
+    return c["n"]
+
+
+def _conta_dia_soma(c, arq):
+    _conta_dia_n(c, arq)
+    c["n"] += 1
+    try:
+        _grava_privado(arq, json.dumps(c))
+    except Exception:
+        pass
+
+
+def envio_dia_n():
+    """Fotos novas de hoje pela rota (com o lock na mão)."""
+    return _conta_dia_n(envio_dia, ENVIO_DIA_ARQ)
 
 
 def envio_dia_soma():
-    envio_dia_n()
-    envio_dia["n"] += 1
-    try:
-        _grava_privado(ENVIO_DIA_ARQ, json.dumps(envio_dia))
-    except Exception:
-        pass
+    _conta_dia_soma(envio_dia, ENVIO_DIA_ARQ)
+
+
+leitor_dia = {"dia": "", "n": 0}            # 18/11: fotos novas de hoje pelos leitores de cartão (com o lock)
+LEITOR_DIA_ARQ = os.path.join(HOME, "leitor-dia.json")
+
+
+def leitor_dia_n():
+    return _conta_dia_n(leitor_dia, LEITOR_DIA_ARQ)
+
+
+def leitor_dia_soma():
+    _conta_dia_soma(leitor_dia, LEITOR_DIA_ARQ)
 
 
 if os.path.exists(INDEX):
@@ -2002,13 +2032,14 @@ def _por_campos(por):
     return {**({"por": str(usuario)} if usuario else {}), **({"por_assumido": str(assumido)} if assumido else {})}
 
 
-def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False, sem_mt=False, por=None):
+def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quieto=False, sem_mt=False, por=None, extra=None):
     """Leva um arquivo para a inbox. Devolve 'new', 'dup', 'excluida' (apagada a pedido do cliente) ou None (falhou).
     v96-ux: quieto=True (envio pela tela) não põe o nome do arquivo no console; o fluxo é o mesmo.
     18/11: sem_mt=True (envio pela tela sem a data do arquivo) não grava o mt: a data do temporário é a da chegada.
     18/11 (segurança): por = login de quem mandou a foto pela tela, ou (login, quem assumiu pelo "ver como"); vai para o
     meta (por, por_assumido) e para a linha de métrica, só no índice e no backup privado. Nunca sai para os navegadores
-    (/biblioteca e /events montam os campos à mão; /metricas tira o por)."""
+    (/biblioteca e /events montam os campos à mão; /metricas tira o por).
+    18/11: extra (leitor de cartão: {"ap": nome do leitor, "api": id}) entra no meta da foto e no evento "photo"."""
     t_ini = time.time()
     h = quick_hash(src, st.st_size)
     if h in lgpd_excluidas:                 # o cliente pediu para apagar: não entra de novo (a câmera recebe "ok" e não reenvia)
@@ -2055,12 +2086,13 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
     with lock:
         seen[h] = pid
         lib[pid] = {"file": dst, "thumb": thumb}
-        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), **({} if sem_mt else {"mt": st.st_mtime}), **exif_info(dst), **_por_campos(por)}
+        meta[pid] = {"o": origin, "s": src_kind, "u": time.time(), **({} if sem_mt else {"mt": st.st_mtime}), **exif_info(dst), **_por_campos(por), **(extra or {})}
         mm = dict(meta[pid])
         save_meta()
         events.append({"type": "photo", "id": pid, "name": fn, "size": st.st_size,
                        "t": st.st_mtime, "card": origin, "src": src_kind, "file": dst, "thumb": thumb,
-                       "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", "")})
+                       "cap": meta[pid].get("cap", 0), "serie": meta[pid].get("serie", ""), "autor": meta[pid].get("autor", ""), "dono": meta[pid].get("dono", ""),
+                       **(extra or {})})
         state["copied"] += 1
         m = {"pid": pid, "nome": fn, "bytes": st.st_size, "origem": src_kind, "quem": origin, "chegada": time.time(),
              "copia_ms": round((time.time() - t_ini) * 1000, 1), "sha": sha, **_por_campos(por)}
@@ -7964,6 +7996,15 @@ def auth_db():
     c.execute("create table if not exists posto (id text primary key, nome text, num integer, hash text unique, criado_por text, criado_em real,"
               " ultimo_uso real, ip_ultimo text, revogado_em real)")
     c.execute("create table if not exists posto_convite (hash text primary key, nome text, expira real, usado real)")
+    # 18/11: leitor de cartão do gramado (um por computador); aqui fica só o SHA-256 do token e do código de ativação
+    c.execute("create table if not exists leitor (id text primary key, nome text, hash text, criado_por text, criado_em real, ativado_em real,"
+              " maquina text, ultimo_contato real, ip_ultimo text, revogado_em real)")
+    c.execute("create table if not exists leitor_convite (hash text primary key, leitor_id text, expira real, usado real)")
+    for col in ("fila_n integer", "fila_mb real", "fila_em real"):      # último tamanho da fila do leitor (vale depois de reiniciar)
+        try:
+            c.execute("alter table leitor add column " + col)
+        except sqlite3.OperationalError:
+            pass
     return c
 
 
@@ -10444,6 +10485,302 @@ def posto_parear_cli(nome):
     print("Abra no aparelho \"%s\" em até 10 minutos (vale uma vez), trocando 127.0.0.1 pelo endereço do servidor na rede se for outro aparelho:" % n)
     print("  http://127.0.0.1:%d/postos/aceitar?c=%s" % (PORT, codigo))
     return 0
+
+
+# ---------- Leitor de cartão do gramado (18/11, plano docs/planos/2026-11-18-leitor-cartao-gramado.md) ----------
+# Cada computador do gramado roda agente/eterna-leitor.py: lê o cartão da câmera e manda ao servidor só as fotos que faltam.
+# O aparelho é cadastrado por quem tem Painel de controle (Alterar), que recebe um código de uso único (10 min); o instalador
+# troca esse código por um token de 256 bits que fica só no aparelho (aqui só o SHA-256). As rotas /leitor/* só aceitam a rede
+# do ponto e a VPN (ETERNA_LEITOR_REDES; vazia vale ETERNA_POSTO_REDE), sem Origin, com X-Eterna: 1 e Authorization: Bearer.
+LEITOR_CONVITE_S = 600              # validade do código de ativação
+LEITOR_VIVO_S = 90                  # sem pulso há mais que isto: "desligado"
+LEITOR_FOTO_TAXA = 300              # fotos por minuto por leitor
+LEITOR_VAGAS = 2                    # gravações ao mesmo tempo por leitor (além das FOTO_ENVIO_SIMULT do agente inteiro)
+LEITOR_TEM_TAXA = 60                # consultas /leitor/tem por minuto por leitor
+LEITOR_TEM_MAX = 500                # hashes por consulta
+LEITOR_PULSO_TAXA = 6               # pulsos por minuto por leitor
+LEITOR_ATIVAR_TAXA = 10             # tentativas de ativação por minuto por IP
+LEITOR_ATIVAR_ERROS = 20            # códigos errados em 1 hora (todas as origens) param a ativação por 15 min
+LEITOR_ATIVAR_PARADA_S = 900
+LEITOR_ERROS = ("disco", "rede", "certificado", "recusado", "cartao")
+LEITOR_CODIGO_ABC = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # sem 0/O e 1/I: o Ronaldo pode digitar o código (20 letras = 100 bits)
+_re_leitor_rotulo = re.compile(r"^[A-Za-z0-9 _-]{1,32}$")
+_re_hex64 = re.compile(r"^[0-9a-f]{64}$")
+_re_leitor_versao = re.compile(r"^[0-9A-Za-z._-]{1,20}$")
+_re_leitor_maquina = re.compile(r"^[A-Za-z0-9 ._-]{0,40}$")
+leitor_lock = threading.Lock()
+leitores_pulso = {}                 # id -> {"em": quando chegou, "ip": ..., "d": pulso validado} (só em memória)
+leitor_uso = {}                     # id -> última gravação de ultimo_contato (no máximo uma por minuto)
+leitor_ativar_falhas = []           # instantes dos códigos errados (todas as origens)
+leitor_ativar_parada = {"ate": 0.0}
+
+
+def leitor_redes():
+    """ETERNA_LEITOR_REDES (faixas separadas por vírgula); vazia vale ETERNA_POSTO_REDE; sem as duas, a rede do ponto 192.168.10.0/24."""
+    import ipaddress
+    txt = os.environ.get("ETERNA_LEITOR_REDES", "").strip() or os.environ.get("ETERNA_POSTO_REDE", "").strip() or "192.168.10.0/24"
+    redes = []
+    for x in txt.split(","):
+        try:
+            if x.strip():
+                redes.append(ipaddress.ip_network(x.strip(), strict=False))
+        except ValueError:
+            pass
+    return redes
+
+
+def leitor_ip_ok(ip, redes=None, proxy=False):
+    """O próprio servidor (loopback, só em pedido direto: proxy=False) ou um IP dentro das redes do leitor. A VPN chega como o IP do
+    firewall (192.168.10.1), dentro da faixa. proxy=True: o pedido trouxe X-Real-IP ou X-Forwarded-Proto."""
+    import ipaddress
+    try:
+        a = ipaddress.ip_address(str(ip).split("%")[0])
+        if a.version == 6 and a.ipv4_mapped:
+            a = a.ipv4_mapped
+    except ValueError:
+        return False
+    if a.is_loopback:
+        return not proxy
+    return any(a.version == r.version and a in r for r in (leitor_redes() if redes is None else redes))
+
+
+def leitor_codigo():
+    return "-".join("".join(secrets.choice(LEITOR_CODIGO_ABC) for _ in range(4)) for _ in range(5))
+
+
+def leitor_codigo_norm(codigo):
+    """O código como foi digitado ou colado (espaços, hífens, minúsculas) -> só as letras, ou "" se o formato não serve."""
+    c = re.sub(r"[\s-]", "", str(codigo or "")).upper()
+    return c if 16 <= len(c) <= 32 and all(ch in LEITOR_CODIGO_ABC for ch in c) else ""
+
+
+def leitor_nome_ok(nome, ignora=None):
+    """O nome do leitor limpo, ou None. Recusa nome de fotógrafo cadastrado ou apelido (o leitor nunca é confundido com o dono
+    das fotos) e nome de outro leitor ativo."""
+    n = posto_nome_ok(nome)
+    if not n:
+        return None
+    k = fotografo_chave(n, inteiro=True)
+    if k in ff_cadastrados() or k in ftp_cadastrados() or k in FOTOGRAFO_APELIDO or k in FOTOGRAFO_APELIDO.values():
+        return None
+    for lt in leitor_lista(True):
+        if not lt.get("revogado_em") and lt["id"] != ignora and sem_acento(lt["nome"]).strip() == sem_acento(n).strip():
+            return None
+    return n
+
+
+def _leitor_convite_novo(db, lid):
+    codigo = leitor_codigo()
+    db.execute("delete from leitor_convite where expira < ?", (time.time() - 86400,))
+    db.execute("update leitor_convite set usado=? where leitor_id=? and usado is null", (time.time(), lid))
+    expira = time.time() + LEITOR_CONVITE_S
+    db.execute("insert into leitor_convite values (?, ?, ?, ?)", (_sha(leitor_codigo_norm(codigo)), lid, expira, None))
+    return codigo, expira
+
+
+def leitor_criar(nome, por="", ip=""):
+    """-> ({id, nome}, código, expira). O código sai só aqui, para a tela de quem cadastrou; no banco fica o SHA-256."""
+    lid = "l_" + secrets.token_hex(4)
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("insert into leitor (id, nome, hash, criado_por, criado_em) values (?, ?, ?, ?, ?)", (lid, nome, None, por, time.time()))
+            codigo, expira = _leitor_convite_novo(db, lid)
+            auth_log(db, "leitor:" + lid, "leitor_criado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return {"id": lid, "nome": nome}, codigo, expira
+
+
+def leitor_codigo_novo(lid, por="", ip=""):
+    """Novo código para um leitor que não foi desativado (reinstalar). -> (código, expira) ou None."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            if not db.execute("select 1 from leitor where id=? and revogado_em is null", (str(lid),)).fetchone():
+                return None
+            codigo, expira = _leitor_convite_novo(db, str(lid))
+            auth_log(db, "leitor:" + str(lid), "leitor_codigo", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return codigo, expira
+
+
+def leitor_ativar(codigo, maquina="", ip=""):
+    """Gasta o código (uma vez, dentro de 10 min) e troca o token do leitor. -> (token, {id, nome}) ou None.
+    Ativar de novo derruba o token anterior: só o aparelho instalado por último envia."""
+    c = leitor_codigo_norm(codigo)
+    if not c:
+        return None
+    token = secrets.token_urlsafe(32)
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select leitor_id, expira from leitor_convite where hash=? and usado is null", (_sha(c),)).fetchone()
+            if not r or r[1] < time.time():
+                return None
+            db.execute("update leitor_convite set usado=? where hash=?", (time.time(), _sha(c)))
+            lt = db.execute("select id, nome from leitor where id=? and revogado_em is null", (r[0],)).fetchone()
+            if not lt:
+                db.commit()
+                return None
+            db.execute("update leitor set hash=?, ativado_em=?, maquina=?, ultimo_contato=?, ip_ultimo=? where id=?",
+                       (_sha(token), time.time(), maquina, time.time(), ip, lt[0]))
+            auth_log(db, "leitor:" + lt[0], "leitor_ativado " + maquina if maquina else "leitor_ativado", "", ip)
+            db.commit()
+        finally:
+            db.close()
+    leitores_pulso.pop(lt[0], None)
+    return token, {"id": lt[0], "nome": lt[1]}
+
+
+def leitor_quem(token, ip=""):
+    """O leitor deste token, se não foi desativado; senão None. Grava o último contato no máximo uma vez por minuto."""
+    if not token or len(token) > 100:
+        return None
+    with estado_lock:
+        db = auth_db()
+        try:
+            r = db.execute("select id, nome from leitor where hash=? and revogado_em is null", (_sha(token),)).fetchone()
+            if r and time.time() - leitor_uso.get(r[0], 0) > 60:
+                leitor_uso[r[0]] = time.time()
+                db.execute("update leitor set ultimo_contato=?, ip_ultimo=? where id=?", (time.time(), ip, r[0]))
+                db.commit()
+        finally:
+            db.close()
+    return {"id": r[0], "nome": r[1]} if r else None
+
+
+def leitor_revogar(lid, por="", ip=""):
+    with estado_lock:
+        db = auth_db()
+        try:
+            n = db.execute("update leitor set revogado_em=? where id=? and revogado_em is null", (time.time(), str(lid))).rowcount
+            if n:
+                db.execute("update leitor_convite set usado=? where leitor_id=? and usado is null", (time.time(), str(lid)))
+                auth_log(db, "leitor:" + str(lid), "leitor_revogado", por, ip)
+            db.commit()
+        finally:
+            db.close()
+    return bool(n)
+
+
+def leitor_fila_grava(lid, fila):
+    """Último tamanho da fila do leitor no banco (o painel mostra mesmo depois de reiniciar o agente ou de desativar o leitor)."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            db.execute("update leitor set fila_n=?, fila_mb=?, fila_em=? where id=?", (fila["n"], fila["mb"], time.time(), lid))
+            db.commit()
+        finally:
+            db.close()
+
+
+def leitor_lista(completa=True):
+    """Leitores com a situação (ligado, desligado, aguardando, revogado) e o último pulso. completa=False (quem só tem Upload,
+    set.r): sem IP, máquina, quem cadastrou, versão e espaço livre, e sem os desativados."""
+    with estado_lock:
+        db = auth_db()
+        try:
+            cols = ("id", "nome", "hash", "criado_por", "criado_em", "ativado_em", "maquina", "ultimo_contato", "ip_ultimo", "revogado_em", "fila_n", "fila_mb", "fila_em")
+            linhas = [dict(zip(cols, r)) for r in db.execute("select %s from leitor order by criado_em" % ", ".join(cols))]
+        finally:
+            db.close()
+    agora = time.time()
+    out = []
+    for x in linhas:
+        p = leitores_pulso.get(x["id"]) or {}
+        d = p.get("d") or {}
+        if x["revogado_em"]:
+            sit = "revogado"
+        elif not x["hash"]:
+            sit = "aguardando"
+        elif p and agora - p["em"] < LEITOR_VIVO_S:
+            sit = "ligado"
+        else:
+            sit = "desligado"
+        if not completa and sit == "revogado":
+            continue
+        cartao = d.get("cartao")
+        fila = d.get("fila") or ({"n": x["fila_n"], "mb": x["fila_mb"] or 0, "parada_s": None, "em": x["fila_em"]} if x["fila_n"] is not None else None)
+        y = {"id": x["id"], "nome": x["nome"], "situacao": sit, "ultimo_contato": max(x["ultimo_contato"] or 0, p.get("em") or 0) or None,
+             "cartao": cartao, "fila": fila, "erro": d.get("erro")}
+        if completa:
+            y.update(versao=d.get("versao"), livre_gb=d.get("livre_gb"), maquina=d.get("maquina") or x["maquina"], ip_ultimo=p.get("ip") or x["ip_ultimo"],
+                     criado_por=x["criado_por"], criado_em=x["criado_em"], ativado_em=x["ativado_em"], revogado_em=x["revogado_em"])
+        else:
+            y["cartao"] = {k: cartao.get(k) for k in ("rotulo", "estado", "em", "total", "copiadas")} if cartao else None
+            y["fila"] = {"n": fila.get("n"), "parada_s": fila.get("parada_s")} if fila else None
+        out.append(y)
+    return out
+
+
+def _leitor_int(v, teto):
+    return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= teto
+
+
+def _leitor_num(v, teto):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= teto
+
+
+def leitor_pulso_valida(b):
+    """Pulso do leitor em formato fechado. -> o dicionário limpo, ou None (campo desconhecido ou fora do formato)."""
+    if not isinstance(b, dict) or set(b) - {"v", "versao", "maquina", "livre_gb", "fila", "cartao", "erro"} or b.get("v") != 1:
+        return None
+    d = {"v": 1}
+    if not isinstance(b.get("versao"), str) or not _re_leitor_versao.match(b["versao"]):
+        return None
+    d["versao"] = b["versao"]
+    m = b.get("maquina", "")
+    if not isinstance(m, str) or not _re_leitor_maquina.match(m):
+        return None
+    d["maquina"] = m
+    if b.get("livre_gb") is not None and not _leitor_num(b.get("livre_gb"), 1e7):
+        return None
+    d["livre_gb"] = round(b["livre_gb"], 1) if b.get("livre_gb") is not None else None
+    f = b.get("fila")
+    if not isinstance(f, dict) or set(f) - {"n", "mb", "parada_s"} or not _leitor_int(f.get("n"), 10 ** 7) \
+            or not _leitor_num(f.get("mb"), 1e8) or (f.get("parada_s") is not None and not _leitor_int(f.get("parada_s"), 10 ** 9)):
+        return None
+    d["fila"] = {"n": f["n"], "mb": round(f["mb"], 1), "parada_s": f.get("parada_s")}
+    c = b.get("cartao")
+    if c is not None:
+        if not isinstance(c, dict) or set(c) - {"rotulo", "estado", "total", "copiadas", "ja_tinha", "enviadas", "sem_dono", "puladas", "em"}:
+            return None
+        if c.get("estado") not in ("sem", "lendo", "pronto", "erro") or not (c.get("rotulo") in ("", None) or (isinstance(c.get("rotulo"), str) and _re_leitor_rotulo.match(c["rotulo"]))):
+            return None
+        for k in ("total", "copiadas", "ja_tinha", "enviadas", "sem_dono", "puladas"):
+            if not _leitor_int(c.get(k, 0), 10 ** 6):
+                return None
+        if c.get("em") is not None and not _leitor_num(c.get("em"), 1e11):
+            return None
+        d["cartao"] = {"rotulo": c.get("rotulo") or "", "estado": c["estado"], **{k: c.get(k, 0) for k in ("total", "copiadas", "ja_tinha", "enviadas", "sem_dono", "puladas")},
+                       "em": c.get("em")}
+    else:
+        d["cartao"] = None
+    if b.get("erro") is not None and b.get("erro") not in LEITOR_ERROS:
+        return None
+    d["erro"] = b.get("erro")
+    return d
+
+
+def leitor_ativar_pode(agora=None):
+    """False enquanto a ativação está parada por códigos errados demais (todas as origens)."""
+    agora = time.time() if agora is None else agora
+    with leitor_lock:
+        return agora >= leitor_ativar_parada["ate"]
+
+
+def leitor_ativar_falhou(agora=None):
+    agora = time.time() if agora is None else agora
+    with leitor_lock:
+        leitor_ativar_falhas[:] = [t for t in leitor_ativar_falhas if agora - t < 3600] + [agora]
+        if len(leitor_ativar_falhas) >= LEITOR_ATIVAR_ERROS:
+            leitor_ativar_parada["ate"] = agora + LEITOR_ATIVAR_PARADA_S
+            leitor_ativar_falhas.clear()
+            print("  leitor de cartão: ativação parada por 15 min (códigos errados demais)")
 
 
 def estado_revs():
@@ -13829,6 +14166,8 @@ def cena_loop():
 #   posto_ou_sessao  aparelho pareado (cookie eterna_posto) ou pessoa conectada com um dos módulos (vazio = qualquer pessoa)
 #   sessao           pessoa conectada com um dos módulos (vazio = qualquer pessoa conectada; a rota confere o resto)
 #   teste            só com ETERNA_TESTE_CARGA=1 e pessoa com Painel de controle (Alterar)
+#   leitor           18/11: leitor de cartão do gramado (H.leitor_autoriza): Host do agente, sem Origin, X-Eterna: 1, IP da rede do
+#                    leitor (leitor_ip_ok) e Authorization: Bearer <token do aparelho>. Cookie de pessoa ou de posto não serve.
 # Caminho terminado em "/" vale como prefixo. Fora das públicas: Host do agente, Origin conhecida e, em POST, X-Eterna: 1.
 FOTOS_LER = ("venda.r", "quiosque.r", "set.r", "estoque.r", "galerias.r", "qualidade.r")        # ver fotos e sessões
 VENDER = ("venda.c", "quiosque.c", "galerias.c")                                          # o que o Checkout faz numa venda
@@ -13848,6 +14187,13 @@ ROTAS = (
     ("GET", "/ftp/contas", "sessao", ("configuracao.r",)),
     ("GET", "/postos", "sessao", ("configuracao.r",)),
     ("POST", "/postos/parear", "sessao", ("configuracao.u",)), ("POST", "/postos/revogar", "sessao", ("configuracao.u",)),
+    # 18/11: leitor de cartão do gramado. /leitor/ativar: o código de uso único (10 min) é a credencial; a rota confere Host, rede,
+    # Origin, X-Eterna e limite. As outras /leitor/*: tipo "leitor" (rede do ponto, sem Origin, X-Eterna e o token do aparelho).
+    ("POST", "/leitor/ativar", "publica", ()), ("GET", "/instalar-leitor", "publica", ()),
+    ("POST", "/leitor/pulso", "leitor", ()), ("POST", "/leitor/tem", "leitor", ()), ("POST", "/leitor/foto", "leitor", ()),
+    ("GET", "/leitores", "sessao", ("configuracao.r", "set.r")),            # só set.r: resposta reduzida (sem IP, máquina e versão)
+    ("POST", "/leitores/criar", "sessao", ("configuracao.u",)), ("POST", "/leitores/codigo", "sessao", ("configuracao.u",)),
+    ("POST", "/leitores/revogar", "sessao", ("configuracao.u",)),
     # o que o Checkout usa: posto pareado ou pessoa conectada com o módulo
     ("GET", "/thumb/", "posto_ou_sessao", FOTOS_LER), ("GET", "/file/", "posto_ou_sessao", FOTOS_LER),
     ("GET", "/sessoes", "posto_ou_sessao", FOTOS_LER),
@@ -14691,7 +15037,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar") or path.startswith(("/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
 
 
 # 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
@@ -14829,12 +15175,14 @@ class H(BaseHTTPRequestHandler):
         proxy. Só quando o pedido vem de ETERNA_PROXY_IP, o IP do aparelho é o X-Real-IP que o proxy escreve (o proxy apaga o que o
         aparelho mandou). Assim limites por IP, posto automático e registros veem o aparelho, não o proxy."""
         ok = super().parse_request()
+        self._via_proxy = False
         if ok and PROXY_IP and self.client_address and self.client_address[0] == PROXY_IP:
             real = (self.headers.get("X-Real-IP") or "").strip()
             try:
                 import ipaddress
                 ipaddress.ip_address(real)
                 self.client_address = (real, self.client_address[1])
+                self._via_proxy = True
             except ValueError:
                 pass
         if ok:
@@ -14878,6 +15226,8 @@ class H(BaseHTTPRequestHandler):
     def cors(self):
         """CORS aberto (*) só na galeria do cliente (/g/); as outras rotas só para as origens aceitas, sem cabeçalho livre."""
         path = urlparse(self.path).path
+        if path.startswith("/leitor/"):                # leitor de cartão: programa, nunca navegador (sem CORS, nem no preflight)
+            return
         if path.startswith("/g/"):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Access-Control-Allow-Headers", "Content-Type")
@@ -14927,6 +15277,8 @@ class H(BaseHTTPRequestHandler):
         tipo, mods = regra
         if tipo == "publica":
             return True
+        if tipo == "leitor":
+            return self.leitor_autoriza()
         if tipo == "teste" and not os.environ.get("ETERNA_TESTE_CARGA"):
             self.js({"error": "not found"}, 404)       # fora do teste de carga, a rota não existe
             return False
@@ -14947,6 +15299,47 @@ class H(BaseHTTPRequestHandler):
         else:
             self.js({"erro": "sem_sessao"}, 401, True)
         return False
+
+    def leitor_proxy(self):
+        """O pedido passou pelo proxy com certificado (ou traz os cabeçalhos dele)."""
+        return bool(getattr(self, "_via_proxy", False) or self.headers.get("X-Real-IP") or self.headers.get("X-Forwarded-Proto"))
+
+    def leitor_origem_ok(self):
+        """Host do agente, nenhum Origin, X-Eterna: 1 e só pelo proxy com certificado (X-Forwarded-Proto: https). Fora do proxy,
+        só o próprio servidor em pedido direto, sem os cabeçalhos do proxy (os testes falam assim com o agente)."""
+        if not host_ok((self.headers.get("Host") or "").lower()) or self.headers.get("Origin") is not None or self.headers.get("X-Eterna") != "1":
+            return False
+        if getattr(self, "_via_proxy", False):
+            return (self.headers.get("X-Forwarded-Proto") or "").lower() == "https"
+        import ipaddress
+        try:
+            a = ipaddress.ip_address(str(self.client_address[0]).split("%")[0])
+            a = a.ipv4_mapped or a if a.version == 6 else a
+        except ValueError:
+            return False
+        return a.is_loopback and not self.leitor_proxy()
+
+    def leitor_autoriza(self):
+        """Rotas do leitor de cartão (tipo "leitor" em ROTAS): Host do agente, nenhum Origin (programa, não página), X-Eterna: 1, IP
+        da rede do leitor e o token do aparelho em Authorization: Bearer. Grava self._leitor = {id, nome}."""
+        self.__dict__.pop("_leitor", None)
+        ip = self.client_address[0]
+        erro = None
+        if not self.leitor_origem_ok():
+            erro = ({"erro": "origem"}, 403)
+        elif not leitor_ip_ok(ip, proxy=self.leitor_proxy()):
+            erro = ({"erro": "rede"}, 403)
+        else:
+            a = (self.headers.get("Authorization") or "").strip()
+            lt = leitor_quem(a[7:].strip(), ip) if a[:7].lower() == "bearer " else None
+            if not lt:
+                erro = ({"erro": "sem_leitor"}, 401)
+        if erro:
+            self.close_connection = True           # o corpo não foi lido
+            self.js(erro[0], erro[1], True)
+            return False
+        self._leitor = lt
+        return True
 
     def do_OPTIONS(self):
         p = urlparse(self.path).path
@@ -15652,30 +16045,89 @@ class H(BaseHTTPRequestHandler):
             erro = ({"erro": "formato"}, 415)
         if not erro and not limite_ok(ip, "fotos_enviar", FOTO_ENVIO_TAXA):
             erro = ({"erro": "taxa"}, 429)
+
+        def gravar(tmp):
+            if mt:
+                os.utime(tmp, (mt, mt))               # a data do arquivo no cartão, não a da chegada
+            r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), ENVIO_ORIGEM, "cartao", move=True, quieto=True, sem_mt=not mt,
+                            por=(eu["usuario"], eu.get("assumido_por")))   # quem mandou fica no servidor (auditoria); o "ver como" hoje não chega aqui (so_ver)
+            if r == "new":
+                with lock:
+                    envio_dia_soma()
+                    save_index_logo()                  # o índice inteiro não é regravado a cada foto do lote
+            return r, None
+        r = motivo = None
         if not erro:
-            try:
-                livre = shutil.disk_usage(INBOX).free
-            except OSError:
-                livre = 0
-            if livre < FOTO_ENVIO_PISO_GB * 1024 ** 3:
-                erro = ({"erro": "disco"}, 507)
-        if not erro:
-            with lock:
-                if envio_dia_n() >= FOTO_ENVIO_TETO_DIA:
-                    erro = ({"erro": "teto_dia"}, 429)
-        if not erro:
-            with lock:                              # no máximo FOTO_ENVIO_POR_IP vagas por aparelho
-                if envio_ips.get(ip, 0) >= FOTO_ENVIO_POR_IP:
-                    erro = ({"erro": "ocupado"}, 503)
-                elif not envio_sem.acquire(blocking=False):
-                    erro = ({"erro": "ocupado"}, 503)
-                else:
-                    envio_ips[ip] = envio_ips.get(ip, 0) + 1
+            r, motivo, lido = self._foto_corpo_receber(n, ip, FOTO_ENVIO_POR_IP, gravar, "envio pela tela")
+            if not lido:
+                erro, motivo = motivo, None
         if erro:
             self.close_connection = True           # o corpo não foi lido: esta conexão não serve para o próximo pedido
             with lock:
                 state["envio"]["recusadas"] += 1
             return self.js(erro[0], erro[1], True)
+        if r == "excluida":                            # apagada a pedido do cliente: pela tela não entra de novo
+            r = None
+        res = r or "recusada"
+        with lock:
+            state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
+        print("  envio pela tela: %s %.1f MB" % (motivo[0]["erro"] if motivo else res, n / 1e6))
+        if motivo:
+            return self.js(motivo[0], motivo[1], True)
+        return self.js({"ok": bool(r), "resultado": res}, 200, True)
+
+    def _corpo_descartar(self, n):
+        """Lê e descarta o corpo de n bytes, dentro do prazo do envio (FOTO_ENVIO_PRAZO), sem gravar nada."""
+        fim = time.time() + FOTO_ENVIO_PRAZO
+        ler = getattr(self.rfile, "read1", None) or self.rfile.read
+        resto = n
+        try:
+            while resto > 0 and time.time() < fim:
+                self.connection.settimeout(max(0.05, min(20, fim - time.time())))
+                ch = ler(min(1 << 20, resto))
+                if not ch:
+                    break
+                resto -= len(ch)
+        except OSError:
+            pass
+        finally:
+            try:
+                self.connection.settimeout(20)
+            except OSError:
+                pass
+        return resto == 0
+
+    def _foto_corpo_receber(self, n, vaga, por_vaga, gravar, rotulo, sem=None, teto=None, dia_n=None):
+        """Parte comum do envio pela tela (/fotos/enviar) e do leitor de cartão (/leitor/foto), depois das guardas de cada rota:
+        piso de disco, teto do dia, vaga (no máximo por_vaga gravações ao mesmo tempo pela chave vaga, o IP ou "leitor:<id>",
+        e FOTO_ENVIO_SIMULT no agente inteiro), o corpo com prazo de FOTO_ENVIO_PRAZO num temporário, jpeg_envio_erro e, com a
+        foto conferida, gravar(tmp) -> (resultado, motivo). -> (resultado, motivo, lido): lido=False = recusada antes do corpo,
+        com motivo = (corpo, código). O temporário sai sempre, e a vaga volta. sem, teto e dia_n trocam as vagas e o teto do dia
+        (os leitores de cartão têm os próprios)."""
+        sem = envio_sem if sem is None else sem
+        teto = FOTO_ENVIO_TETO_DIA if teto is None else teto
+        dia_n = envio_dia_n if dia_n is None else dia_n
+        erro = None
+        try:
+            livre = shutil.disk_usage(INBOX).free
+        except OSError:
+            livre = 0
+        if livre < FOTO_ENVIO_PISO_GB * 1024 ** 3:
+            erro = ({"erro": "disco"}, 507)
+        if not erro:
+            with lock:
+                if dia_n() >= teto:
+                    erro = ({"erro": "teto_dia"}, 429)
+        if not erro:
+            with lock:                              # no máximo por_vaga vagas por aparelho
+                if envio_ips.get(vaga, 0) >= por_vaga:
+                    erro = ({"erro": "ocupado"}, 503)
+                elif not sem.acquire(blocking=False):
+                    erro = ({"erro": "ocupado"}, 503)
+                else:
+                    envio_ips[vaga] = envio_ips.get(vaga, 0) + 1
+        if erro:
+            return None, erro, False
         tmp = None
         r, motivo = None, None
         try:
@@ -15708,18 +16160,11 @@ class H(BaseHTTPRequestHandler):
             elif erro_jpeg:
                 motivo = ({"erro": "incompleta"}, 400) if erro_jpeg == "incompleta" else ({"erro": "nao_jpeg"}, 415)
             else:
-                if mt:
-                    os.utime(tmp, (mt, mt))               # a data do arquivo no cartão, não a da chegada
-                r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), ENVIO_ORIGEM, "cartao", move=True, quieto=True, sem_mt=not mt,
-                                por=(eu["usuario"], eu.get("assumido_por")))   # quem mandou fica no servidor (auditoria); o "ver como" hoje não chega aqui (so_ver)
-                if r == "new":
-                    with lock:
-                        envio_dia_soma()
-                        save_index_logo()                  # o índice inteiro não é regravado a cada foto do lote
+                r, motivo = gravar(tmp)
         except Exception as ex:                        # disco, permissão ou falha na entrada da foto: 500 com código fixo
             r, motivo = None, ({"erro": "servidor"}, 500)
             self.close_connection = True
-            print("  envio pela tela: falha no servidor (%s)" % type(ex).__name__)
+            print("  %s: falha no servidor (%s)" % (rotulo, type(ex).__name__))
         finally:
             if tmp and os.path.exists(tmp):
                 try:
@@ -15727,23 +16172,206 @@ class H(BaseHTTPRequestHandler):
                 except OSError:
                     pass
             with lock:
-                envio_ips[ip] = envio_ips.get(ip, 1) - 1
-                if envio_ips[ip] <= 0:
-                    envio_ips.pop(ip, None)
-            envio_sem.release()
+                envio_ips[vaga] = envio_ips.get(vaga, 1) - 1
+                if envio_ips[vaga] <= 0:
+                    envio_ips.pop(vaga, None)
+            sem.release()
             try:
                 self.connection.settimeout(20)
             except OSError:
                 pass
-        if r == "excluida":                            # apagada a pedido do cliente: pela tela não entra de novo
-            r = None
-        res = r or "recusada"
+        return r, motivo, True
+
+    # ---------- leitor de cartão do gramado (18/11, plano docs/planos/2026-11-18-leitor-cartao-gramado.md) ----------
+    def leitor_ativar_post(self):
+        """POST /leitor/ativar {codigo, maquina}: o instalador troca o código de uso único pelo token do aparelho. Rota pública: o
+        código é a credencial. Limites da própria rota: 10 por minuto por IP; 20 códigos errados em 1 hora param a ativação por
+        15 min. Inválido, vencido e usado dão a mesma resposta."""
+        ip = self.client_address[0]
+        if not self.leitor_origem_ok():
+            self.close_connection = True
+            return self.js({"erro": "origem"}, 403, True)
+        if not leitor_ip_ok(ip, proxy=self.leitor_proxy()):
+            self.close_connection = True
+            return self.js({"erro": "rede"}, 403, True)
+        if not limite_ok(ip, "leitor_ativar", LEITOR_ATIVAR_TAXA) or not leitor_ativar_pode():
+            self.close_connection = True
+            return self.js({"erro": "taxa"}, 429, True)
+        b, err = self.corpo(1024)
+        if err:
+            return self.js({"erro": "pedido"}, 400 if err != 413 else 413, True)
+        maquina = b.get("maquina") if isinstance(b.get("maquina"), str) and _re_leitor_maquina.match(b.get("maquina")) else ""
+        r = leitor_ativar(b.get("codigo"), maquina, ip)
+        if not r:
+            leitor_ativar_falhou()
+            return self.js({"erro": "codigo"}, 404, True)
+        token, lt = r
+        print("  leitor de cartão ativado: %s" % lt["nome"])
+        return self.js({"id": lt["id"], "nome": lt["nome"], "token": token}, 200, True)
+
+    def leitor_pulso_post(self):
+        """POST /leitor/pulso: a situação do leitor (cartão, fila, erro), a cada 30 s e a cada mudança. Só em memória."""
+        lt = self._leitor
+        if not limite_ok("leitor:" + lt["id"], "leitor_pulso", LEITOR_PULSO_TAXA):
+            self.close_connection = True
+            return self.js({"erro": "taxa"}, 429, True)
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        d = leitor_pulso_valida(b)
+        if d is None:
+            return self.js({"erro": "campo"}, 400, True)
+        with leitor_lock:
+            antes = (leitores_pulso.get(lt["id"]) or {}).get("d") or {}
+            leitores_pulso[lt["id"]] = {"em": time.time(), "ip": self.client_address[0], "d": d}
+        if (antes.get("fila") or {}).get("n") != d["fila"]["n"] or not antes:
+            leitor_fila_grava(lt["id"], d["fila"])
+        return self.js({"ok": True, "agora": int(time.time())}, 200, True)
+
+    def leitor_tem_post(self):
+        """POST /leitor/tem {h: [quick_hash, ...]}: quais destas fotos o servidor já tem (ou apagou a pedido do cliente, sem dizer
+        qual dos dois). O leitor só copia e envia o resto."""
+        lt = self._leitor
+        if not limite_ok("leitor:" + lt["id"], "leitor_tem", LEITOR_TEM_TAXA):
+            self.close_connection = True
+            return self.js({"erro": "taxa"}, 429, True)
+        b, err = self.corpo(64 * 1024)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        hs = b.get("h")
+        if not isinstance(hs, list) or len(hs) > LEITOR_TEM_MAX or not all(isinstance(h, str) and _re_hex64.match(h) for h in hs):
+            return self.js({"erro": "hash"}, 400, True)
         with lock:
-            state["envio"][{"new": "novas", "dup": "repetidas"}.get(r, "recusadas")] += 1
-        print("  envio pela tela: %s %.1f MB" % (motivo[0]["erro"] if motivo else res, n / 1e6))
+            tem = [h for h in dict.fromkeys(hs) if h in seen or h in lgpd_excluidas]
+        return self.js({"tem": tem}, 200, True)
+
+    def leitor_foto_post(self):
+        """POST /leitor/foto?nome=&rotulo= (o JPEG é o corpo; X-Eterna-Hash = quick_hash, X-Eterna-Sha256 = arquivo inteiro): uma
+        foto do cartão lido no gramado. Entra pelo ingest_file como foto de cartão, com origem = rótulo do cartão (a mesma regra do
+        cartão lido no servidor: o dono sai do ff_quem) e o leitor em "ap". As guardas de disco, teto do dia, vagas e corpo são as
+        do envio pela tela (_foto_corpo_receber)."""
+        lt = self._leitor
+        q = parse_qs(urlparse(self.path).query)
+        tam = self.headers.get("Content-Length")
+        erro = None
+        try:
+            n = int(tam) if tam is not None else -1
+        except ValueError:
+            n, erro = -1, ({"erro": "tamanho"}, 400)
+        nome = (q.get("nome") or [""])[0]
+        rotulo = (q.get("rotulo") or [""])[0]
+        hq = (self.headers.get("X-Eterna-Hash") or "").strip().lower()
+        hs = (self.headers.get("X-Eterna-Sha256") or "").strip().lower()
+        if erro:
+            pass
+        elif (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "image/jpeg":
+            erro = ({"erro": "formato"}, 415)
+        elif tam is None:
+            erro = ({"erro": "tamanho"}, 411)
+        elif n <= 0 or n > FOTO_ENVIO_MAX:
+            erro = ({"erro": "tamanho"}, 413)
+        elif not nome.endswith(EXT) or len(nome) > 200:
+            erro = ({"erro": "formato"}, 415)
+        elif not _re_leitor_rotulo.match(rotulo):
+            erro = ({"erro": "rotulo"}, 400)
+        elif not _re_hex64.match(hq) or not _re_hex64.match(hs):
+            erro = ({"erro": "hash"}, 400)
+        elif not limite_ok("leitor:" + lt["id"], "leitor_foto", LEITOR_FOTO_TAXA):
+            erro = ({"erro": "taxa"}, 429)
+
+        def gravar(tmp):
+            sha = hashlib.sha256()
+            with open(tmp, "rb") as f:
+                for bloco in iter(lambda: f.read(1 << 20), b""):
+                    sha.update(bloco)
+            if quick_hash(tmp, n) != hq or sha.hexdigest() != hs:
+                return None, ({"erro": "hash"}, 400)
+            r = ingest_file(tmp, envio_nome(nome), os.stat(tmp), rotulo, "cartao", move=True, quieto=True, extra={"ap": lt["nome"], "api": lt["id"]})
+            if r == "new":
+                with lock:
+                    leitor_dia_soma()
+                    save_index_logo()
+            if r is None:
+                return None, ({"erro": "servidor"}, 500)
+            return r, None
+        r = motivo = None
+        if not erro:
+            r, motivo, lido = self._foto_corpo_receber(n, "leitor:" + lt["id"], LEITOR_VAGAS, gravar, "leitor de cartão",
+                                                       sem=leitor_sem, teto=LEITOR_TETO_DIA, dia_n=leitor_dia_n)
+            if not lido:
+                erro, motivo = motivo, None
+        if erro:
+            if erro[0].get("erro") in ("ocupado", "teto_dia", "taxa") and 0 < n <= FOTO_ENVIO_MAX:
+                self._corpo_descartar(n)            # o leitor recebe a resposta inteira e tenta de novo depois
+            self.close_connection = True
+            with lock:
+                state["leitor"]["recusadas"] += 1
+            return self.js(erro[0], erro[1], True)
         if motivo:
+            with lock:
+                state["leitor"]["recusadas"] += 1
+            print("  leitor %s: %s %.1f MB" % (lt["nome"], motivo[0]["erro"], n / 1e6))
             return self.js(motivo[0], motivo[1], True)
-        return self.js({"ok": bool(r), "resultado": res}, 200, True)
+        res = "new" if r == "new" else "dup"            # foto que o servidor já tratou (repetida ou apagada) responde igual
+        with lock:
+            mm = dict(meta.get(hq[:12]) or {}) if r == "new" else {}
+            state["leitor"]["novas" if r == "new" else "repetidas"] += 1
+        dono = bool(mm) and ff_quem(mm.get("o"), mm.get("autor"), mm.get("dono"), mm.get("serie"), "cartao")[0] is not None
+        if r == "new":
+            print("  leitor %s: foto nova %.1f MB" % (lt["nome"], n / 1e6))
+        return self.js({"ok": True, "resultado": res, "dono": dono}, 200, True)
+
+    def leitores_get(self):
+        """GET /leitores: os leitores e a situação de cada um. Painel de controle (Ver) vê tudo; só Upload (set.r) vê a forma reduzida."""
+        eu = self.sessao()
+        return self.js({"leitores": leitor_lista(auth_pode(eu["cadastro"], "configuracao", "r"))}, 200, True)
+
+    def leitores_post(self, path):
+        """POST /leitores/criar {nome}, /leitores/codigo {id}, /leitores/revogar {id}: Painel de controle (Alterar). O código de
+        ativação sai só na resposta de quem pediu; nunca vai para log."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"erro": "origem"}, 403, True)
+        eu = self.sessao()
+        b, err = self.corpo(4096)
+        if err:
+            return self.js({"erro": "pedido"}, err, True)
+        ip = self.client_address[0]
+        if path == "/leitores/criar":
+            nome = leitor_nome_ok(b.get("nome"))
+            if not nome:
+                return self.js({"erro": "nome"}, 400, True)
+            lt, codigo, expira = leitor_criar(nome, eu["usuario"], ip)
+            return self.js({"leitor": lt, "codigo": codigo, "expira": expira}, 200, True)
+        if path == "/leitores/codigo":
+            r = leitor_codigo_novo(b.get("id"), eu["usuario"], ip)
+            if not r:
+                return self.js({"erro": "not found"}, 404, True)
+            return self.js({"codigo": r[0], "expira": r[1]}, 200, True)
+        if path == "/leitores/revogar":
+            if not leitor_revogar(b.get("id"), eu["usuario"], ip):
+                return self.js({"erro": "not found"}, 404, True)
+            return self.js({"ok": True}, 200, True)
+        return self.js({"error": "not found"}, 404)
+
+    def instalar_leitor(self):
+        """GET /instalar-leitor: o instalador do leitor de cartão (servidor/leitor/instalar-leitor.cmd), da cópia do repositório que
+        está no ar, sem internet. É o arquivo público do repositório: não tem segredo (o código de ativação é digitado na hora)."""
+        arq = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servidor", "leitor", "instalar-leitor.cmd")
+        try:
+            with open(arq, "rb") as f:
+                d = f.read(INSTALADOR_MAX + 1)
+        except OSError:
+            d = b""
+        if not 0 < len(d) <= INSTALADOR_MAX:
+            return self.js({"error": "instalador_indisponivel"}, 404)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Disposition", 'attachment; filename="instalar-leitor.cmd"')
+        self.send_header("Content-Length", str(len(d)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(d)
+        return None
 
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
@@ -16272,10 +16900,14 @@ class H(BaseHTTPRequestHandler):
             return self.postos_get(u, q)
         if u.path == "/instalar":
             return self.instalar_posto()
+        if u.path == "/instalar-leitor":
+            return self.instalar_leitor()
         if ("GET", u.path) in AGENDA_ROTAS:          # v97
             return self.agenda_rota("GET", u.path)
         if rota_privada(u.path) and not self.origem_privada_ok(u.path):
             return self.js({"error": "origem não autorizada"}, 403)
+        if u.path == "/leitores":
+            return self.leitores_get()
         if u.path == "/status":
             minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT}
             o = (self.headers.get("Origin") or "").rstrip("/").lower()
@@ -16605,6 +17237,14 @@ class H(BaseHTTPRequestHandler):
         if not self.autoriza("POST"):
             return
         u = urlparse(self.path)
+        if u.path == "/leitor/ativar":                 # 18/11: leitor de cartão do gramado (programa, sem pessoa conectada)
+            return self.leitor_ativar_post()
+        if u.path == "/leitor/pulso":
+            return self.leitor_pulso_post()
+        if u.path == "/leitor/tem":
+            return self.leitor_tem_post()
+        if u.path == "/leitor/foto":
+            return self.leitor_foto_post()
         origin = self.headers.get("Origin") or ""
         eu = self.sessao()
         if eu and eu.get("assumido_por") and u.path not in ASSUMIR_LIVRES:
@@ -16613,6 +17253,8 @@ class H(BaseHTTPRequestHandler):
             return self.auth_post(u)
         if u.path in ("/postos/parear", "/postos/revogar"):
             return self.postos_post(u)
+        if u.path in ("/leitores/criar", "/leitores/codigo", "/leitores/revogar"):
+            return self.leitores_post(u.path)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
         if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):

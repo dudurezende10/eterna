@@ -304,6 +304,42 @@ Bom saber:
 - Pode trocar de tela durante o envio, ele continua. Não feche nem recarregue a página até terminar.
 - Para interromper, toque em **Parar**.
 - Cada envio fica registrado com o nome de quem enviou.
+### Leitor de cartão do gramado (18/11)
+
+No computador do gramado fica aberta uma janelinha do Eterna. É ela que lê o cartão.
+
+**Fotógrafo**
+
+1. Ponha o cartão da câmera no leitor do computador do gramado.
+2. A janela fica **azul**, "Lendo o cartão…". Espere.
+3. Quando ficar **verde**, "Pode tirar o cartão", e o computador apitar, tire o cartão e volte para o campo. As fotos que faltavam já estão guardadas no computador e sobem sozinhas para o servidor.
+
+O leitor só copia as fotos que ainda não chegaram pelo Wi-Fi ou pelo FTP. Pôr o mesmo cartão de novo não manda nada repetido. O cartão nunca é apagado nem alterado.
+
+| Cor da janela | O que fazer |
+| --- | --- |
+| **Cinza**, "Coloque o cartão" | nada: o leitor está esperando |
+| **Azul**, "Lendo o cartão…" | não tire o cartão |
+| **Verde**, "Pode tirar o cartão" | tire o cartão |
+| **Amarela**, "Sem conexão: as fotos ficam guardadas aqui" | pode seguir trabalhando; as fotos sobem quando a rede voltar |
+| **Vermelha**, "Não tire o cartão" | o computador está sem espaço: deixe o cartão e chame a TI |
+| **Vermelha**, "Coloque o cartão de novo" | o cartão saiu antes do fim: ponha de novo, o leitor continua de onde parou |
+| **Vermelha**, "Erro ao ler o cartão" | não tire o cartão: o leitor tenta de novo; se continuar, chame a TI |
+| **Vermelha**, "Leitor desativado no Eterna" | chame a TI |
+
+Se a janela verde disser "N fotos do cartão não abriram", tire o cartão normalmente e avise a TI: as outras fotos foram guardadas.
+
+De quem é a foto: a mesma regra do cartão lido no servidor (o nome gravado na câmera; sem ele, o nome do cartão, se for o de um fotógrafo cadastrado). Sem nenhuma pista, a foto fica em **Sem fotógrafo**.
+
+Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1: ligado · 34 fotos na fila". Ela fica amarela quando o leitor está desligado ou quando a fila está parada há mais de 10 minutos: avise a TI.
+
+**Administração** (Painel de controle › Avançado › **Leitores de cartão**, com Painel de controle em Alterar)
+
+- **Cadastrar leitor**: escreva o nome do computador (ex.: Gramado 1) e toque em **Cadastrar leitor**. Aparece um **código de ativação**: vale 10 minutos e uma vez só, e some da tela quando você sai dela. Passe o código para quem instala (a TI).
+- **Novo código**: para reinstalar o leitor naquele computador. O código antigo e a instalação anterior deixam de valer quando o novo é usado.
+- **Desativar**: o leitor para de enviar na hora. As fotos que estavam na fila dele ficam naquele computador até a TI apagar; depois de 7 dias desativado, o próprio leitor apaga a fila. A tabela continua mostrando o tamanho da fila do leitor desativado.
+- A tabela mostra se cada leitor está **Ligado**, **Desligado desde…**, **Aguardando instalação** ou **Desativado**, o último cartão (lendo, pronto, quantas já estavam no servidor, quantas ficaram sem fotógrafo), a fila e o aviso, se houver.
+
 ### Sessões de hoje (v91)
 
 Com o computador do ponto ligado, **Minhas fotos** mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. O fotógrafo vê as sessões dele. A supervisora e o Admin filtram pelo seletor **Fotógrafo** do alto da tela (o filtro por ponto saiu em 18/11; sessão sem ponto aparece).
