@@ -215,7 +215,7 @@ try{
   // ---- critério 12: halo no fundo branco de teste (outra página: o fundo do Túnel trocado por branco)
   const pg2=await ctx.newPage();pg2.setDefaultTimeout(120000);pg2.on('pageerror',e=>errs.push(e.message));const branco=path.join(TMP,'recortes','branco_2400.png');
   await pg2.route('**/'+REGRAS.fundos.tunel.previa,r=>r.fulfill({status:200,contentType:'image/png',body:fs.readFileSync(branco)}));
-  await pg2.goto(U);await pg2.waitForFunction(()=>window.ETERNA&&ETERNA.fiaMontar&&ETERNA.FIA_ROSTOS,null,{timeout:20000});
+  await pg2.goto(U);await pg2.waitForFunction(()=>window.ETERNA&&ETERNA.fiaMontar&&ETERNA.FIA_ROSTOS&&ETERNA.mtgCanvasOk(),null,{timeout:20000}); // o /status (sem montagem) já respondeu
   const hc=await pg2.evaluate(async pid=>{ETERNA.state.agent.on=true;ETERNA.state.agent.recorte={ok:true};ETERNA.FIA_ROSTOS['ag_'+pid]=Promise.resolve([]);const r=await ETERNA.fiaMontar('ag_'+pid,'tunel');return r.canvas?r.canvas.toDataURL('image/png'):null;},pidDe('halo'));
   if(ok(!!hc,'12: montagem da prova do halo no canvas')){const ca=path.join(TMP,'canvas-halo.png'),pyh=path.join(TMP,'py-halo.png');salvaPng(ca,hc);
     const ph=pyLinhas([PY,'--teste'],J([{recorte:HALO.hi,reduzir:true,fundo:branco,bg:'tunel',rostos:[],saida:pyh}]))[0];ok(ph.ok,'12: montagem da prova do halo no Python');

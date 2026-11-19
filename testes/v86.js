@@ -1,3 +1,4 @@
+const statusSemMontagem=require('./_status_agente.js');
 // v86: 5º fundo de IA aprovado direto, Pódio de campeão (regra 14). Ativo por padrão, migração da escolha salva (uma vez só),
 // FIA_REGRAS.podio com o grupo à esquerda da taça do fundo (borda direita até ~0,76), fileHi de 5000 px e mapa de fundos do agente.
 // Recortes: formas desenhadas aqui (sem pessoa); nenhuma foto de convidado.
@@ -43,6 +44,7 @@ im.save(sys.argv[1]+'/largomeio.png')
   ok(pad.dir<=.761&&near(pad.p.top,.2*1600,1)&&pad.p.bottom===0&&near(pad.tl,60,1)&&near(pad.tr,60,1),'1: bgPad do pódio sem invadir a taça (túnel igual a antes): '+J(pad));
 
   // ---------- 2. montagem: grupo encostado embaixo, à esquerda da taça ----------
+  await statusSemMontagem(ctx,ORIG,pg); // o agente responde sem `montagem`: o navegador monta no canvas
   const mont=(id,hi)=>pg.evaluate(async([id,hi])=>{const r=await ETERNA.fiaMontar(id,'podio',hi?{hi:true}:{});const L=r.layout;if(!L)return r;return {w:r.w||(hi?null:0),h:r.h,modo:L.modo,corte:L.corte,dst:L.dst,W:r.canvas?r.canvas.width:null,H:r.canvas?r.canvas.height:null,fonte:r.fonte,av:r.avisos,url:(r.url||'').slice(0,23)};},[id,hi]);
   for(const [id,nome] of Object.entries(CUT)){const m=await mont('ag_'+id);const W=m.W,Hh=m.H;const dir=(m.dst.x+m.dst.w)/W,cx=(m.dst.x+m.dst.w/2)/W;
     ok(W===2400&&Hh===1600,'2 '+nome+': prévia com o fundo de 2400 px: '+J(m));

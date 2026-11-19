@@ -22,12 +22,14 @@ const {chromium}=require('playwright');const {execFileSync}=require('child_proce
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const login=require('./_login.js');
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);return c;};const J=JSON.stringify;
-const [JPG,PV,HI]=execFileSync('python3',['-c',`
+const [JPG,PV,HI,SIL]=execFileSync('python3',['-c',`
 import io,base64
 from PIL import Image,ImageDraw
 def j(w,h,c):
     im=Image.new('RGB',(w,h),c);d=ImageDraw.Draw(im);d.ellipse([w*.4,h*.3,w*.6,h*.6],fill=(230,200,170));b=io.BytesIO();im.save(b,'JPEG',quality=80);return base64.b64encode(b.getvalue()).decode()
-print(j(300,200,(60,110,150)));print(j(1200,856,(20,90,40)));print(j(1844,1240,(90,40,20)))`]).toString().trim().split('\n').map(x=>Buffer.from(x,'base64'));
+print(j(300,200,(60,110,150)));print(j(1200,856,(20,90,40)));print(j(1844,1240,(90,40,20)))
+s=Image.new('RGBA',(1600,2400),(0,0,0,0));d=ImageDraw.Draw(s);d.ellipse([650,200,950,520],fill=(230,200,170,255));d.rectangle([520,520,1080,2399],fill=(30,60,140,255))
+b=io.BytesIO();s.save(b,'PNG');print(base64.b64encode(b.getvalue()).decode())`]).toString().trim().split('\n').map(x=>Buffer.from(x,'base64'));
 const hoje=(()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
 const a=Date.now()/1000;
 const ids=(p,n)=>Array.from({length:n},(_,i)=>p+String(i+1).padStart(9,'0'));
@@ -69,6 +71,16 @@ try{
     const r0=await p0.evaluate(async()=>{const a=await ETERNA.compose('ag_e5e000000001','mirantedia');const h=await ETERNA.compHi('ag_e5e000000001','mirantedia');return {a,h:{err:h.err,url:!!h.url},c:{...ETERNA.fiaMontagens},ok:ETERNA.mtgCanvasOk(),srv:ETERNA.mtgSrv()};});
     ok(r0.a.pending==='servidor'&&r0.h.err&&!r0.h.url&&r0.c.canvas===0&&rec0===0&&!r0.ok,'9b: antes do primeiro /status nada é montado no canvas e não sai POST /recorte: '+J([r0,rec0]));
     await c0.close();}
+  // ---- 9c. página nova, nada guardado, /status com a chave desligada: o canvas monta (como sempre)
+  {const c1=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await c1.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());let rec1=0;
+    await c1.route(ORIG+'/status',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,agent:'eterna-agente',version:3,boot:'bD',card:null,copied:0,dups:0,events:0,recorte:{ok:true,carregado:true},montagem:{v:1,modo:'desligada',ok:false,motivo:'desligada'},fundos_modo:'local'})}));
+    await c1.route(ORIG+'/events*',r=>r.fulfill({status:200,contentType:'application/json',body:'{"events":[],"next":0,"total":0}'}));
+    await c1.route(ORIG+'/recorte',r=>{rec1++;r.fulfill({status:200,contentType:'image/png',body:SIL});});
+    const p1=await c1.newPage();p1.on('pageerror',e=>errs.push(e.message));await p1.goto(U+'#loja');
+    const pronto=await p1.waitForFunction(()=>window.ETERNA&&ETERNA.mtgCanvasOk&&ETERNA.mtgCanvasOk(),null,{timeout:20000}).then(()=>true,()=>false);
+    const r1=pronto?await p1.evaluate(async()=>{const a=await ETERNA.compose('ag_e5e000000003','mirantedia');return {url:!!a.url,srv:!!a.srv,err:a.err||a.pending||null,c:{...ETERNA.fiaMontagens},srvOn:ETERNA.mtgSrv()};}):null;
+    ok(pronto&&r1&&r1.url&&!r1.srv&&!r1.srvOn&&r1.c.canvas===1&&r1.c.servidor===0&&rec1>=1,'9c: /status com a chave desligada numa página nova: o navegador recorta e monta no canvas: '+J([pronto,r1,rec1]));
+    await c1.close();}
   const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U+'#loja');
   const espera=async(fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await pg.evaluate(fn,arg))return true;await pg.waitForTimeout(150);}return false;};

@@ -5,6 +5,7 @@
 // Fotos: só as de exemplo do repositório (sprites/c00.webp), ampliadas; nenhuma foto de convidado de fora do repo.
 // Memória: só isnet-general-use e u2net_human_seg (nunca birefnet). Sem rembg no ambiente, a parte do recorte real é pulada com aviso.
 const entrarTeste=require('./_entrar');
+const statusSemMontagem=require('./_status_agente.js');
 const {chromium}=require('playwright');const {spawn,execFileSync}=require('child_process');const fs=require('fs');const os=require('os');const path=require('path');const http=require('http');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const RAIZ=path.join(__dirname,'..');const AG=path.join(RAIZ,'agente','eterna-agente.py');
@@ -150,6 +151,7 @@ out.save(sys.argv[2])
   await pg.type('[data-act="login-usuario"]','eduardo@eduardorezende.com');await pg.evaluate(()=>ETERNA.render());
   ok(await pg.evaluate(()=>document.activeElement&&document.activeElement.dataset.act)==='login-usuario','0: outro render da entrada não pula para outro campo');
   await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(500);
+  await statusSemMontagem(ctx,ORIG,pg); // o agente responde sem `montagem`: o navegador monta no canvas
   const mont=(id,bg)=>pg.evaluate(async([id,bg])=>{const r=await ETERNA.fiaMontar(id,bg);if(!r.canvas)return r;const c=r.canvas,x=c.getContext('2d');const L=r.layout;
     // cinza: R, G e B iguais (±2) numa grade; diferença do fundo puro no meio da borda de baixo do grupo
     let cinza=true;const d=x.getImageData(0,0,c.width,c.height).data;for(let yy=0;yy<c.height;yy+=37)for(let xx=0;xx<c.width;xx+=41){const k=(yy*c.width+xx)*4;if(Math.abs(d[k]-d[k+1])>2||Math.abs(d[k+1]-d[k+2])>2)cinza=false;}

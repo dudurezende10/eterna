@@ -376,6 +376,25 @@ try:
     m.mtg_ruins[(Q, "telao")] = (m.mtg_versao("telao"), "interno", time.time())
     s, j, _ = pede("GET", "/montagem/ag_%s/telao.jpg?t=p" % Q, cookie=posto)
     ok(s == 422 and j == {"estado": "erro"} and fila_vazia(), "2 (revisão): GET com erro recente da versão atual: 422 e nada na fila: %s %r" % (s, j))
+    # com trabalho já na fila para a foto e o fundo, o GET responde 202 (a mesma janela de erro do pedir), e depois da janela tenta de novo
+    with m.mtg_lock:
+        m.mtg_jobs[(Q, "telao")] = {"pid": Q, "fundo": "telao", "tipos": {"p"}, "prio": 0, "p0": False, "pego": True, "ev": threading.Event(), "u": None, "pref": False, "grupo": (), "err": None}
+    s, j, _ = pede("GET", "/montagem/ag_%s/telao.jpg?t=p" % Q, cookie=posto)
+    with m.mtg_lock:
+        m.mtg_jobs.pop((Q, "telao"), None)
+    ok(s == 202, "6 (revisão): erro recente mas já na fila: 202: %s %r" % (s, j))
+    m.mtg_ruins[(Q, "telao")] = (m.mtg_versao("telao"), "interno", time.time() - m.MTG_ERRO_RECENTE - 1)
+    s, j, _ = pede("GET", "/montagem/ag_%s/telao.jpg?t=i" % Q, cookie=posto)
+    ok(s == 202, "6 (revisão): passada a janela de %d s o erro passageiro não segura a impressão: %s %r" % (m.MTG_ERRO_RECENTE, s, j))
+    espera(fila_vazia, 60)
+    # a leitura das vendas pagas não espera o ev_lock (o registro de vendas não trava)
+    m._mtg_pagas["chave"] = None
+    res = {}
+    with m.ev_lock:
+        th2 = threading.Thread(target=lambda: res.update(v=m.mtg_pagas()), daemon=True)
+        th2.start()
+        th2.join(5)
+    ok(not th2.is_alive() and (X0 := res.get("v")) is not None and any(p == Y for p, f in X0), "7 (revisão): mtg_pagas lê com o ev_lock ocupado: %r" % (res,))
     m.mtg_ruins.pop((Q, "telao"), None)
     with m.sess_lock:                                  # a leva de teste sai (as voltas seguintes não a montam)
         m.sess.pop("LP-MTG-Q", None)

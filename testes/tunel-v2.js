@@ -1,3 +1,4 @@
+const statusSemMontagem=require('./_status_agente.js');
 // Saída do túnel v2 (Eduardo, 16/11 18:57; regra 22; docs/planos/2026-11-16-tunel-v2.md): imagem nova no mesmo id `tunel`,
 // 4º fundo ativo (Mirante do Rio, Maracanã 1950, Telão, Saída do túnel). Posição: centro, encostado embaixo, NADA do recorte
 // acima de 23,4% da altura (a faixa "Born to Score"), nem braço erguido; até 92% da largura; casal e pessoa sozinha (estreito)
@@ -94,6 +95,7 @@ try{
   const pngB=(await pg.evaluate(()=>window.__recBraco)).split(',')[1];
   await ctx.route(ORIG+'/recorte',q=>q.fulfill({status:200,contentType:'image/png',body:Buffer.from(pngB,'base64')}));
   await pg.evaluate(()=>{ETERNA.state.agent.on=true;ETERNA.state.agent.recorte={ok:true};});
+  await statusSemMontagem(ctx,ORIG,pg); // o agente responde sem `montagem` (modo conhecido): o navegador monta no canvas
   const z=await pg.evaluate(async([LIM])=>{const E=ETERNA,B=E.bgOf('tunel');const carrega=async u=>{const im=new Image();im.src=u;await im.decode();return im;};
     const dados=(im,sx,sy,sw,sh,w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingQuality='high';x.drawImage(im,sx,sy,sw,sh,0,0,w,h);return x.getImageData(0,0,w,h).data;};
     const r=await E.fiaMontar('ag_7b0000000001','tunel');if(!r.canvas)return {falha:r};const W=r.w,H=r.h;const A=r.canvas.getContext('2d').getImageData(0,0,W,H).data;const pl=await carrega(B.file);const P=dados(pl,0,0,W,H,W,H);

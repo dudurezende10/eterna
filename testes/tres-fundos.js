@@ -1,3 +1,4 @@
+const statusSemMontagem=require('./_status_agente.js');
 // 16/11 (Eduardo): três fundos de IA no Checkout (Mirante do Rio de dia, Arquibancada 1950 toda em preto e branco e Telão do
 // Maracanã com a imagem nova). Noite de campeão, Mirante ao pôr do sol e Saída do túnel vão para o Laboratório, sem apagar.
 // Plano e critérios: docs/planos/2026-11-16-tres-fundos-ia.md. Recorte sintético (nunca foto de cliente).
@@ -89,6 +90,7 @@ try{
 
   // ---------- montagens (recorte sintético) ----------
   await pg.evaluate(()=>{ETERNA.state.agent.on=true;ETERNA.state.agent.recorte={ok:true};});
+  await statusSemMontagem(ctx,ORIG,pg); // o agente responde sem `montagem` (modo conhecido): o navegador monta no canvas
   const cena=`async function carrega(src){return await new Promise(z=>{const i=new Image();i.onload=()=>z(i);i.onerror=()=>z(null);i.src=src;});}
     function dados(c){return c.getContext('2d',{willReadFrequently:true}).getImageData(0,0,c.width,c.height);}
     function tela(im){const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext('2d').drawImage(im,0,0);return c;}`;
