@@ -3170,12 +3170,20 @@ function LOJA_ABA_NOW(){try{return sessionStorage.getItem('eterna.lojaTab')==='1
 let LOJA_TELAS=null;
 async function lojaTelasLer(pede){try{if(!('getScreenDetails' in window))return;if(!pede){const st=await navigator.permissions.query({name:'window-management'});if(st.state!=='granted')return;}LOJA_TELAS=await window.getScreenDetails();}catch(e){}}
 lojaTelasLer(false);
+// 19/11 (Ronaldo): o vendedor fica no notebook e o Checkout vai sozinho para o monitor ligado nele, virado para o cliente.
+// A tela do cliente é a que não é a do notebook (currentScreen); com a permissão liberada pela política do Chrome
+// (preparar-posto-eterna.cmd como administrador) não há pergunta; sem ela, na primeira vez a janela abre aqui e vai para lá
+// assim que o vendedor tocar em Permitir.
+function lojaTelaCliente(){const ts=LOJA_TELAS&&LOJA_TELAS.screens||[];return ts.find(x=>LOJA_TELAS.currentScreen&&x!==LOJA_TELAS.currentScreen)||(LOJA_TELAS&&LOJA_TELAS.currentScreen)||screen;}
 function lojaJanela(){const u=state.user;if(u)try{localStorage.setItem('eterna.posto.vendedor',JSON.stringify({email:u.email,nome:u.name}));}catch(e){} // v83: vendedor declarado das vendas deste Checkout
-  const ts=LOJA_TELAS&&LOJA_TELAS.screens||[];const t=ts.find(x=>LOJA_TELAS.currentScreen&&x!==LOJA_TELAS.currentScreen)||(LOJA_TELAS&&LOJA_TELAS.currentScreen)||screen;
+  const t=lojaTelaCliente();
   const L=t.availLeft||0,Tp=t.availTop||0,W=t.availWidth||1280,H=t.availHeight||800;
   let w=null;try{w=window.open(location.pathname+'#loja','eterna-checkout',`popup,fullscreen,left=${L},top=${Tp},width=${W},height=${H}`);}catch(e){w=null;}
   if(!w){toast('Libere janelas pop-up deste site para abrir o Checkout no segundo monitor');return null;}
-  try{w.moveTo(L,Tp);w.resizeTo(W,H);w.focus();}catch(e){}if(!LOJA_TELAS)lojaTelasLer(true);return w;}
+  try{w.moveTo(L,Tp);w.resizeTo(W,H);w.focus();}catch(e){}
+  if(!LOJA_TELAS)lojaTelasLer(true).then(()=>{if(!LOJA_TELAS||w.closed)return;const t2=lojaTelaCliente();if(t2===t)return;
+    try{w.moveTo(t2.availLeft||0,t2.availTop||0);w.resizeTo(t2.availWidth||W,t2.availHeight||H);}catch(e){}});
+  return w;}
 // A saída da Loja sempre leva à tela de login (nunca ao app logado de quem estiver no navegador).
 // v79 (D7): qualquer saída do #loja (Esc, painel, endereço, voltar do navegador, #g) passa por aqui e encerra a sessão salva; a única exceção é lojaVoltarApp
 // v81: Esc na aba do Checkout (janela do cliente) sem login só volta ao início do #loja: não apaga o login salvo do admin (mesmo navegador) nem abre o login

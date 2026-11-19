@@ -27,6 +27,24 @@ foreach ($l in @((Join-Path ([Environment]::GetFolderPath("Desktop")) "Eterna.ln
     $s.IconLocation = "$chrome,0"; $s.Description = "Eterna - posto de venda"; $s.Save()
     Write-Host "Atalho criado: $l"
 }
+# 19/11: "Abrir Checkout" no notebook abre o Checkout sozinho no monitor do cliente, sem o Chrome perguntar nada: politica
+# do Chrome que libera so para o Eterna ver as telas (Window Management) e abrir a janela (pop-up). Precisa de administrador.
+$pol = "HKLM:\SOFTWARE\Policies\Google\Chrome"
+try {
+    foreach ($k in @("WindowManagementAllowedForUrls", "PopupsAllowedForUrls")) {
+        if (-not (Test-Path "$pol\$k")) { New-Item -Path "$pol\$k" -Force -ErrorAction Stop | Out-Null }
+        $vals = (Get-Item "$pol\$k").GetValueNames() | ForEach-Object { (Get-ItemProperty "$pol\$k").$_ }
+        foreach ($u in @($Endereco, $Reserva)) {
+            if ($vals -notcontains $u) {
+                $n = 1; while ((Get-Item "$pol\$k").GetValueNames() -contains "$n") { $n++ }
+                New-ItemProperty -Path "$pol\$k" -Name "$n" -Value $u -PropertyType String -ErrorAction Stop | Out-Null
+            }
+        }
+    }
+    Write-Host "Checkout no monitor do cliente: liberado (abre sozinho na outra tela, sem perguntar)"
+} catch {
+    Write-Host "ATENCAO: para o Checkout abrir sozinho no monitor do cliente, rode este arquivo de novo com o botao direito > Executar como administrador."
+}
 # programa de impressao direta: a foto vai para a DNP sem a previa do Chrome
 $prog = "$pasta\eterna-impressao.ps1"
 $partes = (Get-Content -Raw -Encoding UTF8 $env:ETERNA_CMD) -split ('#'+'ETERNA'+'#')

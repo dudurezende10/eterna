@@ -93,6 +93,12 @@ Cadastro da equipe por comando (`vendedores.sh`, senha digitada pelo Ronaldo, se
 - Galeria online (QR do recibo, selfie e vídeo do cartão fora do estádio): `galeria-ligar.sh` grava `ETERNA_GALERIA_API` no `nuvem.env`, confere se a nuvem reconhece o segredo do servidor (se não, mostra o SHA-256 para a stack `eterna-galeria`) e reinicia; as galerias que ficaram para trás sobem sozinhas. Sem ela o celular abre "Galeria não encontrada" (16/11: o servidor novo veio sem essa linha).
 - Escola pelo voucher: `escola-ligar.sh` pede o token do painel do Viva Parceiros (o mesmo valor de `PARCEIROS_PAINEL_TOKEN` do Render) sem mostrar, confere se o Viva Parceiros aceita, grava `ETERNA_PARCEIROS_TOKEN` no `nuvem.env` e reinicia o Eterna.
 
+## Recorte só na placa de vídeo (19/11, inegociável)
+
+Toda foto é recortada no servidor assim que chega, na placa NVIDIA, antes de o cliente chegar ao Checkout. O Checkout nunca prepara recorte na frente do cliente. Com `ETERNA_RECORTE_GPU=obrigatoria` no `nuvem.env` (o `instalar.sh` grava sozinho quando há placa NVIDIA), o modelo que abrir fora da placa (driver caído, CUDA faltando) é fechado na hora: `/status.recorte` fica com `ok: false` e o motivo "recorte fora da placa de vídeo", o Checkout não oferece fundo de IA e o agente tenta a placa de novo a cada minuto. Nunca cai no processador. Teste: `testes/recorte_placa_obrigatoria_agente.py`.
+
+Conferir a placa: `ssh srv-viva-maracana 'nvidia-smi'` e, como o usuário `eterna`, `instalar-recorte-modelos.py --provedor` (tem que dizer "placa de vídeo (CUDA)").
+
 ## Leitor de cartão do gramado (18/11)
 
 O computador Windows do gramado roda `agente/eterna-leitor.py`: o fotógrafo põe o cartão e as fotos que faltam no servidor sobem sozinhas (plano `docs/planos/2026-11-18-leitor-cartao-gramado.md`).
