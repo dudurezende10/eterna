@@ -4812,17 +4812,19 @@ function mtgModoSalva(modo){if(!MTG_MODOS.includes(modo)||!can('configuracao','u
 // Sem Painel de controle em Alterar, só o texto. Agente antigo (sem `poses` no /status): nada aparece.
 const PS_MODOS=['desligada','sombra','ligada'];
 const psMotivo=k=>TEk('ps_parou_'+k,String(k||''));
+const psModoTx=()=>({desligada:TE('ps_modo_desligada'),sombra:TE('ps_modo_sombra'),ligada:TE('ps_modo_ligada')});
+const psModoBt=()=>({desligada:TE('ps_modo_b_desligada'),sombra:TE('ps_modo_b_sombra'),ligada:TE('ps_modo_b_ligada')});
 function posesPanel(){const a=state.agent||{};const p=a.on?a.poses:null;if(!p||!can('configuracao','r'))return '';
   const modo=PS_MODOS.includes(p.modo)?p.modo:'desligada';const mo=p.modelo||{};const n=p.noite||{};const j=p.janela||{};const pode=can('configuracao','u');
   const modelo=mo.pronto?TE('ps_painel_pronto'):mo.ok?TE('ps_painel_ok'):psMotivo(mo.erro||'sem_modelo');
   const noite=n.ini?TE('ps_painel_noite_linha',+n.feitas||0,+n.duvidas||0,+n.erros||0,n.ms_med?String((n.ms_med/1000).toFixed(1)).replace('.',','):'--')+(n.fim?'':' · '+TE('ps_painel_rodando')):TE('ps_painel_sem_noite');
-  return `<div class="note" id="ps-srv" data-modo="${modo}"><b>${TE('ps_painel_h')}</b>: ${TE('ps_modo_'+modo)}${p.forcada?TE('ps_painel_forcada'):''}</div>
+  return `<div class="note" id="ps-srv" data-modo="${modo}"><b>${TE('ps_painel_h')}</b>: ${psModoTx()[modo]}${p.forcada?TE('ps_painel_forcada'):''}</div>
     <div class="note">${TE('ps_janela',esc(String(j.ini||'--')),esc(String(j.fim||'--')))} · ${TE('ps_painel_modelo')}: ${esc(modelo)}${modo!=='desligada'?' · '+TE('ps_painel_pend',+p.pendentes||0):''}</div>
     <div class="note" id="ps-noite">${TE('ps_painel_noite')}: ${noite}${n.parou_por?' · '+TE('ps_painel_parou')+' '+esc(psMotivo(n.parou_por)):''}</div>
-    ${pode?`<div class="row" style="align-items:center;gap:10px;flex-wrap:wrap"><div class="seg" id="ps-modo" role="group" aria-label="${TE('ps_painel_h')}">${PS_MODOS.map(x=>`<button data-act="ps-modo" data-v="${x}" aria-pressed="${x===modo}" ${state.psSalvando?'disabled':''}>${TE('ps_modo_b_'+x)}</button>`).join('')}</div></div>`:''}`;}
+    ${pode?`<div class="row" style="align-items:center;gap:10px;flex-wrap:wrap"><div class="seg" id="ps-modo" role="group" aria-label="${TE('ps_painel_h')}">${PS_MODOS.map(x=>`<button data-act="ps-modo" data-v="${x}" aria-pressed="${x===modo}" ${state.psSalvando?'disabled':''}>${psModoBt()[x]}</button>`).join('')}</div></div>`:''}`;}
 async function psModoSalva(modo){const a=state.agent||{};const p=a.on?a.poses:null;const u=trAg();
   if(!p||!u||!PS_MODOS.includes(modo)||!can('configuracao','u')||state.psSalvando)return;const de=PS_MODOS.includes(p.modo)?p.modo:'desligada';if(de===modo)return;
-  if(!confirm(TE('ps_modo_conf',TE('ps_modo_b_'+modo))))return;state.psSalvando=true;render();
+  if(!confirm(TE('ps_modo_conf',psModoBt()[modo])))return;state.psSalvando=true;render();
   try{const r=await agFetch(u+'/poses/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo})});const j=await r.json().catch(()=>null);
     if(r.ok&&j&&j.ok){p.modo=PS_MODOS.includes(j.modo)?j.modo:modo;if(j.janela)p.janela=j.janela;p.forcada=!!j.forcada;auditLog('poses_modo','config/poses',[{campo:'modo',de,para:p.modo}]);toast(TE('ps_modo_ok'));}
     else if(r.status===409&&j&&j.error==='criterio')toast(TE('ps_modo_criterio',+j.falta||0));

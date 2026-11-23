@@ -16172,9 +16172,12 @@ def poses_loop():
     """A thread da classificação de poses (padrão do cena_loop). Fora de sombra ou ligada, ou quando não pode rodar: fecha o
     filho e dorme POSE_DORME. Dentro: lotes de POSE_LOTE, conferindo poses_pode_rodar() entre um e outro. Limpeza de hora
     em hora."""
-    t_limpa = time.time()
+    t_limpa, t_mod = time.time(), 0.0
     while not poses_parar.is_set():
         try:
+            if time.time() - t_mod >= 600:
+                t_mod = time.time()
+                poses_modelo_ok()                    # o /status nunca lê os 6 GB: a conferência do SHA é daqui (cache)
             if time.time() - t_limpa >= 3600:
                 t_limpa = time.time()
                 n = poses_limpa()
