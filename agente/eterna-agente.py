@@ -11944,6 +11944,9 @@ def estado_gravar(body, quem=""):
                 if d["col"] == "config" and d["id"] == "poses":     # 23/11: a chave das poses só pela rota /poses/config
                     print("  config/poses recusada pela sincronização (só POST /poses/config) · de %s" % (quem or "?"))
                     continue
+                if d["col"] == "config" and d["id"] == "fotografos":   # 23/11 (AF): limites só pela rota /fotografos/config
+                    print("  config/fotografos recusada pela sincronização (só POST /fotografos/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
                     if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
                         print("  config/ia: apagar recusado · de %s" % (quem or "?"))
@@ -12884,6 +12887,10 @@ def operacao_db():
         # v97 (selo Edição Maracanã): montagens vistas no Checkout, um número acumulado por dia e terminal (id aleatório do navegador).
         # Sem IP, sessão, rosto, foto ou nome
         c.execute("create table if not exists montagem_vista (dia text, terminal text, vistas int, em real, primary key (dia, terminal))")
+        # 23/11 (AF): por fotógrafo e por dia, só somas (sem pid nem cliente); o mês congelado; os dias já calculados
+        c.execute("create table if not exists fotografo_dia (dia text, fotografo text, dados text, em text, primary key (dia, fotografo))")
+        c.execute("create table if not exists fotografo_mes (mes text primary key, dados text, fechado_em text)")
+        c.execute("create table if not exists fotografo_dia_calc (dia text primary key, em text)")
         c.commit()
         _op_criado["arq"] = OPERACAO_DB
     return c
@@ -14512,6 +14519,447 @@ def luz_medida(forcar=False):
          "criterio": {"passa": not falta, "falta": falta}, "crit": dict(LUZ_CRIT)}
     _luz_med.update(t=time.time(), r=r, lim=lim)
     return r
+
+
+# ---------- Alertas do fotógrafo (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md) ----------
+# Por fotógrafo e por dia, no servidor, só somas (sem pid nem cliente): famílias (leva = sessão fechada, AF-D1), cliques por
+# família (com o reconhecimento do ponto Ligado: gramado, troféu e arquibancada com confiança >= CENA_LIMIAR; chute à parte;
+# "outro" e sem leitura = não contadas; senão todas as fotos da leva, AF-D2), conversão por foto (AF-D3: a leva comprou
+# quando alguma foto dela está no selected de uma venda paga e não cancelada, ou é base de um aiSel dela; fotos vendidas = os
+# pids do fotógrafo no selected) e luz (escuras, estouradas). Grava em operacao.db fotografo_dia; o mês fecha em
+# fotografo_mes (congelado). Limites em estado.db config/fotografos, só pela rota POST /fotografos/config (configuracao.u).
+# Nenhum campo de hora, presença, falta ou turno: a conta é por família, nunca por hora (decisão "sem controle de ponto").
+FOTOGRAFOS_CFG_PADRAO = {"v": 1, "cliques_min": 20, "cliques_max": 40, "fam_min": 5,
+                         "conv_fam_pp": 10, "conv_fotos_pp": 5, "conv_fam_min": 15, "conv_equipe_min": 3,
+                         "luz_pct": 15, "luz_grave_pct": 25, "luz_fotos_min": 50, "luz": dict(LUZ_LIM_PADRAO)}
+FOTOGRAFOS_FAIXAS = {"cliques_min": (1, 200), "cliques_max": (2, 400), "fam_min": (1, 1000), "conv_fam_pp": (1, 100),
+                     "conv_fotos_pp": (1, 100), "conv_fam_min": (1, 10000), "conv_equipe_min": (2, 100), "luz_pct": (1, 100),
+                     "luz_grave_pct": (1, 100), "luz_fotos_min": (1, 100000)}
+LUZ_FAIXAS = {"rosto_p95_alto": (200, 255), "rosto_alto_pct": (1, 100), "rosto_med_baixo": (1, 200), "quadro_alto_pct": (1, 100),
+              "quadro_med_alto": (50, 255), "quadro_med_baixo": (1, 200), "quadro_baixo_pct": (1, 100)}
+AF_SETS_CONTA = ("gramado", "trofeu", "arquibancada")
+AF_SEM_FOTOGRAFO = ("", "sem fotógrafo")
+AF_DIAS_NOITE = 35          # a madrugada refaz os últimos 35 dias (LGPD e venda atrasada)
+AF_VENDA_DIAS = 2           # uma leva do dia D pode ser comprada até D + 2 (a selfie do dia seguinte)
+AF_PONTO_COBERTURA = 0.9    # dia com o ponto Ligado conta pelo ponto só se 90% das fotos têm leitura (senão, todas as fotos)
+AF_MES_ATE_DIA = 5          # o mês congela no dia 1; faltando dia calculado, espera até o dia 5
+af_lock = threading.Lock()
+af_st = {"ultimo_dia": None, "em": None, "noite": None, "sujo": False, "erro": None}
+_fot_cfg = {"t": 0.0, "v": None}
+
+
+def fotografos_cfg_valida(j, base=None):
+    """config/fotografos, formato fechado (inteiros dentro das faixas; cliques_min < cliques_max; luz_pct <= luz_grave_pct).
+    base = a config atual (o POST manda só o que muda). -> (config, None) ou (None, nome do campo recusado)."""
+    if not isinstance(j, dict):
+        return None, "corpo"
+    base = base or FOTOGRAFOS_CFG_PADRAO
+    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in base.items()}
+    for k, v in j.items():
+        if k == "v":
+            if v != 1 or isinstance(v, bool):
+                return None, "v"
+            continue
+        if k == "luz":
+            if not isinstance(v, dict):
+                return None, "luz"
+            for kk, vv in v.items():
+                if kk == "v":
+                    if vv != 1 or isinstance(vv, bool):
+                        return None, "luz.v"
+                    continue
+                fx = LUZ_FAIXAS.get(kk)
+                if fx is None or not isinstance(vv, int) or isinstance(vv, bool) or not fx[0] <= vv <= fx[1]:
+                    return None, "luz." + str(kk)[:40]
+                out["luz"][kk] = vv
+            continue
+        fx = FOTOGRAFOS_FAIXAS.get(k)
+        if fx is None or not isinstance(v, int) or isinstance(v, bool) or not fx[0] <= v <= fx[1]:
+            return None, str(k)[:40]
+        out[k] = v
+    if out["cliques_min"] >= out["cliques_max"]:
+        return None, "cliques_min"
+    if out["luz_pct"] > out["luz_grave_pct"]:
+        return None, "luz_pct"
+    out["v"] = 1
+    out["luz"]["v"] = 1
+    return out, None
+
+
+def fotografos_cfg():
+    """Os limites (estado.db config/fotografos), relidos a cada 3 s; sem documento ou ilegível: os padrões. Nunca cria banco."""
+    agora = time.time()
+    if agora - _fot_cfg["t"] < 3 and _fot_cfg["v"] is not None:
+        return _fot_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'fotografos' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                j = json.loads(r[0])
+                v, _ = fotografos_cfg_valida({k: x for k, x in j.items() if k not in ("por", "em")})
+                if v is not None:
+                    v.update(por=j.get("por"), em=j.get("em"))
+    except Exception:
+        v = _fot_cfg["v"]
+    v = v or dict(FOTOGRAFOS_CFG_PADRAO, luz=dict(LUZ_LIM_PADRAO), por=None, em=None)
+    _fot_cfg.update(t=agora, v=v)
+    return v
+
+
+def fotografos_cfg_gravar(corpo, quem):
+    """POST /fotografos/config: só os campos que mudam (formato fechado). 400 campo com o nome do campo recusado. Mudança dos
+    limites de luz refaz os 35 dias (af_st.sujo). -> (status, resposta com antes e depois, para o auditLog da tela)"""
+    if not isinstance(corpo, dict) or not corpo:
+        return 400, {"ok": False, "error": "campo", "campo": "corpo"}
+    de = fotografos_cfg()
+    antes = {k: (dict(x) if isinstance(x, dict) else x) for k, x in de.items() if k not in ("por", "em")}
+    novo, campo = fotografos_cfg_valida(corpo, antes)
+    if novo is None:
+        return 400, {"ok": False, "error": "campo", "campo": campo}
+    v = dict(novo, por=str(quem or "")[:100] or None, em=_iso())
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "fotografos", json.dumps(v, ensure_ascii=False), rev, v["em"]))
+            db.commit()
+        finally:
+            db.close()
+    _fot_cfg.update(t=time.time(), v=v)
+    mud = [k for k in novo if k != "luz" and novo[k] != antes.get(k)] + ["luz." + k for k in novo["luz"] if novo["luz"][k] != (antes.get("luz") or {}).get(k)]
+    if any(k.startswith("luz.") for k in mud):
+        af_st["sujo"] = True
+        try:
+            dia_wake.set()
+        except NameError:
+            pass
+    print("  fotógrafos: limites %s · por %s" % (", ".join("%s %s -> %s" % (k, _af_cfg_val(antes, k), _af_cfg_val(novo, k)) for k in mud) or "sem mudança", v["por"] or "?"))
+    return 200, {"ok": True, "limites": novo, "antes": antes, "mudou": mud, "por": v["por"], "em": v["em"]}
+
+
+def _af_cfg_val(c, k):
+    if k.startswith("luz."):
+        return (c.get("luz") or {}).get(k[4:])
+    return c.get(k)
+
+
+def _af_sessoes(dia):
+    """Levas fechadas do dia com fotógrafo: [(fotografo, [pids])] (fotos + bases dos fundos de IA, sem repetir)."""
+    a = os.path.join(SESS_DIR, dia + ".json")
+    try:
+        ss = json.load(open(a, encoding="utf8")).get("sessoes") or []
+    except Exception:
+        return []
+    out = []
+    for x in ss:
+        if not isinstance(x, dict) or x.get("removida") or x.get("status") != "fechada":
+            continue
+        f = x.get("fotografo")
+        if not isinstance(f, str) or f.strip() in AF_SEM_FOTOGRAFO or f in CHAVES_PROIBIDAS:
+            continue
+        ps = []
+        for p in list(x.get("fotos") or []) + list(x.get("ia") or []):
+            if isinstance(p, str) and pid_ok(p) and p not in ps:
+                ps.append(p)
+        if ps:
+            out.append((f[:60], ps))
+    return out
+
+
+def _af_cena(pids):
+    """{pid: (rotulo, conf)} do cena.db (só leitura; sem o banco, {})."""
+    if not pids or not os.path.exists(CENA_DB):
+        return {}
+    out = {}
+    ps = list(pids)
+    db = sqlite3.connect("file:%s?mode=ro" % quote(CENA_DB), uri=True, timeout=5, check_same_thread=False)
+    try:
+        for i in range(0, len(ps), 500):
+            bl = ps[i:i + 500]
+            for p, r, c in db.execute("select pid, rotulo, conf from cena where pid in (%s)" % ",".join("?" * len(bl)), bl):
+                out[p] = (r, float(c or 0))
+    finally:
+        db.close()
+    return out
+
+
+def _af_vendas(dia):
+    """Vendas pagas e não canceladas criadas de dia até dia + AF_VENDA_DIAS: [(selected, bases dos aiSel)] em pids da biblioteca.
+    Conexão só de leitura, sem o ev_lock (como o _mtg_pagas_ler)."""
+    if not os.path.exists(VENDAS_DB):
+        return []
+    ate = _dia_mais(dia, AF_VENDA_DIAS)
+    db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=5, check_same_thread=False)
+    try:
+        db.execute("pragma query_only=1")
+        rs = db.execute("select venda, tipo, dados from evento where venda in (select venda from evento where tipo = 'criar' and dia >= ? and dia <= ?)",
+                        (dia, ate)).fetchall()
+    finally:
+        db.close()
+    vs = {}
+    for venda, tipo, dados in rs:
+        v = vs.setdefault(venda, {"c": None, "paga": False, "canc": False})
+        if tipo == "criar":
+            try:
+                v["c"] = json.loads(dados or "{}")
+            except ValueError:
+                v["c"] = None
+        elif tipo == "pagar":
+            v["paga"] = True
+        elif tipo == "cancelar":
+            v["canc"] = True
+    out = []
+    for v in vs.values():
+        c = v["c"]
+        if not v["paga"] or v["canc"] or not isinstance(c, dict):
+            continue
+        sel = {pid_lib(p) for p in (c.get("selected") or []) if pid_ok(p)}
+        ai = set()
+        for k in c.get("aiSel") or []:
+            a = re.sub(r"^ai:", "", str(k)).partition("|")[0]
+            if pid_ok(a):
+                ai.add(pid_lib(a))
+        if sel or ai:
+            out.append((sel, ai))
+    return out
+
+
+def af_dia(dia):
+    """Função pura sobre as sessões, o cena.db, a medida de luz e o vendas.db: {fotografo: dados} do dia (só somas)."""
+    cfg = fotografos_cfg()
+    lim = cfg["luz"]
+    levas = _af_sessoes(dia)
+    todos = [p for _, ps in levas for p in ps]
+    ponto = treino_cfg().get("ponto") == "ligada"
+    cena_ = _af_cena(todos) if ponto else {}
+    if ponto and todos and sum(1 for p in todos if (cena_.get(p) or (None,))[0]) < AF_PONTO_COBERTURA * len(todos):
+        ponto = False                                  # dia sem leitura do ponto (antes de ligar): conta todas as fotos
+    fonte = "ponto" if ponto else "todas"
+    luz = luz_ler(todos) if todos else {}
+    vendas = _af_vendas(dia) if todos else []
+    sel_tudo = set().union(*[s for s, _ in vendas]) if vendas else set()
+    ai_tudo = set().union(*[a for _, a in vendas]) if vendas else set()
+    out = {}
+    for f, ps in levas:
+        d = out.setdefault(f, {"v": 1, "familias": 0, "cliques_soma": 0, "chute_soma": 0, "nao_contadas": 0, "hist": [0, 0, 0],
+                               "por_n": {}, "lim": [cfg["cliques_min"], cfg["cliques_max"]], "fonte": fonte, "fam_compraram": 0,
+                               "fotos": 0, "fotos_vendidas": 0, "luz": {"n": 0, "escuras": 0, "estouradas": 0, "sem_dado": 0}})
+        if ponto:
+            cl = ch = nc = 0
+            for p in ps:
+                r, c = cena_.get(p) or (None, 0.0)
+                if r in AF_SETS_CONTA and c >= CENA_LIMIAR:
+                    cl += 1
+                elif r == "chute" and c >= CENA_LIMIAR:
+                    ch += 1
+                else:
+                    nc += 1
+        else:
+            cl, ch, nc = len(ps), 0, 0
+        d["familias"] += 1
+        d["cliques_soma"] += cl
+        d["chute_soma"] += ch
+        d["nao_contadas"] += nc
+        d["hist"][0 if cl < cfg["cliques_min"] else 2 if cl > cfg["cliques_max"] else 1] += 1
+        kn = str(min(cl, 999))
+        d["por_n"][kn] = d["por_n"].get(kn, 0) + 1
+        d["fotos"] += len(ps)
+        sp = set(ps)
+        if sp & sel_tudo or sp & ai_tudo:
+            d["fam_compraram"] += 1
+        d["fotos_vendidas"] += len(sp & sel_tudo)
+        for p in ps:
+            k = luz_classe(luz.get(p), lim)
+            if k == "sem_dado":
+                d["luz"]["sem_dado"] += 1
+            else:
+                d["luz"]["n"] += 1
+                if k == "escura":
+                    d["luz"]["escuras"] += 1
+                elif k == "estourada":
+                    d["luz"]["estouradas"] += 1
+    return out
+
+
+def af_gravar(dia):
+    """Refaz o dia em operacao.db fotografo_dia (apaga o dia e grava de novo: quem saiu do dia, pela LGPD, sai da tabela)."""
+    dados = af_dia(dia)
+    em = _iso()
+    with op_lock:
+        db = operacao_db()
+        try:
+            with db:
+                db.execute("delete from fotografo_dia where dia = ?", (dia,))
+                db.executemany("insert into fotografo_dia values (?,?,?,?)",
+                               [(dia, f, json.dumps(d, ensure_ascii=False, separators=(",", ":")), em) for f, d in dados.items()])
+                db.execute("insert into fotografo_dia_calc values (?, ?) on conflict(dia) do update set em = excluded.em", (dia, em))
+        finally:
+            db.close()
+    if not af_st["ultimo_dia"] or dia >= af_st["ultimo_dia"]:
+        af_st.update(ultimo_dia=dia, em=em)
+    return dados
+
+
+def _af_soma(a, b):
+    """Soma dois dados de fotografo_dia (o mesmo formato)."""
+    for k, v in b.items():
+        if k in ("familias", "cliques_soma", "chute_soma", "nao_contadas", "fam_compraram", "fotos", "fotos_vendidas"):
+            a[k] = a.get(k, 0) + int(v or 0)
+        elif k == "hist":
+            a["hist"] = [x + y for x, y in zip(a.get("hist") or [0, 0, 0], v)]
+        elif k == "por_n":
+            pn = a.setdefault("por_n", {})
+            for n, c in v.items():
+                pn[n] = pn.get(n, 0) + int(c or 0)
+        elif k == "luz":
+            lz = a.setdefault("luz", {"n": 0, "escuras": 0, "estouradas": 0, "sem_dado": 0})
+            for kk in ("n", "escuras", "estouradas", "sem_dado"):
+                lz[kk] = lz.get(kk, 0) + int(v.get(kk) or 0)
+        elif k == "fonte":
+            a["fonte"] = v if a.get("fonte") in (None, v) else "misto"
+        elif k == "lim":
+            a.setdefault("lim", v)
+        elif k == "v":
+            a["v"] = 1
+    return a
+
+
+def af_ler(de, ate):
+    """{fotografo: dados somados} e os dias calculados no período (fotografo_dia)."""
+    rs = op_ler("select dia, fotografo, dados from fotografo_dia where dia >= ? and dia <= ?", (de, ate))
+    out, dias = {}, set()
+    for dia, f, d in rs:
+        try:
+            j = json.loads(d)
+        except ValueError:
+            continue
+        dias.add(dia)
+        _af_soma(out.setdefault(f, {}), j)
+    return out, dias
+
+
+def af_mes(mes):
+    """Soma dos dias do mês (fotografo_dia) por fotógrafo."""
+    ate = _dia_mais(_dia_mais(mes + "-01", 31)[:7] + "-01", -1)
+    return af_ler(mes + "-01", ate)[0]
+
+
+def af_mes_fechar(hoje=None):
+    """No dia 1 (e até o dia AF_MES_ATE_DIA se faltar dia calculado) congela o mês anterior em fotografo_mes. Congelado não
+    muda mais (insert or ignore). -> "fechado" | "ja" | "espera" | "fora" """
+    hoje = hoje or _ff_hoje()
+    dd = int(hoje[8:10])
+    if dd > AF_MES_ATE_DIA:
+        return "fora"
+    mes = _dia_mais(hoje[:8] + "01", -1)[:7]
+    if op_ler("select 1 from fotografo_mes where mes = ?", (mes,)):
+        return "ja"
+    dias = [_dia_mais(mes + "-01", i) for i in range(31)]
+    dias = [d for d in dias if d[:7] == mes]
+    feitos = {r[0] for r in op_ler("select dia from fotografo_dia_calc where dia >= ? and dia <= ?", (dias[0], dias[-1]))}
+    falta = [d for d in dias if d not in feitos and os.path.exists(os.path.join(SESS_DIR, d + ".json"))]
+    if falta and dd < AF_MES_ATE_DIA:
+        return "espera"
+    dados = af_mes(mes)
+    with op_lock:
+        db = operacao_db()
+        try:
+            with db:
+                db.execute("insert or ignore into fotografo_mes values (?, ?, ?)", (mes, json.dumps(dados, ensure_ascii=False, separators=(",", ":")), _iso()))
+        finally:
+            db.close()
+    print("  fotógrafos: mês %s fechado (%d fotógrafos%s)" % (mes, len(dados), ", %d dia(s) sem cálculo" % len(falta) if falta else ""))
+    return "fechado"
+
+
+def af_rodada(hoje, virou):
+    """Dentro do dia_loop: hoje sempre (a cada 10 min); ontem na virada; os 35 dias de madrugada (ou quando os limites de luz
+    mudaram); o fechamento do mês."""
+    try:
+        af_gravar(hoje)
+        if virou:
+            af_gravar(_dia_mais(hoje, -1))
+        hora = int(time.strftime("%H"))
+        if af_st["sujo"] or (2 <= hora < 6 and af_st["noite"] != hoje):
+            af_st["sujo"] = False
+            for i in range(1, AF_DIAS_NOITE + 1):
+                af_gravar(_dia_mais(hoje, -i))
+            af_st["noite"] = hoje
+        af_mes_fechar(hoje)
+        af_st["erro"] = None
+    except Exception as ex:
+        af_st["erro"] = str(ex)[:160]
+        print("  fotógrafos: agregado %s" % str(ex)[:160])
+
+
+def _af_pct(a, b):
+    return a / b if b else None
+
+
+def af_alertas(de, ate, agora_hoje=True):
+    """GET /fotografos/alertas: soma do período, a equipe toda e os alertas (AF-D3, D6, D8; regras do plano)."""
+    cfg = fotografos_cfg()
+    hoje = _ff_hoje()
+    if agora_hoje and de <= hoje <= ate:
+        with af_lock:
+            if af_st.get("hoje_em", 0) < time.time() - 120 or af_st.get("hoje_dia") != hoje:
+                af_gravar(hoje)
+                af_st.update(hoje_em=time.time(), hoje_dia=hoje)
+    dados, dias = af_ler(de, ate)
+    expo = treino_cfg().get("exposicao")
+    fontes = {d.get("fonte") for d in dados.values() if d.get("familias")}
+    fonte = "ponto" if fontes == {"ponto"} else "todas" if fontes <= {"todas"} else "misto"
+    eq = {"familias": 0, "fam_compraram": 0, "fotos": 0, "fotos_vendidas": 0}
+    fs = []
+    for k in sorted(dados):
+        d = dados[k]
+        fam = int(d.get("familias") or 0)
+        if not fam:
+            continue
+        for x in eq:
+            eq[x] += int(d.get(x) or 0)
+        pn = {int(n): c for n, c in (d.get("por_n") or {}).items() if str(n).isdigit()}
+        fs.append({"k": k, "familias": fam,
+                   "cliques": {"media": round(d["cliques_soma"] / fam, 1), "abaixo": sum(c for n, c in pn.items() if n < cfg["cliques_min"]),
+                               "acima": sum(c for n, c in pn.items() if n > cfg["cliques_max"]), "chute_media": round(d.get("chute_soma", 0) / fam, 1),
+                               "nao_contadas": int(d.get("nao_contadas") or 0)},
+                   "conv": {"fam": [int(d.get("fam_compraram") or 0), fam], "fotos": [int(d.get("fotos_vendidas") or 0), int(d.get("fotos") or 0)]},
+                   "luz": dict(d.get("luz") or {"n": 0, "escuras": 0, "estouradas": 0, "sem_dado": 0}) if expo != "desligada" else None})
+    al = []
+    n_eq = len(fs)
+    t_fam, t_fot = _af_pct(eq["fam_compraram"], eq["familias"]), _af_pct(eq["fotos_vendidas"], eq["fotos"])
+    for x in fs:
+        c, fam = x["cliques"], x["familias"]
+        if fam >= cfg["fam_min"] and c["media"] < cfg["cliques_min"]:
+            al.append({"tipo": "af_poucos", "k": x["k"], "sev": "warn", "args": [c["media"], c["abaixo"], fam, cfg["cliques_min"]]})
+        if fam >= cfg["fam_min"] and c["media"] > cfg["cliques_max"]:
+            al.append({"tipo": "af_muitos", "k": x["k"], "sev": "warn", "args": [c["media"], c["acima"], fam, cfg["cliques_max"]]})
+        if n_eq >= cfg["conv_equipe_min"] and fam >= cfg["conv_fam_min"]:
+            cf, tf = x["conv"]["fam"], x["conv"]["fotos"]
+            if t_fam is not None and 100 * cf[0] / cf[1] <= 100 * t_fam - cfg["conv_fam_pp"] + 1e-9:
+                al.append({"tipo": "af_conv_fam", "k": x["k"], "sev": "warn", "args": [round(100 * cf[0] / cf[1]), round(100 * t_fam), cf[0], cf[1]]})
+            if t_fot is not None and tf[1] and 100 * tf[0] / tf[1] <= 100 * t_fot - cfg["conv_fotos_pp"] + 1e-9:
+                al.append({"tipo": "af_conv_fotos", "k": x["k"], "sev": "warn", "args": [round(100 * tf[0] / tf[1]), round(100 * t_fot), tf[0], tf[1]]})
+        lz = x["luz"]
+        if expo == "ligada" and lz and lz["n"] >= cfg["luz_fotos_min"]:
+            fora = lz["escuras"] + lz["estouradas"]
+            if 100 * fora / lz["n"] >= cfg["luz_pct"]:
+                al.append({"tipo": "af_luz", "k": x["k"], "sev": "bad" if 100 * fora / lz["n"] >= cfg["luz_grave_pct"] else "warn",
+                           "args": [fora, lz["n"], lz["estouradas"], lz["escuras"]]})
+    lim = {k: (dict(v) if isinstance(v, dict) else v) for k, v in cfg.items() if k not in ("por", "em")}
+    return {"ok": True, "v": 1, "de": de, "ate": ate, "limites": lim, "exposicao": expo, "fonte_cliques": fonte, "dias": len(dias),
+            "equipe": eq, "fotografos": fs, "alertas": al, "em": _iso()}
+
+
+def af_status():
+    return {"ultimo_dia": af_st["ultimo_dia"], "em": af_st["em"]}
 
 
 # ---------- Cena: reconhecer o ponto pela imagem (regra 19, 18/11; plano "bases dos fundos de IA só com foto do gramado") ----------
@@ -16745,6 +17193,10 @@ ROTAS = (
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
     ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa)
+    # 23/11 (AF): números por fotógrafo só com desempenho.r (Admin e Supervisora), conferido aqui pela sessão; a calibração da luz
+    # é da Medição (qualidade.r); os limites, do Painel de controle em Alterar
+    ("GET", "/fotografos/alertas", "sessao", ("desempenho.r",)), ("GET", "/fotografos/dias", "sessao", ("desempenho.r",)),
+    ("GET", "/fotografos/luz/medida", "sessao", ("qualidade.r",)), ("POST", "/fotografos/config", "sessao", ("configuracao.u",)),
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -17405,6 +17857,7 @@ def dia_loop():
     feito = None
     while True:
         hoje = _ff_hoje()
+        virou = feito != hoje                     # também na partida: ontem refeito com as vendas atrasadas
         try:
             if feito != hoje:
                 dia_completo()
@@ -17417,6 +17870,7 @@ def dia_loop():
         except Exception as ex:
             dia_estado.update(erro=str(ex)[:160])
             print("  série diária: %s" % str(ex)[:160])
+        af_rodada(hoje, virou)                    # 23/11 (AF): por fotógrafo e por dia (tem o próprio try)
         if dia_wake.wait(600):
             time.sleep(3)                         # junta várias mudanças seguidas numa rodada
         dia_wake.clear()
@@ -17528,7 +17982,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
 
 
 # 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
@@ -18351,6 +18805,63 @@ class H(BaseHTTPRequestHandler):
             st, r = poses_cfg_gravar(body, quem)
         except Exception as ex:
             print("  poses: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        return self.js(r, st, nostore=True)
+
+    def pode_desempenho(self):
+        """23/11 (AF-D9): a pessoa da sessão tem desempenho.r (Admin e Supervisora). Conferido pela sessão, nunca por parâmetro."""
+        eu = self.sessao()
+        return bool(eu) and auth_pode(eu["cadastro"], "desempenho", "r")
+
+    def fotografos_get(self, u):
+        """23/11 (AF): GET /fotografos/alertas?de=&ate= (desempenho.r, 30 por minuto por pessoa, até 92 dias), /fotografos/dias
+        (desempenho.r, até 366 dias) e /fotografos/luz/medida (qualidade.r, 10 por minuto). Só números e chaves de fotógrafo."""
+        if not self.origem_local():
+            return self.js({"error": "origem não autorizada"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        q = parse_qs(u.query)
+        try:
+            if u.path == "/fotografos/luz/medida":
+                if not limite_ok("u:" + quem, "luz_medida", 10):
+                    return self.js({"error": "limite"}, 429)
+                return self.js(luz_medida(), nostore=True)
+            hoje = _ff_hoje()
+            de, ate = (q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0]
+            try:
+                n = (_dt.date.fromisoformat(ate) - _dt.date.fromisoformat(de)).days + 1
+            except ValueError:
+                n = 0
+            teto = 92 if u.path == "/fotografos/alertas" else 366
+            if not (_re_dia_iso.match(de) and _re_dia_iso.match(ate)) or not 1 <= n <= teto:
+                return self.js({"error": "datas inválidas"}, 400)
+            if not limite_ok("u:" + quem, "fotografos", 30):
+                return self.js({"error": "limite"}, 429)
+            if u.path == "/fotografos/alertas":
+                return self.js(af_alertas(de, ate), nostore=True)
+            r = metricas_periodo(de, ate) or []
+            campos = ("fotos", "sessoes", "sessoes_com_venda", "vendas", "faturamento", "fotos_vendidas", "clique_checkout_s")
+            dias = [{"dia": d.get("dia"), "por_fotografo": {k: {c: v[c] for c in campos if c in v} for k, v in (d.get("por_fotografo") or {}).items()
+                                                            if isinstance(v, dict) and k not in CHAVES_PROIBIDAS}} for d in r if isinstance(d, dict)]
+            return self.js({"ok": True, "dias": dias}, nostore=True)
+        except Exception as ex:
+            print("  fotógrafos: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500)
+
+    def fotografos_post(self):
+        """23/11 (AF): POST /fotografos/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna (conferido no autoriza),
+        6 por minuto por pessoa, corpo até 4 KB. O console nunca imprime o corpo, só os campos que mudaram."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "fotografos_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        try:
+            st, r = fotografos_cfg_gravar(body, quem)
+        except Exception as ex:
+            print("  fotógrafos: %s" % type(ex).__name__)
             return self.js({"ok": False, "error": "erro no servidor"}, 500)
         return self.js(r, st, nostore=True)
 
@@ -19560,7 +20071,7 @@ class H(BaseHTTPRequestHandler):
                            rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
-                           estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
+                           estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"], "af": af_status()}, fuso=fuso_info(),
                            app_offline_pronto=app_offline_pronto(), agenda=ag_,
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
                            pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_, luz=lz_,
@@ -19595,8 +20106,10 @@ class H(BaseHTTPRequestHandler):
             return self.js({"pid": pid, "v": v, **nuvem_link(pid, v)})
         if u.path == "/metricas":
             desde = float(q.get("desde", ["0"])[0] or 0)
+            fora = ("por", "por_assumido") if self.pode_desempenho() else ("por", "por_assumido", "quem")   # 23/11 (AF-D9): o fotógrafo da foto só com desempenho.r
             with lock:
-                linhas = [{k: v for k, v in m.items() if k not in ("por", "por_assumido")} for m in metricas if m["chegada"] >= desde]   # 18/11: quem enviou não sai
+                # 18/11: quem enviou não sai. 23/11: a linha da exclusão LGPD (sem chegada) derrubava a rota com KeyError
+                linhas = [{k: v for k, v in m.items() if k not in fora} for m in metricas if "chegada" in m and m["chegada"] >= desde]
             return self.js({"agora": time.time(), "fila_rostos": fila_rostos.qsize(), "maquina": uso_maquina(), "fotos": linhas})
         if u.path == "/roverpix/status":
             c = rover_cfg()
@@ -19750,6 +20263,8 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": True, "vendas": r, "envio": nuvem_envio_medido(de, ate)}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
         if u.path in ("/treino/dias", "/treino/amostra", "/treino/rotulos", "/treino/medida"):
             return self.treino_get(u)
+        if u.path in ("/fotografos/alertas", "/fotografos/dias", "/fotografos/luz/medida"):
+            return self.fotografos_get(u)
         if u.path == "/pessoas/rostos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -19769,6 +20284,8 @@ class H(BaseHTTPRequestHandler):
             q = parse_qs(u.query)
             hoje = _ff_hoje()
             r = metricas_periodo((q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0])
+            if r is not None and not self.pode_desempenho():      # 23/11 (AF-D9): por fotógrafo só com desempenho.r
+                r = [{k: v for k, v in d.items() if k != "por_fotografo"} if isinstance(d, dict) else d for d in r]
             return self.js({"ok": True, "dias": r} if r is not None else {"error": "datas inválidas"}, 200 if r is not None else 400)
         if u.path == "/ponto/entradas/importacoes":
             if not self.posto() or not self.origem_local():
@@ -19917,6 +20434,8 @@ class H(BaseHTTPRequestHandler):
             return self.treino_post(u.path)
         if u.path == "/poses/config":
             return self.poses_post()
+        if u.path == "/fotografos/config":
+            return self.fotografos_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":

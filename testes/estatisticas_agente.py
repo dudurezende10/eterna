@@ -106,7 +106,9 @@ t_foto = time.time() - 3000
 m.meta["fffff0000001"] = {}
 card = m.sess_add("fffff0000001", {"o": "carlos", "s": "ftp", "u": t_foto, "cap": t_foto - 2})
 tabs = {r[0] for r in m.op_ler("select name from sqlite_master where type = 'table'")}
-ok(card and tabs == {"entrada", "importacao", "dia", "entrada_total", "montagem_vista"}, "operacao.db só com entrada, importacao e as da v97 (dia, entrada_total, montagem_vista do selo): %r" % tabs)
+# 23/11 (AF): por fotógrafo e por dia, só somas (fotografo_dia, fotografo_mes, fotografo_dia_calc); nada de presença
+TABS = {"entrada", "importacao", "dia", "entrada_total", "montagem_vista", "fotografo_dia", "fotografo_mes", "fotografo_dia_calc"}
+ok(card and tabs == TABS, "operacao.db só com entrada, importacao, as da v97 (dia, entrada_total, montagem_vista do selo) e as da AF: %r" % tabs)
 # segurança: um operacao.db antigo com a tabela presenca (só de testes) perde a tabela e os bytes dela, uma vez só
 import sqlite3 as _sq
 velho = os.path.join(HA, "operacao-velho.db")
@@ -124,7 +126,7 @@ with m.op_lock:
     m.operacao_db().close()
 tv = {r[0] for r in m.op_ler("select name from sqlite_master where type = 'table'")}
 bytes_ = b"".join(open(f, "rb").read() for f in (velho, velho + "-wal") if os.path.exists(f))
-ok(tv == {"entrada", "importacao", "dia", "entrada_total", "montagem_vista"} and b"fotografo-marca-" not in bytes_, "presenca e servico antigos apagados com secure_delete e VACUUM: %r" % tv)
+ok(tv == TABS and b"fotografo-marca-" not in bytes_, "presenca e servico antigos apagados com secure_delete e VACUUM: %r" % tv)
 m.OPERACAO_DB = arq0
 m._op_criado.clear()
 m._op_criado.update(criado0)
