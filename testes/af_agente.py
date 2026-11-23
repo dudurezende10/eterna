@@ -177,7 +177,8 @@ try:
     r4 = m.af_alertas(D4, D4, agora_hoje=False)
     al = [x for x in r4["alertas"] if x["tipo"] == "af_conv_fam"]
     ok(len(al) == 1 and al[0]["k"] == "a" and al[0]["args"] == [30, 40, 6, 20], "4: exatamente 10 pontos abaixo (30%% x 40%%) sai: %r" % r4["alertas"])
-    ok(r4["equipe"] == {"familias": 60, "fam_compraram": 24, "fotos": 1500, "fotos_vendidas": 150}, "4: equipe toda: %r" % r4["equipe"])
+    ok({k: r4["equipe"][k] for k in ("familias", "fam_compraram", "fotos", "fotos_vendidas", "cliques_soma")} == {"familias": 60, "fam_compraram": 24, "fotos": 1500, "fotos_vendidas": 150, "cliques_soma": 1500},
+       "4: equipe toda: %r" % r4["equipe"])
     fd_grava(D4, "a", {"familias": 20, "fam_compraram": 7, "cliques_soma": 500, "fotos": 500, "fotos_vendidas": 50})
     ok("af_conv_fam" not in tipos(m.af_alertas(D4, D4, agora_hoje=False)), "4: 35%% contra 41,7%% (menos de 10 pontos) não sai")
     fd_grava(D4, "a", {"familias": 14, "fam_compraram": 1, "cliques_soma": 350, "fotos": 350, "fotos_vendidas": 35})

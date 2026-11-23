@@ -14916,7 +14916,7 @@ def af_alertas(de, ate, agora_hoje=True):
     expo = treino_cfg().get("exposicao")
     fontes = {d.get("fonte") for d in dados.values() if d.get("familias")}
     fonte = "ponto" if fontes == {"ponto"} else "todas" if fontes <= {"todas"} else "misto"
-    eq = {"familias": 0, "fam_compraram": 0, "fotos": 0, "fotos_vendidas": 0}
+    eq = {"familias": 0, "fam_compraram": 0, "fotos": 0, "fotos_vendidas": 0, "cliques_soma": 0, "chute_soma": 0}   # a linha da equipe na tela
     fs = []
     for k in sorted(dados):
         d = dados[k]
