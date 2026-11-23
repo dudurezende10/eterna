@@ -4,8 +4,11 @@
 # responde o /health e o /v1/chat/completions com a chave do arquivo (outra chave = 401) e devolve uma resposta
 # determinística pelo hash da imagem recebida (cada foto de teste é desenhada para o seu pid), com 10% inválidas de
 # propósito: fora da taxonomia, JSON quebrado e incoerência, um terço de cada.
-#   POSES_FALSO_NAO_ABRE=1  sai antes de abrir a porta          POSES_FALSO_DORMIR=<s>  cada foto demora
-#   POSES_FALSO_MORRE=1     morre no primeiro pedido             POSES_FALSO_DIR=<pasta> grava pid, linha e caminho da chave
+# O lançador do teste passa --falso-dir <pasta> (o agente/eterna-poses.py não repassa variáveis de teste ao llama-server):
+# ali o falso grava pid, linha e caminho da chave (llama-<pid>.json) e lê, a cada pedido, o controle.json do teste:
+#   nao_abre   sai antes de abrir a porta          dormir <s>  cada foto demora
+#   morre      morre no primeiro pedido             erro500     todo pedido responde 500
+#   sem_health o /health nunca responde 200 (a abertura passa do prazo)
 import hashlib, json, os, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -16,12 +19,22 @@ def arg(n):
     return a[a.index(n) + 1] if n in a and a.index(n) + 1 < len(a) else None
 
 
-if os.environ.get("POSES_FALSO_NAO_ABRE"):
+D = arg("--falso-dir")
+
+
+def ctl():
+    try:
+        with open(os.path.join(D, "controle.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
+if ctl().get("nao_abre"):
     sys.exit(1)
 if arg("--host") != "127.0.0.1" or not arg("--api-key-file") or any(x in a for x in ("-hf", "--hf-repo", "0.0.0.0")):
     sys.exit(2)
 CHAVE = open(arg("--api-key-file")).read().strip()
-D = os.environ.get("POSES_FALSO_DIR")
 if D:
     json.dump({"pid": os.getpid(), "argv": a, "chave_arq": arg("--api-key-file"), "modo": oct(os.stat(arg("--api-key-file")).st_mode & 0o777)},
               open(os.path.join(D, "llama-%d.json" % os.getpid()), "w"))
@@ -64,6 +77,8 @@ class H(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
+            if ctl().get("sem_health"):
+                return self._js({"error": "carregando"}, 503)
             return self._js({"status": "ok"})
         self._js({"error": "x"}, 404)
 
@@ -72,10 +87,13 @@ class H(BaseHTTPRequestHandler):
             return self._js({"error": "x"}, 404)
         if self.headers.get("Authorization") != "Bearer " + CHAVE:
             return self._js({"error": "chave"}, 401)
-        if os.environ.get("POSES_FALSO_MORRE"):
+        c = ctl()
+        if c.get("morre"):
             os._exit(9)
         j = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-        dorme = float(os.environ.get("POSES_FALSO_DORMIR") or 0)
+        if c.get("erro500"):
+            return self._js({"error": "falso"}, 500)
+        dorme = float(c.get("dormir") or 0)
         if dorme:
             time.sleep(dorme)
         rf = j.get("response_format") or {}

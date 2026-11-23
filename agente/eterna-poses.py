@@ -6,14 +6,18 @@
 # arquivo 0600 (nunca na linha de comando, que aparece no ps). Nunca usa -hf (nada é baixado daqui) e nenhuma foto sai do
 # servidor: a imagem vai do disco para o llama-server local e a resposta volta só como texto curto.
 #
+#   -> {"llama_pid": N}                                                   logo depois de abrir o llama-server (o agente
+#                                                                         grava o pid para nunca deixar órfão)
 #   -> {"pronto": true, "modelo": "qwen3vl-8b-q4", "sha": ..., "carga_ms": N, "prompt_v": ..., "llama_pid": N}
 #   <- {"id": "p.7", "itens": [{"pid", "origem"}], "esquema": {...}}      até POSE_LOTE itens
 #   -> {"id": "p.7", "ok": true, "res": [{"pid", "bruto": {...} | "texto", "ms": N} | {"pid", "erro"}]}
 #
 # O caminho de cada foto precisa estar dentro de --inbox ou --thumbs (realpath). A foto é aberta com a rotação do EXIF e
 # reduzida a POSE_LADO no lado maior. O agente valida a resposta (pose_valida): aqui ela só é lida como JSON.
-# Ao sair (fim do stdin, SIGTERM ou o agente que caiu), o grupo de processos do llama-server é encerrado e o arquivo da
-# chave é apagado.
+# Ao sair (fim do stdin, SIGTERM, também no meio da abertura, ou o agente que caiu), o grupo de processos do llama-server é
+# encerrado (SIGTERM, depois SIGKILL) e o arquivo da chave é apagado.
+# SHA dos arquivos do modelo: o agente confere os 6,2 GB uma vez (e guarda tamanho, data e inode do que conferiu) e passa
+# --conferido; aqui só se confere que tamanho, data e inode são os mesmos. Sem --conferido (uso manual), o SHA é lido inteiro.
 import base64, hashlib, io, json, os, re, secrets, signal, socket, subprocess, sys, tempfile, threading, time
 import urllib.error, urllib.request
 
@@ -22,7 +26,7 @@ POSE_LOTE = 8
 POSE_LADO = 768
 POSE_SEED = 7
 POSE_MAX_TOKENS = 80
-POSE_CARGA_SEG = 300       # s para o llama-server abrir o modelo e responder o /health
+POSE_CARGA_SEG = 300       # s do início (conferência incluída) até o /health responder; menor que o POSE_CARGA_SEG do agente
 POSE_PEDIDO_SEG = 60       # s por foto no /v1/chat/completions
 POSE_VAGAS = 4             # pedidos ao mesmo tempo (o -np do llama-server)
 MAX_PIXELS = 40_000_000    # igual ao do agente
@@ -99,6 +103,31 @@ class SemModelo(RuntimeError):
     pass
 
 
+class FotoGrande(Exception):
+    pass
+
+
+_LLAMAS = []               # os servidores abertos (ou abrindo): o tratador do SIGTERM fecha todos
+_TERM = {"critico": False, "pendente": False}   # SIGTERM entre o Popen e o self.p espera o self.p existir
+
+
+def sair(*_):
+    """Tratador do SIGTERM (e do agente que caiu): fecha todo llama-server aberto ou abrindo, apaga a chave e sai.
+    Entre o Popen e o self.p (trecho crítico) só anota: quem sai do trecho chama de novo. Não usa pthread_sigmask, que o
+    llama-server herdaria (ele passaria a ignorar o SIGTERM)."""
+    if _TERM["critico"]:
+        _TERM["pendente"] = True
+        return
+    try:
+        for s in list(_LLAMAS):
+            try:
+                s.fechar()
+            except Exception:
+                pass
+    finally:
+        os._exit(0)
+
+
 def linha_llama(binario, modelo, mmproj, porta, chave_arq):
     """A linha de comando do llama-server: só 127.0.0.1, porta escolhida aqui, chave por arquivo, sem interface web e
     sem baixar nada (nunca pelo repositório de modelos). O teste estático (critério 11) lê esta função."""
@@ -118,7 +147,7 @@ def porta_livre():
 def env_llama():
     """O llama-server recebe só o necessário para achar a placa (nenhuma chave da nuvem, nenhum token de download)."""
     passa = ("PATH", "HOME", "LANG", "LC_ALL", "CUDA_VISIBLE_DEVICES", "CUDA_PATH", "LD_LIBRARY_PATH", "TMPDIR")
-    e = {k: v for k, v in os.environ.items() if k in passa or k.startswith("POSES_FALSO")}
+    e = {k: v for k, v in os.environ.items() if k in passa}
     e["LLAMA_OFFLINE"] = "1"
     return e
 
@@ -127,10 +156,12 @@ class Llama:
     """O llama-server local. Sem o binário, sem os arquivos ou com SHA diferente do fixado no agente: SemModelo."""
     nome = POSE_NOME
 
-    def __init__(self, binario, modelos_dir, arq, mmproj_arq, sha, mmproj_sha, ponto):
+    def __init__(self, binario, modelos_dir, arq, mmproj_arq, sha, mmproj_sha, ponto, conferido=None, aviso=None):
         t0 = time.time()
         self.p = None
         self.dir = None
+        self.aviso = aviso
+        _LLAMAS.append(self)
         m = os.path.join(modelos_dir, os.path.basename(arq or ""))
         mp = os.path.join(modelos_dir, os.path.basename(mmproj_arq or ""))
         for s in (sha, mmproj_sha):
@@ -138,18 +169,23 @@ class Llama:
                 raise SemModelo("sem_modelo")
         if not binario or not os.path.isfile(binario) or not os.access(binario, os.X_OK):
             raise SemModelo("sem_modelo")
-        if not os.path.isfile(m) or not os.path.isfile(mp) or sha256(m) != sha or sha256(mp) != mmproj_sha:
+        if not os.path.isfile(m) or not os.path.isfile(mp):
+            raise SemModelo("sem_modelo")
+        if conferido is not None:                 # o agente já conferiu o SHA destes mesmos arquivos
+            if [assinatura(m), assinatura(mp)] != conferido:
+                raise SemModelo("sem_modelo")
+        elif sha256(m) != sha or sha256(mp) != mmproj_sha:
             raise SemModelo("sem_modelo")
         self.sha = sha
         # chave nova a cada abertura, num diretório 0700 com o arquivo 0600; some no fechar
         self.dir = tempfile.mkdtemp(prefix="poses-", dir=ponto if ponto and os.path.isdir(ponto) else None)
         try:
-            self._abrir(binario, m, mp, ponto, t0)
+            self._abrir(binario, m, mp, ponto, t0, t0 + POSE_CARGA_SEG)
         except BaseException:
             self.fechar()                         # nada fica para trás: nem o processo nem o arquivo da chave
             raise
 
-    def _abrir(self, binario, m, mp, ponto, t0):
+    def _abrir(self, binario, m, mp, ponto, t0, fim):
         os.chmod(self.dir, 0o700)
         self.chave_arq = os.path.join(self.dir, "chave")
         self.chave = secrets.token_hex(32)
@@ -161,16 +197,25 @@ class Llama:
         if ponto and os.path.isdir(ponto):
             fd = os.open(os.path.join(ponto, "poses-llama.log"), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             log = os.fdopen(fd, "wb")
+        # SIGTERM entre o Popen e o self.p fica anotado (o tratador fecha o self.p; sem isto o processo podia escapar)
+        _TERM["critico"] = True
         try:
             self.p = subprocess.Popen(linha_llama(binario, m, mp, self.porta, self.chave_arq), stdin=subprocess.DEVNULL,
                                       stdout=log or subprocess.DEVNULL, stderr=log or subprocess.DEVNULL, env=env_llama(),
                                       close_fds=True, start_new_session=True)
+            if self.aviso:
+                try:
+                    self.aviso(self.p.pid)            # o agente guarda o pid antes de esperar o modelo abrir
+                except Exception:
+                    pass
         finally:
+            _TERM["critico"] = False
             if log:
                 log.close()
+        if _TERM["pendente"]:
+            sair()
         # urllib sem proxy: o pedido nunca sai do computador, mesmo com HTTP_PROXY no ambiente
         self.abre = urllib.request.build_opener(urllib.request.ProxyHandler({})).open
-        fim = time.time() + POSE_CARGA_SEG
         while True:
             if self.p.poll() is not None:
                 raise RuntimeError("llama-server terminou ao abrir (código %s)" % self.p.returncode)
@@ -181,7 +226,7 @@ class Llama:
             except Exception:
                 pass
             if time.time() > fim:
-                raise RuntimeError("llama-server não respondeu em %d s" % POSE_CARGA_SEG)
+                raise RuntimeError("llama-server não respondeu em %d s" % POSE_CARGA_SEG)    # conta do início
             time.sleep(0.5)
         self.pid = self.p.pid
         self.carga_ms = int((time.time() - t0) * 1000)
@@ -228,12 +273,27 @@ class Llama:
             self.dir = None
 
 
+def assinatura(caminho):
+    """[tamanho, mtime_ns, inode]: o que o agente guarda junto do SHA conferido."""
+    st = os.stat(caminho)
+    return [st.st_size, st.st_mtime_ns, st.st_ino]
+
+
+def _conferido(txt):
+    """--conferido "tam:mtime_ns:inode,tam:mtime_ns:inode" (modelo, mmproj) -> [[...], [...]]; outro formato: None."""
+    try:
+        v = [[int(x) for x in parte.split(":")] for parte in (txt or "").split(",")]
+    except ValueError:
+        return None
+    return v if len(v) == 2 and all(len(x) == 3 for x in v) else None
+
+
 def preparar(origem):
     """Foto -> data URI JPEG com a rotação do EXIF aplicada e o lado maior em POSE_LADO."""
     from PIL import Image, ImageOps
     with Image.open(origem) as im0:
         if im0.size[0] * im0.size[1] > MAX_PIXELS:
-            raise ValueError("imagem_grande")
+            raise FotoGrande("imagem_grande")
         im = ImageOps.exif_transpose(im0).convert("RGB")
     im.thumbnail((POSE_LADO, POSE_LADO), Image.LANCZOS)
     b = io.BytesIO()
@@ -266,10 +326,10 @@ def lote(srv, itens, pastas, esquema):
             t0 = time.time()
             try:
                 uri = preparar(origem)
-            except ValueError as ex:
-                res[i] = {"pid": pid, "erro": str(ex)[:40] or "imagem"}
+            except FotoGrande:
+                res[i] = {"pid": pid, "erro": "imagem_grande"}
                 continue
-            except Exception:
+            except Exception:                           # ValueError e outros do PIL: a foto não serve (não é o servidor)
                 res[i] = {"pid": pid, "erro": "imagem"}
                 continue
             try:
@@ -307,15 +367,8 @@ def main(fabrica=None):
         manda({"pronto": False, "erro": "faltam --inbox e --thumbs"})
         return 2
     srv = None
-
-    def fim(*_):
-        try:
-            if srv is not None:
-                srv.fechar()
-        finally:
-            os._exit(0)
     try:
-        signal.signal(signal.SIGTERM, fim)
+        signal.signal(signal.SIGTERM, sair)       # fecha também o llama-server que ainda está abrindo
     except (ValueError, OSError):
         pass
     try:
@@ -323,8 +376,12 @@ def main(fabrica=None):
         Image.MAX_IMAGE_PIXELS = MAX_PIXELS
         sha = _arg("--sha")
         msha = _arg("--mmproj-sha")
+        conf = _arg("--conferido")
+        kw = {} if fabrica else {"conferido": _conferido(conf) if conf else None, "aviso": lambda pid: manda({"llama_pid": pid})}
+        if conf and not kw.get("conferido", True):
+            raise SemModelo("sem_modelo")
         srv = (fabrica or Llama)(_arg("--bin"), _arg("--modelos") or os.path.expanduser("~/Eterna/modelos"), _arg("--modelo-arq"),
-                                 _arg("--mmproj-arq"), None if sha == "-" else sha, None if msha == "-" else msha, _arg("--ponto"))
+                                 _arg("--mmproj-arq"), None if sha == "-" else sha, None if msha == "-" else msha, _arg("--ponto"), **kw)
     except SemModelo:
         manda({"pronto": False, "erro": "sem_modelo"})
         return 3
@@ -340,7 +397,7 @@ def main(fabrica=None):
         while True:
             time.sleep(2)
             if os.getppid() != pai:
-                fim()
+                sair()
     if os.name != "nt":
         threading.Thread(target=vigia_pai, daemon=True).start()
     manda({"pronto": True, "modelo": getattr(srv, "nome", POSE_NOME), "sha": getattr(srv, "sha", None), "carga_ms": srv.carga_ms,
