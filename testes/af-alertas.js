@@ -62,9 +62,9 @@ try{
     ok(J(R.pedidos[R.pedidos.length-1])===J([HOJE,HOJE]),'Hoje: de e até hoje: '+J(R.pedidos));
     await pg.click('[data-act="af-per"][data-p="30d"]');await pg.waitForTimeout(300);ok(J(R.pedidos[R.pedidos.length-1])===J([addD(HOJE,-29),HOJE]),'30 dias');
     // grave a partir de 25%
-    R.grave=true;await pg.evaluate(()=>ETERNA.afPull(true));await pg.waitForTimeout(300);cs=await cartoes(pg);
+    R.grave=true;await espera(pg,()=>!ETERNA.state.af.busy);await pg.evaluate(()=>ETERNA.afPull(true));await pg.waitForTimeout(300);cs=await cartoes(pg);
     const g=cs.find(c=>/fora da exposição/.test(c.t));ok(g&&g.sev==='bad'&&g.t==='Márcio: 25 de 100 fora da exposição: 17 estouradas, 8 escuras'&&cs[0].t===g.t,'7: 25% é grave e vem antes: '+J(g));
-    R.grave=false;
+    R.grave=false;await espera(pg,()=>!ETERNA.state.af.busy);await pg.evaluate(()=>ETERNA.afPull(true));await espera(pg,()=>!ETERNA.state.af.busy&&ETERNA.state.af.j.alertas[0].sev==='warn');
     // ---------- 9: o ajuste da foto (automático ou à mão) não muda a conta: a tela não refaz nada no navegador ----------
     const n0=R.pedidos.length;const antes=await pg.textContent('#main .alerts');
     await pg.evaluate(()=>{const S=ETERNA.SIM;S.edits=S.edits||{};S.edits['ag_aaaaaaaaaaaa']={b:60,c:20,s:0,auto:true};S.edits['ag_bbbbbbbbbbbb']={b:25,c:0,s:0};ETERNA.saveSim();ETERNA.render();});await pg.waitForTimeout(200);
@@ -77,9 +77,9 @@ try{
     ok(tab.linhas.length===4&&tab.linhas[3][0]==='Equipe'&&tab.linhas[0][0]==='Márcio'&&tab.linhas.find(l=>l[0]==='Márcio')[6]==='20%20 de 100: 12 estouradas, 8 escuras','tabela da AF com a equipe no fim: '+J(tab.linhas));
     ok(/Famílias/.test(tab.cab.join('|'))&&!/Em teste/.test(tab.cab.join('|')),'Ligada: sem o selo Em teste');
     ok(tab.linhas.find(l=>l[0]==='Yago')[2].includes('9 abaixo de 20 · 0 acima de 40'),'cliques com abaixo e acima');
-    R.expo='medir';await pg.evaluate(()=>ETERNA.afPull(true));await pg.waitForTimeout(300);
+    R.expo='medir';await espera(pg,()=>!ETERNA.state.af.busy);await pg.evaluate(()=>ETERNA.afPull(true));await pg.waitForTimeout(300);
     ok(/Em teste/.test(await pg.textContent('.af-tabela thead')),'6: medir: a coluna tem "Em teste"');
-    R.expo='desligada';await pg.evaluate(()=>ETERNA.afPull(true));await pg.waitForTimeout(300);
+    R.expo='desligada';await espera(pg,()=>!ETERNA.state.af.busy);await pg.evaluate(()=>ETERNA.afPull(true));await pg.waitForTimeout(300);
     ok(!/Fora da exposição/.test(await pg.textContent('.af-tabela thead')),'desligada: sem a coluna de exposição');R.expo='ligada';await pg.evaluate(()=>ETERNA.afPull(true));await pg.waitForTimeout(200);
     // ---------- limites: POST só com o que mudou, auditLog com o anterior e o novo; 400 mostra o campo ----------
     await pg.fill('#af-lim input[data-k="cliques_min"]','18');await pg.click('[data-act="af-cfg-salvar"]');await pg.waitForTimeout(400);
