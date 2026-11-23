@@ -964,7 +964,6 @@ def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
     k = min(1.0, LADO / max(h, w))
     if k < 1:
         img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
-    k = k or 1.0
     det.setInputSize((img.shape[1], img.shape[0]))
     _, f = det.detect(img)
     out = []
@@ -1042,6 +1041,8 @@ def leitor_loop(det, rec, db):
         rostos["fila"] = fila_rostos.qsize()
         t_ini = time.time()
         lidos = None
+        img_l = fs_l = None
+        _leitor_lendo(1)
         try:
             img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)
             if img is None:
@@ -1055,13 +1056,7 @@ def leitor_loop(det, rec, db):
             db.executemany("insert into rosto_q values (?,?,?)", [(pid, dia, f[1].tobytes()) for f in fs
                                                                   if len(f) > 3 and f[2] >= SESS_Q_SCORE and f[3]])
             db.commit()
-            if luz_ligada():                # 23/11 (AF-D4): luz da foto como saiu da câmera, na imagem já decodificada
-                try:
-                    t_l = time.time()
-                    v_l = luz_medir(img, [f[4] for f in fs if len(f) > 4])
-                    luz_acrescenta(pid, v_l, round((time.time() - t_l) * 1000, 1))
-                except Exception as ex:
-                    print("  luz: %s" % type(ex).__name__)
+            img_l, fs_l = img, fs           # 23/11 (AF-D4): a luz é medida no fim, depois da selfie (abaixo)
             lidos = [(f[0], f[1].tolist(), f[2], f[3]) for f in fs]
             with _cont_lock:
                 rostos["lidas"] += 1; rostos["rostos"] += len(fs)
@@ -1080,6 +1075,25 @@ def leitor_loop(det, rec, db):
                 sess_rostos_lidos(pid, lidos)
             except Exception as ex:
                 print("  sessões (rostos): %s" % str(ex)[:80])
+            _leitor_lendo(-1)
+        # 23/11 (AF-D4, revisão): luz da foto como saiu da câmera, na imagem já decodificada, só DEPOIS de a foto entrar na matriz
+        # da selfie (mat_acrescenta), na fila do fotógrafo (ff_rosto_lido) e na sessão (sess_rostos_lidos): a selfie não espera
+        if img_l is not None and luz_ligada():
+            try:
+                t_l = time.time()
+                v_l = luz_medir(img_l, [f[4] for f in fs_l if len(f) > 4])
+                luz_acrescenta(pid, v_l, round((time.time() - t_l) * 1000, 1))
+            except Exception as ex:
+                print("  luz: %s" % type(ex).__name__)
+        img = img_l = fs_l = None
+
+
+_lendo = [0]                       # 23/11 (AF): fotos sendo lidas agora pelos leitores (a varredura da luz espera)
+
+
+def _leitor_lendo(d):
+    with _cont_lock:
+        _lendo[0] += d
 
 
 def mat_acrescenta(dia, pid, fs):
@@ -12890,7 +12904,11 @@ def operacao_db():
         # 23/11 (AF): por fotógrafo e por dia, só somas (sem pid nem cliente); o mês congelado; os dias já calculados
         c.execute("create table if not exists fotografo_dia (dia text, fotografo text, dados text, em text, primary key (dia, fotografo))")
         c.execute("create table if not exists fotografo_mes (mes text primary key, dados text, fechado_em text)")
-        c.execute("create table if not exists fotografo_dia_calc (dia text primary key, em text)")
+        c.execute("create table if not exists fotografo_dia_calc (dia text primary key, em text, ponto integer)")
+        try:                                       # revisão 23/11: o estado do reconhecimento do ponto no dia (1, 0 ou null)
+            c.execute("alter table fotografo_dia_calc add column ponto integer")
+        except sqlite3.OperationalError:
+            pass
         c.commit()
         _op_criado["arq"] = OPERACAO_DB
     return c
@@ -14116,12 +14134,13 @@ def treino_status():
 
 # ---------- Luz da foto: escura ou estourada (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md, AF-D4 a AF-D6) ----------
 # Medida da foto COMO SAIU DA CÂMERA: no leitor de rostos (o original já decodificado, cv2.IMREAD_REDUCED_COLOR_2) e, na
-# varredura dos últimos 30 dias, na miniatura (gerada do original só com a rotação do EXIF). O Ajuste automático e o ajuste à
-# mão são filtro de tela (documentos sim/edits|) e nunca mudam o arquivo: a medida não muda com eles. Só números por pid em
+# varredura dos últimos 30 dias, no mesmo original e do mesmo jeito (luz_medir_arquivo: uma fonte só, a calibração não mistura
+# medidas de miniatura e de original). O Ajuste automático e o ajuste à mão são filtro de tela (documentos sim/edits|) e nunca mudam o arquivo: a medida não muda com eles. Só números por pid em
 # treino.db medida(pid, 'luz', valor) (vai para o backup; a exclusão LGPD apaga pelo treino_lgpd). Nada sai do servidor.
 # Liga e desliga: config/treino.exposicao (desligada = não mede; medir = mede e mostra com "Em teste"; ligada = gera alertas,
-# só com o LUZ_CRIT na calibração contra as marcações do Treino). Prioridade baixa: a varredura cede ao recorte e à montagem
-# (_poses_ocupado) e nunca usa a placa de vídeo.
+# só com o LUZ_CRIT na calibração contra as marcações do Treino). Prioridade baixa: a varredura cede ao leitor de rostos e à
+# selfie, ao recorte e à montagem; de dia só mede as fotos marcadas no Treino (até LUZ_HORA_MAX por hora), o resto de madrugada;
+# nunca usa a placa de vídeo.
 LUZ_V = 1
 LUZ_LIM_PADRAO = {"v": 1, "rosto_p95_alto": 250, "rosto_alto_pct": 8, "rosto_med_baixo": 50,
                   "quadro_alto_pct": 12, "quadro_med_alto": 170, "quadro_med_baixo": 45, "quadro_baixo_pct": 30}
@@ -14131,10 +14150,12 @@ LUZ_DIAS = 30               # a varredura mede o que ficou sem medida nestes dia
 LUZ_FILA_MAX = 20000
 LUZ_GRAVA_SEG = 5
 LUZ_VARRE_SEG = 3600
+LUZ_HORA_MAX = 200          # revisão 23/11: fora da madrugada, só as fotos marcadas no Treino e no máximo 200 por hora
+LUZ_NOITE = (2, 6)          # o resto da varredura só de madrugada (2h às 6h, hora do servidor)
 LUZ_GRADE = {"rosto_med_baixo": "escura", "quadro_med_baixo": "escura", "rosto_alto_pct": "estourada", "quadro_alto_pct": "estourada"}
 luz_lock = threading.Lock()
 luz_novas = collections.OrderedDict()       # pid -> valor (JSON) esperando o luz_grava_loop
-luz_st = {"dia": "", "hoje": 0, "ms_total": 0.0, "ms_n": 0, "pendentes": None, "rodando": False, "ultima": None}
+luz_st = {"dia": "", "hoje": 0, "ms_total": 0.0, "ms_n": 0, "pendentes": None, "rodando": False, "ultima": None, "hora": "", "hora_n": 0}
 luz_parar = threading.Event()               # só os testes ligam: o luz_loop termina
 _luz_med = {"t": 0.0, "r": None, "lim": None}
 _luz_det = {"d": None, "ok": None}
@@ -14156,15 +14177,17 @@ def _luz_hist(h, n=None):
             "alto": round(100.0 * sum(h[250:]) / n, 1), "baixo": round(100.0 * sum(h[:9]) / n, 1)}
 
 
-def _luz_cinza(img):
-    """BGR (numpy) -> luminância 0 a 255 (uint8). Com o OpenCV, o cvtColor; sem ele, a mesma conta em numpy."""
+def _luz_cinza(img, x0=0, y0=0, x1=None, y1=None, passo=1):
+    """Recorte [y0:y1, x0:x1] (de passo em passo) da BGR (numpy) -> luminância 0 a 255 (uint8). Só o recorte é convertido
+    (revisão 23/11: os 60% centrais e o rosto, não a foto inteira). Com o OpenCV, o cvtColor; sem ele, a mesma conta em numpy."""
+    c = img[y0:y1:passo, x0:x1:passo]
+    if c.ndim == 2:
+        return c
     cv2 = _cv.get("cv2")
-    if img.ndim == 2:
-        return img
-    if cv2 is not None:
-        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     np = _vis_np()
-    g = (img[..., 0].astype(np.uint32) * 29 + img[..., 1].astype(np.uint32) * 150 + img[..., 2].astype(np.uint32) * 77) >> 8
+    if cv2 is not None:
+        return cv2.cvtColor(np.ascontiguousarray(c) if passo > 1 else c, cv2.COLOR_BGR2GRAY)
+    g = (c[..., 0].astype(np.uint32) * 29 + c[..., 1].astype(np.uint32) * 150 + c[..., 2].astype(np.uint32) * 77) >> 8
     return g.astype(np.uint8)
 
 
@@ -14172,11 +14195,11 @@ def luz_medir(img, caixas=None, src="original"):
     """img BGR (numpy) e caixas dos rostos (x, y, l, a) nas coordenadas dela -> {v, src, q:{med,p5,p95,alto,baixo},
     r:{med,p95,alto,n}|None}. q = os 60% centrais do quadro (o céu fica de fora); r = o maior rosto com a caixa 10% maior."""
     np = _vis_np()
-    g = _luz_cinza(img)
-    h, w = g.shape[:2]
-    c = g[int(h * 0.2):max(int(h * 0.2) + 1, int(h * 0.8)), int(w * 0.2):max(int(w * 0.2) + 1, int(w * 0.8))]
-    if c.size > 2_000_000:                    # o histograma não precisa de todos os pixels
-        c = c[::2, ::2]
+    h, w = img.shape[:2]
+    y0, y1 = int(h * 0.2), max(int(h * 0.2) + 1, int(h * 0.8))
+    x0, x1 = int(w * 0.2), max(int(w * 0.2) + 1, int(w * 0.8))
+    passo = 2 if (y1 - y0) * (x1 - x0) > 2_000_000 else 1     # o histograma não precisa de todos os pixels
+    c = _luz_cinza(img, x0, y0, x1, y1, passo)
     q = _luz_hist(np.bincount(c.ravel(), minlength=256).tolist())
     r = None
     cs = [b for b in (caixas or []) if b and len(b) >= 4 and b[2] > 0 and b[3] > 0]
@@ -14185,7 +14208,7 @@ def luz_medir(img, caixas=None, src="original"):
         x0, y0 = max(0, int(x - l * 0.05)), max(0, int(y - a * 0.05))
         x1, y1 = min(w, int(x + l * 1.05) + 1), min(h, int(y + a * 1.05) + 1)
         if x1 - x0 >= 4 and y1 - y0 >= 4:
-            hr = np.bincount(g[y0:y1, x0:x1].ravel(), minlength=256).tolist()
+            hr = np.bincount(_luz_cinza(img, x0, y0, x1, y1).ravel(), minlength=256).tolist()
             s = _luz_hist(hr)
             if s:
                 r = {"med": s["med"], "p95": s["p95"], "alto": s["alto"], "n": int(sum(hr))}
@@ -14193,13 +14216,38 @@ def luz_medir(img, caixas=None, src="original"):
 
 
 def luz_medir_pil(caminho):
-    """Sem OpenCV: Pillow, só o quadro (r = None), na miniatura."""
+    """Sem OpenCV: Pillow, só o quadro (r = None), no original reduzido pela metade na decodificação (o mesmo que o
+    cv2.IMREAD_REDUCED_COLOR_2 do leitor; os 60% centrais não dependem da rotação do EXIF)."""
     from PIL import Image
     with Image.open(caminho) as im:
+        try:
+            im.draft("RGB", (max(1, im.width // 2), max(1, im.height // 2)))
+        except Exception:
+            pass
         g = im.convert("L")
         w, h = g.size
         g = g.crop((int(w * 0.2), int(h * 0.2), max(int(w * 0.2) + 1, int(w * 0.8)), max(int(h * 0.2) + 1, int(h * 0.8))))
-        return {"v": LUZ_V, "src": "thumb", "q": _luz_hist(g.histogram()[:256]), "r": None}
+        return {"v": LUZ_V, "src": "original", "q": _luz_hist(g.histogram()[:256]), "r": None}
+
+
+def luz_medir_arquivo(caminho, det=None):
+    """A varredura mede pela MESMA fonte do leitor de rostos (revisão 23/11): o original com cv2.IMREAD_REDUCED_COLOR_2, os
+    rostos pelo YuNet na mesma escala do ler_rostos (LADO, ROSTO_MIN). Sem OpenCV, o Pillow (só o quadro). None = ilegível."""
+    cv2 = _cv.get("cv2")
+    if cv2 is None:
+        return luz_medir_pil(caminho)
+    img = cv2.imread(caminho, cv2.IMREAD_REDUCED_COLOR_2)
+    if img is None:
+        return None
+    cx = []
+    if det is not None:
+        h, w = img.shape[:2]
+        k = min(1.0, LADO / max(h, w))
+        im2 = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA) if k < 1 else img
+        det.setInputSize((im2.shape[1], im2.shape[0]))
+        _, f = det.detect(im2)
+        cx = [(float(r[0]) / k, float(r[1]) / k, float(r[2]) / k, float(r[3]) / k) for r in (f if f is not None else []) if r[2] >= ROSTO_MIN]
+    return luz_medir(img, cx)
 
 
 def luz_limites():
@@ -14335,9 +14383,22 @@ def _luz_detector():
     return _luz_det["d"]
 
 
+def _luz_noite(t=None):
+    """A janela da madrugada (LUZ_NOITE, hora do servidor): a varredura mede tudo; fora dela, só as fotos marcadas no Treino."""
+    return LUZ_NOITE[0] <= time.localtime(t if t is not None else time.time()).tm_hour < LUZ_NOITE[1]
+
+
+def _luz_ocupado():
+    """Leitor de rostos com foto na fila ou lendo (o caminho da selfie), selfie buscando, recorte ou montagem com trabalho de
+    prioridade 0 ou 1: a varredura espera."""
+    return (fila_rostos.qsize() > 0 or _lendo[0] > 0 or _busca_lock.locked()
+            or _poses_ocupado("rec") or _poses_ocupado("mtg"))
+
+
 def luz_pendentes():
-    """Fotos das sessões dos últimos LUZ_DIAS sem medida de luz: primeiro as marcadas no Treino, depois da mais nova para a
-    mais antiga. -> [pid]"""
+    """Fotos das sessões dos últimos LUZ_DIAS sem medida de luz -> (marcadas no Treino, resto), da mais nova para a mais
+    antiga. Fica de fora a foto que o leitor de rostos ainda não leu (com o leitor ligado): ele mesmo mede, sem medir duas vezes.
+    Medida de miniatura (src thumb, de antes da revisão de 23/11) conta como pendente: a fonte é sempre o original."""
     pids = []
     for i in range(LUZ_DIAS):
         a = os.path.join(SESS_DIR, _ff_hoje(time.time() - i * 86400) + ".json")
@@ -14349,13 +14410,13 @@ def luz_pendentes():
             if isinstance(x, dict) and not x.get("removida"):
                 pids += [p for p in (x.get("fotos") or []) if isinstance(p, str)]
     if not pids:
-        return []
+        return [], []
     feitas, rot = set(), set()
     if os.path.exists(TREINO_DB):
         with treino_lock:
             db = treino_db()
             try:
-                feitas = {r[0] for r in db.execute("select pid from medida where tipo = 'luz'")}
+                feitas = {r[0] for r in db.execute("select pid from medida where tipo = 'luz' and valor not like '%\"src\":\"thumb\"%'")}
                 rot = {r[0] for r in db.execute("select pid from rotulo")}
             finally:
                 db.close()
@@ -14363,60 +14424,101 @@ def luz_pendentes():
         feitas |= set(luz_novas)
     with lock:
         vivas = {p for p in pids if p in lib}
+    if rostos.get("ligado"):
+        lidas, ps = set(), [p for p in vivas if p not in feitas]
+        db = rostos_db()
+        try:
+            for i in range(0, len(ps), 500):
+                bl = ps[i:i + 500]
+                lidas |= {r[0] for r in db.execute("select pid from foto where pid in (%s)" % ",".join("?" * len(bl)), bl)}
+        finally:
+            db.close()
+        vivas = lidas
     vistos, pr, resto = set(), [], []
     for p in pids:
         if p in vistos or p in feitas or p not in vivas:
             continue
         vistos.add(p)
         (pr if p in rot else resto).append(p)
-    return pr + resto
+    return pr, resto
 
 
-def luz_varre(parar=None):
-    """Mede o que ficou sem medida (luz_pendentes) pela miniatura: OpenCV com o YuNet (src thumb); sem OpenCV, Pillow só o
-    quadro. Para quando a exposição desliga; espera enquanto o recorte ou a montagem têm trabalho de prioridade 0 ou 1."""
+class _LuzThreads:
+    """Revisão 23/11: o YuNet roda no pool de threads do OpenCV, que não herda a prioridade baixa da thread da varredura.
+    Enquanto a varredura trabalha, o OpenCV fica com 1 thread (o detector roda na própria thread de prioridade 19); antes de
+    esperar pelo leitor, pela selfie, pelo recorte ou pela montagem, e no fim, volta ao número de antes. O ajuste do OpenCV é do
+    processo inteiro: só muda com o leitor parado (fila vazia, ninguém lendo, selfie sem buscar)."""
+
+    def __init__(self):
+        self.cv2, self.antes = _cv.get("cv2"), None
+
+    def uma(self):
+        if self.cv2 is not None and self.antes is None:
+            try:
+                self.antes = self.cv2.getNumThreads()
+                self.cv2.setNumThreads(1)
+            except Exception:
+                self.antes = None
+
+    def volta(self):
+        if self.cv2 is not None and self.antes is not None:
+            try:
+                self.cv2.setNumThreads(self.antes)
+            except Exception:
+                pass
+            self.antes = None
+
+
+def luz_varre(parar=None, noite=None):
+    """Mede o que ficou sem medida (luz_pendentes) pelo original, como o leitor (luz_medir_arquivo). De madrugada (noite)
+    mede tudo, primeiro as marcadas, e para quando a janela fecha; fora dela, só as marcadas no Treino e no máximo LUZ_HORA_MAX
+    por hora. Para quando a exposição desliga; espera enquanto o leitor de rostos, a selfie, o recorte ou a montagem trabalham."""
     parar = parar or luz_parar
+    relogio = noite is None                       # pela hora do servidor (o luz_loop); os testes passam noite
+    noite = _luz_noite() if relogio else noite
     _luz_prio_baixa()
-    lista = luz_pendentes()
-    luz_st.update(pendentes=len(lista), rodando=True)
+    pr, resto = luz_pendentes()
+    lista = pr + resto if noite else pr
+    luz_st.update(pendentes=len(pr) + len(resto), rodando=True)
     feitas = 0
+    th = _LuzThreads()
     try:
         cv2 = _cv.get("cv2")
         det = _luz_detector() if cv2 is not None else None
-        for i, p in enumerate(lista):
-            if parar.is_set() or not luz_ligada():
+        for p in lista:
+            if parar.is_set() or not luz_ligada() or (noite and relogio and not _luz_noite()):
                 break
-            while _poses_ocupado("rec") or _poses_ocupado("mtg"):
-                if parar.wait(2):
-                    return feitas
+            if not noite:
+                hora = time.strftime("%Y-%m-%d %H")
+                if luz_st["hora"] != hora:
+                    luz_st.update(hora=hora, hora_n=0)
+                if luz_st["hora_n"] >= LUZ_HORA_MAX:
+                    break
+            if _luz_ocupado():
+                th.volta()
+                while _luz_ocupado():
+                    if parar.wait(2):
+                        return feitas
+            luz_st["pendentes"] = max(0, (luz_st["pendentes"] or 0) - 1)   # tentada (medida, sem original ou ilegível)
             with lock:
                 e = lib.get(p)
-            if not e:
+            arq = (e or {}).get("file")
+            if not arq or not os.path.exists(arq):
                 continue
-            th = e.get("thumb") or os.path.join(THUMBS, p + ".jpg")
-            if not os.path.exists(th):
-                continue
-            t0 = time.time()
+            th.uma()
             try:
-                if cv2 is not None:
-                    img = cv2.imread(th, cv2.IMREAD_COLOR)
-                    if img is None:
-                        continue
-                    cx = []
-                    if det is not None:
-                        det.setInputSize((img.shape[1], img.shape[0]))
-                        _, f = det.detect(img)
-                        cx = [(float(r[0]), float(r[1]), float(r[2]), float(r[3])) for r in (f if f is not None else []) if r[2] >= 8]
-                    v = luz_medir(img, cx, src="thumb")
-                else:
-                    v = luz_medir_pil(th)
+                v = luz_medir_arquivo(arq, det)
             except Exception:
+                v = None
+            if v is None:
                 continue
             luz_acrescenta(p, v)
             feitas += 1
-            luz_st["pendentes"] = len(lista) - i - 1
+            if not noite:
+                luz_st["hora_n"] += 1
             time.sleep(0.002)                     # cede o processador às outras threads
     finally:
+        th.volta()
         luz_st.update(rodando=False, ultima=_iso())
         if not luz_ligada():
             luz_st["pendentes"] = None
@@ -14424,13 +14526,16 @@ def luz_varre(parar=None):
 
 
 def luz_loop():
-    """De hora em hora (e logo que a exposição sai de desligada) mede o que ficou sem medida; grava pelo luz_grava_loop."""
+    """De hora em hora (e logo que a exposição sai de desligada) mede as marcadas no Treino; de madrugada, roda de novo enquanto
+    houver pendente. Grava pelo luz_grava_loop."""
     antes, ultima = "desligada", 0.0
     while not luz_parar.is_set():
         try:
             agora = treino_cfg_mem().get("exposicao")
-            if agora != "desligada" and (antes == "desligada" or time.time() - ultima >= LUZ_VARRE_SEG):
-                ultima = time.time()
+            t = time.time()
+            if agora != "desligada" and (antes == "desligada" or t - ultima >= LUZ_VARRE_SEG
+                                         or (_luz_noite(t) and luz_st["pendentes"] and t - ultima >= 60)):
+                ultima = t
                 luz_varre()
             antes = agora
         except Exception as ex:
@@ -14457,12 +14562,15 @@ def _luz_prf(itens, classe, lim):
     return n, (round(vp / pp, 4) if pp else None), (round(vp / n, 4) if n else None), vp
 
 
-def luz_medida(forcar=False):
+def luz_medida(forcar=False, lim=None):
     """Calibração contra as marcações do Treino (AF-D6). Positiva = qual.nivel fraca ou nao_vai com o motivo escura ou
     estourada (a foto "ajustar" não entra); negativa = nível boa. Por classe: n, precisão, revocação; a matriz; uma grade de
-    5 valores para cada limite principal; e o LUZ_CRIT para Ligada. Cache de 10 s."""
-    lim = luz_limites()
-    if not forcar and _luz_med["r"] is not None and time.time() - _luz_med["t"] < 10 and _luz_med["lim"] == lim:
+    5 valores para cada limite principal; e o LUZ_CRIT para Ligada. Cache de 10 s. lim (revisão 23/11) = limites candidatos
+    (o POST /fotografos/config confere o LUZ_CRIT com eles antes de gravar, com a exposição Ligada); sem cache.
+    Só entram medidas do original (src "original", a fonte do leitor e da varredura): a calibração não mistura fontes."""
+    candidato = lim is not None
+    lim = dict(lim) if candidato else luz_limites()
+    if not forcar and not candidato and _luz_med["r"] is not None and time.time() - _luz_med["t"] < 10 and _luz_med["lim"] == lim:
         return _luz_med["r"]
     rots = []
     if os.path.exists(TREINO_DB):
@@ -14485,7 +14593,7 @@ def luz_medida(forcar=False):
                 verdade[p] = cs[0]
         elif nv == "boa":
             verdade[p] = "boa"
-    meds = luz_ler(list(verdade))
+    meds = {p: v for p, v in luz_ler(list(verdade)).items() if isinstance(v, dict) and v.get("src") == "original"}
     itens = [(t, meds[p]) for p, t in verdade.items() if p in meds]
     sem = sum(1 for p in verdade if p not in meds)
     classes = {}
@@ -14517,7 +14625,8 @@ def luz_medida(forcar=False):
             falta.append({"k": "revocacao_" + c, "tem": classes[c]["revocacao"] or 0, "precisa": LUZ_CRIT["revocacao"]})
     r = {"v": 1, "limites": lim, "classes": classes, "boas_n": boas, "matriz": mx, "grade": grade, "sem_medida": sem,
          "criterio": {"passa": not falta, "falta": falta}, "crit": dict(LUZ_CRIT)}
-    _luz_med.update(t=time.time(), r=r, lim=lim)
+    if not candidato:
+        _luz_med.update(t=time.time(), r=r, lim=lim)
     return r
 
 
@@ -14537,14 +14646,18 @@ FOTOGRAFOS_FAIXAS = {"cliques_min": (1, 200), "cliques_max": (2, 400), "fam_min"
                      "luz_grave_pct": (1, 100), "luz_fotos_min": (1, 100000)}
 LUZ_FAIXAS = {"rosto_p95_alto": (200, 255), "rosto_alto_pct": (1, 100), "rosto_med_baixo": (1, 200), "quadro_alto_pct": (1, 100),
               "quadro_med_alto": (50, 255), "quadro_med_baixo": (1, 200), "quadro_baixo_pct": (1, 100)}
-AF_SETS_CONTA = ("gramado", "trofeu", "arquibancada")
-AF_SEM_FOTOGRAFO = ("", "sem fotógrafo")
-AF_DIAS_NOITE = 35          # a madrugada refaz os últimos 35 dias (LGPD e venda atrasada)
-AF_VENDA_DIAS = 2           # uma leva do dia D pode ser comprada até D + 2 (a selfie do dia seguinte)
-AF_PONTO_COBERTURA = 0.9    # dia com o ponto Ligado conta pelo ponto só se 90% das fotos têm leitura (senão, todas as fotos)
-AF_MES_ATE_DIA = 5          # o mês congela no dia 1; faltando dia calculado, espera até o dia 5
-af_lock = threading.Lock()
-af_st = {"ultimo_dia": None, "em": None, "noite": None, "sujo": False, "erro": None}
+FOT_SETS_CONTA = ("gramado", "trofeu", "arquibancada")
+FOT_SEM_FOTOGRAFO = ("", "sem fotógrafo")
+FOT_DIAS_NOITE = 35          # a madrugada refaz os últimos 35 dias (LGPD e venda atrasada)
+FOT_VENDA_DIAS = 2           # uma leva do dia D pode ser comprada até D + 2 (a selfie do dia seguinte)
+FOT_PONTO_COBERTURA = 0.9    # dia com o ponto Ligado conta pelo ponto só se 90% das fotos têm leitura (senão, todas as fotos)
+FOT_MES_DESDE_DIA = 1 + FOT_VENDA_DIAS + 1   # revisão 23/11: o mês só congela a partir do dia 4 (a última leva do mês ainda
+                                              # vende até o dia 2) e só depois da rodada da madrugada desse dia
+FOT_MES_ATE_DIA = 5          # faltando dia calculado, espera até o dia 5 (depois, calcula o que falta e congela)
+FOT_REFAZ_JA = 7             # revisão 23/11: limite de luz novo refaz na hora os 7 dias do período padrão da tela; o resto, de madrugada
+fot_lock = threading.Lock()
+fot_cfg_lock = threading.Lock()
+fot_st = {"ultimo_dia": None, "em": None, "noite": None, "sujo": False, "erro": None}
 _fot_cfg = {"t": 0.0, "v": None}
 
 
@@ -14613,44 +14726,67 @@ def fotografos_cfg():
 
 
 def fotografos_cfg_gravar(corpo, quem):
-    """POST /fotografos/config: só os campos que mudam (formato fechado). 400 campo com o nome do campo recusado. Mudança dos
-    limites de luz refaz os 35 dias (af_st.sujo). -> (status, resposta com antes e depois, para o auditLog da tela)"""
+    """POST /fotografos/config: só os campos que mudam (formato fechado). 400 campo com o nome do campo recusado. Sem mudança:
+    não regrava nem sobe o rev. Revisão 23/11: com a exposição Ligada, limite de luz novo só passando no LUZ_CRIT com os
+    limites novos (409 criterio com falta, nada gravado); limite de luz novo refaz na hora os FOT_REFAZ_JA dias mais recentes e
+    marca o resto para a rodada da madrugada (fot_st.sujo). -> (status, resposta com antes e depois, para o auditLog da tela)"""
     if not isinstance(corpo, dict) or not corpo:
         return 400, {"ok": False, "error": "campo", "campo": "corpo"}
-    de = fotografos_cfg()
-    antes = {k: (dict(x) if isinstance(x, dict) else x) for k, x in de.items() if k not in ("por", "em")}
-    novo, campo = fotografos_cfg_valida(corpo, antes)
-    if novo is None:
-        return 400, {"ok": False, "error": "campo", "campo": campo}
-    v = dict(novo, por=str(quem or "")[:100] or None, em=_iso())
-    with estado_lock:
-        db = estado_db()
-        try:
-            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
-            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
-                       ("config", "fotografos", json.dumps(v, ensure_ascii=False), rev, v["em"]))
-            db.commit()
-        finally:
-            db.close()
-    _fot_cfg.update(t=time.time(), v=v)
-    mud = [k for k in novo if k != "luz" and novo[k] != antes.get(k)] + ["luz." + k for k in novo["luz"] if novo["luz"][k] != (antes.get("luz") or {}).get(k)]
-    if any(k.startswith("luz.") for k in mud):
-        af_st["sujo"] = True
-        try:
-            dia_wake.set()
-        except NameError:
-            pass
-    print("  fotógrafos: limites %s · por %s" % (", ".join("%s %s -> %s" % (k, _af_cfg_val(antes, k), _af_cfg_val(novo, k)) for k in mud) or "sem mudança", v["por"] or "?"))
-    return 200, {"ok": True, "limites": novo, "antes": antes, "mudou": mud, "por": v["por"], "em": v["em"]}
+    with fot_cfg_lock:
+        de = fotografos_cfg()
+        antes = {k: (dict(x) if isinstance(x, dict) else x) for k, x in de.items() if k not in ("por", "em")}
+        novo, campo = fotografos_cfg_valida(corpo, antes)
+        if novo is None:
+            return 400, {"ok": False, "error": "campo", "campo": campo}
+        mud = [k for k in novo if k != "luz" and novo[k] != antes.get(k)] + ["luz." + k for k in novo["luz"] if novo["luz"][k] != (antes.get("luz") or {}).get(k)]
+        if not mud:
+            return 200, {"ok": True, "limites": novo, "antes": antes, "mudou": [], "igual": True, "por": de.get("por"), "em": de.get("em")}
+        luz_mudou = any(k.startswith("luz.") for k in mud)
+        if luz_mudou and treino_cfg().get("exposicao") == "ligada":
+            crit = luz_medida(forcar=True, lim=novo["luz"])["criterio"]
+            if not crit["passa"]:
+                return 409, {"ok": False, "error": "criterio", "falta": crit["falta"]}
+        v = dict(novo, por=str(quem or "")[:100] or None, em=_iso())
+        with estado_lock:
+            db = estado_db()
+            try:
+                rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+                db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                           ("config", "fotografos", json.dumps(v, ensure_ascii=False), rev, v["em"]))
+                db.commit()
+            finally:
+                db.close()
+        _fot_cfg.update(t=time.time(), v=v)
+    print("  fotógrafos: limites %s · por %s" % (", ".join("%s %s -> %s" % (k, _fot_cfg_val(antes, k), _fot_cfg_val(novo, k)) for k in mud), v["por"] or "?"))
+    r = {"ok": True, "limites": novo, "antes": antes, "mudou": mud, "por": v["por"], "em": v["em"]}
+    if luz_mudou:
+        fot_st["sujo"] = True                     # os dias mais antigos só na rodada da madrugada (fot_rodada)
+        r.update(refeitos=fot_refaz_recentes(), noite=True)
+    return 200, r
 
 
-def _af_cfg_val(c, k):
+def fot_refaz_recentes(hoje=None):
+    """Limite de luz novo: refaz na hora hoje e os FOT_REFAZ_JA - 1 dias antes (o período padrão da tela). -> dias refeitos"""
+    hoje = hoje or _ff_hoje()
+    n = 0
+    try:
+        with fot_lock:
+            for i in range(FOT_REFAZ_JA):
+                fot_gravar(_dia_mais(hoje, -i))
+                n += 1
+            fot_st.update(hoje_em=time.time(), hoje_dia=hoje)
+    except Exception as ex:
+        print("  fotógrafos: refazer os dias recentes %s (a madrugada refaz)" % str(ex)[:120])
+    return n
+
+
+def _fot_cfg_val(c, k):
     if k.startswith("luz."):
         return (c.get("luz") or {}).get(k[4:])
     return c.get(k)
 
 
-def _af_sessoes(dia):
+def _fot_sessoes(dia):
     """Levas fechadas do dia com fotógrafo: [(fotografo, [pids])] (fotos + bases dos fundos de IA, sem repetir)."""
     a = os.path.join(SESS_DIR, dia + ".json")
     try:
@@ -14662,7 +14798,7 @@ def _af_sessoes(dia):
         if not isinstance(x, dict) or x.get("removida") or x.get("status") != "fechada":
             continue
         f = x.get("fotografo")
-        if not isinstance(f, str) or f.strip() in AF_SEM_FOTOGRAFO or f in CHAVES_PROIBIDAS:
+        if not isinstance(f, str) or f.strip() in FOT_SEM_FOTOGRAFO or f in CHAVES_PROIBIDAS:
             continue
         ps = []
         for p in list(x.get("fotos") or []) + list(x.get("ia") or []):
@@ -14673,7 +14809,7 @@ def _af_sessoes(dia):
     return out
 
 
-def _af_cena(pids):
+def _fot_cena(pids):
     """{pid: (rotulo, conf)} do cena.db (só leitura; sem o banco, {})."""
     if not pids or not os.path.exists(CENA_DB):
         return {}
@@ -14690,12 +14826,12 @@ def _af_cena(pids):
     return out
 
 
-def _af_vendas(dia):
-    """Vendas pagas e não canceladas criadas de dia até dia + AF_VENDA_DIAS: [(selected, bases dos aiSel)] em pids da biblioteca.
+def _fot_vendas(dia):
+    """Vendas pagas e não canceladas criadas de dia até dia + FOT_VENDA_DIAS: [(selected, bases dos aiSel)] em pids da biblioteca.
     Conexão só de leitura, sem o ev_lock (como o _mtg_pagas_ler)."""
     if not os.path.exists(VENDAS_DB):
         return []
-    ate = _dia_mais(dia, AF_VENDA_DIAS)
+    ate = _dia_mais(dia, FOT_VENDA_DIAS)
     db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=5, check_same_thread=False)
     try:
         db.execute("pragma query_only=1")
@@ -14731,31 +14867,56 @@ def _af_vendas(dia):
     return out
 
 
-def af_dia(dia):
-    """Função pura sobre as sessões, o cena.db, a medida de luz e o vendas.db: {fotografo: dados} do dia (só somas)."""
+def _fot_ponto_no_dia(dia, hoje=None):
+    """O reconhecimento do ponto estava Ligado naquele dia (revisão 23/11, decisão 3: pelo estado do dia, não pelo de agora)?
+    Hoje: o interruptor de agora. Dia passado: o que ficou gravado quando ele era hoje (fotografo_dia_calc.ponto, o último
+    cálculo do dia). Sem esse registro (dia de antes desta versão): Ligado só se já havia um Ligar no liga_log até o fim daquele
+    dia E o interruptor está Ligado agora (o liga_log só registra o Ligar; o desligar não fica registrado em lugar nenhum)."""
+    hoje = hoje or _ff_hoje()
+    agora = treino_cfg().get("ponto") == "ligada"
+    if dia >= hoje:
+        return agora
+    r = op_ler("select ponto from fotografo_dia_calc where dia = ?", (dia,))
+    if r and r[0][0] is not None:
+        return bool(r[0][0])
+    if not agora or not os.path.exists(TREINO_DB):
+        return False
+    with treino_lock:
+        db = treino_db()
+        try:
+            ems = [x[0] for x in db.execute("select em from liga_log")]
+        finally:
+            db.close()
+    return any(_ff_hoje(_epoch(e)) <= dia for e in ems if isinstance(e, str) and _epoch(e))
+
+
+def fot_dia(dia):
+    """Sobre as sessões, o cena.db, a medida de luz, o vendas.db e o estado do reconhecimento naquele dia (_fot_ponto_no_dia):
+    {fotografo: dados} do dia (só somas). Sem o histograma nem os limites da época: o por_n (famílias por número de cliques)
+    serve a qualquer limite."""
     cfg = fotografos_cfg()
     lim = cfg["luz"]
-    levas = _af_sessoes(dia)
+    levas = _fot_sessoes(dia)
     todos = [p for _, ps in levas for p in ps]
-    ponto = treino_cfg().get("ponto") == "ligada"
-    cena_ = _af_cena(todos) if ponto else {}
-    if ponto and todos and sum(1 for p in todos if (cena_.get(p) or (None,))[0]) < AF_PONTO_COBERTURA * len(todos):
+    ponto = _fot_ponto_no_dia(dia)
+    cena_ = _fot_cena(todos) if ponto else {}
+    if ponto and todos and sum(1 for p in todos if (cena_.get(p) or (None,))[0]) < FOT_PONTO_COBERTURA * len(todos):
         ponto = False                                  # dia sem leitura do ponto (antes de ligar): conta todas as fotos
     fonte = "ponto" if ponto else "todas"
     luz = luz_ler(todos) if todos else {}
-    vendas = _af_vendas(dia) if todos else []
+    vendas = _fot_vendas(dia) if todos else []
     sel_tudo = set().union(*[s for s, _ in vendas]) if vendas else set()
     ai_tudo = set().union(*[a for _, a in vendas]) if vendas else set()
     out = {}
     for f, ps in levas:
-        d = out.setdefault(f, {"v": 1, "familias": 0, "cliques_soma": 0, "chute_soma": 0, "nao_contadas": 0, "hist": [0, 0, 0],
-                               "por_n": {}, "lim": [cfg["cliques_min"], cfg["cliques_max"]], "fonte": fonte, "fam_compraram": 0,
+        d = out.setdefault(f, {"v": 1, "familias": 0, "cliques_soma": 0, "chute_soma": 0, "nao_contadas": 0,
+                               "por_n": {}, "fonte": fonte, "fam_compraram": 0,
                                "fotos": 0, "fotos_vendidas": 0, "luz": {"n": 0, "escuras": 0, "estouradas": 0, "sem_dado": 0}})
         if ponto:
             cl = ch = nc = 0
             for p in ps:
                 r, c = cena_.get(p) or (None, 0.0)
-                if r in AF_SETS_CONTA and c >= CENA_LIMIAR:
+                if r in FOT_SETS_CONTA and c >= CENA_LIMIAR:
                     cl += 1
                 elif r == "chute" and c >= CENA_LIMIAR:
                     ch += 1
@@ -14767,7 +14928,6 @@ def af_dia(dia):
         d["cliques_soma"] += cl
         d["chute_soma"] += ch
         d["nao_contadas"] += nc
-        d["hist"][0 if cl < cfg["cliques_min"] else 2 if cl > cfg["cliques_max"] else 1] += 1
         kn = str(min(cl, 999))
         d["por_n"][kn] = d["por_n"].get(kn, 0) + 1
         d["fotos"] += len(ps)
@@ -14788,9 +14948,12 @@ def af_dia(dia):
     return out
 
 
-def af_gravar(dia):
-    """Refaz o dia em operacao.db fotografo_dia (apaga o dia e grava de novo: quem saiu do dia, pela LGPD, sai da tabela)."""
-    dados = af_dia(dia)
+def fot_gravar(dia):
+    """Refaz o dia em operacao.db fotografo_dia (apaga o dia e grava de novo: quem saiu do dia, pela LGPD, sai da tabela). O dia
+    de hoje grava também o estado do reconhecimento do ponto (fotografo_dia_calc.ponto), que vale depois para refazer o dia."""
+    hoje = _ff_hoje()
+    ponto = (1 if treino_cfg().get("ponto") == "ligada" else 0) if dia == hoje else None
+    dados = fot_dia(dia)
     em = _iso()
     with op_lock:
         db = operacao_db()
@@ -14799,21 +14962,20 @@ def af_gravar(dia):
                 db.execute("delete from fotografo_dia where dia = ?", (dia,))
                 db.executemany("insert into fotografo_dia values (?,?,?,?)",
                                [(dia, f, json.dumps(d, ensure_ascii=False, separators=(",", ":")), em) for f, d in dados.items()])
-                db.execute("insert into fotografo_dia_calc values (?, ?) on conflict(dia) do update set em = excluded.em", (dia, em))
+                db.execute("insert into fotografo_dia_calc (dia, em, ponto) values (?, ?, ?) on conflict(dia) do update set em = excluded.em,"
+                           " ponto = coalesce(excluded.ponto, fotografo_dia_calc.ponto)", (dia, em, ponto))
         finally:
             db.close()
-    if not af_st["ultimo_dia"] or dia >= af_st["ultimo_dia"]:
-        af_st.update(ultimo_dia=dia, em=em)
+    if not fot_st["ultimo_dia"] or dia >= fot_st["ultimo_dia"]:
+        fot_st.update(ultimo_dia=dia, em=em)
     return dados
 
 
-def _af_soma(a, b):
+def _fot_soma(a, b):
     """Soma dois dados de fotografo_dia (o mesmo formato)."""
     for k, v in b.items():
         if k in ("familias", "cliques_soma", "chute_soma", "nao_contadas", "fam_compraram", "fotos", "fotos_vendidas"):
             a[k] = a.get(k, 0) + int(v or 0)
-        elif k == "hist":
-            a["hist"] = [x + y for x, y in zip(a.get("hist") or [0, 0, 0], v)]
         elif k == "por_n":
             pn = a.setdefault("por_n", {})
             for n, c in v.items():
@@ -14824,14 +14986,12 @@ def _af_soma(a, b):
                 lz[kk] = lz.get(kk, 0) + int(v.get(kk) or 0)
         elif k == "fonte":
             a["fonte"] = v if a.get("fonte") in (None, v) else "misto"
-        elif k == "lim":
-            a.setdefault("lim", v)
         elif k == "v":
             a["v"] = 1
     return a
 
 
-def af_ler(de, ate):
+def fot_ler(de, ate):
     """{fotografo: dados somados} e os dias calculados no período (fotografo_dia)."""
     rs = op_ler("select dia, fotografo, dados from fotografo_dia where dia >= ? and dia <= ?", (de, ate))
     out, dias = {}, set()
@@ -14841,78 +15001,95 @@ def af_ler(de, ate):
         except ValueError:
             continue
         dias.add(dia)
-        _af_soma(out.setdefault(f, {}), j)
+        _fot_soma(out.setdefault(f, {}), j)
     return out, dias
 
 
-def af_mes(mes):
+def fot_mes(mes):
     """Soma dos dias do mês (fotografo_dia) por fotógrafo."""
     ate = _dia_mais(_dia_mais(mes + "-01", 31)[:7] + "-01", -1)
-    return af_ler(mes + "-01", ate)[0]
+    return fot_ler(mes + "-01", ate)[0]
 
 
-def af_mes_fechar(hoje=None):
-    """No dia 1 (e até o dia AF_MES_ATE_DIA se faltar dia calculado) congela o mês anterior em fotografo_mes. Congelado não
-    muda mais (insert or ignore). -> "fechado" | "ja" | "espera" | "fora" """
+def fot_mes_fechar(hoje=None, noite=None):
+    """Congela em fotografo_mes o mês anterior (e um mês mais antigo que ficou para trás, com o agente parado na época) como a
+    soma dos fotografo_dia. Revisão 23/11: o mês anterior só a partir do dia FOT_MES_DESDE_DIA (a última leva do mês ainda vende
+    até o dia 2) e todos só depois da rodada da madrugada de hoje (noite). Faltando dia calculado, espera até o dia
+    FOT_MES_ATE_DIA; depois, calcula o que falta e congela. Congelado não muda mais (insert or ignore).
+    -> "fechado" | "ja" | "cedo" | "noite" | "espera" """
     hoje = hoje or _ff_hoje()
+    noite = (fot_st["noite"] == hoje) if noite is None else noite
     dd = int(hoje[8:10])
-    if dd > AF_MES_ATE_DIA:
-        return "fora"
-    mes = _dia_mais(hoje[:8] + "01", -1)[:7]
-    if op_ler("select 1 from fotografo_mes where mes = ?", (mes,)):
+    ini = hoje[:8] + "01"
+    ant = _dia_mais(ini, -1)[:7]
+    fechados = {r[0] for r in op_ler("select mes from fotografo_mes")}
+    meses = {r[0] for r in op_ler("select distinct substr(dia, 1, 7) from fotografo_dia_calc where dia < ?", (ini,))}
+    meses |= {r[0] for r in op_ler("select distinct substr(dia, 1, 7) from fotografo_dia where dia < ?", (ini,))}
+    cands = sorted(({ant} | meses) - fechados)
+    if not cands:
         return "ja"
-    dias = [_dia_mais(mes + "-01", i) for i in range(31)]
-    dias = [d for d in dias if d[:7] == mes]
-    feitos = {r[0] for r in op_ler("select dia from fotografo_dia_calc where dia >= ? and dia <= ?", (dias[0], dias[-1]))}
-    falta = [d for d in dias if d not in feitos and os.path.exists(os.path.join(SESS_DIR, d + ".json"))]
-    if falta and dd < AF_MES_ATE_DIA:
-        return "espera"
-    dados = af_mes(mes)
-    with op_lock:
-        db = operacao_db()
-        try:
-            with db:
-                db.execute("insert or ignore into fotografo_mes values (?, ?, ?)", (mes, json.dumps(dados, ensure_ascii=False, separators=(",", ":")), _iso()))
-        finally:
-            db.close()
-    print("  fotógrafos: mês %s fechado (%d fotógrafos%s)" % (mes, len(dados), ", %d dia(s) sem cálculo" % len(falta) if falta else ""))
-    return "fechado"
+    if not noite:
+        return "noite"
+    res = "ja"
+    for mes in cands:
+        if mes == ant and dd < FOT_MES_DESDE_DIA:
+            res = "cedo"
+            continue
+        dias = [_dia_mais(mes + "-01", i) for i in range(31)]
+        dias = [d for d in dias if d[:7] == mes]
+        feitos = {r[0] for r in op_ler("select dia from fotografo_dia_calc where dia >= ? and dia <= ?", (dias[0], dias[-1]))}
+        falta = [d for d in dias if d not in feitos and os.path.exists(os.path.join(SESS_DIR, d + ".json"))]
+        if falta and mes == ant and dd < FOT_MES_ATE_DIA:
+            res = "espera" if res != "fechado" else res
+            continue
+        for d in falta:                           # dia que nunca foi calculado (agente parado): calcula antes de congelar
+            fot_gravar(d)
+        dados = fot_mes(mes)
+        with op_lock:
+            db = operacao_db()
+            try:
+                with db:
+                    db.execute("insert or ignore into fotografo_mes values (?, ?, ?)", (mes, json.dumps(dados, ensure_ascii=False, separators=(",", ":")), _iso()))
+            finally:
+                db.close()
+        print("  fotógrafos: mês %s fechado (%d fotógrafos%s)" % (mes, len(dados), ", %d dia(s) calculado(s) agora" % len(falta) if falta else ""))
+        res = "fechado"
+    return res
 
 
-def af_rodada(hoje, virou):
-    """Dentro do dia_loop: hoje sempre (a cada 10 min); ontem na virada; os 35 dias de madrugada (ou quando os limites de luz
-    mudaram); o fechamento do mês."""
+def fot_rodada(hoje, virou, hora=None):
+    """Dentro do dia_loop: hoje sempre (a cada 10 min); ontem na virada; os 35 dias de madrugada (revisão 23/11: limite de luz
+    novo refaz na hora só os dias recentes, fot_refaz_recentes, e o resto espera esta rodada); o fechamento do mês."""
     try:
-        af_gravar(hoje)
+        fot_gravar(hoje)
         if virou:
-            af_gravar(_dia_mais(hoje, -1))
-        hora = int(time.strftime("%H"))
-        if af_st["sujo"] or (2 <= hora < 6 and af_st["noite"] != hoje):
-            af_st["sujo"] = False
-            for i in range(1, AF_DIAS_NOITE + 1):
-                af_gravar(_dia_mais(hoje, -i))
-            af_st["noite"] = hoje
-        af_mes_fechar(hoje)
-        af_st["erro"] = None
+            fot_gravar(_dia_mais(hoje, -1))
+        hora = int(time.strftime("%H")) if hora is None else hora
+        if 2 <= hora < 6 and fot_st["noite"] != hoje:
+            for i in range(1, FOT_DIAS_NOITE + 1):
+                fot_gravar(_dia_mais(hoje, -i))
+            fot_st.update(noite=hoje, sujo=False)
+        fot_mes_fechar(hoje)
+        fot_st["erro"] = None
     except Exception as ex:
-        af_st["erro"] = str(ex)[:160]
+        fot_st["erro"] = str(ex)[:160]
         print("  fotógrafos: agregado %s" % str(ex)[:160])
 
 
-def _af_pct(a, b):
+def _fot_pct(a, b):
     return a / b if b else None
 
 
-def af_alertas(de, ate, agora_hoje=True):
+def fot_alertas(de, ate, agora_hoje=True):
     """GET /fotografos/alertas: soma do período, a equipe toda e os alertas (AF-D3, D6, D8; regras do plano)."""
     cfg = fotografos_cfg()
     hoje = _ff_hoje()
     if agora_hoje and de <= hoje <= ate:
-        with af_lock:
-            if af_st.get("hoje_em", 0) < time.time() - 120 or af_st.get("hoje_dia") != hoje:
-                af_gravar(hoje)
-                af_st.update(hoje_em=time.time(), hoje_dia=hoje)
-    dados, dias = af_ler(de, ate)
+        with fot_lock:
+            if fot_st.get("hoje_em", 0) < time.time() - 120 or fot_st.get("hoje_dia") != hoje:
+                fot_gravar(hoje)
+                fot_st.update(hoje_em=time.time(), hoje_dia=hoje)
+    dados, dias = fot_ler(de, ate)
     expo = treino_cfg().get("exposicao")
     fontes = {d.get("fonte") for d in dados.values() if d.get("familias")}
     fonte = "ponto" if fontes == {"ponto"} else "todas" if fontes <= {"todas"} else "misto"
@@ -14934,32 +15111,33 @@ def af_alertas(de, ate, agora_hoje=True):
                    "luz": dict(d.get("luz") or {"n": 0, "escuras": 0, "estouradas": 0, "sem_dado": 0}) if expo != "desligada" else None})
     al = []
     n_eq = len(fs)
-    t_fam, t_fot = _af_pct(eq["fam_compraram"], eq["familias"]), _af_pct(eq["fotos_vendidas"], eq["fotos"])
+    t_fam, t_fot = _fot_pct(eq["fam_compraram"], eq["familias"]), _fot_pct(eq["fotos_vendidas"], eq["fotos"])
     for x in fs:
         c, fam = x["cliques"], x["familias"]
         if fam >= cfg["fam_min"] and c["media"] < cfg["cliques_min"]:
-            al.append({"tipo": "af_poucos", "k": x["k"], "sev": "warn", "args": [c["media"], c["abaixo"], fam, cfg["cliques_min"]]})
+            al.append({"tipo": "fot_poucos", "k": x["k"], "sev": "warn", "args": [c["media"], c["abaixo"], fam, cfg["cliques_min"]]})
         if fam >= cfg["fam_min"] and c["media"] > cfg["cliques_max"]:
-            al.append({"tipo": "af_muitos", "k": x["k"], "sev": "warn", "args": [c["media"], c["acima"], fam, cfg["cliques_max"]]})
+            al.append({"tipo": "fot_muitos", "k": x["k"], "sev": "warn", "args": [c["media"], c["acima"], fam, cfg["cliques_max"]]})
         if n_eq >= cfg["conv_equipe_min"] and fam >= cfg["conv_fam_min"]:
             cf, tf = x["conv"]["fam"], x["conv"]["fotos"]
             if t_fam is not None and 100 * cf[0] / cf[1] <= 100 * t_fam - cfg["conv_fam_pp"] + 1e-9:
-                al.append({"tipo": "af_conv_fam", "k": x["k"], "sev": "warn", "args": [round(100 * cf[0] / cf[1]), round(100 * t_fam), cf[0], cf[1]]})
+                al.append({"tipo": "fot_conv_fam", "k": x["k"], "sev": "warn", "args": [round(100 * cf[0] / cf[1]), round(100 * t_fam), cf[0], cf[1]]})
             if t_fot is not None and tf[1] and 100 * tf[0] / tf[1] <= 100 * t_fot - cfg["conv_fotos_pp"] + 1e-9:
-                al.append({"tipo": "af_conv_fotos", "k": x["k"], "sev": "warn", "args": [round(100 * tf[0] / tf[1]), round(100 * t_fot), tf[0], tf[1]]})
+                al.append({"tipo": "fot_conv_fotos", "k": x["k"], "sev": "warn", "args": [round(100 * tf[0] / tf[1]), round(100 * t_fot), tf[0], tf[1]]})
         lz = x["luz"]
         if expo == "ligada" and lz and lz["n"] >= cfg["luz_fotos_min"]:
             fora = lz["escuras"] + lz["estouradas"]
             if 100 * fora / lz["n"] >= cfg["luz_pct"]:
-                al.append({"tipo": "af_luz", "k": x["k"], "sev": "bad" if 100 * fora / lz["n"] >= cfg["luz_grave_pct"] else "warn",
+                al.append({"tipo": "fot_luz", "k": x["k"], "sev": "bad" if 100 * fora / lz["n"] >= cfg["luz_grave_pct"] else "warn",
                            "args": [fora, lz["n"], lz["estouradas"], lz["escuras"]]})
     lim = {k: (dict(v) if isinstance(v, dict) else v) for k, v in cfg.items() if k not in ("por", "em")}
+    # sujo (revisão 23/11): limite de luz mudou e os dias mais antigos que os FOT_REFAZ_JA recentes só são refeitos de madrugada
     return {"ok": True, "v": 1, "de": de, "ate": ate, "limites": lim, "exposicao": expo, "fonte_cliques": fonte, "dias": len(dias),
-            "equipe": eq, "fotografos": fs, "alertas": al, "em": _iso()}
+            "equipe": eq, "fotografos": fs, "alertas": al, "em": _iso(), "sujo": bool(fot_st["sujo"])}
 
 
-def af_status():
-    return {"ultimo_dia": af_st["ultimo_dia"], "em": af_st["em"]}
+def fot_status():
+    return {"ultimo_dia": fot_st["ultimo_dia"], "em": fot_st["em"]}
 
 
 # ---------- Cena: reconhecer o ponto pela imagem (regra 19, 18/11; plano "bases dos fundos de IA só com foto do gramado") ----------
@@ -17194,7 +17372,7 @@ ROTAS = (
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
     ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa)
     # 23/11 (AF): números por fotógrafo só com desempenho.r (Admin e Supervisora), conferido aqui pela sessão; a calibração da luz
-    # é da Medição (qualidade.r); os limites, do Painel de controle em Alterar
+    # é da Medição (qualidade.r); os limites, de configuracao.u E desempenho.r (o segundo conferido no fotografos_post)
     ("GET", "/fotografos/alertas", "sessao", ("desempenho.r",)), ("GET", "/fotografos/dias", "sessao", ("desempenho.r",)),
     ("GET", "/fotografos/luz/medida", "sessao", ("qualidade.r",)), ("POST", "/fotografos/config", "sessao", ("configuracao.u",)),
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
@@ -17870,7 +18048,7 @@ def dia_loop():
         except Exception as ex:
             dia_estado.update(erro=str(ex)[:160])
             print("  série diária: %s" % str(ex)[:160])
-        af_rodada(hoje, virou)                    # 23/11 (AF): por fotógrafo e por dia (tem o próprio try)
+        fot_rodada(hoje, virou)                    # 23/11 (AF): por fotógrafo e por dia (tem o próprio try)
         if dia_wake.wait(600):
             time.sleep(3)                         # junta várias mudanças seguidas numa rodada
         dia_wake.clear()
@@ -18837,7 +19015,7 @@ class H(BaseHTTPRequestHandler):
             if not limite_ok("u:" + quem, "fotografos", 30):
                 return self.js({"error": "limite"}, 429)
             if u.path == "/fotografos/alertas":
-                return self.js(af_alertas(de, ate), nostore=True)
+                return self.js(fot_alertas(de, ate), nostore=True)
             r = metricas_periodo(de, ate) or []
             campos = ("fotos", "sessoes", "sessoes_com_venda", "vendas", "faturamento", "fotos_vendidas", "clique_checkout_s")
             dias = [{"dia": d.get("dia"), "por_fotografo": {k: {c: v[c] for c in campos if c in v} for k, v in (d.get("por_fotografo") or {}).items()
@@ -18848,10 +19026,13 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "erro no servidor"}, 500)
 
     def fotografos_post(self):
-        """23/11 (AF): POST /fotografos/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna (conferido no autoriza),
-        6 por minuto por pessoa, corpo até 4 KB. O console nunca imprime o corpo, só os campos que mudaram."""
+        """23/11 (AF): POST /fotografos/config (configuracao.u, pela tabela ROTAS, e desempenho.r, conferido aqui: os limites
+        mexem nos números por fotógrafo). Origem local, X-Eterna (conferido no autoriza), 6 por minuto por pessoa, corpo até 4 KB.
+        O console nunca imprime o corpo, só os campos que mudaram."""
         if not self.origem_local():
             return self.js({"ok": False, "error": "origem"}, 403)
+        if not self.pode_desempenho():
+            return self.js({"ok": False, "error": "sem_permissao"}, 403)
         quem = (self.sessao() or {}).get("usuario") or ""
         if not limite_ok("u:" + quem, "fotografos_cfg", 6):
             return self.js({"ok": False, "error": "limite"}, 429)
@@ -20071,7 +20252,7 @@ class H(BaseHTTPRequestHandler):
                            rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
-                           estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"], "af": af_status()}, fuso=fuso_info(),
+                           estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"], "fot": fot_status()}, fuso=fuso_info(),
                            app_offline_pronto=app_offline_pronto(), agenda=ag_,
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
                            pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_, luz=lz_,

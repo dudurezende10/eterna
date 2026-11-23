@@ -1,8 +1,10 @@
 # 23/11 (plano docs/planos/2026-11-23-alertas-fotografo.md, critério 5): luz_medir e luz_classe com imagens geradas em
 # numpy (nenhuma foto real): quadro preto = escura; branco = estourada; cinza médio = ok; rosto estourado com fundo escuro =
-# estourada; céu estourado com rosto bom = ok. Também: a mesma conta sem o OpenCV (numpy puro), a miniatura pelo Pillow
-# (só o quadro, r = None) e o formato da medida (só números).
-#   HOME=$(mktemp -d) python3 -I testes/af_luz.py agente/eterna-agente.py
+# estourada; céu estourado com rosto bom = ok. Também: a mesma conta sem o OpenCV (numpy puro), o original pelo Pillow
+# (só o quadro, r = None) e o formato da medida (só números). Revisão 23/11: só os recortes (60% centrais e rosto) são
+# convertidos para cinza, com o mesmo resultado da foto inteira convertida; a varredura (luz_medir_arquivo) mede o original
+# do mesmo jeito que o leitor (uma fonte só, src "original").
+#   HOME=$(mktemp -d) python3 -I testes/fot_luz.py agente/eterna-agente.py
 import importlib.util, json, os, sys, time
 sys.dont_write_bytecode = True
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -62,19 +64,44 @@ try:
         c[200:320, 400:500] = 30
         ok(cl(m.luz_medir(c, [(400, 200, 100, 120)])) == "escura", "5 (%s): rosto escuro = escura" % tag)
         ok(m.luz_classe(None, L) == "sem_dado" and m.luz_classe({"v": 1}, L) == "sem_dado", "sem medida = sem_dado")
+        # revisão: converter só os recortes dá o mesmo que converter a foto inteira e recortar depois
+        rg = np.random.default_rng(7)
+        for (hh, ww, cx) in ((600, 900, (400, 200, 100, 120)), (1500, 2000, (700, 300, 300, 360)), (3000, 4000, (100, 2500, 80, 90))):
+            im = rg.integers(0, 256, (hh, ww, 3), dtype=np.uint8)
+            full = im.copy()
+            if usa_cv:
+                g = cv2.cvtColor(full, cv2.COLOR_BGR2GRAY)
+            else:
+                g = ((full[..., 0].astype(np.uint32) * 29 + full[..., 1].astype(np.uint32) * 150 + full[..., 2].astype(np.uint32) * 77) >> 8).astype(np.uint8)
+            y0, y1, x0, x1 = int(hh * 0.2), int(hh * 0.8), int(ww * 0.2), int(ww * 0.8)
+            c = g[y0:y1, x0:x1]
+            if c.size > 2_000_000:
+                c = c[::2, ::2]
+            qref = m._luz_hist(np.bincount(c.ravel(), minlength=256).tolist())
+            x, y, l, a_ = cx
+            fx0, fy0, fx1, fy1 = max(0, int(x - l * 0.05)), max(0, int(y - a_ * 0.05)), min(ww, int(x + l * 1.05) + 1), min(hh, int(y + a_ * 1.05) + 1)
+            hr = np.bincount(g[fy0:fy1, fx0:fx1].ravel(), minlength=256).tolist()
+            v = m.luz_medir(im, [cx])
+            ok(v["q"] == qref and v["r"]["med"] == m._luz_hist(hr)["med"] and v["r"]["n"] == sum(hr) and (im == full).all(),
+               "revisão (%s, %dx%d): recorte antes do cinza = foto inteira: %r x %r" % (tag, ww, hh, v["q"], qref))
+        if usa_cv:
+            f = os.path.join(os.environ["HOME"], "orig-cv.jpg")
+            cv2.imwrite(f, rg.integers(0, 256, (800, 1200, 3), dtype=np.uint8))
+            ref = m.luz_medir(cv2.imread(f, cv2.IMREAD_REDUCED_COLOR_2), [])
+            ok(m.luz_medir_arquivo(f) == ref and ref["src"] == "original", "revisão: a varredura mede o original como o leitor: %r" % ref)
         # tempo: uma foto de ~3 MP (a do leitor, reduzida pela metade)
         g = np.random.default_rng(1).integers(0, 255, (1500, 2000, 3), dtype=np.uint8)
         t0 = time.time()
         for _ in range(5):
             m.luz_medir(g, [(800, 500, 200, 240)])
         num["ms_" + tag] = round((time.time() - t0) * 200, 1)
-    # Pillow (sem OpenCV): miniatura, só o quadro
+    # Pillow (sem OpenCV): o original reduzido pela metade, só o quadro
     from PIL import Image
     for cor, esp in ((0, "escura"), (255, "estourada"), (128, "ok")):
         f = os.path.join(os.environ["HOME"], "mini-%d.jpg" % cor)
         Image.new("RGB", (300, 200), (cor, cor, cor)).save(f, "JPEG", quality=90)
         v = m.luz_medir_pil(f)
-        ok(v["src"] == "thumb" and v["r"] is None and cl(v) == esp, "Pillow %d = %s: %r" % (cor, esp, v))
+        ok(v["src"] == "original" and v["r"] is None and cl(v) == esp, "Pillow %d = %s: %r" % (cor, esp, v))
     # os limites da config valem: subir quadro_med_baixo põe o cinza escuro em escura
     d = img(60)
     v = m.luz_medir(d)
@@ -83,7 +110,7 @@ try:
 except Exception:
     import traceback
     falhas.append("exceção: %s" % traceback.format_exc()[-1500:])
-print(("OK" if not falhas else "FALHA") + " af_luz: luz_medir e luz_classe com imagens geradas (critério 5) · %s" % json.dumps(num)
+print(("OK" if not falhas else "FALHA") + " fot_luz: luz_medir e luz_classe com imagens geradas (critério 5) · %s" % json.dumps(num)
       + ("" if not falhas else " · " + " | ".join(falhas[:12])))
 sys.stdout.flush()
 os._exit(1 if falhas else 0)
