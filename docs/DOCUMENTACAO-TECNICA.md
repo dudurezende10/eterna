@@ -951,8 +951,8 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 | Grupo | Itens (view) |
 | --- | --- |
 | (sem grupo) | Início (`perfis`, abre pelo logo) · Checkout (`quiosque`, botão "Abrir Checkout") |
-| Dashboard | Painel (`painel`, v80) · Bandeiras (`bandeiras`) · Estoque (`estoque`) · Fotógrafos (`fotografos`) · Vendas e caixa (`vendas`) · Lista de vendas (`vendas-lista`) · Galerias online (`galerias`) |
-| Curadoria | Qualidade (`revisao`) · Treino da IA (`treino`) · Alertas (`alertas`) |
+| Dashboard | Painel (`painel`, v80) · Bandeiras (`bandeiras`) · Estoque (`estoque`) · Vendas e caixa (`vendas`) · Lista de vendas (`vendas-lista`) · Galerias online (`galerias`) |
+| Curadoria | Qualidade (`revisao`) · Treino da IA (`treino`) · Fotógrafos (`fotografos`, desde 23/11; antes no Dashboard) · Alertas (`alertas`) |
 | Fotógrafo | Diário do set (`diario`) · Upload automático (`importar`) · Escala 5×2 (`escala`) |
 | Configurações | Repositório (`repo`) · Identidade (`identidade`) · Painel de controle (`catalogo`, antes Catálogo e preços) · Fundos de IA (`chroma`) · Ajuste automático (`ajustes`) · Usuários (`usuarios`) · Permissões (`permissoes`) |
 | Laboratório | Vestiário (`vestiario`) |
@@ -2103,8 +2103,8 @@ Grupos de `VIEWS` (4º campo; o 5º campo é a pasta dentro do grupo):
 | Grupo | Telas (view) |
 | --- | --- |
 | Venda | Posto de venda (`posto`) |
-| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Fotógrafos, Vendedores (`vendas`), Lista de vendas, Galerias online, Calendário de eventos (`calendario`, veio do grupo Fotógrafo; módulo `escala`, permissões iguais) |
-| Curadoria | Qualidade, Treino da IA, Alertas |
+| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores (`vendas`), Lista de vendas, Galerias online, Calendário de eventos (`calendario`, veio do grupo Fotógrafo; módulo `escala`, permissões iguais) |
+| Curadoria | Qualidade, Treino da IA, Fotógrafos (`fotografos`, veio do Dashboard em 23/11, entre Treino da IA e Alertas; módulo, permissões, rota e conteúdo iguais), Alertas |
 | Fotógrafo | Diário do set, Minhas fotos (`importar`), Fila do fotógrafo, Escala |
 | Configurações | Preços e Checkout (`catalogo`, abas `precos`, `checkout`, `fundos`, `avancado` em `state.catTab`), Ajuste automático |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico) (`chroma`), Usuários, Permissões e a pasta Laboratório: Vestiário, Chute a gol (`chute-a-gol`), Fundos em teste |
@@ -2508,3 +2508,19 @@ sequenceDiagram
 
 - A 390 px, com o reconhecimento Ligado, o texto de "Versão ligada" na Medição (`.tr-med-ver`) sai do cartão e a página rola para o lado. Não bloqueia.
 - Fora desta entrega: comparador lado a lado para o Admin, montagem na galeria (E4) e a E3.
+
+## Classificação de poses no servidor, P1 (23/11/2026)
+
+Plano: `docs/planos/2026-11-23-poses-estatistica.md` (fatia P1). À noite, o servidor classifica cada foto das sessões fechadas dos últimos 7 dias com o Qwen3-VL-8B-Instruct (Apache 2.0) num `llama-server` local. Nenhuma foto sai do servidor, e nada desta fatia aparece para o cliente. A tela "Poses que vendem" e as contas ficam para a P3 e a P4. Instalação e conferência: `docs/SERVIDOR-ESTADIO.md`, "Classificação de poses".
+
+| Peça | O que faz |
+| --- | --- |
+| `agente/eterna-poses.py` | Filho do agente, um JSON por linha, como o `eterna-recorte.py`. Sobe o `llama-server` só em `127.0.0.1`, numa porta livre, com uma chave nova num arquivo 0600 em `~/Eterna/ponto/poses-*/` (`--api-key-file`), sem `-hf` e com `LLAMA_OFFLINE=1`. Avisa `{"llama_pid"}` logo depois de abrir e `{"pronto"}` com o `/health`. Lotes de até 8 fotos a 768 px, `temperature 0`, `json_schema` fechado. No SIGTERM, também durante a abertura, fecha o grupo do `llama-server` e apaga a chave. |
+| Bloco "Poses" do agente | Chave `config/poses` (`desligada` (padrão), `sombra` ou `ligada`), gravada só por `POST /poses/config` (`configuracao.u`, 6 por minuto; Ligada responde 409 `criterio` até a P2). `ETERNA_POSES=0` força Desligada. Banco `~/Eterna/ponto/poses.db`, tabela `pose` (vai no backup, apagada na exclusão LGPD, linhas vencem em 60 dias). `/status.poses` só com números e códigos. |
+| `poses_pode_rodar` | Nesta ordem: `desligada`, `fora_janela` (padrão 20:00 às 07:00), `parado`/`versao`, `recorte_ocupado`, `montagem_ocupada` (trabalho de prioridade 0 ou 1 nos últimos 120 s), `sem_modelo`/`conferindo`, `vram` (9.000 MB livres, só antes de abrir). Conferido entre um lote e outro; se não pode, o lote termina e o filho fecha. |
+| SHA do modelo | Lido uma vez por arquivo, pelo laço e só depois de todas as condições anteriores. O resultado fica em `~/Eterna/ponto/poses-sha.json` (0600, com tamanho, mtime, inode e SHA). Só é relido se um deles mudar. O `/status` nunca lê os 6,2 GB: mostra `conferindo` ou o estado guardado. O filho recebe `--conferido` e só confere tamanho, mtime e inode. `POSE_SHA` e `POSE_MMPROJ_SHA` vazios: `sem_modelo`. |
+| Processos | Agente: fecha o stdin, depois SIGTERM e espera `POSE_TERM_SEG`, e só então SIGKILL. No grupo do `llama-server`: SIGTERM, depois SIGKILL. A abertura do filho tem 300 s contados do início, e o agente espera 360 s. Na partida, `poses_orfaos_encerrar` encerra o que sobrou pelo `poses-filho.json` e procurando `--api-key-file` em `ponto/poses-*`, e apaga as pastas de chave. |
+| Falhas | 3 mortes seguidas do filho deixam a classificação `parado` até a noite seguinte. Lote inteiro com erro do servidor do modelo conta como morte (motivo `servidor`, as fotos ficam na fila), nunca `fim_fila`. Filho de outra versão do prompt: `versao`, parado até a noite seguinte. Foto ilegível (inclusive `ValueError` do PIL) ou fora das pastas: linha `nao_classificavel`, sem voltar à fila. |
+| Tela | Sistema › Fundos de IA (técnico), cartão `posesPanel` ao lado do `mtgPanel`: modo em 3 botões (`ps-modo`, `configuracao.u`, `confirm`, auditoria `poses_modo`), janela, modelo, fila e a última noite com o motivo da parada em palavras (`ps_parou_*`). |
+
+Testes: `testes/poses_agente.py`, com o `llama-server` trocado por `testes/_poses_filho_falso.py` e o `eterna-poses.py` real, e as rotas em `testes/seguranca_rotas_agente.py`. A medição no servidor (`agente/medir-poses.py`) é manual. Ela se recusa a rodar com o classificador do agente aberto.

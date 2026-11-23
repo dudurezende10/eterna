@@ -38,8 +38,8 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | Grupo | O que tem |
 | --- | --- |
 | Venda | Posto de venda |
-| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Fotógrafos, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
-| Curadoria | Qualidade, Treino da IA, Alertas |
+| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
+| Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas |
 | Fotógrafo | Diário do set, Minhas fotos, Fila do fotógrafo |
 | Configurações | Preços e Checkout, Ajuste automático |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
