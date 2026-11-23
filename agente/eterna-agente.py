@@ -957,12 +957,14 @@ def varias_pessoas(fs):
 
 def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
     """img BGR -> [(largura, vetor 128 normalizado)] do maior para o menor rosto. detalhe=True (v91, sessões):
-    [(largura, vetor, score, frontal)]; frontal = nariz a até SESS_Q_FRONTAL x a distância entre os olhos do meio deles."""
+    [(largura, vetor, score, frontal, caixa)]; frontal = nariz a até SESS_Q_FRONTAL x a distância entre os olhos do meio deles;
+    caixa (23/11, medida de luz) = (x, y, l, a) do rosto nas coordenadas da img recebida (antes da redução para LADO)."""
     np = _cv["np"]; cv2 = _cv["cv2"]
     h, w = img.shape[:2]
     k = min(1.0, LADO / max(h, w))
     if k < 1:
         img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
+    k = k or 1.0
     det.setInputSize((img.shape[1], img.shape[0]))
     _, f = det.detect(img)
     out = []
@@ -975,7 +977,7 @@ def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
             rx, ry, lx, ly, nx = float(r[4]), float(r[5]), float(r[6]), float(r[7]), float(r[8])
             dist = ((lx - rx) ** 2 + (ly - ry) ** 2) ** 0.5
             frontal = dist > 0 and abs(nx - (rx + lx) / 2) <= SESS_Q_FRONTAL * dist
-            out.append((float(r[2]), v, float(r[14]), bool(frontal)))
+            out.append((float(r[2]), v, float(r[14]), bool(frontal), (float(r[0]) / k, float(r[1]) / k, float(r[2]) / k, float(r[3]) / k)))
         else:
             out.append((float(r[2]), v))
     return sorted(out, key=lambda x: -x[0])
@@ -1053,6 +1055,13 @@ def leitor_loop(det, rec, db):
             db.executemany("insert into rosto_q values (?,?,?)", [(pid, dia, f[1].tobytes()) for f in fs
                                                                   if len(f) > 3 and f[2] >= SESS_Q_SCORE and f[3]])
             db.commit()
+            if luz_ligada():                # 23/11 (AF-D4): luz da foto como saiu da câmera, na imagem já decodificada
+                try:
+                    t_l = time.time()
+                    v_l = luz_medir(img, [f[4] for f in fs if len(f) > 4])
+                    luz_acrescenta(pid, v_l, round((time.time() - t_l) * 1000, 1))
+                except Exception as ex:
+                    print("  luz: %s" % type(ex).__name__)
             lidos = [(f[0], f[1].tolist(), f[2], f[3]) for f in fs]
             with _cont_lock:
                 rostos["lidas"] += 1; rostos["rostos"] += len(fs)
@@ -13896,7 +13905,9 @@ def treino_cfg_valida(j):
     pv = j.get("ponto_versao")
     if pv is not None and not (isinstance(pv, str) and _re_cena_versao.match(pv)):
         return None
-    return {"ponto": j["ponto"], "exposicao": j["exposicao"], "ponto_versao": pv if j["ponto"] == "ligada" else None}
+    # 23/11 (AF-D5): exposicao_ok = a exposição foi ligada pelo servidor passando no LUZ_CRIT (treino_cfg_gravar); só vale com ligada
+    return {"ponto": j["ponto"], "exposicao": j["exposicao"], "ponto_versao": pv if j["ponto"] == "ligada" else None,
+            "exposicao_ok": j.get("exposicao_ok") is True and j["exposicao"] == "ligada"}
 
 
 _re_cena_versao = re.compile(r"^c1-[a-z0-9-]{1,80}$")
@@ -13944,16 +13955,17 @@ def treino_cfg():
                     v = {**v, "por": j.get("por"), "em": j.get("em"), "abaixo": _treino_abaixo(j) if v["ponto"] == "ligada" else None}
     except Exception:
         v = _treino_cfg["v"]
-    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None)
+    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None, exposicao_ok=False)
     # 18/11 (Eduardo): o "Ligada" gravado antes desta versão não comandava nada. Sem um modelo congelado que passou no critério,
-    # Ligada vira Só medir sozinho (e fica no log); a exposição ainda não tem medida: Ligada vira Só medir também.
+    # Ligada vira Só medir sozinho (e fica no log). A exposição Ligada sem a marca do servidor (exposicao_ok, 23/11: só o
+    # treino_cfg_gravar põe, passando no LUZ_CRIT) vira Só medir também.
     mig = []
     if v["ponto"] == "ligada" and cena_modelo_existe(v.get("ponto_versao")) is False:
         mig.append(("ponto", v.get("ponto_versao")))
         v = dict(v, ponto="medir", ponto_versao=None, abaixo=None)
-    if v["exposicao"] == "ligada":
+    if v["exposicao"] == "ligada" and not v.get("exposicao_ok"):
         mig.append(("exposicao", None))
-        v = dict(v, exposicao="medir")
+        v = dict(v, exposicao="medir", exposicao_ok=False)
     if mig:
         v = dict(v, por="servidor", em=_iso())
         try:
@@ -13980,8 +13992,12 @@ def treino_cfg_gravar(corpo, quem):
     novo = {"ponto": corpo.get("ponto", de["ponto"]), "exposicao": corpo.get("exposicao", de["exposicao"])}
     if treino_cfg_valida(novo) is None:
         return 400, {"ok": False, "error": "valor"}
-    if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 18/11: ainda não existe a medida da exposição
-        return 409, {"ok": False, "error": "criterio", "falta": [{"k": "exposicao_sem_modelo", "tem": 0, "precisa": 1}]}
+    expo_ok = bool(de.get("exposicao_ok")) and novo["exposicao"] == "ligada"
+    if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 23/11 (AF-D5): Ligada só passando na calibração da luz
+        crit_l = luz_medida(forcar=True)["criterio"]
+        if not crit_l["passa"]:
+            return 409, {"ok": False, "error": "criterio", "falta": crit_l["falta"]}
+        expo_ok = True
     pv = de.get("ponto_versao") if novo["ponto"] == "ligada" else None
     abaixo = de.get("abaixo") if novo["ponto"] == "ligada" else None
     if corpo.get("ponto") == "ligada":
@@ -14013,7 +14029,7 @@ def treino_cfg_gravar(corpo, quem):
     em_v = _iso()
     if corpo.get("ponto") == "ligada":
         abaixo = None if passa else {"por": str(quem or "")[:100] or None, "em": em_v}
-    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": em_v, "abaixo": abaixo}
+    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": em_v, "abaixo": abaixo, "exposicao_ok": expo_ok}
     liga = corpo.get("ponto") == "ligada"
     try:
         _treino_cfg_escreve(v)
@@ -14054,7 +14070,7 @@ def _treino_desfaz(de, pv, antes):
     falhou = []
     if de is not None:
         try:
-            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo")})
+            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo", "exposicao_ok")})
             _treino_cfg.update(t=time.time(), v=dict(de))
         except Exception as ex:
             _treino_cfg.update(t=0.0)
@@ -14089,6 +14105,413 @@ def treino_status():
         _treino_n.update(t=agora, n=n)
     c = treino_cfg()
     return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": cena_status(), "ajuste": None}
+
+
+# ---------- Luz da foto: escura ou estourada (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md, AF-D4 a AF-D6) ----------
+# Medida da foto COMO SAIU DA CÂMERA: no leitor de rostos (o original já decodificado, cv2.IMREAD_REDUCED_COLOR_2) e, na
+# varredura dos últimos 30 dias, na miniatura (gerada do original só com a rotação do EXIF). O Ajuste automático e o ajuste à
+# mão são filtro de tela (documentos sim/edits|) e nunca mudam o arquivo: a medida não muda com eles. Só números por pid em
+# treino.db medida(pid, 'luz', valor) (vai para o backup; a exclusão LGPD apaga pelo treino_lgpd). Nada sai do servidor.
+# Liga e desliga: config/treino.exposicao (desligada = não mede; medir = mede e mostra com "Em teste"; ligada = gera alertas,
+# só com o LUZ_CRIT na calibração contra as marcações do Treino). Prioridade baixa: a varredura cede ao recorte e à montagem
+# (_poses_ocupado) e nunca usa a placa de vídeo.
+LUZ_V = 1
+LUZ_LIM_PADRAO = {"v": 1, "rosto_p95_alto": 250, "rosto_alto_pct": 8, "rosto_med_baixo": 50,
+                  "quadro_alto_pct": 12, "quadro_med_alto": 170, "quadro_med_baixo": 45, "quadro_baixo_pct": 30}
+LUZ_CRIT = {"escuras": 30, "estouradas": 30, "boas": 150, "precisao": 0.85, "revocacao": 0.70}
+LUZ_CLASSES = ("escura", "estourada")
+LUZ_DIAS = 30               # a varredura mede o que ficou sem medida nestes dias
+LUZ_FILA_MAX = 20000
+LUZ_GRAVA_SEG = 5
+LUZ_VARRE_SEG = 3600
+LUZ_GRADE = {"rosto_med_baixo": "escura", "quadro_med_baixo": "escura", "rosto_alto_pct": "estourada", "quadro_alto_pct": "estourada"}
+luz_lock = threading.Lock()
+luz_novas = collections.OrderedDict()       # pid -> valor (JSON) esperando o luz_grava_loop
+luz_st = {"dia": "", "hoje": 0, "ms_total": 0.0, "ms_n": 0, "pendentes": None, "rodando": False, "ultima": None}
+luz_parar = threading.Event()               # só os testes ligam: o luz_loop termina
+_luz_med = {"t": 0.0, "r": None, "lim": None}
+_luz_det = {"d": None, "ok": None}
+
+
+def _luz_hist(h, n=None):
+    """Histograma de 256 contagens -> {med, p5, p95, alto, baixo}: percentis pelo acumulado; alto = % >= 250, baixo = % <= 8."""
+    n = n if n is not None else sum(h)
+    if not n:
+        return None
+    def pct(p):
+        alvo, c = p * n, 0
+        for i, x in enumerate(h):
+            c += x
+            if c >= alvo:
+                return i
+        return 255
+    return {"med": pct(0.5), "p5": pct(0.05), "p95": pct(0.95),
+            "alto": round(100.0 * sum(h[250:]) / n, 1), "baixo": round(100.0 * sum(h[:9]) / n, 1)}
+
+
+def _luz_cinza(img):
+    """BGR (numpy) -> luminância 0 a 255 (uint8). Com o OpenCV, o cvtColor; sem ele, a mesma conta em numpy."""
+    cv2 = _cv.get("cv2")
+    if img.ndim == 2:
+        return img
+    if cv2 is not None:
+        return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    np = _vis_np()
+    g = (img[..., 0].astype(np.uint32) * 29 + img[..., 1].astype(np.uint32) * 150 + img[..., 2].astype(np.uint32) * 77) >> 8
+    return g.astype(np.uint8)
+
+
+def luz_medir(img, caixas=None, src="original"):
+    """img BGR (numpy) e caixas dos rostos (x, y, l, a) nas coordenadas dela -> {v, src, q:{med,p5,p95,alto,baixo},
+    r:{med,p95,alto,n}|None}. q = os 60% centrais do quadro (o céu fica de fora); r = o maior rosto com a caixa 10% maior."""
+    np = _vis_np()
+    g = _luz_cinza(img)
+    h, w = g.shape[:2]
+    c = g[int(h * 0.2):max(int(h * 0.2) + 1, int(h * 0.8)), int(w * 0.2):max(int(w * 0.2) + 1, int(w * 0.8))]
+    if c.size > 2_000_000:                    # o histograma não precisa de todos os pixels
+        c = c[::2, ::2]
+    q = _luz_hist(np.bincount(c.ravel(), minlength=256).tolist())
+    r = None
+    cs = [b for b in (caixas or []) if b and len(b) >= 4 and b[2] > 0 and b[3] > 0]
+    if cs:
+        x, y, l, a = max(cs, key=lambda b: b[2] * b[3])[:4]
+        x0, y0 = max(0, int(x - l * 0.05)), max(0, int(y - a * 0.05))
+        x1, y1 = min(w, int(x + l * 1.05) + 1), min(h, int(y + a * 1.05) + 1)
+        if x1 - x0 >= 4 and y1 - y0 >= 4:
+            hr = np.bincount(g[y0:y1, x0:x1].ravel(), minlength=256).tolist()
+            s = _luz_hist(hr)
+            if s:
+                r = {"med": s["med"], "p95": s["p95"], "alto": s["alto"], "n": int(sum(hr))}
+    return {"v": LUZ_V, "src": src, "q": q, "r": r}
+
+
+def luz_medir_pil(caminho):
+    """Sem OpenCV: Pillow, só o quadro (r = None), na miniatura."""
+    from PIL import Image
+    with Image.open(caminho) as im:
+        g = im.convert("L")
+        w, h = g.size
+        g = g.crop((int(w * 0.2), int(h * 0.2), max(int(w * 0.2) + 1, int(w * 0.8)), max(int(h * 0.2) + 1, int(h * 0.8))))
+        return {"v": LUZ_V, "src": "thumb", "q": _luz_hist(g.histogram()[:256]), "r": None}
+
+
+def luz_limites():
+    """Os limites da classificação: config/fotografos.luz (o Admin aplica a sugestão da calibração); sem ela, LUZ_LIM_PADRAO."""
+    try:
+        return dict(fotografos_cfg()["luz"])
+    except Exception:
+        return dict(LUZ_LIM_PADRAO)
+
+
+def luz_classe(v, lim=None):
+    """-> estourada | escura | ok | sem_dado, nessa ordem. Com rosto vale o rosto (o céu estourado não pesa); sem rosto, o quadro."""
+    lim = lim or luz_limites()
+    if not isinstance(v, dict):
+        return "sem_dado"
+    r, q = v.get("r"), v.get("q")
+    try:
+        if isinstance(r, dict) and r.get("n"):
+            if r["p95"] >= lim["rosto_p95_alto"] and r["alto"] >= lim["rosto_alto_pct"]:
+                return "estourada"
+            if r["med"] < lim["rosto_med_baixo"]:
+                return "escura"
+            return "ok"
+        if isinstance(q, dict):
+            if q["alto"] >= lim["quadro_alto_pct"] and q["med"] >= lim["quadro_med_alto"]:
+                return "estourada"
+            if q["med"] < lim["quadro_med_baixo"] and q["baixo"] >= lim["quadro_baixo_pct"]:
+                return "escura"
+            return "ok"
+    except (KeyError, TypeError):
+        pass
+    return "sem_dado"
+
+
+def luz_ligada():
+    """A exposição não está desligada (sem abrir banco: o interruptor em memória do treino_cfg_loop)."""
+    return treino_cfg_mem().get("exposicao") in ("medir", "ligada")
+
+
+def luz_acrescenta(pid, valor, ms=None):
+    """Medida nova para o luz_grava_loop (fila em memória; acima de LUZ_FILA_MAX sai a mais antiga)."""
+    with luz_lock:
+        luz_novas.pop(pid, None)
+        luz_novas[pid] = valor
+        while len(luz_novas) > LUZ_FILA_MAX:
+            luz_novas.popitem(last=False)
+        hoje = _ff_hoje()
+        if luz_st["dia"] != hoje:
+            luz_st.update(dia=hoje, hoje=0)
+        luz_st["hoje"] += 1
+        if ms is not None:
+            luz_st["ms_total"] += ms
+            luz_st["ms_n"] += 1
+
+
+def luz_grava():
+    """Grava a fila em lote no treino.db (só fotos que ainda existem: a exclusão LGPD no meio não traz a medida de volta)."""
+    with luz_lock:
+        if not luz_novas:
+            return 0
+        itens = list(luz_novas.items())
+        luz_novas.clear()
+    with lock:
+        itens = [(p, v) for p, v in itens if p in lib]
+    if not itens:
+        return 0
+    em = _iso()
+    with treino_lock:
+        db = treino_db()
+        try:
+            db.executemany("insert into medida (pid, tipo, valor, em) values (?, 'luz', ?, ?) on conflict(pid, tipo) do update set"
+                           " valor = excluded.valor, em = excluded.em", [(p, json.dumps(v, separators=(",", ":")), em) for p, v in itens])
+            db.commit()
+        finally:
+            db.close()
+    return len(itens)
+
+
+def luz_grava_loop():
+    while not luz_parar.is_set():
+        luz_parar.wait(LUZ_GRAVA_SEG)
+        try:
+            luz_grava()
+        except Exception as ex:
+            print("  luz: gravação %s" % str(ex)[:80])
+
+
+def luz_ler(pids=None, dias=None):
+    """{pid: valor} das medidas de luz (todas, ou só as dos pids)."""
+    if not os.path.exists(TREINO_DB):
+        return {}
+    with treino_lock:
+        db = treino_db()
+        try:
+            if pids is None:
+                rs = db.execute("select pid, valor from medida where tipo = 'luz'").fetchall()
+            else:
+                ps, rs = list(pids), []
+                for i in range(0, len(ps), 500):
+                    bl = ps[i:i + 500]
+                    rs += db.execute("select pid, valor from medida where tipo = 'luz' and pid in (%s)" % ",".join("?" * len(bl)), bl).fetchall()
+        finally:
+            db.close()
+    out = {}
+    for p, v in rs:
+        try:
+            out[p] = json.loads(v)
+        except ValueError:
+            pass
+    return out
+
+
+def _luz_prio_baixa():
+    """A thread da varredura fica com a menor prioridade do sistema (Linux: por thread; outros: nada muda)."""
+    try:
+        os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), 19)
+    except Exception:
+        pass
+
+
+def _luz_detector():
+    """Só o YuNet (detector de rostos), sem o reconhecedor; None sem OpenCV ou sem o modelo no disco (a varredura não baixa)."""
+    if _luz_det["ok"] is None:
+        _luz_det["ok"] = False
+        try:
+            cv2 = _cv.get("cv2")
+            arq = os.path.join(MODELOS, MOD_DET)
+            if cv2 is not None and os.path.exists(arq) and os.path.getsize(arq) >= 100000:
+                _luz_det["d"] = cv2.FaceDetectorYN.create(arq, "", (320, 320), 0.7, 0.3, 5000)
+                _luz_det["ok"] = True
+        except Exception:
+            _luz_det["d"] = None
+    return _luz_det["d"]
+
+
+def luz_pendentes():
+    """Fotos das sessões dos últimos LUZ_DIAS sem medida de luz: primeiro as marcadas no Treino, depois da mais nova para a
+    mais antiga. -> [pid]"""
+    pids = []
+    for i in range(LUZ_DIAS):
+        a = os.path.join(SESS_DIR, _ff_hoje(time.time() - i * 86400) + ".json")
+        try:
+            ss = json.load(open(a, encoding="utf8")).get("sessoes") or []
+        except Exception:
+            continue
+        for x in ss:
+            if isinstance(x, dict) and not x.get("removida"):
+                pids += [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+    if not pids:
+        return []
+    feitas, rot = set(), set()
+    if os.path.exists(TREINO_DB):
+        with treino_lock:
+            db = treino_db()
+            try:
+                feitas = {r[0] for r in db.execute("select pid from medida where tipo = 'luz'")}
+                rot = {r[0] for r in db.execute("select pid from rotulo")}
+            finally:
+                db.close()
+    with luz_lock:
+        feitas |= set(luz_novas)
+    with lock:
+        vivas = {p for p in pids if p in lib}
+    vistos, pr, resto = set(), [], []
+    for p in pids:
+        if p in vistos or p in feitas or p not in vivas:
+            continue
+        vistos.add(p)
+        (pr if p in rot else resto).append(p)
+    return pr + resto
+
+
+def luz_varre(parar=None):
+    """Mede o que ficou sem medida (luz_pendentes) pela miniatura: OpenCV com o YuNet (src thumb); sem OpenCV, Pillow só o
+    quadro. Para quando a exposição desliga; espera enquanto o recorte ou a montagem têm trabalho de prioridade 0 ou 1."""
+    parar = parar or luz_parar
+    _luz_prio_baixa()
+    lista = luz_pendentes()
+    luz_st.update(pendentes=len(lista), rodando=True)
+    feitas = 0
+    try:
+        cv2 = _cv.get("cv2")
+        det = _luz_detector() if cv2 is not None else None
+        for i, p in enumerate(lista):
+            if parar.is_set() or not luz_ligada():
+                break
+            while _poses_ocupado("rec") or _poses_ocupado("mtg"):
+                if parar.wait(2):
+                    return feitas
+            with lock:
+                e = lib.get(p)
+            if not e:
+                continue
+            th = e.get("thumb") or os.path.join(THUMBS, p + ".jpg")
+            if not os.path.exists(th):
+                continue
+            t0 = time.time()
+            try:
+                if cv2 is not None:
+                    img = cv2.imread(th, cv2.IMREAD_COLOR)
+                    if img is None:
+                        continue
+                    cx = []
+                    if det is not None:
+                        det.setInputSize((img.shape[1], img.shape[0]))
+                        _, f = det.detect(img)
+                        cx = [(float(r[0]), float(r[1]), float(r[2]), float(r[3])) for r in (f if f is not None else []) if r[2] >= 8]
+                    v = luz_medir(img, cx, src="thumb")
+                else:
+                    v = luz_medir_pil(th)
+            except Exception:
+                continue
+            luz_acrescenta(p, v)
+            feitas += 1
+            luz_st["pendentes"] = len(lista) - i - 1
+            time.sleep(0.002)                     # cede o processador às outras threads
+    finally:
+        luz_st.update(rodando=False, ultima=_iso())
+        if not luz_ligada():
+            luz_st["pendentes"] = None
+    return feitas
+
+
+def luz_loop():
+    """De hora em hora (e logo que a exposição sai de desligada) mede o que ficou sem medida; grava pelo luz_grava_loop."""
+    antes, ultima = "desligada", 0.0
+    while not luz_parar.is_set():
+        try:
+            agora = treino_cfg_mem().get("exposicao")
+            if agora != "desligada" and (antes == "desligada" or time.time() - ultima >= LUZ_VARRE_SEG):
+                ultima = time.time()
+                luz_varre()
+            antes = agora
+        except Exception as ex:
+            print("  luz: varredura %s" % str(ex)[:80])
+        luz_parar.wait(3)
+
+
+def luz_status():
+    """/status.luz: só contagens (sem pid, caminho ou nome)."""
+    with luz_lock:
+        fila = len(luz_novas)
+        hoje = luz_st["hoje"] if luz_st["dia"] == _ff_hoje() else 0
+        ms = round(luz_st["ms_total"] / luz_st["ms_n"], 1) if luz_st["ms_n"] else None
+    return {"v": 1, "medidas_hoje": hoje, "fila": fila, "ms_med": ms, "varredura": {"pendentes": luz_st["pendentes"], "rodando": luz_st["rodando"]},
+            "opencv": bool(_cv.get("cv2"))}
+
+
+def _luz_prf(itens, classe, lim):
+    """itens = [(verdade, valor)] -> (n positivos, precisão, revocação, vp) para uma classe com os limites lim."""
+    n = sum(1 for t, _ in itens if t == classe)
+    pred = [(t, luz_classe(v, lim)) for t, v in itens]
+    vp = sum(1 for t, c in pred if t == classe and c == classe)
+    pp = sum(1 for _, c in pred if c == classe)
+    return n, (round(vp / pp, 4) if pp else None), (round(vp / n, 4) if n else None), vp
+
+
+def luz_medida(forcar=False):
+    """Calibração contra as marcações do Treino (AF-D6). Positiva = qual.nivel fraca ou nao_vai com o motivo escura ou
+    estourada (a foto "ajustar" não entra); negativa = nível boa. Por classe: n, precisão, revocação; a matriz; uma grade de
+    5 valores para cada limite principal; e o LUZ_CRIT para Ligada. Cache de 10 s."""
+    lim = luz_limites()
+    if not forcar and _luz_med["r"] is not None and time.time() - _luz_med["t"] < 10 and _luz_med["lim"] == lim:
+        return _luz_med["r"]
+    rots = []
+    if os.path.exists(TREINO_DB):
+        with treino_lock:
+            db = treino_db()
+            try:
+                rots = db.execute("select pid, dados from rotulo").fetchall()
+            finally:
+                db.close()
+    verdade = {}
+    for p, d in rots:
+        try:
+            q = (json.loads(d) or {}).get("qual") or {}
+        except ValueError:
+            continue
+        nv, mot = q.get("nivel"), q.get("motivos") or []
+        if nv in ("fraca", "nao_vai"):
+            cs = [c for c in LUZ_CLASSES if c in mot]
+            if len(cs) == 1:                  # escura e estourada juntas (raro): ambígua, fica fora da conta
+                verdade[p] = cs[0]
+        elif nv == "boa":
+            verdade[p] = "boa"
+    meds = luz_ler(list(verdade))
+    itens = [(t, meds[p]) for p, t in verdade.items() if p in meds]
+    sem = sum(1 for p in verdade if p not in meds)
+    classes = {}
+    for c in LUZ_CLASSES:
+        n, pr, rv, _ = _luz_prf(itens, c, lim)
+        classes[c] = {"n": n, "precisao": pr, "revocacao": rv}
+    boas = sum(1 for t, _ in itens if t == "boa")
+    mx = {t: {c: 0 for c in ("escura", "estourada", "ok", "sem_dado")} for t in ("escura", "estourada", "boa")}
+    for t, v in itens:
+        mx[t][luz_classe(v, lim)] += 1
+    grade = {}
+    for k, c in LUZ_GRADE.items():
+        base = lim[k]
+        vals = sorted({max(1, int(round(base * f))) for f in (0.6, 0.8, 1.0, 1.2, 1.4)})
+        grade[k] = []
+        for val in vals:
+            _, pr, rv, _ = _luz_prf(itens, c, dict(lim, **{k: val}))
+            grade[k].append({"valor": val, "classe": c, "precisao": pr, "revocacao": rv, "atual": val == base})
+    falta = []
+    for c, kk in (("escura", "escuras"), ("estourada", "estouradas")):
+        if classes[c]["n"] < LUZ_CRIT[kk]:
+            falta.append({"k": kk, "tem": classes[c]["n"], "precisa": LUZ_CRIT[kk]})
+    if boas < LUZ_CRIT["boas"]:
+        falta.append({"k": "boas", "tem": boas, "precisa": LUZ_CRIT["boas"]})
+    for c in LUZ_CLASSES:
+        if (classes[c]["precisao"] or 0) < LUZ_CRIT["precisao"]:
+            falta.append({"k": "precisao_" + c, "tem": classes[c]["precisao"] or 0, "precisa": LUZ_CRIT["precisao"]})
+        if (classes[c]["revocacao"] or 0) < LUZ_CRIT["revocacao"]:
+            falta.append({"k": "revocacao_" + c, "tem": classes[c]["revocacao"] or 0, "precisa": LUZ_CRIT["revocacao"]})
+    r = {"v": 1, "limites": lim, "classes": classes, "boas_n": boas, "matriz": mx, "grade": grade, "sem_medida": sem,
+         "criterio": {"passa": not falta, "falta": falta}, "crit": dict(LUZ_CRIT)}
+    _luz_med.update(t=time.time(), r=r, lim=lim)
+    return r
 
 
 # ---------- Cena: reconhecer o ponto pela imagem (regra 19, 18/11; plano "bases dos fundos de IA só com foto do gramado") ----------
@@ -14235,7 +14658,7 @@ def treino_cfg_mem():
     """O último interruptor lido (sem abrir o banco): para quem está com o sess_lock na mão. Atualizado a cada 3 s pelo
     treino_cfg_loop."""
     v = _treino_cfg["v"]
-    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None)
+    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None, exposicao_ok=False)
 
 
 def treino_cfg_loop():
@@ -19126,6 +19549,10 @@ class H(BaseHTTPRequestHandler):
                 ps_ = poses_status()                   # 23/11: classificação de poses (só números e códigos), fora do lock
             except Exception:
                 ps_ = None
+            try:
+                lz_ = luz_status()                     # 23/11 (AF): medida de luz, só contagens
+            except Exception:
+                lz_ = None
             with lock:
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
@@ -19136,7 +19563,7 @@ class H(BaseHTTPRequestHandler):
                            estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
                            app_offline_pronto=app_offline_pronto(), agenda=ag_,
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
-                           pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_,
+                           pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_, luz=lz_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
@@ -19714,6 +20141,8 @@ def main():
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=treino_cfg_loop, daemon=True).start()  # 18/11: interruptor do treino em memória (treino_cfg_mem)
     threading.Thread(target=cena_loop, daemon=True).start()        # 18/11 (regra 19): reconhecer o ponto pela imagem
+    threading.Thread(target=luz_grava_loop, daemon=True).start()   # 23/11 (AF): medidas de luz em lote no treino.db
+    threading.Thread(target=luz_loop, daemon=True).start()         # 23/11 (AF): varredura de 30 dias, prioridade baixa
     poses_orfaos_encerrar()             # 23/11: classificador de poses de uma partida anterior não segura a placa
     threading.Thread(target=poses_loop, daemon=True).start()       # 23/11: poses à noite (chave config/poses, padrão desligada)
     mtg_orfaos_encerrar()               # processo de montagem de uma partida anterior
