@@ -67,11 +67,11 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
 
 | Tipo | Quando | Texto (exemplo, números inventados) |
 |---|---|---|
-| `af_poucos` | média abaixo de `cliques_min`, com `fam_min` famílias ou mais | "Márcio: 16 cliques por família (9 de 14 famílias abaixo de 20)" |
-| `af_muitos` | média acima de `cliques_max` | "... (5 de 12 famílias acima de 40)" |
-| `af_conv_fam` | % de famílias que compraram, menor ou igual à média da equipe menos `conv_fam_pp`, com `conv_fam_min` famílias e `conv_equipe_min` fotógrafos ou mais | "Yago: 41% das famílias compraram (equipe 55%) · 18 de 44" |
-| `af_conv_fotos` | fotos vendidas ÷ feitas, menor ou igual à média da equipe menos `conv_fotos_pp` | "x de n fotos vendidas" |
-| `af_luz` | fora da exposição em `luz_pct` ou mais (grave a partir de `luz_grave_pct`), com `luz_fotos_min` fotos | "Márcio: 20 de 100 fora da exposição: 12 estouradas, 8 escuras" |
+| `fot_poucos` | média abaixo de `cliques_min`, com `fam_min` famílias ou mais | "Márcio: 16 cliques por família (9 de 14 famílias abaixo de 20)" |
+| `fot_muitos` | média acima de `cliques_max` | "... (5 de 12 famílias acima de 40)" |
+| `fot_conv_fam` | % de famílias que compraram, menor ou igual à média da equipe menos `conv_fam_pp`, com `conv_fam_min` famílias e `conv_equipe_min` fotógrafos ou mais | "Yago: 41% das famílias compraram (equipe 55%) · 18 de 44" |
+| `fot_conv_fotos` | fotos vendidas ÷ feitas, menor ou igual à média da equipe menos `conv_fotos_pp` | "x de n fotos vendidas" |
+| `fot_luz` | fora da exposição em `luz_pct` ou mais (grave a partir de `luz_grave_pct`), com `luz_fotos_min` fotos | "Márcio: 20 de 100 fora da exposição: 12 estouradas, 8 escuras" |
 
 - A média da equipe é ponderada por família (ou por foto), no mesmo período, com a equipe toda.
 - O rodapé de cada cartão diz o período e a fonte: "conta gramado, troféu e arquibancada; chute à parte" ou "conta todas as fotos da leva (reconhecimento do ponto desligado)". A conversão também avisa "vendas online fora".
@@ -98,16 +98,16 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
   - Sem OpenCV: Pillow, só o quadro, `r:null`.
   - Roda quando a chave muda para `medir` e de hora em hora.
 - **Agregado por dia:**
-  - `af_dia(dia)` é uma função pura sobre o arquivo de sessões, o `cena.db`, a `medida` e o `vendas.db` (conexão só de leitura, como o `_mtg_pagas_ler`).
+  - `fot_dia(dia)` é uma função pura sobre o arquivo de sessões, o `cena.db`, a `medida` e o `vendas.db` (conexão só de leitura, como o `_mtg_pagas_ler`).
   - Grava em `operacao.db` `fotografo_dia(dia, fotografo, dados, em, primary key(dia, fotografo))`.
   - `dados` só leva somas:
     - `familias`, `cliques_soma`, `chute_soma`, `nao_contadas`
-    - histograma `[<20, 20-40, >40]`
+    - `por_n` (famílias por número de cliques; serve a qualquer limite. Revisão: saíram o histograma e os limites da época, que ninguém lia)
     - `fonte: "ponto"|"todas"`
     - `fam_compraram`, `fotos`, `fotos_vendidas`
     - `luz: {n, escuras, estouradas, sem_dado}`
   - Roda dentro do `dia_loop`: hoje a cada 10 min, ontem na virada, e os últimos 35 dias de madrugada (por causa da LGPD e de venda atrasada).
-- **Fechamento do mês:** `af_mes(mes)` soma os dias. No dia 1 (e até o dia 5 se faltar dia), o mês é congelado em `operacao.db` `fotografo_mes(mes, dados, fechado_em)`. A P5 das poses lê daqui.
+- **Fechamento do mês:** `fot_mes(mes)` soma os dias. No dia 1 (e até o dia 5 se faltar dia), o mês é congelado em `operacao.db` `fotografo_mes(mes, dados, fechado_em)`. A P5 das poses lê daqui.
 - **Calibração:** `luz_medida()`.
   - Positivos como no AF-D6. Negativos: fotos marcadas com nível `boa`.
   - Por classe: n, precisão, revocação e matriz. Mais uma grade de 5 valores para cada limite principal, com precisão e revocação, para o Eduardo escolher.
@@ -132,7 +132,7 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
     - Tabela por fotógrafo: famílias, cliques por família (com "x abaixo de 20 / y acima de 40"), chute por família, % de famílias que compraram (x de n), % de fotos vendidas (x de n), fora da exposição (x de n: estouradas, escuras).
     - Linha da equipe no fim.
     - Selo "Em teste" para a exposição em `medir`.
-    - Cartão `afLimites` editável com `configuracao.u` (`data-act="af-cfg-salvar"`, `WRITE_OPS`, `ACT_MOD` configuracao, `auditLog('fotografos_limites')`).
+    - Cartão `fotLimites` editável com `configuracao.u` (`data-act="fot-cfg-salvar"`, `WRITE_OPS`, `ACT_MOD` configuracao, `auditLog('fotografos_limites')`).
   - A aba "Poses e roteiro" entra depois, na P4.
 - **Estatísticas sem a seção `b`:**
   - `ES_SECOES` perde `['b','Fotógrafos']`.
@@ -140,14 +140,14 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
   - `relPode` da Estatísticas passa de `['a','b','e']` para `['a','e']`. Sai o ramo `M.sec==='b'` do `relEstatisticas`.
 - **Exportar:** `relFotografos` segue a aba aberta. `indice` = o arquivo de hoje. `estatisticas` = as colunas que o `relEstatisticas` exportava na seção `b`, com os dados de `esFotoOrd`. `af` = a tabela da AF com o período. O nome do arquivo leva a aba (`relNovo('fotografos-'+aba, ...)`). O `relAudita` segue como hoje.
 - **Alertas:**
-  - `state.af = {per:'7d', j, em, busy, erro}`, cache de 5 min, nada em SIM nem `localStorage`.
-  - `afPull()` (`agFetch`) chama a rota com o período.
-  - `afAlertas()` traduz `j.alertas` em `{sev, t, d}` pelas chaves `af_al_*`.
-  - `alerts()` acrescenta `afAlertas()` só com `can('desempenho','r')`. Os alertas antigos por fotógrafo passam a exigir o mesmo e somem quando há `state.af.j`.
-  - Em `vAlertas`, chips de período `af-per` (Hoje, 7 dias, 30 dias) e a linha "Dados do servidor do ponto · atualizado hh:mm".
+  - `state.fot = {per:'7d', j, em, busy, erro}`, cache de 5 min, nada em SIM nem `localStorage`.
+  - `fotPull()` (`agFetch`) chama a rota com o período.
+  - `fotAlertas()` traduz `j.alertas` em `{sev, t, d}` pelas chaves `fot_al_*`.
+  - `alerts()` acrescenta `fotAlertas()` só com `can('desempenho','r')`. Os alertas antigos por fotógrafo passam a exigir o mesmo e somem quando há `state.fot.j`.
+  - Em `vAlertas`, chips de período `fot-per` (Hoje, 7 dias, 30 dias) e a linha "Dados do servidor do ponto · atualizado hh:mm".
 - **Painel:** a tabela "Por fotógrafo" (`pn_por_fotografo`) só aparece com `can('desempenho','r')`.
 - **Treino › Medição:** bloco "Exposição" (`trLuzMedida`) com precisão e revocação por classe, a grade e o botão "Usar estes limites" (`configuracao.u`), que grava pelo mesmo POST.
-- **I18N nas 5 línguas** (tela da equipe): `af_al_poucos_t|d`, `af_al_muitos_t|d`, `af_al_conv_fam_t|d`, `af_al_conv_fotos_t|d`, `af_al_luz_t|d`, `af_fonte_ponto`, `af_fonte_todas`, `af_online_fora`, `af_per_*`, `fg_aba_indice`, `fg_aba_estatisticas`, `fg_aba_af`, `af_col_*`, `af_equipe`, `af_teste`, `af_lim_*`, `tr_luz_*`.
+- **I18N nas 5 línguas** (tela da equipe): `fot_al_poucos_t|d`, `fot_al_muitos_t|d`, `fot_al_conv_fam_t|d`, `fot_al_conv_fotos_t|d`, `fot_al_luz_t|d`, `fot_fonte_ponto`, `fot_fonte_todas`, `fot_online_fora`, `fot_per_*`, `fg_aba_indice`, `fg_aba_estatisticas`, `fg_aba_af`, `fot_col_*`, `fot_equipe`, `fot_teste`, `fot_lim_*`, `tr_luz_*`.
 
 ## Contratos
 - `GET /fotografos/alertas?de=&ate=`: sessão com `desempenho.r`, 30 por minuto por pessoa, até 92 dias. Exemplo (todos os números são inventados):
@@ -156,24 +156,24 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
  "equipe":{"familias":310,"fam_compraram":160,"fotos":7400,"fotos_vendidas":1600},
  "fotografos":[{"k":"marcio","familias":14,"cliques":{"media":16.2,"abaixo":9,"acima":0,"chute_media":3.1,"nao_contadas":12},
    "conv":{"fam":[6,14],"fotos":[40,260]},"luz":{"n":100,"escuras":8,"estouradas":12,"sem_dado":0}}],
- "alertas":[{"tipo":"af_luz","k":"marcio","sev":"warn","args":[20,100,12,8]}]}
+ "alertas":[{"tipo":"fot_luz","k":"marcio","sev":"warn","args":[20,100,12,8]}]}
 ```
 - `GET /fotografos/dias?de=&ate=`: `desempenho.r`, até 366 dias. Devolve `{"ok":true,"dias":[{"dia","por_fotografo":{"<chave>":{fotos,sessoes,sessoes_com_venda,vendas,faturamento,fotos_vendidas,clique_checkout_s}}}]}`.
 - `GET /fotografos/luz/medida`: `qualidade.r`, 10 por minuto. Devolve `{v:1, limites, classes:{escura:{n,precisao,revocacao}, estourada:{...}}, boas_n, grade:{...}, criterio:{passa, falta}}`.
 - `POST /fotografos/config`: `configuracao.u`, 6 por minuto, 4 KB, formato fechado acima. 400 `campo` com o nome do campo recusado.
-- `/status`: ganha `luz: {v:1, medidas_hoje, fila, ms_med, varredura:{pendentes}, opencv:bool}`, e `estatisticas.af: {ultimo_dia, em}`. `treino.analise.exposicao` mantém o significado, mas `ligada` agora é possível. Nada disso traz pid ou nome.
+- `/status`: ganha `luz: {v:1, medidas_hoje, fila, ms_med, varredura:{pendentes}, opencv:bool}`, e `estatisticas.fot: {ultimo_dia, em}`. `treino.analise.exposicao` mantém o significado, mas `ligada` agora é possível. Nada disso traz pid ou nome.
 
 ## Critérios de aceite
-1. Com 3 levas sintéticas de 10, 25 e 45 cliques (reconhecimento do ponto ligado, com chute e "outro" misturados), `af_dia` dá média 26,7, 1 abaixo de 20, 1 acima de 40, chute à parte e "outro" em `nao_contadas`.
-2. Com o reconhecimento do ponto desligado, a mesma leva conta todas as fotos e `fonte_cliques` vira `"todas"`; a tela mostra `af_fonte_todas`.
+1. Com 3 levas sintéticas de 10, 25 e 45 cliques (reconhecimento do ponto ligado, com chute e "outro" misturados), `fot_dia` dá média 26,7, 1 abaixo de 20, 1 acima de 40, chute à parte e "outro" em `nao_contadas`.
+2. Com o reconhecimento do ponto desligado, a mesma leva conta todas as fotos e `fonte_cliques` vira `"todas"`; a tela mostra `fot_fonte_todas`.
 3. Venda pela selfie com fotos das levas de A e de B: as duas levas contam como compradoras e cada fotógrafo recebe só as fotos dele em `fotos_vendidas`. Venda cancelada não conta.
-4. O alerta `af_conv_fam` só sai com 15 famílias ou mais e 3 fotógrafos ou mais no período, e com o fotógrafo pelo menos 10 pontos abaixo da média ponderada da equipe toda.
+4. O alerta `fot_conv_fam` só sai com 15 famílias ou mais e 3 fotógrafos ou mais no período, e com o fotógrafo pelo menos 10 pontos abaixo da média ponderada da equipe toda.
 5. Com imagens sintéticas, `luz_medir` e `luz_classe` classificam certo: quadro preto = escura; branco = estourada; cinza médio = ok; rosto estourado com fundo escuro = estourada; céu estourado com rosto bom = ok.
-6. Com a exposição em `desligada`, nenhuma linha `tipo='luz'` nasce. Em `medir`, os números aparecem com "Em teste" e nenhum `af_luz` sai. `ligada` sem o critério responde 409 `criterio` com `falta`.
+6. Com a exposição em `desligada`, nenhuma linha `tipo='luz'` nasce. Em `medir`, os números aparecem com "Em teste" e nenhum `fot_luz` sai. `ligada` sem o critério responde 409 `criterio` com `falta`.
 7. "Márcio, 20 de 100 fora" (12 estouradas e 8 escuras, limite 15%) gera exatamente o cartão "Márcio: 20 de 100 fora da exposição: 12 estouradas, 8 escuras". Com 49 fotos no período, não gera cartão. Com 25% ou mais, o cartão é grave.
-8. `/fotografos/alertas` e `/fotografos/dias` sem `desempenho.r` respondem 403. O Fotógrafo não vê nenhum cartão `af_*` nem os alertas antigos por fotógrafo. A Supervisora vê.
+8. `/fotografos/alertas` e `/fotografos/dias` sem `desempenho.r` respondem 403. O Fotógrafo não vê nenhum cartão `fot_*` nem os alertas antigos por fotógrafo. A Supervisora vê.
 9. Aplicar o Ajuste automático e um ajuste à mão numa foto escura não muda a `medida` dela nem a contagem.
-10. A exclusão LGPD apaga a `medida` da foto. O `af_dia` da noite seguinte não conta mais essa foto.
+10. A exclusão LGPD apaga a `medida` da foto. O `fot_dia` da noite seguinte não conta mais essa foto.
 11. `POST /fotografos/config` com `cliques_min >= cliques_max`, campo a mais ou valor fora da faixa dá 400. Gravar pelo `/ponto/docs` é recusado. Mudança válida vai para o `auditLog`.
 12. O mês congelado em `fotografo_mes` é igual à soma dos `fotografo_dia` e não muda depois.
 13. A calibração conta como positiva só a foto `fraca` ou `nao_vai` com motivo `escura` ou `estourada`. Uma foto "ajustar" com o mesmo motivo não entra como positiva.
@@ -185,9 +185,9 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
 19. As três abas e os cartões abrem nas 5 línguas sem chave faltando. `testes/todas-as-telas.js` e o critério 19 de `testes/permissoes.js` passam.
 
 ## Testes
-- `testes/af_agente.py`: critérios 1 a 4, 6 a 8, 10 a 13 e a parte do servidor dos 16 e 18, com sessões, `cena.db`, `vendas.db` e medidas sintéticas, e as rotas com sessão de teste.
-- `testes/af_luz.py`: critério 5, com imagens geradas em numpy; nenhuma foto real.
-- `testes/af-alertas.js`: critérios 7 a 9 e 19 na tela.
+- `testes/fot_agente.py`: critérios 1 a 4, 6 a 8, 10 a 13 e a parte do servidor dos 16 e 18, com sessões, `cena.db`, `vendas.db` e medidas sintéticas, e as rotas com sessão de teste.
+- `testes/fot_luz.py`: critério 5, com imagens geradas em numpy; nenhuma foto real.
+- `testes/fot-alertas.js`: critérios 7 a 9 e 19 na tela.
 - `testes/fotografos-abas.js`: critérios 14 a 18.
 - Acertar os testes que existem:
   - `testes/estatisticas.js`: as listas de seções sem `b`, e o critério da seção `b` passa para a aba.
@@ -208,3 +208,15 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
 - **Comparação injusta entre pontos:** o fotógrafo da arquibancada converte diferente do fotógrafo do gramado, e a Escala está desligada. As defesas são o mínimo de famílias e a média da equipe toda. O set entra na comparação quando o reconhecimento estiver Ligado.
 - **Limites editáveis pela Supervisora** (ela tem `configuracao.u`): toda mudança fica no `auditLog`, com o valor anterior e o novo.
 - **Tirar `por_fotografo` do `/metricas/dia`** muda uma resposta que o Painel e a Estatísticas usam. O teste do critério 16 confere que Admin e Supervisora não perdem nada.
+
+## Revisão de 23/11 (devolvida pelo revisor; o que mudou)
+- **Nomes:** todo o bloco novo do agente passou de `af_`/`AF_` para `fot_`/`FOT_` (o `af_` é da API-Football no mesmo arquivo): `fot_dia`, `fot_gravar`, `fot_mes`, `fot_mes_fechar`, `fot_rodada`, `fot_alertas`, `fot_status`, `fot_st`, `fot_lock`, tipos `fot_poucos`, `fot_muitos`, `fot_conv_fam`, `fot_conv_fotos`, `fot_luz`; o `/status` traz `estatisticas.fot`. No app, `fot*`, `FOT_*`, `state.fot`, `fot-*` e as chaves `fot_*` (a aba continua com o id `af` e a chave `fg_aba_af`). Testes: `testes/fot_agente.py`, `testes/fot_luz.py`, `testes/fot-alertas.js`.
+- **Varredura da luz (R1):** espera também a fila do leitor de rostos, o leitor lendo e a selfie buscando (`_luz_ocupado`). Fora da madrugada só mede fotos marcadas no Treino, no máximo `LUZ_HORA_MAX` (200) por hora; o resto só de 2h às 6h (`LUZ_NOITE`). Pula a foto que o leitor ainda não leu (ele mesmo mede). O OpenCV fica com 1 thread enquanto a varredura trabalha (`_LuzThreads`; o ajuste é do processo inteiro, por isso só com o leitor parado, e volta ao valor de antes antes de esperar e no fim).
+- **Uma fonte só para a medida:** a varredura mede o original como o leitor (`luz_medir_arquivo`: `IMREAD_REDUCED_COLOR_2`, YuNet na escala `LADO` e `ROSTO_MIN`; sem OpenCV, Pillow no original reduzido pela metade). Todas as medidas são `src:"original"` e a calibração só usa essas; medida antiga de miniatura volta a ser pendente.
+- **Leitor:** a luz é medida depois de `mat_acrescenta`, `ff_rosto_lido` e `sess_rostos_lidos`; só os 60% centrais e o rosto são convertidos para cinza.
+- **Limite de luz novo (R2):** refaz na hora hoje e os 6 dias antes (`FOT_REFAZ_JA`, o período padrão da tela); o resto fica `sujo` e só a rodada da madrugada refaz. A tela avisa (`fot_luz_noite`, `fot_lim_ok_noite`, `tr_luz_ok_noite`, `tr_luz_noite_nota`).
+- **Fechamento do mês (R3):** o mês anterior só a partir do dia `FOT_MES_DESDE_DIA` (1 + `FOT_VENDA_DIAS` + 1 = dia 4) e só depois da rodada da madrugada desse dia; faltando dia calculado, espera até o dia 5 e então calcula o que falta e congela. Mês que ficou para trás (agente parado) e mês mais antigo sem fechamento também fecham, depois da madrugada. O critério 12 continua.
+- **Exposição Ligada (R4):** `POST /fotografos/config` com limite de luz novo confere o `LUZ_CRIT` com os limites novos (`luz_medida(lim=...)`); sem passar, 409 `criterio` com `falta` e nada gravado. Sem mudança, não regrava nem sobe o `rev`. A rota exige também `desempenho.r`.
+- **Decisão 3 (fonte do dia):** o dia conta pelo ponto pelo estado daquele dia: hoje grava o interruptor em `fotografo_dia_calc.ponto`; dia passado usa o que ficou gravado; sem registro, só se havia um Ligar no `liga_log` até o dia e o ponto está Ligado agora (o desligar não fica registrado). A cobertura de 90% continua.
+- **Para a P5:** `fotografo_dia` e `fotografo_mes` não têm mais `hist` nem `lim`; a faixa de cliques sai do `por_n` com os limites de quem lê.
+- **Tela:** título dos Alertas com o período dos dados do servidor; nota da conversão por foto na aba; "quem vê" pela permissão (Índice do fotógrafo); o rascunho dos limites não some no pull; sair limpa `state.fot`, `state.fg.est` e a calibração.
