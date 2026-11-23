@@ -9586,15 +9586,9 @@ def ativ_venda_tablet(v):
     ing = str(v.get("ingresso") or "").strip().upper()[:20]
     ing = ing if _re_ingresso.match(ing) else ""
     foto = None
-    if v.get("cliente_foto"):
-        f = str(v["cliente_foto"])
-        if not f.startswith("data:image/jpeg;base64,") or len(f) > ATIV_FOTO_MAX * 4 // 3 + 40:
-            return None
-        try:
-            foto = base64.b64decode(f.split(",", 1)[1], validate=True)
-        except (ValueError, TypeError):
-            return None
-        if not foto.startswith(b"\xff\xd8") or len(foto) > ATIV_FOTO_MAX:
+    if v.get("cliente_foto"):                  # tablet com o app de antes de 23/11 ainda manda a foto da venda
+        foto = ativ_foto_jpeg(v["cliente_foto"])
+        if foto is None:
             return None
     return {"origem": "eterna", "id": v["id"], "tipo": v["tipo"], "dia": v["criado"][:10], "criado": v["criado"], "itens": itens,
             "valor": v["valor"], "pagamento": v["pagamento"], "vendedor": v.get("vendedor") or "", "vendedor_n": None,
@@ -9610,6 +9604,52 @@ def ativ_venda_tablet(v):
 
 def ativ_cliente_foto(vid):
     return os.path.join(ATIV_CLIENTES_DIR, "%s.jpg" % vid)
+
+
+ATIV_FOTO_OBRIGATORIA = ("drone", "snap")
+
+
+def ativ_foto_jpeg(f):
+    """data URL JPEG da foto do cliente (até ATIV_FOTO_MAX) -> bytes, ou None."""
+    f = str(f or "")
+    if not f.startswith("data:image/jpeg;base64,") or len(f) > ATIV_FOTO_MAX * 4 // 3 + 40:
+        return None
+    try:
+        b = base64.b64decode(f.split(",", 1)[1], validate=True)
+    except (ValueError, TypeError):
+        return None
+    return b if b.startswith(b"\xff\xd8") and len(b) <= ATIV_FOTO_MAX else None
+
+
+def ativ_cliente_foto_entrega(body):
+    """POST /ativ/cliente-foto {id, foto}: 23/11, a foto do cliente é tirada na entrega (câmera do computador do campo). Grava
+    por cima da anterior, marca a venda para procurar as fotos do Tour (como a foto da venda fazia desde a v99.29.1) e procura
+    em seguida, fora do pedido. Some com a limpeza de sempre (ativ_clientes_limpa). -> None ou o erro."""
+    vid = str(body.get("id") or "")
+    foto = ativ_foto_jpeg(body.get("foto"))
+    if not _re_ativ_id.match(vid) or foto is None:
+        return "dados"
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select situacao from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            if not r:
+                return "nao_achou"
+            if (r[0] or "ativa") != "ativa":
+                return "cancelada"
+            c.execute("update ativ_venda set foto_busca=1 where origem='eterna' and id=?", (vid,))
+            c.commit()
+        finally:
+            c.close()
+    ativ_cliente_foto_grava(vid, foto)
+
+    def procura():
+        try:
+            ativ_tour_atualiza(vid)
+        except Exception as ex:
+            print("  tour: busca pela foto da entrega falhou (%s)" % str(ex)[:120])
+    threading.Thread(target=procura, daemon=True).start()
+    return None
 
 
 def ativ_cliente_foto_grava(vid, foto):
@@ -10292,6 +10332,10 @@ def ativ_video_checa(vid, qr):
             return "sem_video" if not prev and r[2] != "chute" else "completa", None
     finally:
         c.close()
+    # 23/11 (Ronaldo): a foto do cliente saiu da venda e é tirada na entrega; no Drone e no Snap Pop ela é obrigatória para
+    # entregar (Chute a Gol: opcional)
+    if r[2] in ATIV_FOTO_OBRIGATORIA and not os.path.isfile(ativ_cliente_foto(vid)):
+        return "sem_foto", None
     try:
         if REPO.ler_manifesto(qr):              # cartão já usado numa galeria de fotos
             return "qr_usado", None
@@ -15468,6 +15512,7 @@ ROTAS = (
     ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),
     ("GET", "/ativ/cliente-foto", "sessao", ("ativentrega.r",)),     # foto do cliente para quem entrega (some com a limpeza)   # vídeos de demonstração (lista e arquivo)
     ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
+    ("POST", "/ativ/cliente-foto", "sessao", ("ativentrega.c",)),   # 23/11: a foto do cliente é tirada na entrega
     ("GET", "/ativ/pulseira", "sessao", ("ativentrega.r", "ativvenda.c")),     # v99.25: de quem é a pulseira
     ("POST", "/ativ/pulseiras", "sessao", ("ativvenda.c", "ativvenda.u", "ativvenda.d", "financeiro.u")),   # v99.28: corrigir a pulseira
     ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
@@ -16878,11 +16923,16 @@ class H(BaseHTTPRequestHandler):
             if e:
                 return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409, "cadastro": 400, "pulseira": 409}[e])
             return self.js({"ok": True})
+        if rota == "/ativ/cliente-foto":
+            e = ativ_cliente_foto_entrega(body)
+            if e:
+                return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409}[e])
+            return self.js({"ok": True})
         if rota == "/ativ/video/liga":
             e, n = ativ_video_liga(body, eu.get("usuario") or "")
             if e:
                 return self.js({"error": e}, {"dados": 400, "rascunho": 410, "nao_achou": 404, "cancelada": 409, "qr_usado": 409,
-                                              "pulseira": 409, "pulseira_usada": 409,
+                                              "pulseira": 409, "pulseira_usada": 409, "sem_foto": 409,
                                               "completa": 409, "sem_video": 409, "formato": 415,
                                               "cartao_desconhecido": 409, "cartao_cancelado": 409}[e])
             return self.js({"ok": True, "qr": body["qr"], "codigo": cartao_codigo(body["qr"]), "n": n})
@@ -18633,7 +18683,7 @@ class H(BaseHTTPRequestHandler):
             return self.ff_funcao_post()
         if u.path == "/ativ/video":
             return self.ativ_video_post(u)
-        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao"):
+        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao", "/ativ/cliente-foto"):
             return self.ativ_post(u.path)
         if u.path in ("/ativ/venda", "/ativ/cancelar", "/ativ/pulseiras"):
             return self.ativ_post(u.path)

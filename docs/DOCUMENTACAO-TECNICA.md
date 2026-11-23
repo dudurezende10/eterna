@@ -2508,3 +2508,12 @@ sequenceDiagram
 
 - A 390 px, com o reconhecimento Ligado, o texto de "Versão ligada" na Medição (`.tr-med-ver`) sai do cartão e a página rola para o lado. Não bloqueia.
 - Fora desta entrega: comparador lado a lado para o Admin, montagem na galeria (E4) e a E3.
+
+## v99.38.0 (23/11/2026): foto do cliente na entrega
+
+Pedido do Ronaldo: tirar a foto do cliente da venda (tablet) e passar para quem entrega o vídeo (notebook com câmera no campo).
+
+- **Venda:** sem botão, câmera e exigência de foto. Saíram `avFotoBotao`, `avCamPode`, `avCamAbre`, `avCamFecha`, `avCamFoto` e o texto `av_e_foto`. `avFotoJpeg` e `avFotoReduz` ficam (a entrega usa).
+- **Entrega (`aeAtend`):** bloco `aeFotoBloco(v, podeC)`. Drone e Snap Pop no passo "4. Foto do cliente"; Chute a Gol em "Foto do cliente (opcional)", depois de Chutou. Câmera de frente (`facingMode: user`, `aeFcAbre`/`aeFcTira`/`aeFcFecha`, 3 tentativas com câmera ocupada, igual à venda antes). Sem câmera ou sem permissão: escolhe arquivo (`ae-fc-arq`). A foto é reduzida a 480 px JPEG e vai por `POST /ativ/cliente-foto`; a imagem da fila ganha `&v=` para trocar na hora. A câmera do QR e a da foto não abrem juntas. `pronto` exige `v.foto` quando `aeFotoObrig(v)` (drone, snap).
+- **Agente:** `ATIV_FOTO_OBRIGATORIA = ("drone", "snap")`; `ativ_video_checa` devolve `sem_foto` (409) sem o arquivo da foto. `ativ_foto_jpeg` confere o data URL (venda e entrega). `ativ_cliente_foto_entrega`: venda ativa (404 `nao_achou`, 409 `cancelada`, 400 `dados`), grava por cima, marca `foto_busca=1` e procura as fotos do Tour numa thread. A foto some com a limpeza de sempre (`ativ_clientes_limpa`).
+- **Testes:** `ativacoes_entrega_agente.py` (sem foto não entrega, permissão, formato, venda inexistente, com foto entrega), `pulseira.js` (Entregar desligado sem foto, câmera abre, foto vai ao servidor, Entregar libera), `ativacoes_venda.js` (venda sem a foto).

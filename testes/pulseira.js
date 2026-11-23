@@ -6,7 +6,7 @@
 const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};const J=JSON.stringify;
-(async()=>{const b=await chromium.launch();
+(async()=>{const b=await chromium.launch({args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
 try{
   const ctx=await b.newContext({viewport:{width:800,height:1200}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
   const HOJE=new Date().toISOString().slice(0,10);
@@ -57,6 +57,8 @@ try{
     if(c.etapa==='voo'&&p)Object.assign(p,{voo_em:HOJE+'T10:30:00',piloto:c.piloto,drone:c.drone,bateria:c.bateria});
     if(c.etapa==='chutou'&&p){p.voo_em=HOJE+'T10:35:00';v.recebido_em=p.voo_em;}r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
   let segura=null;await ctx.route(/\/ativ\/video$/,async r=>{if(segura)await segura.p;r.fulfill({status:200,contentType:'application/json',body:J({ok:true,rascunho:'0123456789abcdef',bytes:300000,duracao:30})});});
+  const fotos=[];await ctx.route(/\/ativ\/cliente-foto$/,r=>{if(r.request().method()!=='POST')return r.fulfill({status:200,contentType:'image/jpeg',body:Buffer.from([0xff,0xd8,0xff,0xd9])});
+    const c=JSON.parse(r.request().postData());fotos.push(c);D.vendas.find(x=>x.id===c.id).foto=true;r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
   await ctx.route(/\/ativ\/video\/liga$/,r=>{const c=JSON.parse(r.request().postData());posts.push(c);const v=D.vendas.find(x=>x.id===c.venda);
     v.entregas.push({qr:c.qr,codigo:'WXYZ-2345-6789',n:1,bytes:300000,duracao:30,nuvem:true,pagina:{ok:true},subindo:null,em:HOJE+'T10:41:00',pulseira:c.pulseira,cliente:{}});v.pulseiras.find(x=>x.numero===c.pulseira).qr=c.qr;
     r.fulfill({status:200,contentType:'application/json',body:J({ok:true,qr:c.qr,codigo:'WXYZ-2345-6789',n:1})});});
@@ -89,6 +91,13 @@ try{
   ok(/Já na nuvem/.test(await txt('#ae-rasc-nuvem')),'vídeo já na nuvem antes do cartão');
   ok(await P.$('[data-act="ae-nv-liga"][disabled]'),'sem cartão não entrega');
   await P.fill('[data-act="ae-qr-txt"]','https://eterna.photo/#g/'+QRN);await P.press('[data-act="ae-qr-txt"]','Enter');await P.waitForTimeout(100);
+  // 23/11: no Drone a foto do cliente é tirada aqui, pela câmera do notebook, e sem ela não entrega
+  ok(await P.$('[data-act="ae-nv-liga"][disabled]')&&/Sem a foto do cliente o vídeo não é entregue/.test(await txt('#ae-fc')),'drone sem a foto do cliente não entrega');
+  await P.click('[data-act="ae-fc-abre"]');await P.waitForTimeout(1200);
+  ok(await P.evaluate(()=>{const v=document.getElementById('ae-fc-cam');return !!v&&v.videoWidth>0;}),'câmera do notebook aberta no atendimento');
+  await P.click('[data-act="ae-fc-tira"]');await P.waitForTimeout(500);
+  ok(fotos.length===1&&fotos[0].id==='TPUL00001D'&&/^data:image\/jpeg;base64,/.test(fotos[0].foto),'foto tirada vai ao servidor: '+fotos.length);
+  ok(/Foto do cliente salva/.test(await txt('#ae-fc'))&&await P.$('#ae-at img')&&!await P.$('[data-act="ae-nv-liga"][disabled]'),'com a foto, Entregar libera');
   await P.click('[data-act="ae-nv-liga"]');await P.waitForTimeout(500);
   ok(J(posts.slice(-1)[0])===J({rascunho:'0123456789abcdef',venda:'TPUL00001D',qr:QRN,pulseira:'123'}),'entrega com a pulseira: '+J(posts.slice(-1)));
   ok(/Vídeo entregue/.test(await txt('#ae-at'))&&/WXYZ-2345-6789/.test(await txt('#ae-at'))&&/Na nuvem/.test(await txt('#ae-at')),'atendimento mostra o vídeo entregue e na nuvem: '+await txt('#ae-at'));

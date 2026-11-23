@@ -1501,7 +1501,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.37.0 · 19/11 08:07"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.38.0 · 23/11 12:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -6129,24 +6129,10 @@ async function asGrava(L){const hoje=venueToday();L=L.filter(x=>x.est!=='enviada
 async function asCarrega(){let B=[];try{B=await asIdbLe();}catch(e){}const L=asJunta(asLer(),B);state.av.saida=L;if(B.length!==L.length||asLer().length!==L.length)await asGrava(L);return L;}
 // até 50 vendas e ~380 KB por envio (o servidor aceita 512 KB): a foto do cliente pesa uns 40 KB
 function asLote(pend){const out=[];let t=0;for(const x of pend){const n=JSON.stringify(x.v).length;if(out.length&&(t+n>380000||out.length>=50))break;out.push(x.v);t+=n;}return out;}
-// foto do cliente: reduzida no tablet (480 px, JPEG) antes de entrar na venda
+// foto do cliente: reduzida no aparelho (480 px, JPEG). 23/11: tirada na entrega, pela câmera do computador do campo
 function avFotoJpeg(src,w,h){const k=Math.min(1,480/Math.max(w,h));const c=document.createElement('canvas');c.width=Math.round(w*k);c.height=Math.round(h*k);
   c.getContext('2d').drawImage(src,0,0,c.width,c.height);let q=.75,u=c.toDataURL('image/jpeg',q);while(u.length>110000&&q>.3){q-=.15;u=c.toDataURL('image/jpeg',q);}return u;}
 async function avFotoReduz(arq){const bm=await createImageBitmap(arq);return avFotoJpeg(bm,bm.width,bm.height);}
-const avFotoBotao=()=>{const A=state.av;return (A.foto?`<img src="${A.foto}" alt="" id="av-foto-img" style="width:40px;height:40px;object-fit:cover;border-radius:50%">`:'')+(A.foto?TE('av_foto_outra'):TE('av_foto_cliente'));};
-// câmera na própria tela: só em página segura (https ou o próprio aparelho) e se ela abriu uma vez sem erro
-const avCamPode=()=>!state.av.camFalhou&&window.isSecureContext&&!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
-let avCamSt=null;
-async function avCamAbre(tent){const A=state.av;try{avCamSt=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});A.cam=true;render();}
-  catch(e){avCamFecha();
-    // 15/11: câmera ocupada por outra aba ou recém-solta (NotReadable/Abort) tenta de novo 3 vezes; só recusa de verdade (sem permissão, sem câmera) desliga o botão
-    if(e&&(e.name==='NotReadableError'||e.name==='AbortError'||e.name==='TrackStartError')&&(tent||0)<3){setTimeout(()=>{if(state.view==='ativ-venda'&&!avCamSt)avCamAbre((tent||0)+1);},700);return;}
-    if(e&&(e.name==='NotAllowedError'||e.name==='NotFoundError'||e.name==='SecurityError'))A.camFalhou=true;
-    toast(TE('av_cam_sem'));render();}}
-function avCamFecha(){if(avCamSt){try{avCamSt.getTracks().forEach(t=>t.stop());}catch(e){}}avCamSt=null;state.av.cam=false;}
-function avCamFoto(){const v=document.getElementById('av-cam');if(!v||!v.videoWidth)return;state.av.foto=avFotoJpeg(v,v.videoWidth,v.videoHeight);avCamFecha();render();}
-// a tela pode ser redesenhada com a câmera aberta (envio, Minhas vendas): o vídeo volta a mostrar a câmera
-setInterval(()=>{const v=document.getElementById('av-cam');if(avCamSt&&v&&v.srcObject!==avCamSt){v.srcObject=avCamSt;v.play&&v.play().catch(()=>{});}if(avCamSt&&state.view!=='ativ-venda')avCamFecha();},300);
 async function asEnviar(){const A=state.av;if(A.enviando)return;const pend=A.saida.filter(x=>x.est==='pendente');if(!pend.length){A.semRede=false;return;}A.enviando=true;
   try{const r=await agFetch(state.agent.url+'/ativ/venda',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendas:asLote(pend)})});
     const j=await r.json().catch(()=>null);if(!r.ok||!j||!j.ok)throw 0;const ok=new Set(j.recebidas||[]),rec=new Map((j.recusadas||[]).map(x=>[x.id,x.motivo]));
@@ -6239,7 +6225,6 @@ async function avRegistrar(forca){const A=state.av;A.err=null;if(state.assumido)
   if(A.pag==='Cortesia'&&(!A.cortMot||!A.cortNota.trim())){A.err='av_e_cort';render();return;}
   const ING=ingNorm(A.ing);if(!ING){A.err=A.ing?'av_e_ingresso_inv':'av_e_ingresso';render();return;}
   if(!A.nome.trim()){A.err='av_e_nome';render();return;}
-  if(!A.foto){A.err='av_e_foto';render();return;} // v99.23.1: a foto do cliente é obrigatória (é por ela que a entrega acha o cliente)
   const PC=avPulConfere();if(PC.erro){A.err=PC.erro;render();return;}
   const u=state.user||{};const assin=JSON.stringify(A.cart.map(l=>[l.pid,l.op,l.qtd,l.pessoas,l.k4,l.chuva]))+A.pag;
   if(!forca&&A.ultimo&&A.ultimo.assin===assin&&A.ultimo.usuario===u.email&&Date.now()-A.ultimo.em<120e3){A.dup=true;render();return;}
@@ -6248,10 +6233,10 @@ async function avRegistrar(forca){const A=state.av;A.err=null;if(state.assumido)
   const vendas=Object.entries(grupos).map(([cat,ls])=>({id:base+{drone:'D',chute:'C',snap:'S'}[cat],tipo:cat,criado,pagamento:A.pag,
     itens:ls.map(l=>{const p=avProd(l);const it={cat,produto:l.pid,op:l.op,qtd:l.qtd,videos:avVideos(l),sugerido:avSug(l),cobrado:avCob(l)};if(p&&p.pede!=='nada')it.pessoas=l.pessoas;if(l.k4)it.k4=true;if(l.chuva)it.chuva=true;return it;}),
     valor:ls.reduce((s,l)=>s+avCob(l),0),sugerido:ls.reduce((s,l)=>s+avSug(l),0),pulseiras:ls.flatMap(l=>(l._puls||[]).map((n,k)=>({n,meio:(l.pulMeio||[])[k]||'digitado',em:(l.pulEm||[])[k]||criado}))),pais:A.pais,idioma:A.idioma,
-    ingresso:ING,ingresso_meio:A.ingMeio==='camera'?'camera':'digitado',cliente_nome:A.nome.trim().slice(0,80),...(A.foto?{cliente_foto:A.foto,cliente_foto_busca:true}:{}) /* v99.29.1: a foto da venda sempre procura as fotos do Tour e do drone */,vendedor:u.name||u.email||'',usuario:u.email||'',...(A.pag==='Cortesia'?{cortesia_motivo:A.cortMot,cortesia_nota:A.cortNota.trim().slice(0,1000)}:{})}));
+    ingresso:ING,ingresso_meio:A.ingMeio==='camera'?'camera':'digitado',cliente_nome:A.nome.trim().slice(0,80),vendedor:u.name||u.email||'',usuario:u.email||'',...(A.pag==='Cortesia'?{cortesia_motivo:A.cortMot,cortesia_nota:A.cortNota.trim().slice(0,1000)}:{})}));
   const L=asJunta(asLer(),state.av.saida).concat(vendas.map(v=>({v,est:'pendente'})));
   if(!(await asGrava(L))){A.err='av_e_gravar';render();return;} // nada ficou gravado: o carrinho continua
-  A.ultimo={assin,usuario:u.email,em:Date.now()};A.dup=null;A.cart=[];A.pulUsada={};A.pag=null;A.cortMot='';A.cortNota='';A.ing='';A.ingMeio=null;A.nome='';A.foto=null;A.pais='';A.idioma='';A.pessoas=1;
+  A.ultimo={assin,usuario:u.email,em:Date.now()};A.dup=null;A.cart=[];A.pulUsada={};A.pag=null;A.cortMot='';A.cortNota='';A.ing='';A.ingMeio=null;A.nome='';A.pais='';A.idioma='';A.pessoas=1;
   toast(TE('av_registrada',avNumero(base)));render();asEnviar();}
 function avSituacao(x){const s=state.av.srv[x.v.id];if(s&&s.situacao==='cancelada')return ['cancelada',TE('av_s_cancelada')];
   // v99.30.2: já no servidor, a situação é a do atendimento (o vendedor vê se o cliente foi atendido)
@@ -6269,9 +6254,6 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const todas=ATIV_PERFIL_
   const topo=`<div class="head"><div><h1>${esc(viewLabel('ativ-venda'))}</h1></div><div style="text-align:right"><div id="av-quem"><b>${esc(u.name||u.email||'')}</b> <span class="note">· ${TE('av_vendedor')}</span></div><div style="margin-top:4px">${status}</div></div></div>
   <div class="chips" role="tablist" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"><button class="chip" style="min-height:44px" role="tab" data-act="av-aba" data-v="nova" aria-selected="${A.aba==='nova'}" aria-pressed="${A.aba==='nova'}">${TE('av_nova')}</button><button class="chip" style="min-height:44px" role="tab" data-act="av-aba" data-v="minhas" aria-selected="${A.aba==='minhas'}" aria-pressed="${A.aba==='minhas'}">${TE('av_minhas')}</button></div>
   ${rec||pend?`<div class="panel" id="av-saida"><div class="note">${rec?TE('av_recusadas_txt'):A.semRede?TE('av_sem_rede_txt'):TE('av_pendentes_txt')}</div><div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap"><button class="btn ghost" data-act="av-enviar">${TE('av_enviar_agora')}</button><button class="btn ghost" data-act="av-exportar">${TE('av_exportar')}</button></div></div>`:''}`;
-  const camera=A.cam?`<div id="av-camera" role="dialog" aria-modal="true" style="position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
-    <video id="av-cam" autoplay playsinline muted style="max-width:100%;max-height:75vh;border-radius:10px"></video>
-    <div class="row" style="gap:16px"><button class="btn primary" style="min-width:180px;min-height:64px;font-size:1.15rem" data-act="av-cam-foto">${TE('av_cam_foto')}</button><button class="btn ghost" style="min-height:64px;background:#fff" data-act="av-cam-fecha">${TE('av_cancelar')}</button></div></div>`:'';
   const player=A.demo?`<div id="av-demo" role="dialog" aria-modal="true" style="position:fixed;inset:0;z-index:50;background:#000;display:flex;align-items:center;justify-content:center">${A.demo.url?`<video src="${esc(A.demo.url)}" autoplay loop playsinline muted controls style="max-width:100%;max-height:100%"></video>`:`<div style="color:#fff;padding:24px;text-align:center">${TE('av_sem_video')}</div>`}<button class="btn" data-act="av-demo-fechar" style="position:absolute;top:12px;right:12px;min-width:56px;min-height:56px;font-size:1.4rem" aria-label="${esc(TE('av_fechar_video'))}">✕</button></div>`:'';
   if(A.aba==='minhas')return topo+avMinhas()+player;
   let prods=ativLista(A.cat).filter(ativVendavel);const grupos=avGrupos(prods);let subTabs='';
@@ -6293,16 +6275,14 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const todas=ATIV_PERFIL_
       ${A.pessoas>AV_PESSOAS_CHIPS?`<div class="row" style="gap:10px;align-items:center;margin-top:8px"><button class="btn ghost" style="min-height:48px;min-width:56px;font-size:1.3rem" data-act="av-pessoas" data-v="${A.pessoas-1}" aria-label="−1">−</button><b style="font-size:1.2rem;min-width:110px;text-align:center" aria-live="polite">${TE('av_n_pessoas',A.pessoas)}</b><button class="btn ghost" style="min-height:48px;min-width:56px;font-size:1.3rem" data-act="av-pessoas" data-v="${A.pessoas+1}" aria-label="+1" ${A.pessoas>=AV_MAX_PESSOAS?'disabled':''}>+</button></div>`:''}</div>`:''}
     ${subTabs}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:14px">${prods.length?prods.map(card).join(''):`<div class="note">${TE('av_sem_produto')}</div>`}</div></div>
   ${A.cart.length?`<div class="panel" id="av-cart" style="border:2px solid var(--accent,#134078)"><h2>${TE('av_carrinho')}</h2>${A.cart.map(linha).join('')}
-    <div class="row" style="justify-content:space-between;gap:12px;margin-top:10px;flex-wrap:wrap"><span class="note">${TE('av_passo_cliente')}</span><span class="row" style="gap:8px;align-items:center">${A.foto?`<img src="${A.foto}" alt="" style="width:36px;height:36px;object-fit:cover;border-radius:50%">`:''}<b id="av-res-cli">${esc(avResCli())}</b></span></div>
+    <div class="row" style="justify-content:space-between;gap:12px;margin-top:10px;flex-wrap:wrap"><span class="note">${TE('av_passo_cliente')}</span><b id="av-res-cli">${esc(avResCli())}</b></div>
     <div class="row" style="justify-content:space-between;gap:12px;margin-top:6px"><span class="note">${TE('av_pagamento')}</span><b>${A.pag?esc(avPagNome(A.pag)):'—'}</b></div>
     <div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"><span>${TE('av_total')}</span><b style="font-size:1.6rem" id="av-total">${fmtR(cob)}</b></div></div>`:''}
   <div class="panel" id="av-cliente"><h2>${TE('av_passo_cliente')}</h2>
     <div class="row" style="gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:12px"><label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_ingresso')}</span><input data-act="av-ing" id="av-ing" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${esc(TE('av_ingresso_ph'))}" style="width:100%;min-height:48px;font-family:ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase" value="${esc(A.ing)}"></label>
       <button class="btn ghost" style="min-height:48px;display:flex;align-items:center;gap:10px" data-act="av-ing-cam">${TE('av_ingresso_ler')}</button></div>
     ${A.ing&&ingNorm(A.ing)?`<div class="note" id="av-ing-ok" style="margin:-6px 0 12px">${TE(A.ingMeio==='camera'?'av_ingresso_lido':'av_ingresso_digitado',esc(ingNorm(A.ing)))}</div>`:''}
-    <div class="row" style="gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:12px"><label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_nome_cliente')}</span><input data-act="av-nome" maxlength="80" autocomplete="off" style="width:100%;min-height:48px" value="${esc(A.nome)}"></label>
-      ${avCamPode()?`<button class="btn ghost" style="min-height:48px;display:flex;align-items:center;gap:10px" data-act="av-cam-abre">${avFotoBotao()}</button>`
-        :`<label class="btn ghost" style="min-height:48px;display:flex;align-items:center;gap:10px;cursor:pointer">${avFotoBotao()}<input type="file" accept="image/*" capture="environment" data-act="av-foto" style="display:none"></label>`}</div>
+    <div class="row" style="gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:12px"><label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_nome_cliente')}</span><input data-act="av-nome" maxlength="80" autocomplete="off" style="width:100%;min-height:48px" value="${esc(A.nome)}"></label></div>
     <div class="row" style="gap:12px;flex-wrap:wrap">
     <label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_pais')}</span><select class="av-pais" data-act="av-pais" style="width:100%;min-height:48px">${avOpcoesPais(A.pais)}</select></label>
     <label style="flex:1;min-width:220px"><span class="eyebrow">${TE('av_idioma')}</span><select data-act="av-idioma" style="width:100%;min-height:48px"><option value="">${esc(TE('av_idioma_ph'))}</option>${AV_IDIOMAS.map(([l,c])=>{const n=avNomeIdioma(l,'pt-BR');return `<option value="${esc(n)}" ${A.idioma===n?'selected':''}>${esc(avNomeIdioma(l))}</option>`;}).join('')}<option value="Outro" ${A.idioma==='Outro'?'selected':''}>${TE('av_outro')}</option></select></label></div></div>
@@ -6310,7 +6290,7 @@ function vAtivVenda(){const A=state.av,u=state.user||{};const todas=ATIV_PERFIL_
     ${A.pag==='Cortesia'?`<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px"><label><span class="eyebrow">${TE('av_cort_motivo')}</span><select data-act="av-cmot" style="width:100%;min-height:48px">${cortOpcoes(A.cortMot,'nome')}</select></label><label><span class="eyebrow">${TE('av_cort_nota')}</span><textarea data-act="av-cnota" maxlength="1000" rows="4" style="width:100%;font:inherit;padding:10px;resize:vertical">${esc(A.cortNota)}</textarea></label></div>`:''}</div>
   ${A.err?`<div class="panel" role="alert" id="av-erro" style="border-color:var(--bad)"><b>${TE(A.err)}</b></div>`:''}
   ${A.dup?`<div class="panel" role="alert" id="av-dup"><b>${TE('av_dup')}</b><div class="row" style="gap:8px;margin-top:8px"><button class="btn primary" data-act="av-dup-sim">${TE('av_dup_sim')}</button><button class="btn ghost" data-act="av-dup-nao">${TE('av_dup_nao')}</button></div></div>`:''}
-  <div class="panel" style="position:sticky;bottom:0;z-index:2"><button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem" data-act="av-registrar" ${A.cart.length?'':'disabled'}>${TE('av_registrar',fmtR(cob))}</button></div>`+player+camera;}
+  <div class="panel" style="position:sticky;bottom:0;z-index:2"><button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem" data-act="av-registrar" ${A.cart.length?'':'disabled'}>${TE('av_registrar',fmtR(cob))}</button></div>`+player;}
 // v99.28: as pulseiras de uma venda da lista: do servidor (enviada) ou da caixa de saída (ainda no tablet)
 const avPulTotal=v=>(v.itens||[]).reduce((s,i)=>s+((+i.videos)||(+i.qtd)||1),0);
 function avPulsDe(x){const s=state.av.srv[x.v.id];if(s&&Array.isArray(s.pulseiras))return s.pulseiras;
@@ -6381,10 +6361,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
   else if(a==='av-registrar'){avRegistrar(false);return;}
   else if(a==='av-dup-sim'){avRegistrar(true);return;}
   else if(a==='av-dup-nao')A.dup=null;
-  else if(a==='av-cam-abre'){avCamAbre();return;}
   else if(a==='av-ing-cam'){pulCamAbre(n=>{const A=state.av;A.ing=n;A.ingMeio='camera';A.ingEm=new Date().toISOString();if(A.err==='av_e_ingresso'||A.err==='av_e_ingresso_inv')A.err=null;render();},ingNorm,'av_ingresso_aponte');return;}
-  else if(a==='av-cam-foto'){avCamFoto();return;}
-  else if(a==='av-cam-fecha'){avCamFecha();}
   else if(a==='av-enviar'){asEnviar();return;}
   else if(a==='av-exportar'){avExportar();return;}
   else if(a==='av-cancelar')A.cancel=el.dataset.id;
@@ -6399,7 +6376,6 @@ document.addEventListener('change',e=>{const t=e.target,a=t.dataset&&t.dataset.a
   if(a==='av-k4')A.k4[t.dataset.id]=t.checked;
   else if(a==='av-local')A.local[t.dataset.id]=t.value;else if(a==='av-pais')A.pais=t.value;else if(a==='av-idioma')A.idioma=t.value;
   else if(a==='av-cmot')A.cortMot=t.value;
-  else if(a==='av-foto'&&t.files&&t.files[0]){avFotoReduz(t.files[0]).then(u=>{A.foto=u;render();}).catch(()=>toast(TE('av_foto_erro')));return;}
   else return;render();});
 document.addEventListener('input',e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-venda')return;if(a==='av-pul')avPulSet(+t.dataset.i,+t.dataset.k,t.value);else if(a==='av-pe-num'&&state.av.pedit){state.av.pedit.vals[+t.dataset.slot]=t.value.replace(/\D/g,'').slice(0,12);state.av.pedit.meio[+t.dataset.slot]='digitado';}else if(a==='av-cnota')state.av.cortNota=t.value;else if(a==='av-ing'){const v=t.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,12);if(v!==t.value)t.value=v;state.av.ing=v;state.av.ingMeio='digitado';}else if(a==='av-nome'){state.av.nome=t.value;const r=document.getElementById('av-res-cli');if(r)r.textContent=avResCli();}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.view==='ativ-venda'&&state.av.demo){state.av.demo=null;render();}});
@@ -6478,13 +6454,35 @@ const aeItensTxt=v=>v.itens.map(i=>{const p=state.ativ.produtos[i.produto]||ATIV
 const aeMB=b=>(b/1048576).toFixed(b<10485760?1:0).replace('.',',')+' MB';
 // ---- leitura do QR do cartão: câmera (BarcodeDetector) ou leitor/pistola, que digita o link e dá Enter ----
 let aeCam=null;
-async function aeCamLiga(){const E=state.ae.nv;if(!E)return;const det=navigator.mediaDevices?await qrLeitor():null;if(!det){E.semCam=true;render();return;}
+async function aeCamLiga(){const E=state.ae.nv;if(!E)return;aeFcFecha();const det=navigator.mediaDevices?await qrLeitor():null;if(!det){E.semCam=true;render();return;}
   try{const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
     aeCam={st,det,vivo:true};E.cam=true;render();const v=document.getElementById('ae-cam');if(v){v.srcObject=st;await v.play().catch(()=>{});}
     const roda=async()=>{if(!aeCam||!aeCam.vivo)return;const vv=document.getElementById('ae-cam');
       if(vv&&vv.readyState>=2){try{const cs=await det.detect(vv);const t=cs.map(c=>cartaoToken(c)).find(Boolean);if(t){aeQrLido(t);return;}}catch(e){}}
       setTimeout(roda,250);};roda();}
   catch(e){E.semCam=true;E.cam=false;render();}}
+// 23/11 (Ronaldo): a foto do cliente é tirada aqui, na entrega, pela câmera do notebook (de frente); sem câmera, escolhe arquivo
+let aeFcSt=null;
+const aeFcPode=()=>!state.ae.fcFalhou&&window.isSecureContext&&!!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
+const aeFotoObrig=v=>v.tipo==='drone'||v.tipo==='snap';
+async function aeFcAbre(vid,tent){const A=state.ae;aeCamDesliga();
+  try{aeFcSt=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280}},audio:false});A.fc={venda:vid,cam:true};render();}
+  catch(e){aeFcFecha();
+    if(e&&(e.name==='NotReadableError'||e.name==='AbortError'||e.name==='TrackStartError')&&(tent||0)<3){setTimeout(()=>{if(state.view==='ativ-entrega'&&!aeFcSt)aeFcAbre(vid,(tent||0)+1);},700);return;}
+    if(e&&(e.name==='NotAllowedError'||e.name==='NotFoundError'||e.name==='SecurityError'))A.fcFalhou=true;
+    toast(TE('av_cam_sem'));render();}}
+function aeFcFecha(){if(aeFcSt){try{aeFcSt.getTracks().forEach(t=>t.stop());}catch(e){}}aeFcSt=null;if(state.ae.fc)state.ae.fc.cam=false;}
+async function aeFcEnvia(vid,foto){const A=state.ae;A.fc={venda:vid,enviando:true};render();const j=await aeAcao({id:vid,foto},'/ativ/cliente-foto');A.fc=null;
+  if(j){(A.fotoV=A.fotoV||{})[vid]=Date.now();toast(TE('ae_foto_salva'));await aePull();}render();}
+function aeFcTira(){const el=document.getElementById('ae-fc-cam'),vid=state.ae.fc&&state.ae.fc.venda;if(!el||!el.videoWidth||!vid)return;const f=avFotoJpeg(el,el.videoWidth,el.videoHeight);aeFcFecha();aeFcEnvia(vid,f);}
+setInterval(()=>{const el=document.getElementById('ae-fc-cam');if(aeFcSt&&el&&el.srcObject!==aeFcSt){el.srcObject=aeFcSt;el.play&&el.play().catch(()=>{});}if(aeFcSt&&(state.view!=='ativ-entrega'||!state.ae.at))aeFcFecha();},300);
+function aeFotoBloco(v,podeC){const A=state.ae,F=A.fc&&A.fc.venda===v.id?A.fc:null,obrig=aeFotoObrig(v);
+  if(F&&F.cam)return `<div id="ae-fc"><video id="ae-fc-cam" autoplay playsinline muted style="width:100%;max-height:45vh;background:#000;border-radius:8px;transform:scaleX(-1)"></video>
+    <div class="row" style="gap:8px;margin-top:8px"><button class="btn primary" style="flex:1;min-height:56px;font-size:1.1rem" data-act="ae-fc-tira">${TE('av_cam_foto')}</button><button class="btn ghost" style="min-height:56px" data-act="ae-fc-fecha">${TE('av_cancelar')}</button></div></div>`;
+  const rot=v.foto?TE('av_foto_outra'):TE('av_foto_cliente');
+  const bt=!podeC?'':F&&F.enviando?`<span class="note">${TE('ae_foto_enviando')}</span>`:aeFcPode()?`<button class="btn ${v.foto?'ghost':'primary'}" style="min-height:52px" data-act="ae-fc-abre" data-id="${esc(v.id)}">${rot}</button>`
+    :`<label class="btn ${v.foto?'ghost':'primary'}" style="min-height:52px;display:flex;align-items:center;cursor:pointer">${rot}<input type="file" accept="image/*" capture="user" data-act="ae-fc-arq" data-id="${esc(v.id)}" style="display:none"></label>`;
+  return `<div id="ae-fc" class="row" style="gap:12px;align-items:center;flex-wrap:wrap">${aeFoto(v,72)}<span class="note" style="flex:1;min-width:180px;margin:0${!v.foto&&obrig?';color:var(--bad);font-weight:600':''}">${TE(v.foto?'ae_foto_ok':obrig?'ae_foto_falta':'ae_foto_opc_dica')}</span>${bt}</div>`;}
 function aeCamDesliga(){if(aeCam){aeCam.vivo=false;try{aeCam.st.getTracks().forEach(t=>t.stop());}catch(e){}aeCam=null;}if(state.ae.nv)state.ae.nv.cam=false;}
 function aeQrLido(t){const E=state.ae.nv;if(!E)return;aeCamDesliga();const usado=(state.ae.dados&&state.ae.dados.vendas||[]).some(v=>v.entregas.some(x=>x.qr===t));
   if(usado){E.err='ae_e_qr_usado';E.qr=null;}else{E.qr=t;E.err=null;}try{navigator.vibrate&&navigator.vibrate(80);}catch(e){}render();}
@@ -6528,7 +6526,7 @@ async function aePulAbre(raw){const A=state.ae,n=pulNorm(raw);A.pulOpc=null;if(!
   if(achou[0].dia!==A.dia){A.dia=achou[0].dia;A.dados=null;await aePull();}
   aeAtAbre(achou[0].venda,n);}
 function aeAtAbre(venda,n){const A=state.ae;aeCamDesliga();if(A.nv&&!A.nv.chave)aeDescarta();A.at={venda,numero:n};A.nv=A.nvs[aeChave(venda,n)]||null;A.pulErr=null;A.pulOpc=null;A.voo=null;render();window.scrollTo&&window.scrollTo(0,0);}
-function aeAtFecha(){const A=state.ae;aeCamDesliga();if(A.nv&&!A.nv.chave)aeDescarta();A.nv=null;A.at=null;A.pulErr=null;A.pulOpc=null;render();}
+function aeAtFecha(){const A=state.ae;aeCamDesliga();aeFcFecha();A.fc=null;if(A.nv&&!A.nv.chave)aeDescarta();A.nv=null;A.at=null;A.pulErr=null;A.pulOpc=null;render();}
 // estado de cada vídeo por pulseira: aguarda, voando (drone) / em andamento, vídeo entregue
 function aePulEstado(v,p){if(p.qr)return 'entregue';if(v.tipo==='drone')return p.voo_em?'voando':'aguarda';
   if(v.tipo==='chute'){if(!p.voo_em)return 'aguarda';return (v.fisicos||[]).some(x=>!x.entregue)?'andamento':'entregue';} // v99.30: o chute é a entrega (o vídeo, se houver, não segura)
@@ -6624,13 +6622,14 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
         ${N.semCam?`<div class="note" role="alert" style="margin-top:6px">${TE('ae_sem_camera')}</div>`:''}
         <label style="display:block;margin-top:10px"><span class="eyebrow">${TE('ae_qr_manual')}</span><input data-act="ae-qr-txt" style="width:100%;min-height:44px" autocomplete="off" placeholder="https://eterna.photo/#g/…"></label>`
       :`<div class="row" style="justify-content:space-between;align-items:center"><span>${TE('ae_cartao')} <b>${esc(cartaoCodigo(N.qr))}</b></span><button class="btn ghost" data-act="ae-qr-troca">${TE('ae_trocar_cartao')}</button></div>`):`<div class="note">${TE('ae_cartao_depois')}</div>`;
-  const pronto=!!(N&&(N.rascunho||(N.subindo&&!N.auto))&&N.qr&&voa);
+  const pronto=!!(N&&(N.rascunho||(N.subindo&&!N.auto))&&N.qr&&voa&&(v.foto||!aeFotoObrig(v)));
   // v99.30.3: Chute a Gol com vídeo: Chutou conclui o atendimento; o vídeo (não é do drone) é opcional e pode vir depois
   if(chute){const falta=(v.fisicos||[]).some(x=>!x.entregue);
     if(!chutouEm)return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid var(--accent,#134078)">${topo(false)}
       <h2 style="margin-top:16px">${TE('ae_at_p1_chute')}</h2><div class="note">${TE('ae_ch_dica')}</div>${btChutou}${fis}</div>`;
     return `<div class="panel" id="ae-at" data-ae-at="${esc(p.numero)}" style="border:2px solid ${falta?'var(--accent,#134078)':'var(--good,#1b7f3b)'}">${topo(true)}
       <div style="margin-top:14px"><b style="font-size:1.15rem">${TE(falta?'ae_ch_itens':'ae_ch_pronto',chutouEm)}</b></div>${fis}
+      <h2 style="margin-top:18px">${TE('ae_foto_opc')}</h2>${aeFotoBloco(v,podeC)}
       ${podeC?`<h2 style="margin-top:18px">${TE('ae_ch_video')}</h2>${passo2}${N?`<div style="margin-top:10px">${passo3}</div>
       ${N.err?`<div class="note" role="alert" style="color:var(--bad);margin-top:8px"><b>${TEk(N.err,TE('ae_e_servidor'))}</b></div>`:''}
       <button class="btn primary" style="width:100%;min-height:56px;margin-top:10px" data-act="ae-nv-liga" ${pronto?'':'disabled'}>${N.auto?TE('ae_entrega_marcada'):N.subindo&&N.qr?TE('ae_entregar_ao_subir'):TE('ae_entregar')}</button>`:''}`:''}
@@ -6639,6 +6638,7 @@ function aeAtend(){const A=state.ae,L=A.dados?A.dados.vendas:[];const v=L.find(x
     <h2 style="margin-top:16px">${TE(chute?'ae_at_p1_chute':v.tipo==='drone'?'ae_at_p1_drone':'ae_at_p1')}</h2>${passo1}
     <h2 style="margin-top:16px">${TE('ae_at_p2')}</h2>${podeC?passo2:''}
     <h2 style="margin-top:16px">${TE('ae_at_p3')}</h2>${passo3}
+    <h2 style="margin-top:16px">${TE('ae_at_p4')}</h2>${aeFotoBloco(v,podeC)}
     ${N&&N.err?`<div class="note" role="alert" style="color:var(--bad);margin-top:8px"><b>${TEk(N.err,TE('ae_e_servidor'))}</b></div>`:''}
     ${podeC?`<button class="btn primary" style="width:100%;min-height:56px;font-size:1.1rem;margin-top:14px" data-act="ae-nv-liga" ${pronto?'':'disabled'}>${N&&N.auto?TE('ae_entrega_marcada'):N&&N.subindo&&N.qr?TE('ae_entregar_ao_subir'):TE('ae_entregar')}</button>`:''}${N&&N.auto?`<div class="note" style="margin-top:6px">${TE('ae_entrega_marcada_dica')}</div>`:''}${fis}</div>`;}
 async function aeCancelaVenda(id,motivo){if(!motivo){toast(TE('av_cancel_motivo'));return;}
@@ -6673,7 +6673,7 @@ function aeCartao(v){const A=state.ae,podeU=can('ativentrega','u');const F=A.voo
     ${F?`<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px" id="ae-voo-form">${sel('piloto',TE('ae_piloto'))}${sel('drone',TE('ae_drone'))}${sel('bateria',TE('ae_bateria'))}<div class="row" style="gap:6px"><button class="btn primary" style="flex:1;min-height:44px" data-act="ae-voo-ok" data-id="${esc(v.id)}">${TE('ae_voo_ok')}</button><button class="btn ghost" style="min-height:44px" data-act="ae-voo-nao">${TE('av_dup_nao')}</button></div></div>
       ${!((cad.piloto||[]).some(x=>x.ativo)&&(cad.drone||[]).some(x=>x.ativo)&&(cad.bateria||[]).some(x=>x.ativo))?`<div class="note" role="alert">${TE('ae_sem_cadastro')}</div>`:''}`:''}</div>`;}
 const ICO_QR='<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/></svg>';
-const aeFoto=(v,px)=>v.foto?`<img src="${esc(state.agent.url)}/ativ/cliente-foto?id=${encodeURIComponent(v.id)}" alt="" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:50%;flex:none">`:'';
+const aeFoto=(v,px)=>v.foto?`<img src="${esc(state.agent.url)}/ativ/cliente-foto?id=${encodeURIComponent(v.id)}&v=${(state.ae.fotoV||{})[v.id]||''}" alt="" style="width:${px}px;height:${px}px;object-fit:cover;border-radius:50%;flex:none">`:'';
 function aeSel(v,t,rot){ // v: a venda ou a pulseira (o voo fica na pulseira desde a v99.25)
 const cad=(state.ae.dados&&state.ae.dados.cadastros)||{};return `<label style="flex:1;min-width:120px"><span class="eyebrow">${rot}</span><select data-ae-voo="${t}" style="width:100%;min-height:44px"><option value="">—</option>${(cad[t]||[]).filter(x=>x.ativo).map(x=>`<option ${(v[t]||(state.ae.vooSel||{})[t])===x.nome?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></label>`;}
 // topo da tela: soltar o vídeo, conferir, escolher a venda do dia (lixeira para cancelar), ler o cartão e entregar
@@ -6741,6 +6741,9 @@ document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.
   else if(a==='ae-voo-ok'){const f=document.getElementById('ae-voo-form');const g=t=>(f.querySelector(`[data-ae-voo="${t}"]`)||{}).value||'';const c={id,etapa:'voo',piloto:g('piloto'),drone:g('drone'),bateria:g('bateria')};
     if(!c.piloto||!c.drone||!c.bateria){toast(TE('ae_e_cadastro'));return;}if(await aeAcao(c)){A.voo=null;A.vooSel=null;await aePull();}}
   else if(a==='ae-cam'){aeCamLiga();return;}
+  else if(a==='ae-fc-abre'){aeFcAbre(id);return;}
+  else if(a==='ae-fc-tira'){aeFcTira();return;}
+  else if(a==='ae-fc-fecha'){aeFcFecha();}
   else if(a==='ae-qr-troca'&&A.nv){A.nv.qr=null;A.nv.err=null;}
   else if(a==='ae-nv-descarta'){aeDescarta();}
   else if(a==='ae-nv-venda'&&A.nv){A.nv.venda=A.nv.venda===id?null:id;A.nv.err=null;A.nv.cancel=null;}
@@ -6767,6 +6770,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.
 document.addEventListener('change',e=>{const t=e.target;if(state.view==='ativ-entrega'&&t.dataset&&t.dataset.aeVoo){state.ae.vooSel={...(state.ae.vooSel||{}),[t.dataset.aeVoo]:t.value};}});
 document.addEventListener('change',async e=>{const t=e.target,a=t.dataset&&t.dataset.act;if(state.view!=='ativ-entrega'||!a)return;const A=state.ae;
   if(a==='ae-item'&&t.checked){t.disabled=true;if(await aeAcao({id:t.dataset.id,etapa:'item',i:+t.dataset.i}))await aePull();else{t.checked=false;t.disabled=false;}}
+  else if(a==='ae-fc-arq'&&t.files&&t.files[0]){const f=t.files[0],vid=t.dataset.id;t.value='';avFotoReduz(f).then(u=>aeFcEnvia(vid,u)).catch(()=>toast(TE('av_foto_erro')));}
   else if(a==='ae-arquivo'&&t.files&&t.files[0]){const f=t.files[0];t.value='';aeSolta(f);} // value limpo: o mesmo arquivo de novo também vale
 });
 document.addEventListener('keydown',e=>{const t=e.target;if(state.view!=='ativ-entrega'||!t.dataset||t.dataset.act!=='ae-pul-txt'||e.key!=='Enter')return;e.preventDefault();aePulAbre(t.value);});
@@ -10923,7 +10927,6 @@ const EQ={
   av_ingresso_digitado:[n=>"Ingresso "+n+" digitado",n=>"Ticket "+n+" typed",n=>"Entrada "+n+" digitada",n=>"Billet "+n+" saisi",n=>"Ticket "+n+" eingegeben"],
   av_e_ingresso:["Leia o QR do ingresso do cliente ou digite o localizador","Scan the customer's ticket QR or type the locator","Lee el QR de la entrada del cliente o escribe el localizador","Lisez le QR du billet du client ou saisissez le localisateur","Ticket-QR des Kunden scannen oder Buchungscode eingeben"],
   av_e_ingresso_inv:["Localizador inválido: são 12 caracteres, 4 números do mês e dia e 8 letras e números. O número de reimpressão não vale.","Invalid locator: 12 characters, 4 digits for month and day and 8 letters and numbers. The reprint number does not count.","Localizador inválido: son 12 caracteres, 4 números del mes y día y 8 letras y números. El número de reimpresión no vale.","Localisateur invalide : 12 caractères, 4 chiffres du mois et du jour et 8 lettres et chiffres. Le numéro de réimpression ne compte pas.","Ungültiger Buchungscode: 12 Zeichen, 4 Ziffern für Monat und Tag und 8 Buchstaben und Ziffern. Die Nachdrucknummer gilt nicht."],
-  av_e_foto:["Tire a foto do cliente","Take the customer's photo","Toma la foto del cliente","Prenez la photo du client","Foto des Kunden aufnehmen"],
   av_e_nome:["Escreva o nome do cliente","Write the customer's name","Escribe el nombre del cliente","Écrivez le nom du client","Namen des Kunden eingeben"],
   av_cort_nota:["Conte o que aconteceu","Tell what happened","Cuenta lo que pasó","Racontez ce qui s'est passé","Beschreiben Sie, was passiert ist"],
   av_pais:["País do cliente","Customer's country","País del cliente","Pays du client","Land des Kunden"],
@@ -11058,6 +11061,14 @@ const EQ={
   ae_at_p1:["1. Começar","1. Start","1. Empezar","1. Commencer","1. Starten"],
   ae_at_p2:["2. Vídeo","2. Video","2. Video","2. Vidéo","2. Video"],
   ae_at_p3:["3. Cartão com QR","3. QR card","3. Tarjeta con QR","3. Carte QR","3. QR-Karte"],
+  ae_at_p4:["4. Foto do cliente","4. Customer photo","4. Foto del cliente","4. Photo du client","4. Foto des Kunden"],
+  ae_foto_opc:["Foto do cliente (opcional)","Customer photo (optional)","Foto del cliente (opcional)","Photo du client (facultative)","Foto des Kunden (optional)"],
+  ae_foto_falta:["Sem a foto do cliente o vídeo não é entregue","Without the customer photo the video is not delivered","Sin la foto del cliente el video no se entrega","Sans la photo du client, la vidéo n'est pas livrée","Ohne Foto des Kunden wird das Video nicht übergeben"],
+  ae_foto_opc_dica:["Com a foto, o cliente acha também as fotos do Tour","With the photo, the customer also finds the Tour photos","Con la foto, el cliente también encuentra las fotos del Tour","Avec la photo, le client retrouve aussi les photos du Tour","Mit dem Foto findet der Kunde auch die Tour-Fotos"],
+  ae_foto_ok:["Foto do cliente salva","Customer photo saved","Foto del cliente guardada","Photo du client enregistrée","Foto des Kunden gespeichert"],
+  ae_foto_salva:["Foto salva","Photo saved","Foto guardada","Photo enregistrée","Foto gespeichert"],
+  ae_foto_enviando:["Salvando a foto…","Saving the photo…","Guardando la foto…","Enregistrement de la photo…","Foto wird gespeichert…"],
+  ae_e_sem_foto:["Tire a foto do cliente antes de entregar","Take the customer photo before delivering","Toma la foto del cliente antes de entregar","Prenez la photo du client avant de livrer","Vor der Übergabe Foto des Kunden aufnehmen"],
   ae_cartao_depois:["Depois do vídeo, leia o cartão novo","After the video, scan the new card","Después del video, lee la tarjeta nueva","Après la vidéo, scannez la nouvelle carte","Nach dem Video die neue Karte scannen"],
   ae_entregar:["Entregar","Deliver","Entregar","Livrer","Übergeben"],
   ae_comecou_as:[h=>"Começou às "+h,h=>"Started at "+h,h=>"Empezó a las "+h,h=>"Commencé à "+h,h=>"Begonnen um "+h],

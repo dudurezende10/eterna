@@ -187,7 +187,7 @@ Cliente recebe um cartão com QR
     <tr><td>Vendedor do balcão</td><td>Atende a família no Posto de venda, escolhe o pacote, cobra e confere a impressão</td></tr>
     <tr><td>Caixa</td><td>Confirma o dinheiro recebido, no próprio Posto de venda</td></tr>
     <tr><td>Família</td><td>Olha para a câmera, escolhe as fotos e recebe impressas ou no celular</td></tr>
-    <tr><td>Vendedor do tablet</td><td>Vende Drone, Chute a Gol e Snap Pop, tira a foto do cliente e lê a pulseira</td></tr>
+    <tr><td>Vendedor do tablet</td><td>Vende Drone, Chute a Gol e Snap Pop e lê a pulseira</td></tr>
     <tr><td>Piloto e equipe de entrega</td><td>No campo, leem a pulseira, voam ou gravam, soltam o vídeo e entregam o cartão com QR</td></tr>
     <tr><td>Supervisor</td><td>Acompanha a operação e os números, desliga um produto no dia</td></tr>
     <tr><td>TI</td><td>Dá suporte a distância, cuida do servidor e da nuvem e libera novas versões</td></tr>
@@ -682,7 +682,7 @@ Pulseira gravada na venda
 <pre class="fluxo">
 ! Lê a pulseira
 >
-Abre o atendimento: foto, nome, pulseira
+Abre o atendimento: nome, pulseira
 >
 Decolar: piloto, drone e bateria (Chute e Snap: Começar)
 >
@@ -690,6 +690,7 @@ Solta o vídeo na tela e confere
 >
 ? Lê o cartão com QR: vale? | Não: Recusado: já usado, de lote cancelado ou fora de lote
 > Sim
+Tira a foto do cliente na câmera do computador
 Entregar; baixa de medalha e bola
 >
 = Próximo cliente
@@ -699,6 +700,7 @@ Entregar; baixa de medalha e bola
     <li>O drone pousa, alguém abre o cartão de memória no computador do campo e arrasta o vídeo para a tela, ou escolhe o arquivo. O vídeo já é daquela pulseira. Ele toca ali mesmo, para conferir.</li>
     <li><b>Decolar</b> pede piloto, drone e bateria, escolhidos do cadastro. O cadastro liga e desliga, nunca apaga. Já vem com a frota do sistema antigo; os pilotos entram pela tela.</li>
     <li>O cartão com QR é lido pela câmera do computador ou por um leitor que digita o número. Se o QR não ler, a equipe digita o código de 12 letras impresso no cartão.</li>
+    <li>A <b>foto do cliente</b> é tirada aqui, pela câmera do computador, e não mais na venda. No Drone e no Snap Pop, sem a foto o vídeo não é entregue; no Chute a Gol ela é opcional. Com a foto, o cliente acha também as fotos dele do Tour.</li>
     <li><b>Entregar</b> liga o vídeo à venda e ao cartão. A partir daí, o cartão é a chave do cliente. Depois, <b>Próximo cliente</b> limpa a tela.</li>
     <li>A venda fica <b>entregue</b>, com data e hora, quando todos os vídeos têm cartão e todos os itens físicos tiveram baixa. Venda entregue não cancela.</li>
     <li>A faixa <b>Agora</b> mostra quem está voando ou gravando e quem ainda tem item faltando.</li>
