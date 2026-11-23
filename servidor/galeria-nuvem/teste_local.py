@@ -252,6 +252,28 @@ ok(tk_ == "tk-real" and m_ == "POST" and u_.endswith("/api/OAuth2/v01/setPessoa/
    "setPessoa: [pessoa, false, [de_para]], PG 100001, carrinho com idreferencia e idproduto: %r" % (c_,))
 imply.set_pessoa("EP-x", "Cliente Teste", "c@exemplo.com", passaporte="AB123456")
 ok("informacoes_extras" not in enviados[-1][2][0] and enviados[-1][2][0]["passaporte"] == "AB123456", "sem carrinho, informacoes_extras não vai (vazio invalida a chamada)")
+# 23/11: GetCart (seção 7) pela referência do pedido
+def gc(resposta):
+    imply._http = lambda metodo, url, corpo=None: enviados.append((metodo, url, corpo)) or resposta
+    return imply.situacao("ON-ABC")
+it_ = lambda st, v=50.0: {"idmovimentacaoitem": "1", "status": st, "valor": v}
+st_, d_ = gc([{"idmovimentacao": "9", "idreferencia": "ON-ABC", "localizador": "LOC1", "pag": [{"status": "PA"}], "itens": [it_("PA", 95.0), it_("PA")]}])
+m_, u_, c_ = enviados[-1]
+ok(m_ == "POST" and u_ == "https://maracanatouradmin.eleventickets.com/api/SuperIngressoV02/v01/GetCart/"
+   and c_ == ["", "PA;RE;CA;AP;TP;PC;EX", "", 1, 100, "-2 months", "now", "ON-ABC"], "GetCart: POST com os 8 parâmetros na ordem: %r" % (c_,))
+ok(st_ == "pago" and d_["valor"] == 145.0 and d_["idpedido"] == "LOC1", "GetCart: pagamento PA e itens PA = pago, valor somado: %r" % ((st_, d_),))
+ok(gc({"id": None, "error": None, "result": [{"idreferencia": "ON-ABC", "pag": [{"status": "PA"}], "itens": [it_("PA")]}]})[0] == "pago", "GetCart: aceita a resposta dentro de result")
+ok(gc([])[0] == "pendente", "GetCart: [] = cliente ainda não fechou: pendente")
+ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "RE"}], "itens": [it_("RE")]}])[0] == "pendente", "GetCart: reservado = pendente")
+ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "PA"}], "itens": [it_("PA"), it_("CA")]}])[0] == "pendente", "GetCart: item cancelado no meio não libera")
+ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "CA"}], "itens": [it_("CA"), it_("EX")]}])[0] == "cancelado", "GetCart: todos CA/EX = cancelado")
+ok(gc([{"idreferencia": "OUTRO", "pag": [{"status": "PA"}], "itens": [it_("PA")]}])[0] == "pendente", "GetCart: pedido de outra referência nunca libera")
+ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "CA"}], "itens": [it_("CA")]}, {"idreferencia": "ON-ABC", "pag": [{"status": "PA"}], "itens": [it_("PA")]}])[0] == "pago",
+   "GetCart: 1ª tentativa cancelada e 2ª paga = pago")
+try:
+    gc({"id": None, "error": {"code": 1, "message": "x"}, "result": None}); ok(False, "GetCart: erro da Imply tem que virar exceção")
+except imply.ImplyErro:
+    pass
 imply._http, imply.TIPO_PESSOA = _http0, tipo0
 imply.set_pessoa = lambda *a, **k: pessoas.append((a, k)) or "tk-pessoa"
 imply.situacao = lambda ref: respostas.get(ref, ("pendente", {"bruto": "aguardando"}))
@@ -297,6 +319,13 @@ ok(st == 200 and len(r["vendas"]) == 1 and r["vendas"][0]["id"] == ref and r["ve
 ev_v = {"rawPath": "/ponto/vendas-online", "headers": {"x-eterna-ponto": seg}, "queryStringParameters": {"desde": r["next"]}, "requestContext": {"http": {"method": "GET", "sourceIp": "1.1.1.1"}}}
 ok(json.loads(app.handler(ev_v, ctx)["body"])["vendas"] == [], "com o 'desde', nada repetido")
 ok(chama("GET", "/ponto/vendas-online")[0] == 401, "vendas online sem o segredo do ponto: 401")
+# 23/11: pagou menos que o pedido (carrinho mexido no checkout da Imply): não libera, fica em erro para a TI
+st, r = ped({"pids": venda[4:5], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli}, ip="5.0.0.7")
+ref3 = r["ref"]
+respostas[ref3] = ("pago", {"valor": 10.0, "idpedido": "LOC3", "bruto": "PA 1 itens"})
+st, r = chama("GET", "/g/pedido/" + ref3)
+ok(r["estado"] == "erro" and venda[4] not in {f["id"] for f in app.manifesto(tokP)["fotos"] if f["direito"] == "comprada"}
+   and not [k for k in T.d if k[0] == "PEDPEND" and k[1] == ref3], "pagou menos que o pedido: não libera e sai da fila: %r" % r.get("estado"))
 # todas as fotos digitais: o pedido leva todas as à venda que o cliente vê; republicar no ponto não desfaz a compra
 st, r = ped({"pids": venda[4:5], "itens": [{"id": "mais", "qtd": 1}], "cliente": dict(cli, cpf="", passaporte="ab 12345")})
 ref2 = r["ref"]

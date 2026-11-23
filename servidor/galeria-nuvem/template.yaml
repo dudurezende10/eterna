@@ -31,7 +31,7 @@ Parameters:
   ImplyConsulta:
     Type: String
     Default: ""
-    Description: endereço da consulta do pedido na Imply, com {ref} no lugar do nosso código (vazio = só conferência manual)
+    Description: endereço do GetCart da Imply (vazio = <admin>/api/SuperIngressoV02/v01/GetCart/, seção 7 da documentação de 23/11)
   ImplyProdutoCampo:
     Type: String
     Default: idproduto

@@ -710,7 +710,12 @@ def conferir(ref):
         st, det = "desconhecido", {"bruto": "erro: " + str(ex)[:100]}
     TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET consultas = :n, conferido = :t, resposta = :r",
                        ExpressionAttributeValues={":n": int(it.get("consultas") or 0) + 1, ":t": iso(), ":r": str(det.get("bruto") or "")[:60]})
-    if st == "pago":
+    if st == "pago" and det.get("valor") is not None and float(det["valor"]) + 0.01 < float(it["total"]):
+        # 23/11: o carrinho foi mexido no checkout da Imply e pagou menos que o pedido: não libera; fica para a TI conferir
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e, resposta = :r",
+                           ExpressionAttributeValues={":e": "erro", ":r": "pago %.2f, pedido %s" % (float(det["valor"]), it["total"])})
+        TABELA.delete_item(Key={"pk": "PEDPEND", "sk": ref})
+    elif st == "pago":
         liberar(ref, it, det)
     elif st == "cancelado":
         TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "cancelado"})
