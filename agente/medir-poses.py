@@ -11,6 +11,8 @@
 #   sudo -u eterna env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/medir-poses.py --n 50
 # Meta (critério 12): mediana de 2,5 s ou menos por foto e 95% ou mais de respostas válidas.
 # Recusa rodar com o classificador do agente aberto (poses-filho.json ou um llama-server com a chave em ponto/poses-*).
+# A chave da medição fica em ponto/medir/poses-* (pasta própria): a limpeza de órfãos do agente, que procura em
+# ponto/poses-*, não derruba o llama-server da medição, e o log dele vai para ponto/medir/poses-llama.log.
 # Prazo estourado (abrir ou um lote): SIGTERM no classificador (ele fecha o llama-server), SIGKILL só se não sair.
 import glob, importlib.util, json, os, queue, statistics, subprocess, sys, threading, time
 
@@ -85,9 +87,12 @@ def main():
                 pico["proc"] = processos_placa()
             time.sleep(0.5)
     threading.Thread(target=vigia, daemon=True).start()
+    ponto = os.path.join(os.path.dirname(ag.POSES_DB), "medir")    # fora de ponto/poses-*: o agente não mexe nela
+    os.makedirs(ponto, mode=0o700, exist_ok=True)
+    os.chmod(ponto, 0o700)
     cmd = [sys.executable, "-I", ag.POSE_FILHO, "--inbox", ag.INBOX, "--thumbs", ag.THUMBS, "--modelos", ag.MODELOS, "--bin", ag.POSE_BIN,
            "--modelo-arq", ag.POSE_ARQ, "--mmproj-arq", ag.POSE_MMPROJ_ARQ, "--sha", ag.POSE_SHA, "--mmproj-sha", ag.POSE_MMPROJ_SHA,
-           "--conferido", ag.poses_conferido() or "", "--ponto", os.path.dirname(ag.POSES_DB)]
+           "--conferido", ag.poses_conferido() or "", "--ponto", ponto]
     t0 = time.time()
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1, env=ag.rec_env())
     fila = queue.Queue()
@@ -110,7 +115,8 @@ def main():
                 return j
 
     def encerra():
-        """SIGTERM no classificador (fecha o llama-server), SIGKILL só se não sair; o llama-server que sobrar, pelo agente."""
+        """SIGTERM no classificador (fecha o llama-server), SIGKILL só se não sair; o llama-server que sobrar (só o com a
+        chave em ponto/medir/poses-*), pela mesma função do agente."""
         try:
             p.stdin.close()
         except Exception:
@@ -127,7 +133,7 @@ def main():
                 p.kill()
                 p.wait(timeout=5)
         if llama["pid"]:
-            ag._poses_mata_llama(llama["pid"])
+            ag._poses_mata_llama(llama["pid"], ponto=ponto)
         fim.set()
     try:
         return medir(p, fotos, espera, encerra, t0, base_mb, pico, fim)

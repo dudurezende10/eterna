@@ -15491,6 +15491,7 @@ poses_parar = threading.Event()              # só os testes ligam: o poses_loop
 POSE_PRIO_EM = {"rec": 0.0, "mtg": 0.0}      # último trabalho de prioridade 0 ou 1 no recorte e na montagem (posto ou tirado)
 _poses_cfg = {"t": 0.0, "v": None}
 _poses_sha_mem = {"v": None}                 # cópia em memória do POSE_SHA_ARQ
+_poses_sha_falha = {}                        # nome do arquivo -> {"assin", "noite"}: a leitura falhou (E/S); não relê nesta noite
 
 
 def poses_marca_prio(tipo):
@@ -15706,8 +15707,10 @@ def _poses_sha_guardado():
 def poses_modelo_ok(conferir=True):
     """(ok, erro) do binário e dos dois arquivos do modelo contra o SHA-256 fixado no código. O SHA lido de cada arquivo fica
     em POSE_SHA_ARQ (0600) com tamanho, data e inode: nada mudou, nada é relido (nem em outra partida do agente).
-    conferir=False (o /status, ou o laço fora da hora) nunca lê os 6 GB: sem conferência guardada, "conferindo". Quem
-    confere é o laço, e só com Sombra ou Ligada, dentro da janela e sem recorte ou montagem esperando (poses_pode_rodar)."""
+    conferir=False (o /status) nunca lê os 6 GB: sem conferência guardada, "conferindo". Quem confere é o laço, pelo
+    poses_pode_rodar, que só chega aqui com Sombra ou Ligada, dentro da janela e sem recorte ou montagem esperando.
+    Leitura que falha no meio (erro de E/S) fica guardada em _poses_sha_falha: "sem_modelo" sem reler até a noite seguinte
+    ou até o arquivo mudar (tamanho, data ou inode), em vez de reler gigabytes a cada POSE_DORME."""
     if not all(re.fullmatch(r"[0-9a-f]{64}", s or "") for s in (POSE_SHA, POSE_MMPROJ_SHA)):
         return False, "sem_modelo"
     if not os.path.isfile(POSE_BIN) or not os.access(POSE_BIN, os.X_OK):
@@ -15720,9 +15723,11 @@ def poses_modelo_ok(conferir=True):
         except OSError:
             return False, "sem_modelo"
         k = os.path.basename(p)
-        x = g.get(k)
+        x, fa = g.get(k), _poses_sha_falha.get(k)          # fa lido uma vez: o /status (outra thread) também passa aqui
         if x and x["assin"] == assin:
             lido = x["sha"]
+        elif fa and fa["assin"] == assin and fa["noite"] == _poses_noite_chave():
+            return False, "sem_modelo"                 # falhou nesta noite e o arquivo não mudou: não relê
         elif not conferir:
             return False, "conferindo"
         else:
@@ -15733,7 +15738,10 @@ def poses_modelo_ok(conferir=True):
                         h.update(b)
                 lido = h.hexdigest()
             except OSError:
+                _poses_sha_falha[k] = {"assin": assin, "noite": _poses_noite_chave()}
+                print("  poses: falha ao ler %s para conferir o SHA; nova tentativa na próxima noite ou se o arquivo mudar" % k)
                 return False, "sem_modelo"
+            _poses_sha_falha.pop(k, None)
             if _poses_assinatura(p) != assin:          # mudou durante a leitura: confere na próxima volta
                 return False, "conferindo"
             novo = dict(novo or g)
@@ -15750,9 +15758,12 @@ def poses_modelo_ok(conferir=True):
 
 
 def poses_conferido():
-    """--conferido para o filho: tamanho, data e inode dos dois arquivos que o agente conferiu (o filho não relê os 6 GB)."""
+    """--conferido para o filho: tamanho, data e inode dos dois arquivos que o agente conferiu (o filho não relê os 6 GB).
+    Só quando o SHA guardado de cada um é o fixado (POSE_SHA, POSE_MMPROJ_SHA); senão None (sem --conferido)."""
     g = _poses_sha_guardado()
     try:
+        if any(g[os.path.basename(p)]["sha"] != sha for p, sha in _poses_arqs()):
+            return None
         return ",".join(":".join(str(int(n)) for n in g[os.path.basename(p)]["assin"]) for p, _ in _poses_arqs())
     except (KeyError, TypeError, ValueError):
         return None
@@ -15853,9 +15864,10 @@ def poses_pendentes():
     return out
 
 
-def _poses_e_nosso(pid, llama=False):
+def _poses_e_nosso(pid, llama=False, ponto=None):
     """True se o processo é o nosso filho (eterna-poses.py) ou um llama-server aberto por ele (a linha tem --api-key-file
-    com a chave numa pasta ponto/poses-*). Nunca mata processo de outro tipo."""
+    com a chave numa pasta ponto/poses-*; ponto: outra pasta, só o medir-poses.py passa a dele, ponto/medir). Nunca mata
+    processo de outro tipo."""
     try:
         import psutil
         cmd = psutil.Process(pid).cmdline()
@@ -15872,7 +15884,7 @@ def _poses_e_nosso(pid, llama=False):
         if not 0 <= i < len(cmd) - 1:
             return False
         d = os.path.dirname(os.path.realpath(cmd[i + 1]))
-        return os.path.dirname(d) == os.path.realpath(os.path.dirname(POSES_DB)) and os.path.basename(d).startswith("poses-")
+        return os.path.dirname(d) == os.path.realpath(ponto or os.path.dirname(POSES_DB)) and os.path.basename(d).startswith("poses-")
     return any(os.path.basename(c) == os.path.basename(POSE_FILHO) for c in cmd)
 
 
@@ -15923,9 +15935,9 @@ def _poses_sinal(pid, grupo, termo_seg, mata_seg):
     return not _poses_pid_vivo(pid)
 
 
-def _poses_mata_llama(pid):
+def _poses_mata_llama(pid, ponto=None):
     """O llama-server abre no próprio grupo (start_new_session): SIGTERM no grupo, depois SIGKILL."""
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1 or not _poses_e_nosso(pid, llama=True):
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1 or not _poses_e_nosso(pid, llama=True, ponto=ponto):
         return False
     return _poses_sinal(pid, True, 5, 3)
 
@@ -19865,7 +19877,10 @@ def main():
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=treino_cfg_loop, daemon=True).start()  # 18/11: interruptor do treino em memória (treino_cfg_mem)
     threading.Thread(target=cena_loop, daemon=True).start()        # 18/11 (regra 19): reconhecer o ponto pela imagem
-    poses_orfaos_encerrar()             # 23/11: classificador de poses de uma partida anterior não segura a placa
+    # 23/11: classificador de poses de uma partida anterior não segura a placa. Roda aqui, na thread do main e ANTES do
+    # poses_loop: ele apaga as pastas ponto/poses-* e o poses-filho.json e mata o llama-server com a chave ali; com o laço
+    # já no ar, o filho que o laço acabou de abrir seria tomado por órfão (chave apagada, llama-server morto, pids perdidos).
+    poses_orfaos_encerrar()
     threading.Thread(target=poses_loop, daemon=True).start()       # 23/11: poses à noite (chave config/poses, padrão desligada)
     mtg_orfaos_encerrar()               # processo de montagem de uma partida anterior
     print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta

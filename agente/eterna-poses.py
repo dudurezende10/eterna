@@ -114,7 +114,8 @@ _TERM = {"critico": False, "pendente": False}   # SIGTERM entre o Popen e o self
 def sair(*_):
     """Tratador do SIGTERM (e do agente que caiu): fecha todo llama-server aberto ou abrindo, apaga a chave e sai.
     Entre o Popen e o self.p (trecho crítico) só anota: quem sai do trecho chama de novo. Não usa pthread_sigmask, que o
-    llama-server herdaria (ele passaria a ignorar o SIGTERM)."""
+    llama-server herdaria (ele passaria a ignorar o SIGTERM). Roda sempre na thread principal: o vigia do pai manda
+    SIGTERM ao próprio processo em vez de chamar daqui (de outra thread, a principal seguiria abrindo e sairia no meio)."""
     if _TERM["critico"]:
         _TERM["pendente"] = True
         return
@@ -367,10 +368,23 @@ def main(fabrica=None):
         manda({"pronto": False, "erro": "faltam --inbox e --thumbs"})
         return 2
     srv = None
+    com_sinal = True
     try:
         signal.signal(signal.SIGTERM, sair)       # fecha também o llama-server que ainda está abrindo
     except (ValueError, OSError):
-        pass
+        com_sinal = False
+    pai = os.getppid()
+
+    def vigia_pai():                       # o agente caiu (também no meio da abertura): o llama-server não fica órfão
+        while True:
+            time.sleep(2)
+            if os.getppid() != pai:
+                if com_sinal:              # o sair() roda na thread principal, que respeita o trecho crítico do Popen
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    return
+                sair()
+    if os.name != "nt":
+        threading.Thread(target=vigia_pai, daemon=True).start()     # antes do Llama(): a abertura leva minutos
     try:
         from PIL import Image
         Image.MAX_IMAGE_PIXELS = MAX_PIXELS
@@ -391,17 +405,11 @@ def main(fabrica=None):
     except Exception as ex:
         manda({"pronto": False, "erro": str(ex)[:200]})
         return 3
-    pai = os.getppid()
-
-    def vigia_pai():                       # o agente caiu: o llama-server não fica segurando a placa
-        while True:
-            time.sleep(2)
-            if os.getppid() != pai:
-                sair()
-    if os.name != "nt":
-        threading.Thread(target=vigia_pai, daemon=True).start()
-    manda({"pronto": True, "modelo": getattr(srv, "nome", POSE_NOME), "sha": getattr(srv, "sha", None), "carga_ms": srv.carga_ms,
-           "prompt_v": POSE_PROMPT_V, "llama_pid": getattr(srv, "pid", None)})
+    try:
+        manda({"pronto": True, "modelo": getattr(srv, "nome", POSE_NOME), "sha": getattr(srv, "sha", None), "carga_ms": srv.carga_ms,
+               "prompt_v": POSE_PROMPT_V, "llama_pid": getattr(srv, "pid", None)})
+    except Exception:                      # BrokenPipe: o agente caiu enquanto o modelo abria
+        sair()
     try:
         for linha in sys.stdin:
             linha = linha.strip()

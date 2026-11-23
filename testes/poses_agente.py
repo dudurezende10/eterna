@@ -8,7 +8,9 @@
 # esperando, e fica guardado (0600) sem releitura; nenhum llama-server órfão (pid avisado logo depois de abrir, prazo de
 # abertura estourado, órfão achado na partida); lote inteiro com erro do servidor conta como morte (nunca fim_fila);
 # versão diferente = parado até a noite seguinte; erro de imagem do PIL = imagem; lista vazia refeita só a cada
-# POSE_FILA_SEG e pausa depois do fim da fila não troca o fim_fila.
+# POSE_FILA_SEG e pausa depois do fim da fila não troca o fim_fila. Ajustes: SHA guardado diferente do fixado não vira
+# --conferido; leitura do modelo que falha não é refeita na rodada seguinte; o agente que cai no meio da abertura não deixa
+# o llama-server órfão (o filho vigia o pai desde antes de abrir).
 # O agente/eterna-poses.py é o de verdade; só o llama-server é trocado pelo testes/_poses_filho_falso.py.
 # Miniaturas desenhadas na hora; nenhuma foto de visitante.
 #   HOME=$(mktemp -d) python3 -I testes/poses_agente.py agente/eterna-agente.py
@@ -445,6 +447,46 @@ try:
     finally:
         m.hashlib = real
 
+    # ---------- ajuste: SHA guardado diferente do fixado não vira --conferido ----------
+    g0 = m._poses_sha_guardado()
+    c0 = m.poses_conferido()
+    m._poses_sha_mem["v"] = dict(g0, **{m.POSE_MMPROJ_ARQ: dict(g0[m.POSE_MMPROJ_ARQ], sha="cd" * 32)})
+    c1 = m.poses_conferido()
+    m._poses_sha_mem["v"] = g0
+    ok(c0 and [len(x.split(":")) for x in c0.split(",")] == [3, 3], "conferido: SHA guardado igual ao fixado: --conferido %r" % c0)
+    ok(c1 is None, "conferido: SHA guardado diferente do fixado: sem --conferido (%r)" % c1)
+
+    # ---------- ajuste: falha de leitura (E/S no meio do arquivo) não é relida na rodada seguinte ----------
+    class _Falha:
+        def __getattr__(self, k):
+            return getattr(real, k)
+
+        def sha256(self, *a):
+            conta[0] += 1
+
+            class _X:
+                def update(self, b):
+                    raise OSError(5, "erro de E/S de teste")
+            return _X()
+    conta[0] = 0
+    m.hashlib = _Falha()
+    try:
+        st_ = os.stat(arq)
+        os.utime(arq, ns=(st_.st_atime_ns, st_.st_mtime_ns + 10 ** 9))
+        f1, f2, f3 = m.poses_modelo_ok(), m.poses_modelo_ok(), m.poses_modelo_ok(conferir=False)
+        ok(f1 == f2 == f3 == (False, "sem_modelo") and conta[0] == 1, "falha: leitura que falhou não é refeita na rodada seguinte (%r %r %r, %d leituras)" % (f1, f2, f3, conta[0]))
+        st_ = os.stat(arq)
+        os.utime(arq, ns=(st_.st_atime_ns, st_.st_mtime_ns + 10 ** 9))
+        f4 = m.poses_modelo_ok()
+        ok(f4 == (False, "sem_modelo") and conta[0] == 2, "falha: arquivo mudou: lido de novo (%r, %d)" % (f4, conta[0]))
+        m._poses_sha_falha[m.POSE_ARQ]["noite"] = "2000-01-01"      # a noite seguinte
+        m.hashlib = _H()
+        f5 = m.poses_modelo_ok()
+        ok(f5 == (True, None) and conta[0] == 3 and m.POSE_ARQ not in m._poses_sha_falha, "falha: na noite seguinte relê e confere (%r, %d)" % (f5, conta[0]))
+    finally:
+        m.hashlib = real
+        m._poses_sha_falha.clear()
+
     # ---------- revisão: lote inteiro com erro do servidor de modelo conta como morte (nunca fim_fila) ----------
     controle(erro500=True)
     with m.poses_lock:
@@ -490,6 +532,42 @@ try:
     ok(not os.path.exists(m.POSE_PIDS), "carga: poses-filho.json some")
     controle()
     m.POSE_CARGA_SEG = CARGA0
+
+    # ---------- ajuste: o agente cai no meio da abertura: o filho fecha o llama-server falso (nenhum processo sobra) ----------
+    controle(sem_health=True)                          # o /health nunca responde: o filho fica na abertura
+    antes = {x["pid"] for x in llamas()}
+    PT1 = os.path.join(HOME, "abre-e-cai")             # fora de ponto/: a limpeza de órfãos do agente não entra aqui
+    os.makedirs(PT1)
+    cmd1 = [sys.executable, "-I", os.path.join(AQUI, "..", "agente", "eterna-poses.py"), "--inbox", m.INBOX, "--thumbs", m.THUMBS,
+            "--modelos", m.MODELOS, "--bin", m.POSE_BIN, "--modelo-arq", m.POSE_ARQ, "--mmproj-arq", m.POSE_MMPROJ_ARQ,
+            "--sha", m.POSE_SHA, "--mmproj-sha", m.POSE_MMPROJ_SHA, "--ponto", PT1]
+    # um "agente" de mentira abre o filho com os canos do protocolo e é morto com SIGKILL enquanto o modelo abre
+    ag1 = subprocess.Popen([sys.executable, "-I", "-c", "import subprocess, sys, time\n"
+                            "p = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE)\n"
+                            "print(p.pid, flush=True)\ntime.sleep(120)\n"] + cmd1, stdout=subprocess.PIPE, text=True)
+    filho1, novos1 = None, []
+    try:
+        filho1 = int(ag1.stdout.readline().strip() or 0) or None
+        ok(filho1 and espera(lambda: [x for x in llamas() if x["pid"] not in antes], 15), "queda: o llama-server falso abriu")
+        novos1 = [x for x in llamas() if x["pid"] not in antes]
+        ok(novos1 and all(proc_vivo(x["pid"]) for x in novos1) and proc_vivo(filho1), "queda: filho e llama-server vivos antes da queda")
+        ag1.kill()
+        ag1.wait()
+        ok(espera(lambda: not proc_vivo(filho1) and all(not proc_vivo(x["pid"]) and not os.path.exists(x["chave_arq"]) for x in novos1), 20),
+           "queda: o filho fecha o llama-server e sai: %r" % [(x["pid"], proc_vivo(x["pid"])) for x in novos1])
+        sobra1 = [d for d in os.listdir(PT1) if d.startswith("poses-") and os.path.isdir(os.path.join(PT1, d))]
+        ok(not sobra1, "queda: pasta da chave apagada: %r" % sobra1)
+    finally:
+        for pid_ in [filho1] + [x["pid"] for x in novos1]:   # se falhou, nada do teste fica rodando
+            if pid_ and proc_vivo(pid_):
+                try:
+                    os.kill(pid_, 9)
+                except OSError:
+                    pass
+        if ag1.poll() is None:
+            ag1.kill()
+            ag1.wait()
+    controle()
 
     # ---------- revisão: na partida, llama-server solto (filho morto com SIGKILL) é achado pelo --api-key-file em ponto/poses-* ----------
     pasta = os.path.join(os.path.dirname(m.POSES_DB), "poses-orfao1")
