@@ -15452,6 +15452,7 @@ POSE_DIAS = 7                  # quantos dias (hoje incluído) a noite cobre
 POSE_MORTES_MAX = 3            # na 3ª morte seguida do filho, parado até a próxima noite
 POSE_OCUPADO_SEG = 120         # recorte ou montagem com prioridade 0 ou 1: a classificação volta só depois disto
 POSE_DORME = 30                # s entre uma conferência e outra quando não pode rodar
+POSE_FILA_SEG = 300            # a lista de pendentes é refeita a cada 5 min (ou quando acaba)
 POSE_ERRO_SEG = 60             # s antes de tentar abrir o filho de novo depois de um erro
 POSE_ESPERA_SEG = 600          # prazo de um lote no filho
 POSE_CARGA_SEG = 360           # prazo para o filho conferir o SHA e o llama-server abrir o modelo
@@ -15779,7 +15780,7 @@ def poses_pendentes():
         falhou = set(poses_st["falhou"])
     out = []
     for dia in dias:
-        fotos = [f for f in treino_fotos_dia(dia)["fotos"] if f["pid"] not in feitos and f["pid"] not in falhou]
+        fotos = [f for f in _treino_ler_dia(dia)[0] if f["pid"] not in feitos and f["pid"] not in falhou]   # sem o cache do Treino (4 dias)
         fotos.sort(key=lambda f: (f.get("t") or 0.0, f["card"], f["ordem"]))
         with lock:
             orig = {f["pid"]: (lib.get(f["pid"]) or {}) for f in fotos}
@@ -16172,7 +16173,7 @@ def poses_loop():
     """A thread da classificação de poses (padrão do cena_loop). Fora de sombra ou ligada, ou quando não pode rodar: fecha o
     filho e dorme POSE_DORME. Dentro: lotes de POSE_LOTE, conferindo poses_pode_rodar() entre um e outro. Limpeza de hora
     em hora."""
-    t_limpa, t_mod = time.time(), 0.0
+    t_limpa, t_mod, fila, fila_t = time.time(), 0.0, [], 0.0
     while not poses_parar.is_set():
         try:
             if time.time() - t_mod >= 600:
@@ -16201,9 +16202,10 @@ def poses_loop():
             if espera:
                 poses_parar.wait(min(POSE_DORME, 5))
                 continue
-            fila = poses_pendentes()
-            with poses_lock:
-                poses_st.update(pendentes=len(fila), pend_t=time.time())
+            if not fila or time.time() - fila_t >= POSE_FILA_SEG:   # a lista é refeita no fim dela ou a cada POSE_FILA_SEG
+                fila, fila_t = poses_pendentes(), time.time()
+                with poses_lock:
+                    poses_st.update(pendentes=len(fila), pend_t=fila_t)
             if not fila:
                 _poses_para("fim_fila")
                 poses_parar.wait(POSE_DORME)
@@ -16216,8 +16218,9 @@ def poses_loop():
                 poses_parar.wait(1)
                 continue
             poses_gravar(res, {x["pid"]: x for x in lote})
+            del fila[:len(lote)]
             with poses_lock:
-                poses_st["pendentes"] = max(0, poses_st["pendentes"] - len(lote))
+                poses_st["pendentes"] = len(fila)
         except Exception as ex:
             print("  poses: %s" % type(ex).__name__)
             poses_parar.wait(2)
