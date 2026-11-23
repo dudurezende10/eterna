@@ -1,43 +1,27 @@
 // Prints do treinamento "Da venda à entrega" (Drone, Chute a Gol e Snap Pop). Telas de verdade do app, com o servidor
 // respondido aqui no navegador (dados fictícios): nada é gravado em servidor nenhum.
-//   NODE_PATH=<node_modules com playwright> U=http://127.0.0.1:8894/index.html VIDEO=<um mp4 de exemplo> node capturar.js <pasta de saída>
+//   NODE_PATH=<node_modules com playwright> U=http://127.0.0.1:8894/index.html VIDEO=<um mp4 de exemplo> FOTOS=<0.jpg a 4.jpg e silhueta.jpg> CAMERA=<silhueta .mjpeg> node capturar.js <pasta de saída>
 // Para cada print grava <chave>.png e, em marcas.json, as caixas (em px da imagem) dos alvos de cada passo e o recorte.
 const {chromium}=require('playwright');const fs=require('fs');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8894/index.html';const OUT=process.argv[2]||'prints-brutos';const VIDEO=process.env.VIDEO;
-fs.mkdirSync(OUT,{recursive:true});const MARCAS={};const J=JSON.stringify;
+const J=JSON.stringify;
 const E=require(path.join(__dirname,'..','..','..','testes','_entrar'));
 const HOJE=new Date().toISOString().slice(0,10);
 const mp4=VIDEO?fs.readFileSync(VIDEO):Buffer.alloc(0);
 // fotos do Tour fictícias (FOTOS=<pasta com 0.jpg a 4.jpg>), no lugar de fotos de clientes
 const FOTOS=[0,1,2,3,4].map(i=>process.env.FOTOS?fs.readFileSync(path.join(process.env.FOTOS,i+'.jpg')):Buffer.alloc(0));
 
-// foto de cliente fictícia (silhueta), no lugar de um rosto de verdade
-const SILHUETA=()=>{const c=document.createElement('canvas');c.width=480;c.height=480;const g=c.getContext('2d');g.fillStyle='#cfd8e3';g.fillRect(0,0,480,480);
-  g.fillStyle='#7a8ca3';g.beginPath();g.arc(240,190,95,0,7);g.fill();g.beginPath();g.ellipse(240,470,170,150,0,0,7);g.fill();return c.toDataURL('image/jpeg',.85);};
+const P=require('./print_tela')(OUT);const {usuario,shot}=P;
+const CAM=process.env.CAMERA; // CAMERA=<.mjpeg com uma silhueta>: a câmera da entrega mostra a silhueta, nunca um rosto de verdade
 
-async function usuario(pg,email,nome,perms){await pg.evaluate(([e,n,p])=>{const U0=JSON.parse(localStorage.getItem('eterna.users.v1')||'null')||JSON.parse(JSON.stringify(ETERNA.USERS));
-  U0[e]={email:e,name:n,active:true,preset:'custom',perms:p,key:null};localStorage.setItem('eterna.users.v1',JSON.stringify(U0));},[email,nome,perms]);await pg.reload();await pg.waitForTimeout(400);}
-
-// print: marcas = [[seletor, direção da seta, número]], recorte = seletor do bloco (ou null = tela toda)
-async function shot(pg,chave,marcas,recorte,folga=24){
-  if(marcas.length){await pg.evaluate(s=>{const el=document.querySelector(s);if(el)el.scrollIntoView({block:'center'});},marcas[0][0]);await pg.waitForTimeout(250);}
-  const dpr=await pg.evaluate(()=>devicePixelRatio);
-  const caixa=async s=>pg.evaluate(s=>{const el=document.querySelector(s);if(!el)return null;const r=el.getBoundingClientRect();return [r.left,r.top,r.right,r.bottom];},s);
-  const ms=[];for(const [s,dir,n] of marcas){const b=await caixa(s);if(!b){console.log('  sem alvo',chave,s);continue;}ms.push([b.map(v=>Math.round(v*dpr)),dir,n]);}
-  const vp=pg.viewportSize();let rc=[0,0,vp.width,vp.height];
-  if(recorte){const b=await caixa(recorte);if(b)rc=[Math.max(0,b[0]-folga),Math.max(0,b[1]-folga),Math.min(vp.width,b[2]+folga),Math.min(vp.height,b[3]+folga)];}
-  // o recorte sempre cabe as marcas, com espaço para a seta
-  for(const [b] of ms){rc=[Math.min(rc[0],b[0]/dpr-130),Math.min(rc[1],b[1]/dpr-130),Math.max(rc[2],b[2]/dpr+130),Math.max(rc[3],b[3]/dpr+130)];}
-  rc=[Math.max(0,rc[0]),Math.max(0,rc[1]),Math.min(vp.width,rc[2]),Math.min(vp.height,rc[3])].map(v=>Math.round(v*dpr));
-  await pg.screenshot({path:path.join(OUT,chave+'.png')});MARCAS[chave]={marcas:ms,recorte:rc};console.log('  print',chave);}
-
-(async()=>{const b=await chromium.launch({channel:process.env.CANAL||'chrome'}); // Chrome de verdade: o Chromium dos testes não toca MP4 (H.264)
+(async()=>{const b=await chromium.launch({channel:process.env.CANAL||'chrome',args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream',...(CAM?['--use-file-for-fake-video-capture='+CAM]:[])]}); // Chrome de verdade: o Chromium dos testes não toca MP4 (H.264)
 try{
   // ---------------- VENDA (tablet) ----------------
   {const ctx=await b.newContext({viewport:{width:800,height:1280},deviceScaleFactor:1.5,locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
     const enviadas=[];
     await ctx.route(/\/ativ\/venda$/,r=>{const j=JSON.parse(r.request().postData());j.vendas.forEach(v=>enviadas.push(v));r.fulfill({status:200,contentType:'application/json',body:J({ok:true,recebidas:j.vendas.map(v=>v.id),recusadas:[]})});});
-    await ctx.route(/\/ativ\/minhas\?/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,vendas:enviadas.map(v=>({...v,situacao:'ativa',cliente_foto:undefined}))})}));
+    await ctx.route(/\/ativ\/minhas\?/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,todos:true,vendas:enviadas.map(v=>({...v,pulseiras:(v.pulseiras||[]).map((p,k)=>({numero:String(p&&p.n||p),slot:k+1})),origem:'eterna',situacao:'ativa',cliente_foto:undefined}))})}));
+    await ctx.route(/\/ativ\/cancelar$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true})}));
     await ctx.route(/\/ativ\/demo\/lista$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,videos:[]})}));
     const A=await ctx.newPage();await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();indexedDB.deleteDatabase('eterna-ativ');});await A.reload();await A.waitForTimeout(400);
     const VEND='ana.souza';await usuario(A,VEND,'Ana Souza',{ativvenda:{c:true,r:true,u:false,d:false}});
@@ -59,20 +43,28 @@ try{
     await A.click('[data-act="av-cat"][data-c="snap"]');await A.waitForTimeout(150);
     await shot(A,'v06-snap',[['[data-act="av-cat"][data-c="snap"]','baixo','1']],'#av-prod');
     await A.click('[data-act="av-cat"][data-c="drone"]');await A.waitForTimeout(150);
-    await A.fill('[data-act="av-nome"]','Mariana Costa');await A.waitForTimeout(100);
-    await shot(A,'v07-cliente-nome',[['[data-act="av-nome"]','baixo','1'],['#av-cliente .btn.ghost','baixo','2']],'#av-cliente');
-    await A.evaluate(f=>{ETERNA.state.av.foto=f;ETERNA.render();},await A.evaluate(SILHUETA));await A.waitForTimeout(150);
-    await A.check('[data-act="av-busca"]');await A.selectOption('[data-act="av-pais"]','Brasil').catch(()=>{});await A.selectOption('[data-act="av-idioma"]','Português').catch(()=>{});await A.waitForTimeout(100);
-    await shot(A,'v08-cliente-foto',[['#av-foto-img','cima','1'],['[data-act="av-busca"]','esquerda','2'],['[data-act="av-pais"]','baixo','3'],['[data-act="av-idioma"]','baixo','4']],'#av-cliente');
+    await A.fill('#av-ing','1123K7PM2QXA');await A.fill('[data-act="av-nome"]','Mariana Costa');
+    await A.selectOption('[data-act="av-pais"]','Brasil').catch(()=>{});await A.selectOption('[data-act="av-idioma"]','Português').catch(()=>{});await A.waitForTimeout(150);
+    await shot(A,'v07-cliente',[['#av-ing','baixo','1'],['[data-act="av-ing-cam"]','baixo','2'],['[data-act="av-nome"]','baixo','3'],['[data-act="av-pais"]','cima','4'],['[data-act="av-idioma"]','cima','5']],'#av-cliente');
     await A.click('[data-act="av-pag"][data-p="PIX"]');await A.waitForTimeout(150);
     await A.fill('[data-act="av-pul"][data-i="0"][data-k="0"]','1042');await A.press('[data-act="av-pul"][data-i="0"][data-k="0"]','Enter');await A.waitForTimeout(100);
     await shot(A,'v09-pulseira',[['[data-act="av-pul"][data-i="0"][data-k="0"]','baixo','1'],['[data-act="av-pul-cam"][data-i="0"][data-k="0"]','esquerda','2']],'#av-cart');
+    {const ps=await A.$$('[data-act="av-pul"]');for(let k=1;k<ps.length;k++){await ps[k].fill(String(1042+k));await ps[k].press('Enter');await A.waitForTimeout(80);}}
     await shot(A,'v09-resumo',[['[data-av-linha="0"]','esquerda','1'],['[data-act="av-tirar"][data-i="0"]','esquerda','2'],['#av-total','esquerda','3']],'#av-cart');
     await shot(A,'v10-pagamento',[['[data-act="av-pag"][data-p="PIX"]','baixo','1'],['[data-act="av-registrar"]','cima','2']],'#av-pag');
     await A.click('[data-act="av-registrar"]');await A.waitForTimeout(500);
     await shot(A,'v11-registrada',[['#toast','cima','1']],'#toast',260);
     await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(800);
     await shot(A,'v12-minhas',[['[data-act="av-aba"][data-v="minhas"]','baixo','1'],['#av-minhas-q','cima','2'],['table.av-tab','baixo','3']],'#av-minhas, #main');
+    // cancelar: só o supervisor
+    const SUP='paula.reis';await A.evaluate(()=>ETERNA.logout());await A.waitForTimeout(300);await usuario(A,SUP,'Paula Reis',{ativvenda:{c:true,r:true,u:true,d:true}});await E(A,SUP);await A.waitForTimeout(300);
+    await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;ETERNA.go('ativ-venda');});await A.waitForTimeout(400);
+    await A.click('[data-act="av-aba"][data-v="minhas"]');await A.waitForTimeout(800);
+    await shot(A,'v13-cancelar',[['[data-act="av-cancelar"]','esquerda','1']],'#av-minhas');
+    await A.click('[data-act="av-cancelar"]');await A.waitForTimeout(1500);await A.fill('[data-act="av-cmotivo"]','Cliente desistiu antes do voo');
+    await shot(A,'v14-motivo',[['[data-act="av-cmotivo"]','baixo','1'],['[data-act="av-cancel-ok"]','baixo','2']],'#av-minhas');
+    await A.click('[data-act="av-cancel-ok"]');await A.waitForTimeout(400);
+    await shot(A,'v15-cancelada',[['#toast','cima','1']],'#av-minhas');
     await ctx.close();}
 
   // ---------------- ENTREGA (computador do campo) ----------------
@@ -99,6 +91,10 @@ try{
       v.entregas.push({qr:c.qr,codigo:'WXYZ-2345-6789',n:1,bytes:mp4.length,duracao:28,nuvem:true,pagina:{ok:true},subindo:null,em:HOJE+'T10:40:00',pulseira:c.pulseira,cliente:{}});v.entregue_em=HOJE+'T10:40:00';
       const pp=v.pulseiras.find(p=>p.numero===c.pulseira);if(pp)pp.qr=c.qr;
       r.fulfill({status:200,contentType:'application/json',body:J({ok:true,qr:c.qr,codigo:'WXYZ-2345-6789',n:1})});});
+    const SIL=fs.readFileSync(path.join(process.env.FOTOS||'.','silhueta.jpg'));
+    await ctx.route(/\/ativ\/cliente-foto/,r=>{if(r.request().method()==='POST'){const c=JSON.parse(r.request().postData());const v=D.vendas.find(x=>x.id===c.id);if(v)v.foto=true;return r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});}
+      r.fulfill({status:200,contentType:'image/jpeg',body:SIL});});
+    await ctx.route(/\/ativ\/cancelar$/,r=>{const c=JSON.parse(r.request().postData());D.vendas=D.vendas.filter(x=>x.id!==c.id);r.fulfill({status:200,contentType:'application/json',body:J({ok:true})});});
     await ctx.route(/\/exemplo\.mp4$/,r=>r.fulfill({status:200,contentType:'video/mp4',body:mp4}));
     const A=await ctx.newPage();await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(400);
     const ENT='bruno.lima';await usuario(A,ENT,'Bruno Lima',{ativentrega:{c:true,r:true,u:true,d:false}});await E(A,ENT);
@@ -119,6 +115,11 @@ try{
     await shot(A,'e05-conferir',[['#ae-at video','direita','1'],['#ae-rasc-nuvem','cima','2']],'#ae-at');
     await shot(A,'e06-cartao',[['[data-act="ae-cam"]','direita','1'],['[data-act="ae-qr-txt"]','direita','2']],'#ae-at');
     await A.fill('[data-act="ae-qr-txt"]','https://eterna.photo/#g/'+QRN);await A.press('[data-act="ae-qr-txt"]','Enter');await A.waitForTimeout(200);
+    await shot(A,'e06b-foto',[['[data-act="ae-fc-abre"]','cima','1']],'#ae-at');
+    await A.click('[data-act="ae-fc-abre"]');await A.waitForTimeout(1800);
+    await shot(A,'e06c-camera',[['[data-act="ae-fc-tira"]','baixo','2'],['#ae-fc-cam','direita','1']],'#ae-fc');
+    await A.click('[data-act="ae-fc-tira"]');await A.waitForTimeout(800);await A.evaluate(()=>ETERNA.aePull());await A.waitForTimeout(600);
+    await A.waitForSelector('[data-act="ae-nv-liga"]:not([disabled])',{timeout:15000});
     await shot(A,'e07-entregar',[['[data-act="ae-nv-liga"]','direita','1']],'#ae-at');
     await A.click('[data-act="ae-nv-liga"]');await A.waitForTimeout(900);
     await shot(A,'e08-entregue',[['#ae-at .pill.good','esquerda','1'],['#ae-at button.primary[data-act="ae-at-fecha"]','cima','2']],'#ae-at');
@@ -128,25 +129,6 @@ try{
     await A.click('#ae-at button.primary[data-act="ae-at-fecha"]');await A.waitForTimeout(300);
     await pul('1060');
     await shot(A,'e11-snap',[['#ae-at [data-act="ae-recebido"]','baixo','1']],'#ae-at');
-    await A.click('#ae-at [data-act="ae-at-fecha"]');await A.waitForTimeout(300);
-    await A.click('[data-act="ae-fila"]');await A.waitForTimeout(400);
-    await shot(A,'e09-fila',[['[data-act="ae-fila"]','baixo','1']],null);
-    await ctx.close();}
-
-  // ---------------- LOTES DE CARTÕES (administrador) ----------------
-  {const ctx=await b.newContext({viewport:{width:1500,height:900},deviceScaleFactor:1.25,locale:'pt-BR',acceptDownloads:true});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
-    const lotes=[{id:'L20261020-101500',n:5000,em:'2026-10-20T10:15:00',por:'Ronaldo',situacao:'recebido',mudou_em:'2026-10-27T15:02:00',mudou_por:'Ronaldo',baixado_n:1,usados:3412}];
-    await ctx.route(/\/ativ\/cartoes$/,r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,lotes,max:10000})}));
-    await ctx.route(/\/ativ\/cartoes\/lote$/,r=>{const c=JSON.parse(r.request().postData());let l=lotes.find(x=>x.situacao==='grafica');const novo=!l;
-      if(!l){l={id:'L'+HOJE.replace(/-/g,'')+'-180000',n:c.n,em:HOJE+'T18:00:00',por:'Ronaldo',situacao:'grafica',mudou_em:null,mudou_por:null,baixado_n:0,usados:0};lotes.unshift(l);}l.baixado_n++;
-      r.fulfill({status:200,contentType:'application/json',body:J({ok:true,lote:l.id,novo,n:l.n,csv:'token;codigo;qr',lotes})});});
-    const A=await ctx.newPage();await A.goto(U);await A.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await A.reload();await A.waitForTimeout(400);
-    const adm=await E.adminFicticio(A);await E(A,adm);
-    await A.evaluate(()=>{const s=ETERNA.state;setInterval(()=>{s.agent.on=true;},20);s.agent.on=true;s.catTab='avancado';ETERNA.go('catalogo');});await A.waitForTimeout(900);
-    await A.fill('#cartao-n','10000');
-    await shot(A,'a01-gerar',[['#cartao-n','baixo','1'],['[data-act="cartao-lote"]','baixo','2']],'[data-cartao-lotes]',60);
-    await Promise.all([A.waitForEvent('download'),A.click('[data-act="cartao-lote"]')]);await A.waitForTimeout(500);
-    await shot(A,'a02-na-grafica',[['[data-cartao-mesmo]','baixo','1'],['[data-act="cartao-situacao"][data-s="recebido"]','cima','2'],['[data-act="cartao-situacao"][data-s="cancelado"]','baixo','3']],'[data-cartao-lotes]',60);
     await ctx.close();}
 
   // ---------------- CLIENTE (celular) ----------------
@@ -173,4 +155,4 @@ try{
     await shot(C,'c03-fotos-tour',[['[data-gv-tour] a.gq-dl','cima','1'],['[data-gv-tour] .gq-tourph','baixo','2'],['[data-gv-tour] button[data-act="gv-tour"]','cima','3']],null);
     await ctx.close();}
 }catch(e){console.log('ERRO',e.stack||e);process.exitCode=1;}
-finally{fs.writeFileSync(path.join(OUT,'marcas.json'),JSON.stringify(MARCAS,null,1));await b.close();}})();
+finally{P.grava();await b.close();}})();
