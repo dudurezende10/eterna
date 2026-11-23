@@ -15,7 +15,9 @@ const abas=await pg.evaluate(()=>{ETERNA.state.view='catalogo';ETERNA.render();r
 if(!abas.length)bad.push('Preços e Checkout sem abas para o Admin');
 for(const a of abas){await pg.evaluate(a=>{ETERNA.state.catTab=a;ETERNA.state.view='catalogo';ETERNA.render();},a);await pg.waitForTimeout(120);await confere('catalogo/'+a);}
 // seções das Estatísticas
-for(const s of ['a','b','c','d','e','f','g']){await pg.evaluate(s=>{ETERNA.state.es.sec=s;ETERNA.state.view='estatisticas';ETERNA.render();},s);await pg.waitForTimeout(120);await confere('estatisticas/'+s);}
+for(const s of ['a','c','d','e','f','g']){await pg.evaluate(s=>{ETERNA.state.es.sec=s;ETERNA.state.view='estatisticas';ETERNA.render();},s);await pg.waitForTimeout(120);await confere('estatisticas/'+s);}
+// 23/11: a antiga seção b (Fotógrafos) é a aba Estatísticas da view Fotógrafos; as três abas
+for(const a of await pg.evaluate(()=>ETERNA.FG_ABAS)){await pg.evaluate(a=>{ETERNA.state.fg.aba=a;ETERNA.state.view='fotografos';ETERNA.render();},a);await pg.waitForTimeout(120);await confere('fotografos/'+a);}
 const ok=!bad.length&&!errs.length;
-console.log(`${ok?'OK':'FALHA'} nomes-antigos: ${vs.length} telas, ${abas.length} abas de Preços e Checkout e 7 seções das Estatísticas sem "Painel de controle", "Vendas e caixa" nem "Computador do ponto"${bad.length?' · '+bad.slice(0,8).join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);
+console.log(`${ok?'OK':'FALHA'} nomes-antigos: ${vs.length} telas, ${abas.length} abas de Preços e Checkout, 6 seções das Estatísticas e as abas de Fotógrafos sem "Painel de controle", "Vendas e caixa" nem "Computador do ponto"${bad.length?' · '+bad.slice(0,8).join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);
 await b.close();process.exit(ok?0:1);})();

@@ -74,7 +74,7 @@ try{
     const tab=await pg.evaluate(()=>({abas:[...document.querySelectorAll('[data-act="fg-aba"]')].map(x=>x.dataset.a),cab:[...document.querySelectorAll('.af-tabela thead th')].map(x=>x.textContent),
       linhas:[...document.querySelectorAll('.af-tabela tbody tr')].map(tr=>[...tr.children].map(td=>td.textContent.replace(/\s+/g,' ').trim()))}));
     ok(J(tab.abas)===J(ETERNA_ABAS(tab.abas))&&tab.abas.includes('af')&&tab.abas[0]==='indice','abas da view Fotógrafos: '+J(tab.abas));
-    ok(tab.linhas.length===4&&tab.linhas[3][0]==='Equipe'&&tab.linhas[0][0]==='Márcio'&&tab.linhas.find(l=>l[0]==='Márcio')[6]==='20% (20 de 100: 12 estouradas, 8 escuras)','tabela da AF com a equipe no fim: '+J(tab.linhas));
+    ok(tab.linhas.length===4&&tab.linhas[3][0]==='Equipe'&&tab.linhas[0][0]==='Márcio'&&tab.linhas.find(l=>l[0]==='Márcio')[6]==='20%20 de 100: 12 estouradas, 8 escuras','tabela da AF com a equipe no fim: '+J(tab.linhas));
     ok(/Famílias/.test(tab.cab.join('|'))&&!/Em teste/.test(tab.cab.join('|')),'Ligada: sem o selo Em teste');
     ok(tab.linhas.find(l=>l[0]==='Yago')[2].includes('9 abaixo de 20 · 0 acima de 40'),'cliques com abaixo e acima');
     R.expo='medir';await pg.evaluate(()=>ETERNA.afPull(true));await pg.waitForTimeout(300);

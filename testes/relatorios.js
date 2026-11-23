@@ -126,11 +126,11 @@ try{
   await abrir('painel',`ETERNA.state.range={from:'2019-01-01',to:'2019-01-07'};`);a=await baixar('xlsx');ok(!a&&(await toast())===await TE('rel_sem_linhas'),'Painel vazio: deveria avisar que não há linhas · '+await toast());
   await pg.evaluate(r=>{ETERNA.state.range=r;},R7);
 
-  // ---------- critérios 1 e 7: Estatísticas só nas seções a, b, e; a seção e exporta só a tabela por idioma ----------
+  // ---------- critérios 1 e 7: Estatísticas só nas seções a e e (23/11: a b virou a aba Estatísticas de Fotógrafos); a seção e exporta só a tabela por idioma ----------
   const DIAS=[{dia:R7.from,v:2,vendas:5,faturamento:900.5,sessoes:10,sessoes_com_venda:5,fotos:100,por_idioma:{pt:{vendas:3,faturamento:500},en:{vendas:2,faturamento:400.5}},por_produto:{gramado:{n:3,receita:450},arquibancada:{n:2,receita:450.5}},por_meio:{pix:{vendas:5,faturamento:900.5}},por_posto:{'Caixa 1':{vendas:5,faturamento:900.5}},por_hora:{10:{vendas:5,faturamento:900.5,sessoes:10,fotos:100}},por_fotografo:{yago:{sessoes:6,fotos:60,vendas:3,faturamento:500.5,sessoes_com_venda:3},marinara:{sessoes:4,fotos:40,vendas:2,faturamento:400,sessoes_com_venda:2}},montagens:{vistas:8,compradas:2}},
     {dia:R7.to,v:2,vendas:5,faturamento:1070,sessoes:8,sessoes_com_venda:4,fotos:90,por_idioma:{pt:{vendas:1,faturamento:70},es:{vendas:4,faturamento:1000}},por_fotografo:{yago:{sessoes:8,fotos:90,vendas:5,faturamento:1070,sessoes_com_venda:4}}}];
   const es=sec=>abrir('estatisticas',`const M=ETERNA.state.es;M.sec=${J(sec)};M.rover=false;M.foto=null;M.ord='faturamento';M.dir=-1;M.chave=${J(R7.from+'|'+R7.to)};M.dias=${J(DIAS)};M.em=Date.now();`);
-  for(const s of ['a','b','c','d','e','f','g']){await es(s);const tem=!!(await pg.$('.head .rel-exp'));ok(tem===['a','b','e'].includes(s),'Estatísticas seção '+s+': botão '+(tem?'sobrando':'faltando'));
+  for(const s of ['a','c','d','e','f','g']){await es(s);const tem=!!(await pg.$('.head .rel-exp'));ok(tem===['a','e'].includes(s),'Estatísticas seção '+s+': botão '+(tem?'sobrando':'faltando'));
     if(tem)grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],['Exportar PDF','Exportar XLS'],'Estatísticas seção '+s+' (2 ícones)');}
   // o CSV dos dias do ano é de outra tabela (seção Jogos e ano a ano): fica junto dela, com o ícone novo (testes/agenda-estatisticas.js clica nele com o servidor)
   {const fonte=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');ok(/\$\{relBotao\('',\{act:'es-dias-csv',rot:TE\('es_baixar_csv'\)\}\)\}/.test(fonte)&&!/<button[^>]*data-act="(es-dias-csv|pn-csv|sales-csv)"/.test(fonte),'CSV fora do grupo Exportar no index.html');
@@ -144,9 +144,14 @@ try{
   await es('a');a=await baixar('xlsx');ok(a,'Estatísticas a: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Estatísticas a');ok(x.abas.length===8&&x.abas[0].dados.find(l=>l[0].v==='Faturamento')[1].v===1970.5&&x.abas[1].dados.length===3,'Estatísticas a: abas '+J(x.abas.map(s=>[s.nome,s.dados.length])));}
   a=await baixar('pdf');ok(a&&pdfLer(a.buf).objs&&pdfLer(a.buf).rodape.length===pdfLer(a.buf).paginas,'Estatísticas a: PDF');
-  await es('b');await pg.click('[data-act="es-ord"][data-c="nome"]');await pg.waitForTimeout(80);const telaB=await pg.evaluate(()=>[...document.querySelectorAll('.es-fotos tbody .es-link')].map(e=>e.textContent));
-  a=await baixar('xlsx');ok(a,'Estatísticas b: XLS não baixou · '+await toast());
-  if(a){const x=await xlsx(a,'Estatísticas b');const d=x.abas[0].dados;ok(telaB.length>1&&J(d.map(l=>l[0].v))===J(telaB),'Estatísticas b: ordem do arquivo × tela');const y=d.find(l=>l[0].v==='Yago');ok(y&&y[2].v===14&&y[8].v===1570.5&&Math.abs(y[6].v-0.5)<1e-9,'Estatísticas b: números do Yago '+J(y&&txt(y)));}
+  // 23/11: a comparação da tela b com o arquivo passa para Fotógrafos › Estatísticas (GET /fotografos/dias: dia e por_fotografo)
+  await abrir('fotografos',`ETERNA.state.range=${J(R7)};const F=ETERNA.state.fg;F.aba='estatisticas';F.foto=null;F.ord='faturamento';F.dir=-1;Object.assign(F.est,{chave:${J(R7.from+'|'+R7.to)},dias:${J(DIAS.map(d=>({dia:d.dia,por_fotografo:d.por_fotografo})))},em:Date.now(),erro:null});`);
+  ok(await pg.$('.head .rel-exp'),'Fotógrafos › Estatísticas: sem Exportar no topo');
+  await pg.click('[data-act="es-ord"][data-c="nome"]');await pg.waitForTimeout(80);const telaB=await pg.evaluate(()=>[...document.querySelectorAll('.es-fotos tbody .es-link')].map(e=>e.textContent));
+  a=await baixar('xlsx');ok(a,'Fotógrafos › Estatísticas: XLS não baixou · '+await toast());
+  if(a){const x=await xlsx(a,'Fotógrafos › Estatísticas');const d=x.abas[0].dados;ok(telaB.length>1&&J(d.map(l=>l[0].v))===J(telaB),'Fotógrafos › Estatísticas: ordem do arquivo × tela');const y=d.find(l=>l[0].v==='Yago');ok(y&&y[2].v===14&&y[8].v===1570.5&&Math.abs(y[6].v-0.5)<1e-9,'Fotógrafos › Estatísticas: números do Yago '+J(y&&txt(y)));
+    ok(J(x.abas[0].colunas)===J(['Fotógrafo','Dias com produção','Sessões','Fotos','Fotos/sessão','Vendas','Conversão','R$/sessão','Faturamento','Clique → Checkout'])&&/-fotografos-estatisticas-/.test(a.nome),'Fotógrafos › Estatísticas: as colunas da antiga seção b e o nome com a aba '+J([x.abas[0].colunas,a.nome]));}
+  await pg.evaluate(()=>{ETERNA.state.fg.aba='indice';});
   // ---------- critério 6: Lista de vendas com vendedor e status filtrados e mais de 50 linhas: todas as do filtro, nenhuma fora ----------
   const vs=await pg.evaluate(de=>{ETERNA.state.range={from:de,to:'2099-12-31'};const S=ETERNA.state.sales;Object.assign(S,{day:'all',seller:'all',pay:'all',q:'',canal:'all',status:'paga',page:0});const c={};const todas=ETERNA.salesFiltradas();todas.forEach(r=>{c[r.seller]=(c[r.seller]||0)+1;});
     const [seller,n]=Object.entries(c).sort((a,b)=>b[1]-a[1])[0];S.seller=seller;ETERNA.state.view='vendas-lista';ETERNA.render();
@@ -203,7 +208,7 @@ try{
     ok(J(ab)===J(["Dani's","Dados","Dados 2","a".repeat(30),"Dani's 2","x y z"])&&ab.every(n=>n.length<=31&&!/^'|'$/.test(n)),'Nome de aba com apóstrofo na ponta: '+J(ab));}
 
   // ---------- Fotógrafos: tabela do período e, com a pessoa aberta, o dia a dia dela ----------
-  await abrir('fotografos',`ETERNA.state.range=${J(R7)};ETERNA.state.person=null;ETERNA.state.personDay=null;`);
+  await abrir('fotografos',`ETERNA.state.range=${J(R7)};ETERNA.state.person=null;ETERNA.state.personDay=null;ETERNA.state.fg.aba='indice';`);
   ok(await pg.$('.head .rel-exp'),'Fotógrafos: sem Exportar no topo');grupoOk(await grupo('.head .rel-exp'),['pdf','xlsx'],['Exportar PDF','Exportar XLS'],'Fotógrafos (2 ícones)');const telaF=await pg.evaluate(()=>[...document.querySelectorAll('.panel table tbody tr')].map(tr=>[tr.children[0].textContent,tr.children[1].textContent,tr.children[9].textContent.replace(/\D/g,'')]));
   a=await baixar('xlsx');ok(a,'Fotógrafos: XLS não baixou · '+await toast());
   if(a){const x=await xlsx(a,'Fotógrafos');const d=x.abas[0].dados;ok(x.abas[0].colunas.length===15&&d.length===telaF.length&&d.every((l,i)=>l[0].v===telaF[i][0]&&(!l[1]||String(l[1].v)===telaF[i][1])&&String(Math.round(l[10].v))===telaF[i][2]),'Fotógrafos: arquivo × tela '+J([d.slice(0,2).map(txt),telaF.slice(0,2)]));}
@@ -275,6 +280,7 @@ try{
   ok(hist&&hist[2]==='exportou o relatório'&&hist[3]==='Bandeiras'&&/^PDF · \d+ linhas · Inventário: Atenção$/.test(hist[4])&&hist[1].startsWith('Admin de teste'),'Permissões › Histórico: '+J(hist));
 
   {const h=await pg.evaluate(()=>ETERNA.auditText({acao:'relatorio_exportado',alvo:'relatorio/estatisticas-b',por:'x',mudancas:[{campo:'formato',para:'xlsx'}],linhas:3}).pessoa);ok(h==='Estatísticas · '+await TE('es_sec_b'),'Histórico: seção de Estatísticas exportada '+J(h));}
+  {const h=await pg.evaluate(()=>ETERNA.auditText({acao:'relatorio_exportado',alvo:'relatorio/fotografos-estatisticas',por:'x',mudancas:[{campo:'formato',para:'xlsx'}],linhas:3}).pessoa);ok(h==='Fotógrafos · Estatísticas','Histórico: Fotógrafos › Estatísticas exportada '+J(h));}
   // ---------- critério 8: idioma da pessoa em inglês; chaves rel_* nas 5 línguas ----------
   await pg.evaluate(()=>{window.__u=JSON.stringify(ETERNA.state.user);ETERNA.state.user.idioma='en';ETERNA.state.view='bandeiras';ETERNA.render();});
   ok((await pg.textContent('.rel-exp>span'))==='Export','Inglês: rótulo do grupo '+await pg.textContent('.rel-exp>span'));
