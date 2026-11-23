@@ -1656,6 +1656,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             md = {"pid": pid, "nome": nome, "apagada": time.time(), "motivo": "lgpd", "sessao": sessao or None, "posto": posto or None, "por": quem or None}
             metricas.append(md); metrica_grava(md)
     falhas += treino_lgpd(alvo)             # 16/11: marcações do treino e ajuste, aviso, descarte e treino antigo do estado.db
+    falhas += poses_lgpd(alvo)              # 23/11: a classificação de pose da foto
     try:
         sess_esquecer_disco(apagados_sess)   # v91 (S14): o pid sai também dos arquivos de sessão dos dias anteriores
     except Exception as ex:
@@ -4075,6 +4076,8 @@ def rec_trabalho(i=0):
         except Exception as ex:
             job["err"] = str(ex)[:200]
         finally:
+            if job["prio"] <= REC_PRIO_IA:
+                poses_marca_prio("rec")              # 23/11: as poses voltam POSE_OCUPADO_SEG depois do último
             with rec_lock:
                 if rec_jobs.get(job["pid"]) is job:
                     del rec_jobs[job["pid"]]
@@ -4119,6 +4122,8 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
             t = threading.Thread(target=rec_trabalho, args=(len(rec_threads),), daemon=True)
             t.start()
             rec_threads.append(t)
+        if prio <= REC_PRIO_IA:
+            poses_marca_prio("rec")                  # 23/11: a classificação de poses cede a placa (D11)
         job = rec_jobs.get(pid)
         if job is None:
             if prio == REC_PRIO_CHECKOUT and rec["fila0"] >= REC_FILA_MAX:
@@ -4957,6 +4962,8 @@ def mtg_trabalho():
             print("  montagem-srv: erro numa montagem (%s)" % type(ex).__name__)   # nunca o id nem o caminho
         finally:
             job["err"] = erro
+            if job["prio"] <= MTG_P_VIVO:
+                poses_marca_prio("mtg")
             with mtg_lock:
                 if mtg_jobs.get((job["pid"], job["fundo"])) is job:
                     del mtg_jobs[(job["pid"], job["fundo"])]
@@ -4987,6 +4994,8 @@ def mtg_enfileirar(pid, fundo, tipos, prio, u=None, pref=False, grupo=()):
             t = threading.Thread(target=mtg_trabalho, daemon=True)
             t.start()
             mtg_threads.append(t)
+        if prio <= MTG_P_VIVO:
+            poses_marca_prio("mtg")                  # 23/11: a classificação de poses cede a placa (D11)
         k = (pid, fundo)
         job = mtg_jobs.get(k)
         if job is None:
@@ -11967,6 +11976,9 @@ def estado_gravar(body, quem=""):
                 if d["col"] == "config" and d["id"] == "treino":    # 16/11: o interruptor da análise só pela rota /treino/config
                     print("  config/treino recusada pela sincronização (só POST /treino/config) · de %s" % (quem or "?"))
                     continue
+                if d["col"] == "config" and d["id"] == "poses":     # 23/11: a chave das poses só pela rota /poses/config
+                    print("  config/poses recusada pela sincronização (só POST /poses/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
                     if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
                         print("  config/ia: apagar recusado · de %s" % (quem or "?"))
@@ -12662,7 +12674,7 @@ def backup_loop():
             backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
             print("  backup na nuvem (arquivos):", str(ex)[:160])
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB, TREINO_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB, TREINO_DB, POSES_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino; 23/11: poses
             if not bancos:
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
@@ -15449,6 +15461,816 @@ def cena_loop():
             time.sleep(2)
 
 
+# ---------- Poses: classificar à noite cada foto (P1 do plano docs/planos/2026-11-23-poses-estatistica.md) ----------
+# Um processo filho (agente/eterna-poses.py) sobe um llama-server do llama.cpp, só no 127.0.0.1, com o Qwen3-VL-8B-Instruct
+# (Apache 2.0) em GGUF Q4_K_M, e responde para cada foto um JSON curto e fechado (POSE_SAIDA): set, quem aparece, adereço,
+# pose, enquadramento e vibração. A orientação vem da miniatura (sem IA) e o set do reconhecimento do ponto (cena), quando
+# ele está Ligado e com confiança de CENA_LIMIAR ou mais (D3). Tudo local: nenhuma foto sai do servidor.
+# Prioridade da placa (D11): o recorte e a montagem dos fundos de IA vêm antes. A classificação só roda dentro da janela
+# (padrão 20:00 às 07:00), sem trabalho de prioridade 0 ou 1 no recorte e na montagem nos últimos POSE_OCUPADO_SEG e com
+# POSE_VRAM_LIVRE_MB livres na placa (só conferido antes de abrir: aberto, o próprio modelo ocupa a placa). Entre um lote
+# e outro tudo é conferido de novo; se não pode, termina o lote e fecha o processo (libera a placa).
+# Chave config/poses no estado.db (só pela rota POST /poses/config; o estado_gravar recusa):
+#   desligada (padrão)  nada roda, o filho nem abre e o poses.db nem é criado
+#   sombra              classifica (e na P3 agrega); a tela mostra "Em teste", sem alertas nem fechamento
+#   ligada              alertas e fechamento mensal (P4 e P5); só com a Medição em POSE_MEDIDA_MIN ou mais (409 criterio)
+# ETERNA_POSES=0 força desligada. ~/Eterna/ponto/poses.db vai para o backup (só texto: nenhum pixel, nenhuma chave).
+POSES_DB = os.path.join(HOME, "ponto", "poses.db")
+POSE_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-poses.py")
+POSE_BIN = "/opt/eterna/visao/bin/llama-server"     # root:root 755 (servidor/linux/visao-instalar.sh); os testes trocam
+POSE_NVSMI = "nvidia-smi"                           # memória livre da placa; os testes trocam
+POSE_ARQ = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"        # em ~/Eterna/modelos (agente/instalar-poses-modelos.py)
+POSE_MMPROJ_ARQ = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
+# SHA-256 dos dois arquivos: o Ronaldo confere o download no servidor (instalar-poses-modelos.py --conferir) e o
+# programador fixa aqui e no instalar-poses-modelos.py, como foi com o CENA_SHA. Vazio = sem SHA fixo: o filho não abre
+# (motivo sem_modelo) e nada é classificado (falha fechada).
+POSE_SHA = ""
+POSE_MMPROJ_SHA = ""
+POSE_NOME = "qwen3vl-8b-q4"
+POSE_PROMPT_V = "p1"           # o mesmo POSE_PROMPT_V do eterna-poses.py (o filho que responde outro não é usado)
+POSE_TAXO_V = 1
+POSE_JANELA_PADRAO = ("20:00", "07:00")
+POSE_LOTE = 8
+POSE_VRAM_LIVRE_MB = 9000
+POSE_DIAS = 7                  # quantos dias (hoje incluído) a noite cobre
+POSE_MORTES_MAX = 3            # na 3ª morte seguida do filho, parado até a próxima noite
+POSE_OCUPADO_SEG = 120         # recorte ou montagem com prioridade 0 ou 1: a classificação volta só depois disto
+POSE_DORME = 30                # s entre uma conferência e outra quando não pode rodar
+POSE_FILA_SEG = 300            # a lista de pendentes é refeita a cada 5 min (ou quando acaba)
+POSE_ERRO_SEG = 60             # s antes de tentar abrir o filho de novo depois de um erro
+POSE_ESPERA_SEG = 600          # prazo de um lote no filho
+POSE_CARGA_SEG = 360           # prazo para o filho conferir o SHA e o llama-server abrir o modelo
+POSE_LINHA_DIAS = 60           # a linha de cada foto vence nisto (os agregados da P3 ficam)
+POSE_MEDIDA_MIN = 150          # conferidas no Marcar para aceitar Ligada (D10; a medida é da P2)
+POSE_MODOS = ("desligada", "sombra", "ligada")
+POSE_PIDS = os.path.join(HOME, "ponto", "poses-filho.json")    # filho e llama-server abertos (a partida encerra órfãos)
+POSE_TAXO = {
+    "set": TREINO_PONTOS,
+    "quem": ("individual", "dupla", "grupo_adultos", "familia_crianca", "so_criancas", "ninguem"),
+    "adereco": ("bandeira", "trofeu", "ambos", "nenhum"),
+    "pose": ("bandeira_frente", "bandeira_atras", "bandeira_capa", "bandeira_outra", "trofeu_segura", "trofeu_comemora",
+             "trofeu_ao_lado", "arq_sentado", "arq_em_pe", "chute_bola_ar", "chute_parado", "chute_comemora", "abraco_beijo",
+             "posado", "comemora_sem", "outra"),
+    "enq": ("inteiro", "meio", "close"),
+    "vib": ("braco", "punho", "pulo", "movimento"),     # lista; vazia = parado
+    "orient": ("h", "v", "q"),                          # do servidor (miniatura), nunca do modelo
+}
+POSE_CURTAS = (("s", "set"), ("q", "quem"), ("a", "adereco"), ("p", "pose"), ("e", "enq"), ("vb", "vib"))
+POSE_SAIDA = {"type": "object", "additionalProperties": False, "required": [c for c, _ in POSE_CURTAS],
+              "properties": {**{c: {"type": "string", "enum": list(POSE_TAXO[k])} for c, k in POSE_CURTAS if c != "vb"},
+                             "vb": {"type": "array", "items": {"type": "string", "enum": list(POSE_TAXO["vib"])}, "maxItems": 4}}}
+POSE_ERROS_FOTO = ("caminho_recusado", "pid", "imagem", "imagem_grande")   # a foto em si não serve: linha nao_classificavel
+_re_pose_hm = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+poses_lock = threading.Lock()                # estado e contadores (nunca junto do rec_lock, do mtg_lock ou do lock)
+poses_db_lock = threading.Lock()
+poses_filho_lock = threading.Lock()
+poses_st = {"erro": None, "erro_em": 0.0, "mortes": 0, "parado": None, "carregado": False, "carga_ms": None, "pendentes": 0,
+            "pend_t": 0.0, "noite_k": None, "rodando": False, "falhou": set(), "abriu": False,
+            "noite": {"ini": None, "fim": None, "feitas": 0, "duvidas": 0, "erros": 0, "ms_total": 0, "ms_n": 0, "parou_por": None}}
+poses_filho = {"p": None, "fila": None, "seq": 0, "criado": None, "llama": None}
+poses_parar = threading.Event()              # só os testes ligam: o poses_loop termina
+POSE_PRIO_EM = {"rec": 0.0, "mtg": 0.0}      # último trabalho de prioridade 0 ou 1 no recorte e na montagem (posto ou tirado)
+_poses_cfg = {"t": 0.0, "v": None}
+_poses_ok = {}                               # ((caminho, tamanho, mtime), ...) -> os dois SHA conferem
+
+
+def poses_marca_prio(tipo):
+    """Chamada pelo recorte (rec_enfileirar, rec_trabalho) e pela montagem (mtg_enfileirar, mtg_trabalho) em todo trabalho
+    de prioridade 0 ou 1: a classificação de poses espera POSE_OCUPADO_SEG depois do último."""
+    POSE_PRIO_EM[tipo] = time.time()
+
+
+def pose_versao():
+    """8 hex: SHA do modelo, SHA do mmproj, versão do prompt e da taxonomia. Mudou = todas as fotos da janela de
+    POSE_DIAS são classificadas de novo."""
+    return hashlib.sha256(("%s|%s|%s|t%d" % (POSE_SHA, POSE_MMPROJ_SHA, POSE_PROMPT_V, POSE_TAXO_V)).encode()).hexdigest()[:8]
+
+
+def _poses_agora():
+    return time.time()       # os testes trocam (janela)
+
+
+def poses_cfg_valida(j):
+    """config/poses: {modo, janela:{ini, fim}} (por e em são de auditoria). Outro formato = None."""
+    if not isinstance(j, dict) or j.get("modo") not in POSE_MODOS:
+        return None
+    ja = j.get("janela")
+    if not isinstance(ja, dict) or set(ja) != {"ini", "fim"}:
+        return None
+    ini, fim = ja.get("ini"), ja.get("fim")
+    if not all(isinstance(x, str) and _re_pose_hm.match(x) for x in (ini, fim)) or ini == fim:
+        return None
+    return {"modo": j["modo"], "janela": {"ini": ini, "fim": fim}}
+
+
+def poses_cfg():
+    """A chave (estado.db config/poses), relida a cada 3 s; sem documento: desligada na janela padrão. ETERNA_POSES=0 vence
+    o que estiver gravado (forcada). Nunca cria banco."""
+    agora = time.time()
+    if agora - _poses_cfg["t"] >= 3 or _poses_cfg["v"] is None:
+        v = None
+        try:
+            if os.path.exists(ESTADO_DB):
+                with estado_lock:
+                    db = estado_db()
+                    try:
+                        r = db.execute("select valor from doc where col = 'config' and id = 'poses' and valor is not null").fetchone()
+                    finally:
+                        db.close()
+                if r:
+                    j = json.loads(r[0])
+                    v = poses_cfg_valida(j)
+                    if v is not None:
+                        v.update(por=j.get("por"), em=j.get("em"))
+        except Exception:
+            v = _poses_cfg["v"]
+        _poses_cfg.update(t=agora, v=v or {"modo": "desligada", "janela": {"ini": POSE_JANELA_PADRAO[0], "fim": POSE_JANELA_PADRAO[1]},
+                                          "por": None, "em": None})
+    v = dict(_poses_cfg["v"], janela=dict(_poses_cfg["v"]["janela"]))
+    v["forcada"] = os.environ.get("ETERNA_POSES") == "0"
+    if v["forcada"]:
+        v["modo"] = "desligada"
+    return v
+
+
+def poses_medida():
+    """Quantas fotos a equipe conferiu no Marcar (P2). Na P1 ainda não existe a conferência: n = 0."""
+    return {"v": 1, "n": 0}
+
+
+def poses_cfg_gravar(corpo, quem):
+    """POST /poses/config {modo?, janela?:{ini, fim}} (configuracao.u, pela tabela ROTAS). Ligada só com a Medição em
+    POSE_MEDIDA_MIN ou mais (409 criterio com falta). -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"modo", "janela"}:
+        return 400, {"ok": False, "error": "campo"}
+    de = poses_cfg()
+    novo = poses_cfg_valida({"modo": corpo.get("modo", _poses_cfg["v"]["modo"]), "janela": corpo.get("janela", de["janela"])})
+    if novo is None:
+        return 400, {"ok": False, "error": "valor"}
+    if novo["modo"] == "ligada" and _poses_cfg["v"]["modo"] != "ligada":
+        n = int(poses_medida().get("n") or 0)
+        if n < POSE_MEDIDA_MIN:
+            return 409, {"ok": False, "error": "criterio", "falta": POSE_MEDIDA_MIN - n}
+    v = dict(novo, por=str(quem or "")[:100] or None, em=_iso())
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "poses", json.dumps(v, ensure_ascii=False), rev, v["em"]))
+            db.commit()
+        finally:
+            db.close()
+    _poses_cfg.update(t=time.time(), v=dict(v))
+    print("  poses: modo %s -> %s · janela %s às %s · por %s" % (_poses_cfg_txt(de), v["modo"], v["janela"]["ini"], v["janela"]["fim"], v["por"] or "?"))
+    f = poses_cfg()
+    return 200, {"ok": True, "modo": v["modo"], "janela": v["janela"], "por": v["por"], "em": v["em"], "forcada": f["forcada"]}
+
+
+def _poses_cfg_txt(c):
+    return "desligada (ETERNA_POSES=0)" if c.get("forcada") else c["modo"]
+
+
+def _poses_hm(t):
+    return time.strftime("%H:%M", time.localtime(t))
+
+
+def poses_na_janela(cfg=None, t=None):
+    cfg = cfg or poses_cfg()
+    hm, ini, fim = _poses_hm(_poses_agora() if t is None else t), cfg["janela"]["ini"], cfg["janela"]["fim"]
+    return ini <= hm < fim if ini < fim else (hm >= ini or hm < fim)
+
+
+def _poses_noite_chave(cfg=None, t=None):
+    """O dia em que a noite começou (a janela que atravessa a meia-noite é da véspera depois das 00:00)."""
+    cfg = cfg or poses_cfg()
+    t = _poses_agora() if t is None else t
+    ini, fim = cfg["janela"]["ini"], cfg["janela"]["fim"]
+    return _ff_hoje(t - 86400) if ini > fim and _poses_hm(t) < fim else _ff_hoje(t)
+
+
+def poses_db():
+    """Conexão ao poses.db (chamar com o poses_db_lock). Só existe depois da primeira classificação."""
+    os.makedirs(os.path.dirname(POSES_DB), exist_ok=True)
+    c = sqlite3.connect(POSES_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("create table if not exists pose (pid text primary key, dia text, card text, fotografo text, w integer, h integer,"
+              " orient text, set_ia text, set_cena text, dados text, duvida integer, motivo text, versao text, ms integer, em text)")
+    c.execute("create index if not exists pose_dia on pose(dia)")
+    c.execute("create index if not exists pose_card on pose(card)")
+    return c
+
+
+def pose_valida(d, origem="ia"):
+    """A única validação de uma classificação de pose: a resposta da IA (origem "ia", chaves curtas de POSE_SAIDA) ou a
+    marcação humana (origem "mao", chaves longas, cada uma podendo ser null; P2). -> (dados, motivo)
+      formato     algum campo fora de POSE_TAXO, chave a mais ou a menos, ou não é um objeto (JSON quebrado): dados None
+      incoerente  bandeira_* sem bandeira, trofeu_* sem troféu, arq_* fora da arquibancada, chute_* fora do chute: dados None
+      sem_pessoa  quem = ninguem: dados ficam, mas a foto sai das contas
+      None        válida"""
+    if not isinstance(d, dict):
+        return None, "formato"
+    campos = ("set", "quem", "adereco", "pose", "enq", "vib")
+    if origem == "ia":
+        if set(d) != {c for c, _ in POSE_CURTAS}:
+            return None, "formato"
+        x = {k: d[c] for c, k in POSE_CURTAS}
+    else:
+        if not d or set(d) - set(campos):
+            return None, "formato"
+        x = {k: d.get(k) for k in campos}
+    out = {}
+    for k in campos[:-1]:
+        v = x.get(k)
+        if v is None and origem != "ia":
+            out[k] = None
+        elif isinstance(v, str) and v in POSE_TAXO[k]:
+            out[k] = v
+        else:
+            return None, "formato"
+    vb = x.get("vib")
+    if vb is None and origem != "ia":
+        out["vib"] = None
+    elif isinstance(vb, list) and len(vb) <= 8 and all(isinstance(i, str) and i in POSE_TAXO["vib"] for i in vb):
+        out["vib"] = [i for i in POSE_TAXO["vib"] if i in vb]
+    else:
+        return None, "formato"
+    p, a, s = out["pose"], out["adereco"], out["set"]
+    if p and ((p.startswith("bandeira_") and a is not None and a not in ("bandeira", "ambos"))
+              or (p.startswith("trofeu_") and a is not None and a not in ("trofeu", "ambos"))
+              or (p.startswith("arq_") and s is not None and s != "arquibancada")
+              or (p.startswith("chute_") and s is not None and s != "chute")):
+        return None, "incoerente"
+    if out["quem"] == "ninguem":
+        return out, "sem_pessoa"
+    return out, None
+
+
+def pose_orient(pid):
+    """(w, h, orient) da miniatura (a rotação do EXIF já está aplicada nela): h acima de 1,05, v abaixo de 0,95, senão q."""
+    with lock:
+        e = lib.get(pid)
+    th = (e or {}).get("thumb")
+    wh = jpeg_cabecalho(th) if th and os.path.exists(th) else None
+    if not wh or not wh[0] or not wh[1]:
+        return None, None, None
+    r = wh[0] / wh[1]
+    return wh[0], wh[1], "h" if r > 1.05 else "v" if r < 0.95 else "q"
+
+
+def poses_modelo_ok(conferir=True):
+    """(ok, erro) do binário e dos dois arquivos do modelo, com o SHA-256 fixado (cache por tamanho e data). conferir=False
+    (o /status) nunca lê os 6 GB: sem conferência ainda, "conferindo"."""
+    if not all(re.fullmatch(r"[0-9a-f]{64}", s or "") for s in (POSE_SHA, POSE_MMPROJ_SHA)):
+        return False, "sem_modelo"
+    if not os.path.isfile(POSE_BIN) or not os.access(POSE_BIN, os.X_OK):
+        return False, "sem_modelo"
+    ps = (os.path.join(MODELOS, POSE_ARQ), os.path.join(MODELOS, POSE_MMPROJ_ARQ))
+    try:
+        k = tuple((p, os.stat(p).st_size, os.stat(p).st_mtime) for p in ps) + (POSE_SHA, POSE_MMPROJ_SHA)
+    except OSError:
+        return False, "sem_modelo"
+    v = _poses_ok.get(k)
+    if v is None:
+        if not conferir:
+            return False, "conferindo"
+        try:
+            v = True
+            for p, sha in zip(ps, (POSE_SHA, POSE_MMPROJ_SHA)):
+                h = hashlib.sha256()
+                with open(p, "rb") as f:
+                    for b in iter(lambda: f.read(1 << 20), b""):
+                        h.update(b)
+                v = v and h.hexdigest() == sha
+        except OSError:
+            v = False
+        _poses_ok.clear()
+        _poses_ok[k] = v
+    return (True, None) if v else (False, "sem_modelo")
+
+
+def poses_vram_livre_mb():
+    """Memória livre da placa (MB, a primeira placa) pelo nvidia-smi; None sem o comando ou sem resposta."""
+    try:
+        r = subprocess.run([POSE_NVSMI, "--query-gpu=memory.free", "--format=csv,noheader,nounits"], capture_output=True,
+                           text=True, timeout=10)
+    except Exception:
+        return None
+    if r.returncode != 0:
+        return None
+    vals = [int(x.strip()) for x in (r.stdout or "").splitlines() if x.strip().isdigit()]
+    return vals[0] if vals else None
+
+
+def _poses_ocupado(tipo):
+    """Recorte (rec) ou montagem (mtg) com trabalho de prioridade 0 ou 1 agora, ou há menos de POSE_OCUPADO_SEG."""
+    if tipo == "rec":
+        with rec_lock:
+            ativo = any((j.get("prio") if j.get("prio") is not None else 9) <= REC_PRIO_IA for j in list(rec_jobs.values()))
+    else:
+        with mtg_lock:
+            ativo = any((j.get("prio") if j.get("prio") is not None else 9) <= MTG_P_VIVO for j in list(mtg_jobs.values()))
+    if ativo:
+        POSE_PRIO_EM[tipo] = time.time()
+        return True
+    return time.time() - POSE_PRIO_EM[tipo] < POSE_OCUPADO_SEG
+
+
+def _poses_vivo():
+    p = poses_filho.get("p")
+    return p is not None and p.poll() is None
+
+
+def poses_pode_rodar(aberto=None):
+    """(bool, motivo). Motivos: fora_janela, parado, sem_modelo, recorte_ocupado, montagem_ocupada, vram. A memória da placa
+    só é conferida com o filho fechado (aberto, o próprio modelo ocupa a placa)."""
+    cfg = poses_cfg()
+    if not poses_na_janela(cfg):
+        return False, "fora_janela"
+    k = _poses_noite_chave(cfg)
+    with poses_lock:
+        if poses_st["parado"]:
+            if poses_st["parado"] == k:
+                return False, "parado"
+            poses_st.update(parado=None, mortes=0)       # noite nova: tenta de novo
+    if not poses_modelo_ok()[0]:
+        return False, "sem_modelo"
+    if _poses_ocupado("rec"):
+        return False, "recorte_ocupado"
+    if _poses_ocupado("mtg"):
+        return False, "montagem_ocupada"
+    if not (_poses_vivo() if aberto is None else aberto):
+        livre = poses_vram_livre_mb()
+        if livre is None or livre < POSE_VRAM_LIVRE_MB:
+            return False, "vram"
+    return True, None
+
+
+def poses_pendentes():
+    """As fotos das sessões fechadas de hoje até POSE_DIAS para trás sem linha da pose_versao() atual, do dia mais antigo
+    para o mais novo e em ordem de clique. -> [{pid, dia, card, fotografo, origem}] (a miniatura; sem ela, o original)."""
+    agora = time.time()
+    dias = [_ff_hoje(agora - i * 86400) for i in range(POSE_DIAS - 1, -1, -1)]
+    feitos = set()
+    if os.path.exists(POSES_DB):
+        with poses_db_lock:
+            db = poses_db()
+            try:
+                feitos = {r[0] for r in db.execute("select pid from pose where versao = ? and dia >= ?", (pose_versao(), dias[0]))}
+            finally:
+                db.close()
+    with poses_lock:
+        falhou = set(poses_st["falhou"])
+    out = []
+    for dia in dias:
+        fotos = [f for f in _treino_ler_dia(dia)[0] if f["pid"] not in feitos and f["pid"] not in falhou]   # sem o cache do Treino (4 dias)
+        fotos.sort(key=lambda f: (f.get("t") or 0.0, f["card"], f["ordem"]))
+        with lock:
+            orig = {f["pid"]: (lib.get(f["pid"]) or {}) for f in fotos}
+        for f in fotos:
+            e = orig.get(f["pid"])
+            o = e.get("thumb") if e.get("thumb") and os.path.exists(e["thumb"]) else e.get("file")
+            if o:
+                out.append({"pid": f["pid"], "dia": dia, "card": f["card"], "fotografo": f.get("fotografo"), "origem": o})
+    return out
+
+
+def _poses_e_nosso(pid, llama=False):
+    """True se o processo é o nosso filho (eterna-poses.py) ou o llama-server que ele abriu (a linha tem o arquivo da chave
+    dentro da pasta ponto). Nunca mata processo de outro tipo."""
+    try:
+        import psutil
+        cmd = psutil.Process(pid).cmdline()
+    except ImportError:
+        try:
+            with open("/proc/%d/cmdline" % pid, "rb") as f:
+                cmd = [c.decode("utf8", "replace") for c in f.read().split(b"\0") if c]
+        except OSError:
+            return False
+    except Exception:
+        return False
+    if llama:
+        i = cmd.index("--api-key-file") if "--api-key-file" in cmd else -1
+        return 0 <= i < len(cmd) - 1 and os.path.realpath(cmd[i + 1]).startswith(os.path.realpath(os.path.dirname(POSES_DB)) + os.sep)
+    return any(os.path.basename(c) == os.path.basename(POSE_FILHO) for c in cmd)
+
+
+def _poses_pids_gravar():
+    f = poses_filho
+    p = f.get("p")
+    try:
+        if p is not None and p.poll() is None:
+            os.makedirs(os.path.dirname(POSE_PIDS), exist_ok=True)
+            _grava_privado(POSE_PIDS, json.dumps({"filho": p.pid, "llama": f.get("llama"), "agente": os.getpid(), "criado": f.get("criado")}))
+        elif os.path.exists(POSE_PIDS):
+            os.remove(POSE_PIDS)
+    except OSError:
+        pass
+
+
+def _poses_mata_llama(pid):
+    import signal
+    if not isinstance(pid, int) or pid <= 1 or not _poses_e_nosso(pid, llama=True):
+        return False
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(pid, signal.SIGKILL)       # o llama-server abre no próprio grupo (start_new_session)
+        else:
+            os.kill(pid, 9)
+        return True
+    except OSError:
+        return False
+
+
+def poses_orfaos_encerrar():
+    """Na partida: o filho e o llama-server deixados por um agente que caiu (POSE_PIDS) são encerrados (libera a placa)."""
+    import signal
+    try:
+        with open(POSE_PIDS, encoding="utf8") as f:
+            j = json.load(f)
+    except (OSError, ValueError):
+        return 0
+    n = 0
+    fp = j.get("filho") if isinstance(j, dict) else None
+    if isinstance(fp, int) and fp != os.getpid() and _poses_e_nosso(fp):
+        try:
+            os.kill(fp, signal.SIGTERM if hasattr(signal, "SIGTERM") else 9)
+            n += 1
+        except OSError:
+            pass
+    if isinstance(j, dict) and _poses_mata_llama(j.get("llama")):
+        n += 1
+    if n:
+        print("  poses: %d processo(s) de uma partida anterior encerrado(s)" % n)
+    try:
+        os.remove(POSE_PIDS)
+    except OSError:
+        pass
+    return n
+
+
+def _poses_erro(motivo, morte=False):
+    k = _poses_noite_chave()
+    with poses_lock:
+        poses_st.update(erro=motivo, erro_em=time.time(), carregado=False)
+        if morte:
+            poses_st["mortes"] += 1
+            if poses_st["mortes"] >= POSE_MORTES_MAX and not poses_st["parado"]:
+                poses_st["parado"] = k
+                print("  poses: o processo do classificador parou %d vezes seguidas; fica parado até a próxima noite" % poses_st["mortes"])
+
+
+def _poses_matar():
+    """Com o poses_filho_lock: fecha o stdin (o filho fecha o llama-server e apaga a chave), espera e, se preciso, mata o
+    filho e o grupo do llama-server."""
+    f = poses_filho
+    p, f["p"] = f.get("p"), None
+    if p is None:
+        return
+    try:
+        p.stdin.close()
+    except Exception:
+        pass
+    try:
+        p.wait(timeout=15)
+    except Exception:
+        try:
+            p.kill()
+            p.wait(timeout=5)
+        except Exception:
+            pass
+    _poses_mata_llama(f.get("llama"))
+    f["llama"] = None
+    _poses_pids_gravar()
+
+
+def _poses_abrir():
+    """Com o poses_filho_lock: o filho vivo, ou abre um novo. Exceção com o motivo se não deu."""
+    f = poses_filho
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:                           # morreu entre um lote e outro
+        _poses_matar()
+        _poses_erro("filho", morte=True)
+        raise RuntimeError("filho")
+    cmd = [sys.executable, "-I", POSE_FILHO, "--inbox", INBOX, "--thumbs", THUMBS, "--modelos", MODELOS, "--bin", POSE_BIN,
+           "--modelo-arq", POSE_ARQ, "--mmproj-arq", POSE_MMPROJ_ARQ, "--sha", POSE_SHA or "-", "--mmproj-sha", POSE_MMPROJ_SHA or "-",
+           "--ponto", os.path.dirname(POSES_DB)]
+    os.makedirs(os.path.dirname(POSES_DB), exist_ok=True)
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1, encoding="utf-8",
+                             env=rec_env(), close_fds=True)
+    except Exception as ex:
+        _poses_erro("filho")
+        raise RuntimeError("filho: %s" % type(ex).__name__)
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila, criado=time.time(), llama=None)
+    _poses_pids_gravar()
+    try:
+        j = fila.get(timeout=POSE_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "tempo"}
+    if not j or not j.get("pronto"):
+        erro = (j or {}).get("erro")
+        _poses_matar()
+        if erro == "sem_modelo":
+            _poses_erro("sem_modelo")
+        else:
+            _poses_erro("filho", morte=True)
+        raise RuntimeError(poses_st["erro"] or "filho")
+    if j.get("prompt_v") != POSE_PROMPT_V:           # o deploy leva os dois arquivos juntos; versão trocada não classifica
+        _poses_matar()
+        _poses_erro("versao")
+        raise RuntimeError("versao")
+    f["llama"] = j.get("llama_pid") if isinstance(j.get("llama_pid"), int) else None
+    _poses_pids_gravar()
+    with poses_lock:
+        poses_st.update(carregado=True, erro=None, carga_ms=j.get("carga_ms"), abriu=True)
+    print("  poses: modelo de visão aberto em %.1f s" % ((j.get("carga_ms") or 0) / 1000.0))
+    return f
+
+
+def poses_fechar():
+    """O filho e o llama-server saem da memória (e da placa)."""
+    with poses_filho_lock:
+        if poses_filho.get("p") is not None:
+            _poses_matar()
+        with poses_lock:
+            poses_st["carregado"] = False
+
+
+def poses_mandar(itens):
+    """[(pid, origem)] -> lista res do filho. Exceção se o filho morreu, demorou ou não abriu."""
+    with poses_filho_lock:
+        f = _poses_abrir()
+        f["seq"] += 1
+        mid = "p.%d" % f["seq"]
+        try:
+            f["p"].stdin.write(json.dumps({"id": mid, "itens": [{"pid": p, "origem": o} for p, o in itens[:POSE_LOTE]], "esquema": POSE_SAIDA}) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            _poses_matar()
+            _poses_erro("filho", morte=True)
+            raise RuntimeError("filho")
+        fim = time.time() + POSE_ESPERA_SEG
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _poses_matar()
+                _poses_erro("filho", morte=True)
+                raise RuntimeError("tempo")
+            if j is None:
+                _poses_matar()
+                _poses_erro("filho", morte=True)
+                raise RuntimeError("filho")
+            if j.get("id") == mid:
+                break
+        if not j.get("ok"):
+            if j.get("erro") == "servidor":              # o llama-server caiu: o filho sai
+                _poses_matar()
+                _poses_erro("filho", morte=True)
+            raise RuntimeError(str(j.get("erro") or "erro")[:80])
+    with poses_lock:
+        poses_st["mortes"] = 0
+    return [r for r in (j.get("res") or []) if isinstance(r, dict)]
+
+
+def poses_gravar(res, info):
+    """Junta a resposta da IA com o set do reconhecimento do ponto (D3), valida (pose_valida), grava em pose e conta na
+    noite. info: pid -> {dia, card, fotografo}. Foto que saiu da biblioteca no meio do lote não é gravada. -> (feitas,
+    dúvidas, erros)"""
+    ver, em = pose_versao(), _iso()
+    with lock:
+        vivas = {r.get("pid") for r in res if r.get("pid") in lib}
+    cena_lig = treino_cfg_mem().get("ponto") == "ligada"
+    cdb = {}
+    if cena_lig and os.path.exists(CENA_DB):
+        faltam = [r.get("pid") for r in res if r.get("pid") in vivas and r.get("pid") not in cena_mem]
+        if faltam:
+            with cena_db_lock:
+                db = cena_db()
+                try:
+                    cdb = {p: (rt, c) for p, rt, c in db.execute("select pid, rotulo, conf from cena where pid in (%s)" % ",".join("?" * len(faltam)), faltam)}
+                finally:
+                    db.close()
+    linhas, feitas, duvs, erros, ms = [], 0, 0, 0, []
+    for r in res:
+        pid = r.get("pid")
+        i = info.get(pid)
+        if not i or pid not in vivas:
+            continue
+        w, h, o = pose_orient(pid)
+        if "erro" in r:
+            erros += 1
+            if r.get("erro") in POSE_ERROS_FOTO:
+                linhas.append((pid, i["dia"], i["card"], i.get("fotografo"), w, h, o, None, None, None, 1, "nao_classificavel", ver, None, em))
+            else:
+                with poses_lock:
+                    poses_st["falhou"].add(pid)          # tenta de novo na próxima noite
+            continue
+        b = r.get("bruto")
+        d, mot = pose_valida(b, "ia")
+        set_ia = b.get("s") if isinstance(b, dict) and isinstance(b.get("s"), str) and b.get("s") in POSE_TAXO["set"] else None
+        set_cena = None
+        if cena_lig:
+            c = cena_mem.get(pid)
+            rt, cf = (c.get("r"), c.get("c")) if c else cdb.get(pid, (None, None))
+            if rt in CENA_CLASSES and isinstance(cf, (int, float)) and cf >= CENA_LIMIAR:
+                set_cena = rt
+        duvida = 1 if mot in ("formato", "incoerente") else 0
+        if d is not None:
+            if set_cena and set_ia and set_cena != set_ia:
+                duvida, mot = 1, mot or "set_diverge"
+            elif set_cena:
+                d["set"] = set_cena
+            d["orient"] = o
+        feitas += 1
+        duvs += duvida
+        m_ = r.get("ms") if isinstance(r.get("ms"), int) and 0 <= r.get("ms") < 10 ** 7 else None
+        if m_ is not None:
+            ms.append(m_)
+        linhas.append((pid, i["dia"], i["card"], i.get("fotografo"), w, h, o, set_ia, set_cena,
+                       json.dumps(d, ensure_ascii=False) if d is not None else None, duvida, mot, ver, m_, em))
+    if linhas:
+        with poses_db_lock:
+            db = poses_db()
+            try:
+                db.executemany("insert or replace into pose values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", linhas)
+                db.commit()
+            finally:
+                db.close()
+    with poses_lock:
+        n = poses_st["noite"]
+        n["feitas"] += feitas
+        n["duvidas"] += duvs
+        n["erros"] += erros
+        n["ms_total"] += sum(ms)
+        n["ms_n"] += len(ms)
+    return feitas, duvs, erros
+
+
+def poses_agregar():
+    """Agregados da noite (P3). Na P1 não faz nada."""
+    return None
+
+
+def poses_lgpd(pids):
+    """LGPD: a linha de pose da foto sai (e ela não volta à fila). Nunca cria o banco. -> falhas"""
+    pids = [p for p in pids if pid_ok(p)]
+    with poses_lock:
+        poses_st["falhou"].difference_update(pids)
+    if not pids or not os.path.exists(POSES_DB):
+        return []
+    try:
+        with poses_db_lock:
+            db = poses_db()
+            try:
+                for p in pids:
+                    db.execute("delete from pose where pid = ?", (p,))
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        return ["poses: " + str(ex)[:80]]
+    return []
+
+
+def poses_limpa(agora=None):
+    """De hora em hora: a linha de foto com mais de POSE_LINHA_DIAS sai (os agregados e os meses da P3 e da P5 ficam)."""
+    if not os.path.exists(POSES_DB):
+        return 0
+    lim = _ff_hoje((agora or time.time()) - POSE_LINHA_DIAS * 86400)
+    with poses_db_lock:
+        db = poses_db()
+        try:
+            n = db.execute("delete from pose where dia < ?", (lim,)).rowcount
+            db.commit()
+        finally:
+            db.close()
+    return n
+
+
+def _poses_comeca(cfg):
+    """Antes de cada lote: a noite começa (ou segue) e os contadores são da noite de agora."""
+    k = _poses_noite_chave(cfg)
+    with poses_lock:
+        n = poses_st["noite"]
+        novo = poses_st["noite_k"] != k
+        if novo:
+            poses_st.update(noite_k=k, falhou=set(), mortes=0)
+            poses_st["noite"] = {"ini": _iso(), "fim": None, "feitas": 0, "duvidas": 0, "erros": 0, "ms_total": 0, "ms_n": 0, "parou_por": None}
+        elif not poses_st["rodando"]:
+            n.update(fim=None, parou_por=None)
+        if not poses_st["rodando"]:
+            print("  poses: classificação %s (%d pendentes)" % ("começou" if novo else "voltou", poses_st["pendentes"]))
+        poses_st["rodando"] = True
+
+
+def _poses_para(motivo):
+    """Não pode rodar (ou acabou a fila): fecha o filho. Se a noite estava rodando, ela termina com o motivo e os agregados
+    são refeitos; senão o motivo fica em parou_por (fora_janela não apaga o motivo da noite que já terminou)."""
+    if poses_filho.get("p") is not None:
+        poses_fechar()
+    fim = None
+    with poses_lock:
+        n = poses_st["noite"]
+        if poses_st["rodando"]:
+            poses_st["rodando"] = False
+            n.update(fim=_iso(), parou_por=motivo)
+            fim = dict(n)
+        elif motivo != "fora_janela" or n["parou_por"] is None:
+            n["parou_por"] = motivo
+    if fim:
+        print("  poses: noite parou (%s) · %d feitas · %d dúvidas · %d erros · média %s ms por foto" % (
+            motivo, fim["feitas"], fim["duvidas"], fim["erros"], int(fim["ms_total"] / fim["ms_n"]) if fim["ms_n"] else "--"))
+        try:
+            poses_agregar()
+        except Exception as ex:
+            print("  poses: agregados %s" % type(ex).__name__)
+
+
+def poses_status():
+    """/status.poses: só números e códigos (nenhum pid, caminho ou chave)."""
+    cfg = poses_cfg()
+    ok, erro = poses_modelo_ok(conferir=False)
+    with poses_lock:
+        st = {k: poses_st[k] for k in ("erro", "parado", "carregado", "carga_ms", "pendentes", "noite_k", "rodando")}
+        n = dict(poses_st["noite"])
+    parado = bool(st["parado"] and st["parado"] == _poses_noite_chave(cfg))
+    if parado:
+        erro = "parado"
+    elif ok and st["erro"]:
+        erro = st["erro"]
+    return {"v": 1, "modo": cfg["modo"], "forcada": cfg["forcada"], "versao": pose_versao(),
+            "modelo": {"ok": bool(ok), "erro": erro, "nome": POSE_NOME, "pronto": bool(_poses_vivo() and st["carregado"]),
+                       "carga_ms": st["carga_ms"] if isinstance(st["carga_ms"], int) else None},
+            "janela": cfg["janela"], "na_janela": poses_na_janela(cfg), "pendentes": int(st["pendentes"]) if cfg["modo"] != "desligada" else 0,
+            "parado": parado, "rodando": bool(st["rodando"]),
+            "noite": {"ini": n["ini"], "fim": n["fim"], "feitas": n["feitas"], "duvidas": n["duvidas"], "erros": n["erros"],
+                      "ms_med": int(n["ms_total"] / n["ms_n"]) if n["ms_n"] else 0, "parou_por": n["parou_por"]}}
+
+
+def poses_loop():
+    """A thread da classificação de poses (padrão do cena_loop). Fora de sombra ou ligada, ou quando não pode rodar: fecha o
+    filho e dorme POSE_DORME. Dentro: lotes de POSE_LOTE, conferindo poses_pode_rodar() entre um e outro. Limpeza de hora
+    em hora."""
+    t_limpa, t_mod, fila, fila_t = time.time(), 0.0, [], 0.0
+    while not poses_parar.is_set():
+        try:
+            if time.time() - t_mod >= 600:
+                t_mod = time.time()
+                poses_modelo_ok()                    # o /status nunca lê os 6 GB: a conferência do SHA é daqui (cache)
+            if time.time() - t_limpa >= 3600:
+                t_limpa = time.time()
+                n = poses_limpa()
+                if n:
+                    print("  poses: %d linha(s) com mais de %d dias apagada(s)" % (n, POSE_LINHA_DIAS))
+            cfg = poses_cfg()
+            if cfg["modo"] not in ("sombra", "ligada"):
+                with poses_lock:
+                    rodando = poses_st["rodando"]
+                if rodando or poses_filho.get("p") is not None:
+                    _poses_para("desligada")
+                poses_parar.wait(POSE_DORME)
+                continue
+            pode, mot = poses_pode_rodar()
+            if not pode:
+                _poses_para(mot)
+                poses_parar.wait(POSE_DORME)
+                continue
+            with poses_lock:
+                espera = poses_st["erro"] and time.time() - poses_st["erro_em"] < POSE_ERRO_SEG
+            if espera:
+                poses_parar.wait(min(POSE_DORME, 5))
+                continue
+            if not fila or time.time() - fila_t >= POSE_FILA_SEG:   # a lista é refeita no fim dela ou a cada POSE_FILA_SEG
+                fila, fila_t = poses_pendentes(), time.time()
+                with poses_lock:
+                    poses_st.update(pendentes=len(fila), pend_t=fila_t)
+            if not fila:
+                _poses_para("fim_fila")
+                poses_parar.wait(POSE_DORME)
+                continue
+            lote = fila[:POSE_LOTE]
+            _poses_comeca(cfg)
+            try:
+                res = poses_mandar([(x["pid"], x["origem"]) for x in lote])
+            except Exception:
+                poses_parar.wait(1)
+                continue
+            poses_gravar(res, {x["pid"]: x for x in lote})
+            del fila[:len(lote)]
+            with poses_lock:
+                poses_st["pendentes"] = len(fila)
+        except Exception as ex:
+            print("  poses: %s" % type(ex).__name__)
+            poses_parar.wait(2)
+    poses_fechar()
+
+
 # Quem pode cada rota do agente. Nada abre sem estar aqui: rota fora da tabela responde 404 sem tocar o disco.
 #   publica          qualquer um: o app, o /status mínimo, a galeria do cliente (/g/) e o webhook do adquirente
 #   posto_ou_sessao  aparelho pareado (cookie eterna_posto) ou pessoa conectada com um dos módulos (vazio = qualquer pessoa)
@@ -15544,6 +16366,7 @@ ROTAS = (
     ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
+    ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa)
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -17140,6 +17963,24 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": False, "error": "erro no servidor"}, 500)
         return self.js(r, st, nostore=True)
 
+    def poses_post(self):
+        """23/11 (P1 de poses): POST /poses/config {modo?, janela?} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
+        (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "poses_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        try:
+            st, r = poses_cfg_gravar(body, quem)
+        except Exception as ex:
+            print("  poses: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        return self.js(r, st, nostore=True)
+
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
         Mesma guarda do /ponto/entradas (posto + origem + X-Eterna + 30 por minuto), corpo até 1 KB. O console nunca imprime o corpo."""
@@ -18331,6 +19172,10 @@ class H(BaseHTTPRequestHandler):
                 tr_ = treino_status()                  # 16/11: Treino da IA (contagem e interruptor), fora do lock
             except Exception:
                 tr_ = None
+            try:
+                ps_ = poses_status()                   # 23/11: classificação de poses (só números e códigos), fora do lock
+            except Exception:
+                ps_ = None
             with lock:
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
@@ -18341,7 +19186,7 @@ class H(BaseHTTPRequestHandler):
                            estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
                            app_offline_pronto=app_offline_pronto(), agenda=ag_,
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
-                           pagamento="teste" if compra_online() else "desligado", treino=tr_,
+                           pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
@@ -18693,6 +19538,8 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_config_post()
         if u.path in ("/treino/rotulo", "/treino/config"):
             return self.treino_post(u.path)
+        if u.path == "/poses/config":
+            return self.poses_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
@@ -18917,6 +19764,8 @@ def main():
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=treino_cfg_loop, daemon=True).start()  # 18/11: interruptor do treino em memória (treino_cfg_mem)
     threading.Thread(target=cena_loop, daemon=True).start()        # 18/11 (regra 19): reconhecer o ponto pela imagem
+    poses_orfaos_encerrar()             # 23/11: classificador de poses de uma partida anterior não segura a placa
+    threading.Thread(target=poses_loop, daemon=True).start()       # 23/11: poses à noite (chave config/poses, padrão desligada)
     mtg_orfaos_encerrar()               # processo de montagem de uma partida anterior
     print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta
     threading.Thread(target=mtg_loop, daemon=True).start()

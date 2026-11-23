@@ -137,6 +137,15 @@ try:
     so_ver = S.cookie_sessao(m, "so-ver-rotas", {"qualidade": {"r": True}})
     ok(pede("GET", "/treino/dias", cookie=so_ver)[0] == 200 and pede("POST", "/treino/rotulo", {"pid": "abc123abc123", "v": 1}, cookie=so_ver)[0] == 403
        and pede("POST", "/treino/config", {"ponto": "medir"}, cookie=so_ver)[0] == 403, "treino: só ver não marca nem liga a análise")
+    # 23/11 (P1 de poses): a chave da classificação de poses só com Painel de controle em Alterar; não existe GET; o corpo
+    # passa pelo limite (6 por minuto por pessoa) e config/poses não grava pelo /ponto/docs
+    ok(m.rota_regra("POST", "/poses/config") == ("sessao", ("configuracao.u",)) and m.rota_regra("GET", "/poses/config") is None
+       and pede("POST", "/poses/config", {"modo": "sombra"}, cookie=so_ver)[0] == 403 and pede("POST", "/poses/config", {"modo": "sombra"}, cookie=cfgr)[0] == 403
+       and pede("POST", "/poses/config", {"modo": "ligada"}, cookie=adm)[:2] == (409, {"ok": False, "error": "criterio", "falta": m.POSE_MEDIDA_MIN}),
+       "poses: a chave só com configuracao.u e Ligada só com a Medição")
+    st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "config", "id": "poses", "valor": {"modo": "sombra", "janela": {"ini": "20:00", "fim": "07:00"}}}]}, cookie=adm)
+    m._poses_cfg["t"] = 0.0
+    ok(m.poses_cfg()["modo"] == "desligada", "poses: config/poses pelo /ponto/docs: %s %s" % (st, j))
     # coleção sim por perfil (cópia dos PRESETS do index.html): cada perfil grava o que a tela dele grava
     RW, RO, ALL = {"c": True, "r": True, "u": True}, {"r": True}, {"c": True, "r": True, "u": True, "d": True}
     perfis = {"foto": {"set": RW, "diario": RW, "escala": RO, "filafoto": RO},
