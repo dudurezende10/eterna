@@ -1556,7 +1556,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.47.3 · 24/11 22:35"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.47.4 · 24/11 22:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -13003,15 +13003,16 @@ async function ajAuto(id,force){const e0=SIM.edits&&SIM.edits[id];if(!force&&e0&
   const pct=q=>{let a=0;for(let i=0;i<256;i++){a+=hist[i];if(a>=N*q)return i;}return 255;};
   const lo=pct(.02),hi=pct(.98),mid=pct(.5),mean=sum/N;const r5=v=>Math.round(v/5)*5;
   if(N<50)return null;
-  // 24/11 (Eduardo): o automático só mexe na exposição, e só quando a foto está claramente errada (regra AJ_V=2).
-  // Mede pela parte clara da foto (ponto de 98%), não pela média: foto com flash e fundo escuro tem média baixa e está certa.
-  // - se a foto já tem parte clara (98% em 200 ou mais), não clareia. Só escurece se o quadro inteiro estiver claro demais (média acima de 170);
-  // - se nada na foto chega a 200, clareia até a parte mais clara chegar perto de 215, no máximo 130%.
-  let b=100;if(hi>=200){if(mean>170)b=Math.max(75,Math.ceil(100*150/mean/5)*5);}else b=Math.max(100,Math.min(130,Math.floor(100*215/Math.max(1,hi)/5)*5));
+  // 24/11 (Eduardo): o automático só mexe na exposição, pouco, e só quando a foto está claramente errada (regra AJ_V=3).
+  // Mede pela parte mais clara da foto (ponto de 99,5%, que pega um rosto pequeno com flash), não pela média: foto com flash e fundo
+  // escuro tem média baixa e está certa.
+  // - se a foto já tem parte clara (190 ou mais), não clareia. Só escurece, até 15%, se o quadro inteiro estiver claro demais (média acima de 175);
+  // - se nada na foto chega a 190, clareia metade do que faltaria para a parte clara chegar a 210, no máximo 115%.
+  const h5=pct(.995);let b=100;if(h5>=190){if(mean>175)b=Math.max(85,Math.ceil((100-(100-100*150/mean)*.6)/5)*5);}else b=Math.max(100,Math.min(115,Math.floor((100+(100*210/Math.max(1,h5)-100)*.5)/5)*5));
   const e=editOf(id);Object.assign(e,{b,c:100,t:0,auto:true,v:AJ_V});return e;}
 // Chute a gol sem ajuste automático (24/11): o servidor diz o ponto de cada foto na biblioteca (pt: 'chute', '-' ou '' enquanto não leu).
 // A foto nova espera o ponto por AJ_PT_ESPERA segundos; sem resposta nesse prazo, é ajustada. Se depois o servidor disser chute, o ajuste é desfeito.
-const AJ_PT_ESPERA=90;const AJ_V=2; // versão da regra do automático: ajuste automático feito por regra antiga é refeito sozinho
+const AJ_PT_ESPERA=90;const AJ_V=3; // versão da regra do automático: ajuste automático feito por regra antiga é refeito sozinho
 function ajChute(id){const k=String(id).replace(/^ag_/,'');const f=state.lib&&state.lib.find(x=>x.id===k);return !!(f&&f.pt==='chute');}
 async function ajPtPull(){const a=state.agent;if(!a||!a.on||ajPtPull.busy||Date.now()-(ajPtPull.t||0)<30000)return;const agora=Date.now()/1000;
   if(!state.lib.some(f=>!f.pt&&agora-(f.t||0)<600))return;ajPtPull.busy=1;ajPtPull.t=Date.now();
