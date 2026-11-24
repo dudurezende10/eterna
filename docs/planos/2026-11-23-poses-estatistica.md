@@ -1,7 +1,5 @@
 # Plano: Estatística de poses (ramo `feat/poses-estatistica`, a partir de `idiomas-base` 77e0901)
 
-Este texto pode ir para `docs/planos/2026-11-23-poses-estatistica.md` como está, porque não traz nenhum número de venda do relatório. Tem só a metodologia, as regras combinadas com os fotógrafos e os nomes das poses.
-
 ## Objetivo
 Toda foto que chega ao servidor é classificada à noite por um modelo de visão local, com set, quem aparece, adereço, pose, enquadramento, orientação e vibração. O Eterna então calcula sozinho a taxa de escolha, a cobertura e a produção por fotógrafo, usando a metodologia do relatório de 22/11.
 Todo dia mostra o acumulado do mês, com alertas. No dia 1 fecha o mês, gera um relatório no mesmo formato do PDF e compara com o mês anterior.
@@ -353,7 +351,11 @@ O `POSE_GUIA_PADRAO` da P4 sai do roteiro dos fotógrafos por set de 22/11, item
 - A memória da placa só é conferida antes de abrir o filho (aberto, o próprio modelo ocupa a placa). Recorte e montagem marcam o último trabalho de prioridade 0 ou 1 (`poses_marca_prio`), na fila ou terminando.
 - `/status.poses` segue o contrato e traz também `modelo.pronto`, `modelo.carga_ms` e `rodando`. `modelo.erro` pode ser `conferindo` (o `/status` nunca lê os 6 GB para conferir o SHA; quem confere é o laço).
 - `poses_medida()` existe na P1 só com `n: 0` (a medida é da P2), então Ligada responde sempre 409 `criterio` nesta fatia.
-- O teste troca o binário do `llama-server` por `testes/_poses_filho_falso.py` (um servidor HTTP local que confere a linha de comando e a chave); o `agente/eterna-poses.py` testado é o de verdade.
+- O teste troca o binário do `llama-server` por `testes/_poses_filho_falso.py` (um servidor HTTP local que confere a linha de comando e a chave); o `agente/eterna-poses.py` testado é o de verdade. O falso recebe a pasta de controle pela linha do lançador do teste (`--falso-dir`): o `env_llama` de produção não repassa variável de teste.
+- Revisão de 23/11:
+  - O SHA dos 6,2 GB só é conferido pelo laço, com Sombra ou Ligada, dentro da janela e depois de `recorte_ocupado` e `montagem_ocupada` (ordem do `poses_pode_rodar`: desligada, fora_janela, parado/versao, recorte, montagem, sem_modelo/conferindo, vram). O resultado fica em `~/Eterna/ponto/poses-sha.json` (0600: tamanho, mtime, inode e SHA lido de cada arquivo) e não é relido sem mudança, nem em outra partida. Fora disso o `/status` diz `conferindo` ou o estado guardado. O filho recebe `--conferido` (tamanho, mtime e inode) e só confere isso.
+  - Nenhum `llama-server` órfão: o filho avisa `{"llama_pid"}` logo depois do Popen (o agente grava no `poses-filho.json`); o SIGTERM do filho fecha o `llama-server` também no meio da abertura (o SIGTERM entre o Popen e o `self.p` fica anotado; `pthread_sigmask` não serve, porque o `llama-server` herdaria a máscara); o agente manda SIGTERM, espera `POSE_TERM_SEG` e só então SIGKILL, e no grupo do `llama-server` SIGTERM antes do SIGKILL; o prazo do filho (300 s) conta do início e é menor que o do agente (360 s); na partida o agente encerra o que sobrou pelo `poses-filho.json` e procurando `--api-key-file` dentro de `ponto/poses-*`, e apaga as pastas de chave que sobraram.
+  - Versão do filho diferente: parado até a noite seguinte (motivo `versao`). Lote inteiro com erro do servidor de modelo (nenhuma foto respondida): as fotos ficam na fila e conta como morte do filho (motivo `servidor`; na 3ª seguida, `parado`), nunca `fim_fila`. `ValueError` do PIL vira `imagem`. A lista vazia só é refeita a cada `POSE_FILA_SEG`, e pausa depois do fim da fila não troca o `fim_fila`.
 
 ## Contratos
 
@@ -426,11 +428,11 @@ O `POSE_GUIA_PADRAO` da P4 sai do roteiro dos fotógrafos por set de 22/11, item
 7. **Calendário:** Sombra a partir de 25/11, conferência das 300 até 30/11, Ligada em 01/12. Primeiro mês fechado: dezembro (em 01/01), comparado com a referência que você carregar. Recomendo esse calendário.
 
 ## Arquivos que a entrega toca
-- `/home/claude/eterna-ligar/agente/eterna-agente.py` (blocos Treino, Cena, `ROTAS`, `lgpd_excluir`, backup, `AUTH_MODULOS`)
-- `/home/claude/eterna-ligar/agente/eterna-poses.py`, `/home/claude/eterna-ligar/agente/instalar-poses-modelos.py`, `/home/claude/eterna-ligar/agente/medir-poses.py` (novos)
-- `/home/claude/eterna-ligar/servidor/linux/visao-instalar.sh` (novo)
-- `/home/claude/eterna-ligar/index.html` (Treino, Fundos de IA técnico, `VIEWS`/`MODULES`/`PRESETS`, view `poses`, `REL`, `pdfBlob`, I18N)
-- `/home/claude/eterna-ligar/testes/` (os arquivos citados em cada fatia)
+- `agente/eterna-agente.py` (blocos Treino, Cena, `ROTAS`, `lgpd_excluir`, backup, `AUTH_MODULOS`)
+- `agente/eterna-poses.py`, `agente/instalar-poses-modelos.py`, `agente/medir-poses.py` (novos)
+- `servidor/linux/visao-instalar.sh` (novo)
+- `index.html` (Treino, Fundos de IA técnico, `VIEWS`/`MODULES`/`PRESETS`, view `poses`, `REL`, `pdfBlob`, I18N)
+- `testes/` (os arquivos citados em cada fatia)
 - Documentação: `docs/CONTEXTO-ETERNA.md`, `docs/DOCUMENTACAO-TECNICA.md`, `docs/GUIA-DA-EQUIPE.md`, `docs/SERVIDOR-ESTADIO.md` (o que o Ronaldo instala)
 
 Modelo: Qwen3-VL-8B-Instruct, Apache 2.0

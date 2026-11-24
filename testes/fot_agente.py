@@ -440,6 +440,12 @@ try:
     m._cv.clear()
     ok(n_w >= 3 and time.time() - t_w >= 3.9, "R1: esperou o leitor antes de medir: %r" % n_w)
     ok(registro[4:8] == [("le", 1), ("set", 8), ("set", 1), ("le", 1)], "S4: leitor começou depois do uma(): volta o OpenCV e espera antes de medir: %r" % registro)
+    # junção com as poses: a luz cede à classificação de poses (as poses não olham a luz: sem espera circular)
+    livre = m._luz_ocupado()
+    m.poses_st["rodando"] = True
+    ocupado_poses = m._luz_ocupado()
+    m.poses_st["rodando"] = False
+    ok(not livre and ocupado_poses and m._luz_ocupado() is False, "luz e poses: a varredura espera a classificação de poses: %r" % [livre, ocupado_poses])
     sets = [x for x in registro if x[0] == "set"]
     ok(registro[:4] == [("set", 1), ("le", 1), ("set", 8), ("set", 1)] and sets[-1] == ("set", 8) and all(x == ("le", 1) for x in registro if x[0] == "le"),
        "R1: OpenCV com 1 thread só durante a varredura e de volta no fim: %r" % registro)
