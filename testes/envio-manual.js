@@ -161,19 +161,19 @@ try{
   // ---------- 2, 13: Admin e Supervisora enviam sem escolher fotógrafo (18/11); sem set.c, vendedor e caixa sem o link ----------
   for(const email of ['eduardo@eduardorezende.com','supervisor@eterna.photo']){const {ctx,pg}=await nova();const M=novoM();await agente(ctx,M);await entrar(pg,email);
     ok(await abrir(pg),'2: '+email+' vê o link');await espera(pg,()=>!!ETERNA.state.agent.envio);
-    await pg.selectOption('#main select[data-act="imp-key"]','todos');await pg.waitForTimeout(120);
+    ok(!(await pg.$('#main select[data-act="imp-key"]'))&&await pg.evaluate(()=>ETERNA.state.imp.key)==='todos','24/11 (Eduardo, 11:04): '+email+' sem o seletor Fotógrafo, com todos');
     const t=await pg.evaluate(()=>(document.querySelector('#envio-painel')||{}).innerText||'');
     ok(!/Escolha o fotógrafo/.test(t)&&!(await pg.$('#envio-painel .envio-quem'))&&!!(await pg.$('#envio-painel [data-act="envio-escolher"]'))&&!!(await pg.$('#envio-painel .envio-drop'))&&await pg.evaluate(()=>ETERNA.envioPode().ok),'13 (18/11): '+email+' com Todos envia, sem escolher fotógrafo: '+t.slice(0,160));
     await escolher(pg,[arq('m1.jpg'),arq('m2.jpg')]);await fim(pg);
     ok(M.posts.length===2&&M.posts.every(p=>p.quem===null),'13 (18/11): '+email+' manda sem quem: '+J(M.posts));
     const au=await pg.evaluate(()=>ETERNA.auditRead().find(e=>e.acao==='fotos_envio_manual'));ok(au&&au.alvo==='cartao'&&au.por===email&&au.mudancas[0].para===2,'14: auditLog com quem mandou: '+J(au));
-    // com o seletor em Samuel (o caso de 18/11) ou vinculada ao Carlos, o POST continua sem quem: o dono vem da câmera
-    {M.posts.length=0;await pg.selectOption('#main select[data-act="imp-key"]','samuel');await pg.waitForTimeout(120);
+    // com o filtro em Samuel (o caso de 18/11; desde 24/11 sem seletor na tela, posto pelo estado) ou vinculada ao Carlos, o POST continua sem quem: o dono vem da câmera
+    {M.posts.length=0;await pg.evaluate(()=>{ETERNA.state.imp.key='samuel';});await pg.waitForTimeout(120);
       await escolher(pg,[arq('v0.jpg')]);await fim(pg);
       await pg.evaluate(()=>{ETERNA.state.user.key='carlos';ETERNA.render();});await pg.waitForTimeout(120);
-      ok(!!(await pg.$('#main select[data-act="imp-key"]'))&&await pg.evaluate(()=>ETERNA.impPreso()===null),'13: '+email+' vinculada ao Carlos continua com o seletor (filtro)');
+      ok(!(await pg.$('#main select[data-act="imp-key"]'))&&await pg.evaluate(()=>ETERNA.impPreso()===null&&ETERNA.state.imp.key==='todos'),'13: '+email+' vinculada ao Carlos não fica presa e vê todos (24/11: sem o seletor)');
       await escolher(pg,[arq('v1.jpg')]);await fim(pg);
-      ok(M.posts.length===2&&M.posts.every(p=>p.quem===null),'13 (18/11): '+email+' com Samuel no seletor e vinculada ao Carlos manda sem quem: '+J(M.posts.map(p=>p.quem)));
+      ok(M.posts.length===2&&M.posts.every(p=>p.quem===null),'13 (18/11): '+email+' com o filtro em Samuel e vinculada ao Carlos manda sem quem: '+J(M.posts.map(p=>p.quem)));
       await pg.evaluate(()=>{delete ETERNA.state.user.key;ETERNA.render();});await pg.waitForTimeout(80);}
     if(/supervisor/.test(email)){
       // sem set.c (usuário personalizado): sem link

@@ -101,12 +101,13 @@ try{
     ok(/Valor recusado: Cliques por família: mínimo/.test(await pg.textContent('#toast').catch(()=>'')),'11: 400 mostra o campo');
     ok(await pg.$eval('#fot-lim input[data-k="cliques_min"]',x=>x.value==='50'),'revisão: o valor recusado continua no campo para corrigir');
     await pg.fill('#fot-lim input[data-k="cliques_min"]','18');
-    // ---------- Medição › Exposição: critério, grade e "Usar estes limites" ----------
+    // ---------- Resultado › Exposição: critério, grade e "Usar estes limites" ----------
+    // 24/11: o interruptor da exposição fica em Configurações › IA automática (#tr-cfg). O /status (de 2,5 em 2,5 s) é
+    // que traz a exposição de volta para Ligada depois do medir e do desligada acima; o quadro redesenha sozinho (agentPoll) e, com a máquina
+    // carregada, o poll atrasa: espera até 20 s
+    await pg.evaluate(()=>ETERNA.go('ia-auto'));
+    ok(await espera(pg,()=>{const x=document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="on"]');const y=document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="off"]');return !!x&&!!y&&x.disabled===false&&x.getAttribute('aria-pressed')==='true'&&y.getAttribute('aria-pressed')==='false';},20000),'exposição Ligada (do /status) aparece marcada em Ligado no #tr-cfg');
     await pg.evaluate(()=>{ETERNA.state.train.aba='medida';ETERNA.go('treino');});await espera(pg,()=>document.querySelector('.tr-luz-cls'));
-    // 24/11: o /status (de 2,5 em 2,5 s) é que traz a exposição de volta para Ligada depois do medir e do desligada acima. Se o Treino
-    // abriu entre um /status com desligada e o seguinte, o interruptor precisa redesenhar sozinho (agentPoll); com a máquina carregada
-    // o poll atrasa, então espera até 20 s
-    ok(await espera(pg,()=>{const x=document.querySelector('[data-act="tr-analise"][data-k="exposicao"][data-v="ligada"]');return !!x&&(x.disabled===false||x.getAttribute('aria-pressed')==='true');},20000),'exposição Ligada (do /status) não fica travada');
     const lz=await pg.evaluate(()=>({cls:[...document.querySelectorAll('.tr-luz-cls tbody tr')].map(tr=>tr.textContent),falta:[...document.querySelectorAll('.tr-luz-faltas li')].map(x=>x.textContent)}));
     ok(lz.cls.length===2&&/Escura31/.test(lz.cls[0].replace(/\s/g,''))&&lz.falta.some(x=>/Precisão de Escura: 60%/.test(x))&&lz.falta.some(x=>/Boas: 120 de 150/.test(x)),'Medição › Exposição: classes e o que falta: '+J(lz));
     ok(await pg.$eval('[data-act="tr-luz-usar"]',x=>x.disabled),'Usar estes limites travado sem escolha');
@@ -121,11 +122,11 @@ try{
     ok(/Hoje e os 6 dias anteriores já foram refeitos; os dias mais antigos são refeitos de madrugada/.test(await pg.textContent('#toast'))&&!(await pg.$('#tr-luz .fot-recusa')),'R2 e S5: salvo, diz os dias refeitos (refeitos do servidor), avisa a madrugada e some a recusa: '+await pg.textContent('#toast'));
     const p2=R.posts[R.posts.length-1];ok(p2&&J(p2.b)===J({luz:{rosto_med_baixo:40}}),'Usar estes limites grava pelo mesmo POST: '+J(p2&&p2.b));
     const au2=await pg.evaluate(()=>ETERNA.auditRead().find(e=>e.acao==='fotografos_limites'));ok(au2&&J(au2.mudancas)===J([{campo:'luz.rosto_med_baixo',de:50,para:40}]),'auditLog da luz: '+J(au2));
-    // ---------- 19: abas, cartões e Medição nas 5 línguas, sem chave faltando ----------
+    // ---------- 19: abas, cartões, Resultado e Configurações › IA automática nas 5 línguas, sem chave faltando ----------
     const falta=[];for(const l of ['pt','en','es','fr','de']){await pg.evaluate(l=>{ETERNA.state.user.idioma=l;},l);
-      for(const [v,prep] of [['alertas',''],...(await pg.evaluate(()=>ETERNA.FG_ABAS)).map(a=>['fotografos',a]),['treino','medida']]){
-        await pg.evaluate(([v,a])=>{if(v==='fotografos')ETERNA.state.fg.aba=a;if(v==='treino')ETERNA.state.train.aba='medida';ETERNA.state.view=v;ETERNA.render();},[v,prep]);await pg.waitForTimeout(120);
-        const tx=await pg.textContent('#main');const m=tx.match(/\b(fot|fg|tr_luz|tr_an)_[a-z0-9_]+\b|undefined|NaN|Algo falhou/g);if(m)falta.push(l+'/'+v+'/'+prep+': '+[...new Set(m)].join(','));}}
+      for(const [v,prep] of [['alertas',''],...(await pg.evaluate(()=>ETERNA.FG_ABAS)).map(a=>['fotografos',a]),['treino','medida'],['ia-auto','']]){
+        await pg.evaluate(([v,a])=>{if(v==='fotografos')ETERNA.state.fg.aba=a;if(v==='treino')ETERNA.state.train.aba='medida';if(v==='catalogo')ETERNA.state.catTab=a;ETERNA.state.view=v;ETERNA.render();},[v,prep]);await pg.waitForTimeout(120);
+        const tx=await pg.textContent('#main');const m=tx.match(/\b(fot|fg|tr_luz|tr_an|tr_cfg|tr_res|tr_aviso)_[a-z0-9_]+\b|undefined|NaN|Algo falhou/g);if(m)falta.push(l+'/'+v+'/'+prep+': '+[...new Set(m)].join(','));}}
     ok(!falta.length,'19: chave faltando: '+falta.join(' | '));
     await pg.evaluate(()=>{ETERNA.state.user.idioma='pt';});
     // R2 na aba: depois de mudar a luz, a aba diz que os dias antigos são refeitos de madrugada; R4 nos limites da aba
@@ -164,5 +165,5 @@ try{
     await ctx.close();}
 }catch(e){fails.push('exceção: '+(e.stack||e).toString().slice(0,600));}
 await b.close();
-const okT=!fails.length&&!errs.length;console.log(`${okT?'OK':'FALHA'} fot-alertas: cartões fot_* (7), permissão (8), ajuste não muda a conta (9), 5 línguas (19), período, limites e Medição › Exposição${fails.length?' · '+fails.join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okT?0:1);})();
+const okT=!fails.length&&!errs.length;console.log(`${okT?'OK':'FALHA'} fot-alertas: cartões fot_* (7), permissão (8), ajuste não muda a conta (9), 5 línguas (19), período, limites e Resultado › Exposição${fails.length?' · '+fails.join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okT?0:1);})();
 function ETERNA_ABAS(a){return a;}
