@@ -12878,6 +12878,8 @@ ARQUIVO_DIR = os.path.join(HOME, "arquivo")                              # NVMe:
 ARQUIVO_MIDIA = os.path.join(os.path.realpath(INBOX), ".arquivo")        # HD das fotos: o ponto esconde a pasta de quem varre a inbox
 ZERAR_PEDIDO_MAX_S = 600                 # pedido mais velho que isto na partida não executa (vira zerar-expirado.json)
 ZERAR_TENTATIVAS = 3                     # parou no meio 3 vezes: zerar-falhou.json e o agente sobe normal
+ZERAR_ATE = "2026-11-25"                 # revisão de segurança (24/11): depois deste dia (data local do servidor) o botão recusa com
+                                         # "prazo"; ETERNA_ZERAR_LIBERA=1 no serviço libera de novo. Pedido ou andamento já gravado retoma normal.
 ZERAR_PRAZO_DIAS = 30                    # D9 (Eduardo, 24/11): a pasta de arquivo fica 30 dias; a data vai no resumo e no console.
                                          # Ninguém apaga sozinho: passado o prazo, o Ronaldo apaga as duas pastas à mão.
 # D1: as ativações (Drone, Chute a Gol, Snap Pop) geradas pelo Eterna vão para o arquivo. Se o Eduardo confirmar que as vendas do
@@ -13042,9 +13044,19 @@ def zerar_inventario():
     return {"vai": vai, "fica": fica}
 
 
+def _zerar_hoje():
+    """Data local do servidor (a mesma de _ff_hoje); ETERNA_ZERAR_HOJE (aaaa-mm-dd) simula outro dia, só nos testes."""
+    h = os.environ.get("ETERNA_ZERAR_HOJE") or ""
+    if os.environ.get("ETERNA_MODO_TESTE") == "1" and re.match(r"^\d{4}-\d{2}-\d{2}$", h):
+        return h
+    return _ff_hoje()
+
+
 def zerar_bloqueios():
     """Códigos que impedem a zeragem agora (lista vazia = pode)."""
     b = []
+    if _zerar_hoje() > ZERAR_ATE and os.environ.get("ETERNA_ZERAR_LIBERA") != "1":
+        b.append("prazo")                                # o botão só valia até ZERAR_ATE
     if os.path.exists(ZERAR_FEITA):
         b.append("ja_zerado")
     if os.path.exists(ZERAR_PEDIDO) or os.path.exists(ZERAR_ANDA):
@@ -13176,7 +13188,7 @@ def _zerar_sem_escrita():
 
 
 def _zp_preparo(ctx):
-    bq = [x for x in zerar_bloqueios() if x not in ("ja_zerado", "em_andamento")]
+    bq = [x for x in zerar_bloqueios() if x not in ("ja_zerado", "em_andamento", "prazo")]   # o prazo vale para o pedido novo, não para a retomada
     if bq:
         raise ZerarErro(",".join(bq))
     se = _zerar_sem_escrita()

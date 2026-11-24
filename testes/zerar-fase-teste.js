@@ -17,7 +17,7 @@ function usuario(pg,email,nome,preset){return pg.evaluate(([e,n,p])=>{const U0=J
 (async()=>{const b=await chromium.launch();const errs=[];const home=fs.mkdtempSync(path.join(os.tmpdir(),'eterna-zerar-'));let ag=null,log='';const porta=await livre(),ftp=await livre();
   const UA=`http://127.0.0.1:${porta}/index.html`;
   const sobe=async()=>{ag=spawn('python3',['-I','-u',AG],{env:{...process.env,HOME:home,USERPROFILE:home,ETERNA_PORTA:String(porta),ETERNA_FTP_PORTA:String(ftp),ETERNA_FTP_PASV:`${ftp+1}-${ftp+3}`,ETERNA_APP_ORIGIN:ORIG,
-    ETERNA_SEM_OPENCV:'1',ETERNA_SEM_RECORTE:'1',ETERNA_MODO_TESTE:'1',NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});
+    ETERNA_SEM_OPENCV:'1',ETERNA_SEM_RECORTE:'1',ETERNA_MODO_TESTE:'1',ETERNA_ZERAR_HOJE:'2026-11-24',ETERNA_ZERAR_LIBERA:'',NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'},stdio:['ignore','pipe','pipe']});
     ag.stdout.on('data',d=>log+=d);ag.stderr.on('data',d=>log+=d);for(let i=0;i<120;i++){await sleep(250);if((await get(porta,'/status')).s===200)return true;}return false;};
   const nova=async(w,h)=>{const ctx=await b.newContext({viewport:{width:w||1366,height:h||900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const pg=await ctx.newPage();
     pg.on('pageerror',e=>errs.push(e.message));return {ctx,pg};};
@@ -55,6 +55,8 @@ function usuario(pg,email,nome,preset){return pg.evaluate(([e,n,p])=>{const U0=J
       const x=await painel(pg);vistos[l]=x;ok(x&&!/\bzr_[a-z_]+/.test(x),'2: chave crua em '+l+': '+x);}
     ok(new Set(Object.values(vistos)).size===LS.length,'2: o cartão muda com a língua: '+J(Object.keys(vistos)));
     const de=await pg.evaluate(()=>ETERNA.EQ.zr_titulo[ETERNA.LANGS.findIndex(x=>x[0]==='de')]);ok(de==='Testphase zurücksetzen','2: chaves com a 5ª língua (de) também');
+    // revisão 24/11: o bloqueio "prazo" (botão só até 25/11) tem texto nas 5 línguas, sem travessão
+    const pz=await pg.evaluate(()=>ETERNA.EQ.zr_bq_prazo);ok(Array.isArray(pz)&&pz.length===5&&pz.every(x=>x&&!/—/.test(x))&&/25\/11/.test(pz[0]),'prazo: zr_bq_prazo nas 5 línguas: '+J(pz));
     // 4: sem ZERAR exato, nenhum POST
     for(const v of ['zerar',' ZERAR ','ZERAR.','']){await pg.fill('#zr-txt',v);await pg.click('#zr-painel [data-act="zerar-ir"]');await pg.waitForTimeout(200);
       ok(/Digite ZERAR, em letras maiúsculas/.test(await painel(pg)),'4: aviso para "'+v+'"');}

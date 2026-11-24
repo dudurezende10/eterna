@@ -11,9 +11,10 @@ import _agente_sessao as S
 
 AG = os.path.abspath(sys.argv[1])
 for k in ("ETERNA_TESTE_CARGA", "ETERNA_FUNCAO_DIA", "ETERNA_RECORTE_FALSO", "ETERNA_MODO_TESTE", "INVOCATION_ID", "ETERNA_ZERAR_FALHA_PASSO",
-          "ETERNA_ZERAR_FOLGA_GB", "ETERNA_PASTA", "ETERNA_BUSCA_DIAS", "ETERNA_GALERIA_API", "ETERNA_NUVEM", "ETERNA_BUCKET"):
+          "ETERNA_ZERAR_FOLGA_GB", "ETERNA_ZERAR_LIBERA", "ETERNA_ZERAR_HOJE", "ETERNA_PASTA", "ETERNA_BUSCA_DIAS", "ETERNA_GALERIA_API", "ETERNA_NUVEM", "ETERNA_BUCKET"):
     os.environ.pop(k, None)
 os.environ["ETERNA_SEM_OPENCV"] = "1"
+os.environ["ETERNA_ZERAR_HOJE"] = "2026-11-24"           # revisão 24/11: dia simulado dentro do prazo (ZERAR_ATE), para o teste valer depois do dia 25
 HOME = os.environ["HOME"]
 E = os.path.join(HOME, "Eterna")
 MIDIA = os.path.join(HOME, "midia")
@@ -382,6 +383,20 @@ try:
     os.rename(P("thumbs-real"), P("thumbs"))
     para()
 
+    # ---------------------------------------- revisão 24/11: prazo do botão (ZERAR_ATE) ----------------------------------------
+    for hoje, libera, esperado in (("2026-11-25", None, []), ("2026-11-26", None, ["prazo"]), ("2026-11-26", "1", [])):
+        env = {"ETERNA_MODO_TESTE": "1", "ETERNA_ZERAR_HOJE": hoje}
+        if libera:
+            env["ETERNA_ZERAR_LIBERA"] = libera
+        ok(sobe(env), "prazo: agente não subiu: " + log_txt()[-400:])
+        st, j = pede("GET", "/zerar/previa", cookie=ADM)
+        ok(st == 200 and j.get("bloqueios") == esperado and j.get("pode") is (not esperado), "prazo %s libera=%s: prévia %s %s" % (hoje, libera, st, j and j.get("bloqueios")))
+        if esperado:
+            st, j = pede("POST", "/zerar/fase-teste", {"confirma": "ZERAR"}, cookie=ADM)
+            ok(st == 409 and j.get("bloqueios") == ["prazo"], "prazo: POST depois do dia 25 dá 409 prazo: %s %s" % (st, j))
+            ok(not os.path.exists(m.ZERAR_PEDIDO) and not os.path.exists(m.ZERAR_ANDA), "prazo: nada gravado na recusa")
+        para()
+
     # ---------------------------------------- 20: falta de espaço na partida (preparo recusa, nada muda) ----------------------------------------
     ok(sobe({"ETERNA_MODO_TESTE": "1"}), "agente não subiu")
     st, j = pede("POST", "/zerar/fase-teste", {"confirma": " ZERAR "}, cookie=ADM)
@@ -402,9 +417,9 @@ try:
 
     # ---------------------------------------- 7, 8, 21: pedido, parada no meio, retomada ----------------------------------------
     antes = fica_hash()
-    ok(sobe({"ETERNA_MODO_TESTE": "1"}), "agente não subiu")
+    ok(sobe({"ETERNA_MODO_TESTE": "1", "ETERNA_ZERAR_HOJE": "2026-11-26", "ETERNA_ZERAR_LIBERA": "1"}), "agente não subiu")
     st, j = pede("POST", "/zerar/fase-teste", {"confirma": "ZERAR"}, cookie=ADM)
-    ok(st == 202, "7: POST válido: %s %s" % (st, j))
+    ok(st == 202, "7: POST válido (depois do prazo, com ETERNA_ZERAR_LIBERA=1): %s %s" % (st, j))
     ZID = (j or {}).get("id")
     ok(not os.path.exists(m.ZERAR_FALHOU), "pedido novo tira a falha do preparo")
     ped = json.load(open(m.ZERAR_PEDIDO)) if os.path.exists(m.ZERAR_PEDIDO) else {}
@@ -414,7 +429,8 @@ try:
     ok(lg and lg[-1][0] == "admin-zr" and lg[-1][1], "7: zerar_pedido no login_log: %s" % lg)
     ok(espera_sair(5) is not None, "7: sai em até 5 s")
     # 21: para no mover_midia na 1ª partida; a 2ª (sem a falha) continua e termina
-    p1 = sobe({"ETERNA_MODO_TESTE": "1", "ETERNA_ZERAR_FALHA_PASSO": "mover_midia"}, espera_status=False)
+    # prazo: as duas partidas rodam como se fosse dia 26, sem ETERNA_ZERAR_LIBERA; o andamento gravado retoma normal
+    p1 = sobe({"ETERNA_MODO_TESTE": "1", "ETERNA_ZERAR_FALHA_PASSO": "mover_midia", "ETERNA_ZERAR_HOJE": "2026-11-26"}, espera_status=False)
     rc = espera_sair(60)
     ok(rc not in (None, 0), "21: com a falha no mover_midia o agente sai para o systemd religar: %s" % rc)
     an = json.load(open(m.ZERAR_ANDA)) if os.path.exists(m.ZERAR_ANDA) else {}
@@ -423,7 +439,7 @@ try:
     # revisão 24/11: originais vem depois de mover_midia; parado no mover_midia, o registro do backup-originais fica intacto
     ok(n_sql(BO, "select count(*) from feito") == 4 and n_sql(BO, "select count(*) from sqlite_master where name='arquivado'") == 0,
        "21: parado no mover_midia, a tabela feito do backup-originais não foi esvaziada")
-    ok(sobe({"ETERNA_MODO_TESTE": "1"}, seg=90), "21: a partida seguinte não terminou: " + log_txt()[-600:])
+    ok(sobe({"ETERNA_MODO_TESTE": "1", "ETERNA_ZERAR_HOJE": "2026-11-26"}, seg=90), "21: a partida seguinte não terminou: " + log_txt()[-600:])
     st, j = pede("GET", "/status")
     ok(j.get("zerada") == ZID, "12: /status.zerada = id: %s" % j.get("zerada"))
     # 8: tudo no arquivo
