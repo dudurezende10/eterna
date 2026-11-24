@@ -12,6 +12,7 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   POST /g/<token>/pagamento       rota antiga (compra direta): responde compra_indisponivel
   POST /ponto/galerias            o agente do estádio publica o manifesto (segredo do ponto)
   GET  /ponto/vendas-online       o agente busca as vendas online pagas (segredo do ponto) (v99)
+  GET|POST /ponto/compra          chave da compra online pelo painel do ponto (segredo do ponto) (24/11)
   Vídeo das ativações (Drone, Chute a Gol, Snap Pop; v99.20): galeria tipo "video", o cartão com QR é a chave, sem selfie
   POST /g/<token>/video           aceite de uso de imagem + e-mail -> acesso e o link do vídeo (ou "chegando")
   POST /g/<token>/evento          o cliente deu play (registro com data e hora)
@@ -550,8 +551,36 @@ def senha_email(ev, corpo):
 _ALFA_REF = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
+# 24/11 (Ronaldo): a compra online liga e desliga pelo painel do ponto (Configurações › Checkout). Registro CFG/compra
+# {ligada, por, em}; sem registro, ligada. CompraOnline=1 no CloudFormation e a chave da Imply continuam valendo por cima.
+_cfg_compra = {"v": None, "em": 0.0}
+
+
+def compra_cfg(fresco=False):
+    if fresco or time.time() - _cfg_compra["em"] > 30:
+        _cfg_compra.update(v=item("CFG", "compra") or {}, em=time.time())
+    return _cfg_compra["v"] or {}
+
+
+def compra_painel():
+    return compra_cfg().get("ligada", True) is not False
+
+
 def compra_ligada(m=None):
-    return COMPRA_ONLINE and imply.ligada() and (m is None or bool(m.get("catalogo")))
+    return COMPRA_ONLINE and imply.ligada() and compra_painel() and (m is None or bool(m.get("catalogo")))
+
+
+def compra_ponto(ev, corpo, metodo):
+    """GET|POST /ponto/compra {ligada, por}: a chave do painel. Responde a chave e se a nuvem pode vender (pode)."""
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    if metodo == "POST":
+        if not isinstance(corpo.get("ligada"), bool):
+            return resp({"error": "ligada"}, 400)
+        TABELA.put_item(Item={"pk": "CFG", "sk": "compra", "ligada": corpo["ligada"], "por": str(corpo.get("por") or "")[:120], "em": iso()})
+        print("compra online %s pelo painel (%s)" % ("ligada" if corpo["ligada"] else "desligada", str(corpo.get("por") or "?")[:120]))
+    c = compra_cfg(fresco=True)
+    return resp({"ligada": compra_painel(), "pode": bool(COMPRA_ONLINE and imply.ligada()), "por": c.get("por") or None, "em": c.get("em") or None})
 
 
 def catalogo_ok(cat):
@@ -575,12 +604,12 @@ def catalogo_ok(cat):
 
 
 def cesta(m, itens, n):
-    """Confere o carrinho da galeria: produtos do catálogo online, ao menos um pacote, cobrindo as n fotos escolhidas.
+    """Confere o carrinho da galeria: produtos do catálogo online cobrindo as n fotos escolhidas (24/11: foto avulsa sem pacote vale).
     O preço é o do manifesto (o que o navegador mandar é ignorado). Devolve (itens, total, todas) ou None."""
     cat = {c["id"]: c for c in m.get("catalogo") or []}
     if not isinstance(itens, list) or not 1 <= len(itens) <= 5:
         return None
-    out, total, cobre, todas, pacote = [], 0.0, 0, False, False
+    out, total, cobre, todas = [], 0.0, 0, False
     for i in itens:
         c = cat.get(str(i.get("id"))) if isinstance(i, dict) else None
         q = i.get("qtd") if isinstance(i, dict) else None
@@ -588,12 +617,11 @@ def cesta(m, itens, n):
             return None
         out.append({"id": c["id"], "sku": c["sku"], "nome": c["nome"], "qtd": q, "preco": c["preco"]})
         total += c["preco"] * q
-        pacote = pacote or c["kind"] == "pacote"
         if c["digital"] == "todas":
             todas = True
         else:
             cobre += c["digital"] * q
-    if not pacote or not (todas or cobre >= n):
+    if not (todas or cobre >= n):
         return None
     return out, round(total, 2), todas
 
@@ -604,6 +632,7 @@ def _ref():
 
 def pedido(token, m, corpo, ip, pids_acesso):
     if not compra_ligada(m):
+        print("pedido recusado %s: compra desligada (COMPRA_ONLINE=%s, chave=%s, painel=%s, catálogo=%d)" % (token[-6:], COMPRA_ONLINE, imply.ligada(), compra_painel(), len(m.get("catalogo") or [])))
         evento(token, "compra_tentada", ip)
         return resp({"ok": False, "motivo": "compra_indisponivel"}, 503)
     if not contar("PED#" + ip_hash(ip), 3600, 20):
@@ -612,9 +641,13 @@ def pedido(token, m, corpo, ip, pids_acesso):
     a_venda = [f["id"] for f in m["fotos"] if f["id"] in pids_acesso and f["direito"] == "venda"]
     pids = corpo.get("pids")
     if not isinstance(pids, list) or not pids or len(set(map(str, pids))) != len(pids) or any(x not in pids_acesso or dire.get(x) != "venda" for x in pids):
+        print("pedido recusado %s: foto fora do acesso ou não está à venda (%d pedidas, %d no acesso, %d à venda)"
+              % (token[-6:], len(pids) if isinstance(pids, list) else -1, len(pids_acesso), len(a_venda)))
         return resp({"error": "foto fora do acesso ou não está à venda"}, 400)
     c = cesta(m, corpo.get("itens"), len(pids))
     if not c:
+        print("pedido recusado %s: carrinho inválido itens=%s catálogo=%s n=%d" % (token[-6:], json.dumps(corpo.get("itens"))[:200],
+              json.dumps([(x.get("id"), x.get("digital"), x.get("kind")) for x in (m.get("catalogo") or [])])[:200], len(pids)))
         return resp({"error": "carrinho inválido"}, 400)
     itens, total, todas = c
     if todas:
@@ -624,6 +657,9 @@ def pedido(token, m, corpo, ip, pids_acesso):
     email = str(cli.get("email") or "").strip().lower()
     cpf = re.sub(r"\D", "", str(cli.get("cpf") or ""))
     passaporte = re.sub(r"[^A-Z0-9]", "", str(cli.get("passaporte") or "").upper())
+    if len(nome) < 3 or not _re_email.match(email) or (cpf and not imply.cpf_ok(cpf) or not cpf and not _re_passaporte.match(passaporte)):
+        print("pedido recusado %s: dados do cliente (nome %s, e-mail %s, documento %s)" % (token[-6:], len(nome) >= 3, bool(_re_email.match(email)),
+              "cpf" if cpf else "passaporte" if passaporte else "nenhum"))
     if len(nome) < 3 or not _re_email.match(email):
         return resp({"error": "dados", "campo": "nome" if len(nome) < 3 else "email"}, 400)
     if cpf and not imply.cpf_ok(cpf) or not cpf and not _re_passaporte.match(passaporte):
@@ -710,7 +746,12 @@ def conferir(ref):
         st, det = "desconhecido", {"bruto": "erro: " + str(ex)[:100]}
     TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET consultas = :n, conferido = :t, resposta = :r",
                        ExpressionAttributeValues={":n": int(it.get("consultas") or 0) + 1, ":t": iso(), ":r": str(det.get("bruto") or "")[:60]})
-    if st == "pago":
+    if st == "pago" and det.get("valor") is not None and float(det["valor"]) + 0.01 < float(it["total"]):
+        # 23/11: o carrinho foi mexido no checkout da Imply e pagou menos que o pedido: não libera; fica para a TI conferir
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e, resposta = :r",
+                           ExpressionAttributeValues={":e": "erro", ":r": "pago %.2f, pedido %s" % (float(det["valor"]), it["total"])})
+        TABELA.delete_item(Key={"pk": "PEDPEND", "sk": ref})
+    elif st == "pago":
         liberar(ref, it, det)
     elif st == "cancelado":
         TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "cancelado"})
@@ -1191,6 +1232,8 @@ def handler(ev, ctx):
         return senha_email(ev, corpo)
     if caminho == "/ponto/vendas-online" and metodo == "GET":
         return vendas_online(ev)
+    if caminho == "/ponto/compra" and metodo in ("GET", "POST"):
+        return compra_ponto(ev, corpo, metodo)
     if caminho == "/ponto/eventos" and metodo == "GET":
         return eventos_ponto(ev)
     if caminho == "/ponto/escolas" and metodo == "GET":

@@ -1326,7 +1326,7 @@ Para voltar atrás: **Sombra** ou **Desligada** na mesma tela. O Checkout volta 
 
 No celular (tela estreita), com o reconhecimento ligado, o texto "Versão ligada" na Medição sai do cartão e a página rola para o lado. Use a Medição no computador ou no tablet.
 
-## Novidades da v99.38 (24/11/2026): Treino da IA, alertas do fotógrafo e troca de pessoa
+## Novidades da v99.43 (24/11/2026): Treino da IA, alertas do fotógrafo e troca de pessoa
 
 ### Treino da IA: a escolha é salva sozinha
 
