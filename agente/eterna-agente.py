@@ -9055,6 +9055,36 @@ def estado_db():
     return c
 
 
+# 24/11 (Ronaldo): "mantenha as vendas canceladas de tal modo que possamos pedir para recuperar alguma delas, em outro lugar,
+# para não ficar refletindo". No cancelamento, a cópia inteira da venda vem para cá (estado.db, tabela venda_cancelada, fora das
+# vendas e dos feeds; entra no backup do estado.db). Nas telas e nas contagens a cancelada não aparece mais. Recuperar é pedir à TI:
+# a cópia tem tudo o que a venda tinha no momento do cancelamento. tipo: foto (venda paga do Posto), pedido (do Checkout, cancelado
+# antes de pagar) ou ativacao (Drone, Chute a Gol, Snap Pop).
+VC_TIPOS = ("foto", "pedido", "ativacao")
+_re_vc_id = re.compile(r"^[A-Za-z0-9_.:#-]{1,80}$")
+
+
+def venda_cancelada_arquiva(tipo, vid, no, motivo, por, dados, em=None):
+    """Guarda (ou atualiza) a cópia da venda cancelada. -> True se gravou."""
+    if tipo not in VC_TIPOS or not _re_vc_id.match(str(vid or "")):
+        return False
+    txt = json.dumps(dados, ensure_ascii=False, default=str)
+    if len(txt) > ESTADO_MAX:
+        return False
+    with estado_lock:
+        c = estado_db()
+        try:
+            c.execute("create table if not exists venda_cancelada (tipo text, id text, no text, em text, por text, motivo text,"
+                      " dados text, arquivada_em text, primary key (tipo, id))")
+            c.execute("insert or replace into venda_cancelada values (?,?,?,?,?,?,?,?)",
+                      (tipo, str(vid), str(no or "")[:40], str(em or "")[:40] or time.strftime("%Y-%m-%dT%H:%M:%S"),
+                       str(por or "")[:120], str(motivo or "")[:200], txt, time.strftime("%Y-%m-%dT%H:%M:%S")))
+            c.commit()
+        finally:
+            c.close()
+    return True
+
+
 # Entrada da equipe: usuário e senha conferidos aqui, no servidor, para funcionar sem internet e sem e-mail. Mora no estado.db,
 # em tabelas próprias, fora de /ponto/docs e dos feeds: credencial guarda só o hash scrypt com sal, sessao_login só o hash do token
 # (o navegador fica com o token em cookie HttpOnly). O admin cadastra; a senha que ele gera é provisória e a pessoa troca na entrada.
@@ -9937,8 +9967,15 @@ def ativ_cancelar(vid, motivo, eu):
             c.execute("update ativ_venda set situacao='cancelada', cancel_motivo=?, cancel_por=?, cancel_em=? where origem='eterna' and id=?",
                       (motivo, eu, time.strftime("%Y-%m-%dT%H:%M:%S"), vid))
             c.commit()
+            cur = c.execute("select * from ativ_venda where origem='eterna' and id=?", (vid,))
+            cols = [d[0] for d in cur.description]
+            linha = dict(zip(cols, cur.fetchone() or ()))
         finally:
             c.close()
+    try:                                          # 24/11: a cópia vai para o arquivo das canceladas (estado.db)
+        venda_cancelada_arquiva("ativacao", vid, linha.get("venda") or linha.get("numero") or vid, motivo, eu, linha)
+    except Exception as ex:
+        print("  arquivo das canceladas: %s" % type(ex).__name__)
     return None
 
 
@@ -19411,6 +19448,7 @@ ROTAS = (
     # posto + origem local; o POST, X-Eterna, 2 por minuto, corpo até 1 KB e confirma == "ZERAR"
     ("GET", "/zerar/previa", "sessao", ("configuracao.u",)), ("POST", "/zerar/fase-teste", "sessao", ("configuracao.u",)),
     ("POST", "/compra-online/config", "sessao", ("configuracao.u",)),   # 24/11: liga e desliga a compra online (vai para a Nuvem)
+    ("POST", "/vendas/canceladas", "sessao", ("venda.c", "venda.u", "quiosque.c", "financeiro.d")),   # 24/11: cópia da venda cancelada
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
     # 24/11: Lixeira da IA (Curadoria). Ver e "Não é ruim" pelo módulo qualidade; a chave só o Admin (conferido no lixeira_post)
     ("GET", "/lixeira", "sessao", ("qualidade.r",)),
@@ -21265,6 +21303,24 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": False, "error": "erro no servidor"}, 500, nostore=True)
         return self.js(r, st, nostore=True)
 
+    def vendas_canceladas_post(self):
+        """24/11: POST /vendas/canceladas {tipo: foto|pedido, id, no, motivo, em, dados}: o app manda a cópia da venda que acabou de
+        cancelar (e as canceladas de antes, uma vez). Origem local, X-Eterna, 120 por minuto por pessoa, até ESTADO_MAX."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "vcanc", 120):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(ESTADO_MAX + 4096)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        tipo, dados = body.get("tipo"), body.get("dados")
+        if tipo not in ("foto", "pedido") or not isinstance(dados, dict):
+            return self.js({"ok": False, "error": "dados"}, 400)
+        if not venda_cancelada_arquiva(tipo, body.get("id"), body.get("no"), body.get("motivo"), body.get("por") or quem, dados, body.get("em")):
+            return self.js({"ok": False, "error": "dados"}, 400)
+        return self.js({"ok": True}, nostore=True)
+
     def compra_online_post(self):
         """24/11: POST /compra-online/config {ligada} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna, 6 por minuto
         por pessoa, corpo até 1 KB. Repassa à Nuvem com o segredo do ponto e responde a chave como a Nuvem gravou."""
@@ -22871,6 +22927,8 @@ class H(BaseHTTPRequestHandler):
             return self.lixeira_post(u.path)
         if u.path == "/compra-online/config":
             return self.compra_online_post()
+        if u.path == "/vendas/canceladas":
+            return self.vendas_canceladas_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
