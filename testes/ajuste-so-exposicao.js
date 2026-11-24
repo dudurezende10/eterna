@@ -9,6 +9,7 @@ const {chromium}=require('playwright');
     poe('escura','-',img(50));out.escura={...(await ajAuto('ag_escura'))};
     poe('clara','-',img(215));out.clara={...(await ajAuto('ag_clara'))};
     poe('mista','-',img(50,240));out.mista={...(await ajAuto('ag_mista'))};
+    poe('flash','-',img(45,225));out.flash={...(await ajAuto('ag_flash'))};poe('media','-',img(120,235));out.media={...(await ajAuto('ag_media'))};
     poe('chute','chute',img(50));out.chute={...(await ajAuto('ag_chute'))};
     // ajuste antigo com contraste é refeito pela fila; chute que já tinha ajuste volta ao neutro
     SIM.edits['ag_escura']={b:130,c:125,t:10,auto:true};SIM.edits['ag_chute']={b:130,c:100,t:0,auto:true};SIM.edits['ag_clara']={b:120,c:130,t:0,auto:false};
@@ -22,6 +23,7 @@ const {chromium}=require('playwright');
   ok(r.escura.b>100&&r.escura.c===100&&r.escura.t===0,'escura: clareia sem contraste nem temperatura '+JSON.stringify(r.escura));
   ok(r.clara.b<100&&r.clara.c===100&&r.clara.t===0,'clara: escurece só na exposição '+JSON.stringify(r.clara));
   ok(r.mista.b<=105&&r.mista.c===100,'escura com parte clara: não estoura '+JSON.stringify(r.mista));
+  ok(r.flash.b===100,'flash com fundo escuro: não mexe '+JSON.stringify(r.flash));ok(r.media.b===100,'foto bem exposta: não mexe '+JSON.stringify(r.media));ok(r.mista.b===100,'escura com parte clara: não mexe');
   ok(r.chute.b===100&&r.chute.c===100&&r.chute.t===0,'chute a gol: sem ajuste '+JSON.stringify(r.chute));
   ok(r.fila.escura.c===100&&r.fila.escura.t===0,'ajuste antigo refeito '+JSON.stringify(r.fila.escura));
   ok(r.fila.chute.b===100,'chute já ajustado volta ao neutro '+JSON.stringify(r.fila.chute));
