@@ -99,6 +99,22 @@ Toda foto é recortada no servidor assim que chega, na placa NVIDIA, antes de o 
 
 Conferir a placa: `ssh srv-viva-maracana 'nvidia-smi'` e, como o usuário `eterna`, `instalar-recorte-modelos.py --provedor` (tem que dizer "placa de vídeo (CUDA)").
 
+## Classificação de poses: modelo de visão local (23/11, P1)
+
+Plano: `docs/planos/2026-11-23-poses-estatistica.md`. À noite o servidor classifica cada foto (set, quem aparece, adereço, pose, enquadramento, vibração) com o Qwen3-VL-8B-Instruct (Apache 2.0) num `llama-server` do llama.cpp que só escuta em `127.0.0.1`, numa porta escolhida na hora e com uma chave nova a cada abertura (arquivo 0600 em `~/Eterna/ponto/poses-*/`, apagado ao fechar). Nenhuma foto sai do servidor. O recorte e a montagem dos fundos de IA têm prioridade: a classificação só roda na janela (padrão 20:00 às 07:00), para quando chega recorte ou montagem do Checkout e volta 2 minutos depois, e só abre com 9 GB livres na placa. Chave em Fundos de IA (técnico) › Classificação de poses (Desligada, Sombra, Ligada; padrão Desligada). `ETERNA_POSES=0` no `nuvem.env` força Desligada.
+
+**Ronaldo (sudo, uma vez):**
+
+1. Escolher a tag do llama.cpp (`bNNNN`, de uma release com suporte a Qwen3-VL) e conferir a versão do CUDA Toolkit da mesma geração do driver. Rodar:
+   `ssh -t srv-viva-maracana "sudo LLAMA_TAG=bNNNN bash /opt/eterna/app/servidor/linux/visao-instalar.sh"`
+   Ele instala `build-essential`, `cmake`, `git` e o CUDA Toolkit (versão fixa em `CUDA_PACOTE`, bloqueado no unattended-upgrades), compila só o `llama-server` com CUDA para a placa (sm_120), estático e sem libcurl (não baixa nada, nem com `-hf`), e instala em `/opt/eterna/visao/bin/llama-server` (root, 755). Plano B se a compilação falhar: o binário Vulkan oficial do mesmo `LLAMA_TAG`, instalado no mesmo caminho e do mesmo jeito.
+2. No passo 3 o script roda `agente/instalar-poses-modelos.py --conferir`: baixa os dois arquivos (cerca de 6,2 GB) para `~/Eterna/modelos` do usuário `eterna` e mostra o SHA-256 de cada um. Conferir com a página de cada arquivo no Hugging Face (Qwen/Qwen3-VL-8B-Instruct-GGUF) e mandar os dois valores ao programador, que fixa `POSE_SHA` e `POSE_MMPROJ_SHA` no agente e no instalador (como foi com o `CENA_SHA`). Sem os dois fixados, o Eterna não abre o modelo (motivo `sem_modelo`).
+3. Depois de publicado, à noite, com a classificação **Desligada** no Eterna (dois modelos de visão juntos não cabem na placa) e o agente e o recorte no ar, medir 50 fotos e mandar o resultado:
+   `ssh -t srv-viva-maracana "sudo -u eterna env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/medir-poses.py --n 50"`
+   Mostra ms por foto (mediana e p90), % de respostas válidas, pico de memória da placa e os processos na placa nesse pico (o recorte tem que aparecer lá: continua na placa). Meta: mediana até 2,5 s e 95% ou mais de válidas. Nada é gravado e nenhum id de foto aparece.
+
+**Para conferir (sem sudo):** `ssh srv-viva-maracana 'journalctl -u eterna --since "-12 h" --no-pager | grep "poses:"'` (só contagens: quando começou, quando parou e por quê, feitas, dúvidas, erros, ms por foto) e `nvidia-smi` durante a noite (aparece o `llama-server`). Motivos de parada: `fora_janela`, `recorte_ocupado`, `montagem_ocupada`, `vram` (menos de 9 GB livres ou sem `nvidia-smi`), `sem_modelo`, `parado` (3 quedas seguidas; volta na noite seguinte), `fim_fila`. O registro do `llama-server` da última abertura fica em `~/Eterna/ponto/poses-llama.log` (sem imagens).
+
 ## Leitor de cartão do gramado (18/11)
 
 O computador Windows do gramado roda `agente/eterna-leitor.py`: o fotógrafo põe o cartão e as fotos que faltam no servidor sobem sozinhas (plano `docs/planos/2026-11-18-leitor-cartao-gramado.md`).

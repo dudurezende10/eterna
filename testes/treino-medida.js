@@ -29,10 +29,10 @@ const MEDIDA={v:1,metodo:'sessao',versao:'c1-clip-b32-k7-l070-p080-9f8e7d6c',lig
     cadeiras:{alvo:'arquibancada',contra:'resto',auc:0.79,media:{},veto:null},dourado:{alvo:'trofeu',contra:'resto',auc:0.91,media:{},veto:null}},
   erros:ERROS,criterio:{passa:false,falta:[{k:'n',classe:'gramado',tem:42,precisa:150},{k:'n',classe:'arquibancada',tem:26,precisa:40},{k:'n',classe:'trofeu',tem:6,precisa:40},{k:'n',classe:'chute',tem:4,precisa:60},{k:'n',classe:'outro',tem:29,precisa:40},
     {k:'precisao',tem:0.9474,precisa:0.98},{k:'prosp_n',tem:12,precisa:100}]},em:'2026-11-18T10:00:00',ms:42};
-async function agente(ctx,R){R.cfg=[];R.medida=0;R.amostra=[];R.analise={ponto:'medir',exposicao:'desligada'};R.passa=false;
+async function agente(ctx,R){R.cfg=[];R.medida=0;R.amostra=[];R.analise={ponto:'medir',exposicao:'desligada'};R.passa=false;R.abaixo=null;R.lv=null;R.semRot=false;R.cong=null;R.semMod=false;R.atraso=0;
   const js=(r,b,st)=>r.fulfill({status:st||200,contentType:'application/json',body:J(b)});
   await ctx.route(ORIG+'/status',r=>js(r,{ok:true,agent:'eterna-agente',version:3,boot:'bM',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:true},sessoes:{v:2,pausa:60,rostos:true,rev:1,gen:'gM',hoje:0,abertas:0},
-    treino:{v:1,rotulos:107,analise:R.analise,ajuste:null,modelo_ponto:{v:1,pronto:true,erro:null,provedor:'cuda',modelo:'clip-b32',versao:MEDIDA.versao,ligada_versao:null,fila:0,feitas_hoje:812,ms_medio:14,criterio_passa:R.passa}}}));
+    treino:{v:1,rotulos:107,analise:R.analise,ajuste:null,modelo_ponto:{v:1,pronto:!R.semMod,erro:R.semMod?'sem_modelo':null,congelados:R.cong,provedor:'cuda',modelo:'clip-b32',versao:MEDIDA.versao,ligada_versao:R.lv,abaixo:R.abaixo,aviso:R.semMod?'sem_modelo':null,fila:0,feitas_hoje:812,ms_medio:14,criterio_passa:R.passa}}}));
   await ctx.route(ORIG+'/events*',r=>js(r,{events:[],next:0,total:0}));
   await ctx.route(ORIG+'/biblioteca',r=>js(r,{fotos:[]}));
   await ctx.route(ORIG+'/sessoes*',r=>js(r,{ok:true,gen:'gM',rev:1,pausa:60,rostos:true,completo:true,sessoes:[]}));
@@ -43,17 +43,23 @@ async function agente(ctx,R){R.cfg=[];R.medida=0;R.amostra=[];R.analise={ponto:'
   await ctx.route(ORIG+'/thumb/**',r=>{const p=new URL(r.request().url()).pathname.split('/').pop();r.fulfill({status:200,contentType:'image/jpeg',body:THUMB[CLASSE_DE[p]||'gramado']});});
   await ctx.route(ORIG+'/file/**',r=>{const p=new URL(r.request().url()).pathname.split('/').pop();r.fulfill({status:200,contentType:'image/jpeg',body:THUMB[CLASSE_DE[p]||'gramado']});});
   await ctx.route(ORIG+'/treino/dias',r=>js(r,{v:1,dias:[{dia:DIA,fotos:40,sessoes:8,rotuladas:20}]}));
-  await ctx.route(ORIG+'/treino/medida?*',r=>{R.medida++;const m=new URL(r.request().url()).searchParams.get('metodo');js(r,Object.assign({},MEDIDA,{metodo:m}));});
+  await ctx.route(ORIG+'/treino/medida?*',r=>{R.medida++;const m=new URL(r.request().url()).searchParams.get('metodo');js(r,Object.assign({},MEDIDA,{metodo:m,ligada_versao:R.lv,ligada_abaixo:R.abaixo,modelo_ok:true}));});
   await ctx.route(ORIG+'/treino/amostra?*',r=>{const q=new URL(r.request().url()).searchParams;R.amostra.push(Object.fromEntries(q));
     js(r,{v:1,dia:q.get('dia'),modo:q.get('modo'),semente:'abc',total_dia:4,itens:ERROS.map((e,i)=>({pid:e.pid,card:e.card,fotografo:'carlos',t:1763380000+i*20,ordem:1,n_sessao:3,rostos:2,rotulo:{v:1,pid:e.pid,ponto:e.marcado,qual:{nivel:null,motivos:[],ajuste:[]},ia:{serve:null,motivos:[],frente:null},duvida:false,obs:'',por:'quem',em:'2026-11-17T10:00:00.000'}}))});});
-  await ctx.route(ORIG+'/treino/config',r=>{const b=r.request().postDataJSON();R.cfg.push(b);
+  await ctx.route(ORIG+'/treino/config',async r=>{const b=r.request().postDataJSON();R.cfg.push(b);
+    if(b.forcar&&R.atraso)await new Promise(ok_=>setTimeout(ok_,R.atraso));
+    if(R.limite)return js(r,{ok:false,error:'limite'},429);
+    if(b.forcar&&R.igual)return js(r,{ok:true,analise:Object.assign({},R.analise),por:R.email,em:R.abaixo.em,abaixo:R.abaixo,ponto_versao:R.lv,congelados:R.cong,igual:true});
+    if(b.forcar){if(R.semRot)return js(r,{ok:false,error:'rotulos',falta:[{k:'rot_outra_lidas',tem:0,precisa:1}]},409);
+      R.analise.ponto='ligada';R.lv='c1-clip-b32-k7-l070-p080-forcada1';R.abaixo={por:R.email,em:'2026-11-18T22:30:00Z'};R.cong=312;
+      return js(r,{ok:true,analise:Object.assign({},R.analise),por:R.email,em:R.abaixo.em,abaixo:R.abaixo,ponto_versao:R.lv,congelados:R.cong});}
     if(b.ponto==='ligada'&&!R.passa)return js(r,{ok:false,error:'criterio',falta:MEDIDA.criterio.falta},409);Object.assign(R.analise,b);js(r,{ok:true,analise:Object.assign({},R.analise),por:'quem',em:'x'});});}
 const espera=async(pg,fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||8000)){if(await pg.evaluate(fn,arg).catch(()=>false))return true;await pg.waitForTimeout(100);}return false;};
 (async()=>{const b=await chromium.launch();
 try{
   const ctx=await b.newContext({viewport:{width:1366,height:900},locale:'pt-BR'});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const R={};await agente(ctx,R);
   const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));
-  await pg.goto(U);await pg.waitForTimeout(300);const email=await entrarTeste.adminFicticio(pg);await entrarTeste(pg,email);await espera(pg,()=>ETERNA.state.agent.on&&ETERNA.state.agent.treino);
+  await pg.goto(U);await pg.waitForTimeout(300);const email=await entrarTeste.adminFicticio(pg);R.email=email;await entrarTeste(pg,email);await espera(pg,()=>ETERNA.state.agent.on&&ETERNA.state.agent.treino);
   await pg.evaluate(()=>ETERNA.go('treino'));await pg.waitForTimeout(300);
   ok(J(await pg.$$eval('[data-act="tr-aba"]',x=>x.map(b=>b.dataset.a)))===J(['marcar','medida','outubro']),'abas com a Medição');
   // 24: Ligada travado abaixo do critério, com a explicação
@@ -86,11 +92,60 @@ try{
   await pg.click('[data-act="tr-analise"][data-k="ponto"][data-v="ligada"]');await pg.waitForTimeout(500);
   const t409=await pg.evaluate(()=>({toast:document.getElementById('toast').textContent,aba:ETERNA.state.train.aba,ponto:ETERNA.state.agent.treino.analise.ponto}));
   ok(/critério/.test(t409.toast)&&t409.aba==='medida'&&t409.ponto==='medir','24: 409 criterio vira o aviso e abre a Medição: '+J(t409));
+  // 18/11 (Eduardo, ligar já): "Ligar mesmo assim" só para quem tem configuracao.u, com confirmação; ligado assim, o selo
+  // "Ligado abaixo da meta por <nome> em <data>" e o que falta continuam na Medição
+  await pg.evaluate(()=>{const t=ETERNA.state.train;t.aba='medida';ETERNA.render();});await espera(pg,()=>document.querySelector('.tr-med-faltas'));
+  ok(await pg.$('[data-act="tr-forcar"]'),'o botão Ligar mesmo assim aparece abaixo do critério para quem tem configuracao.u');
+  const semPerm=await pg.evaluate(()=>{const u=ETERNA.state.user;const p0=u.perms.configuracao;u.perms.configuracao={c:false,r:true,u:false,d:false};ETERNA.render();
+    const tem=!!document.querySelector('[data-act="tr-forcar"]');u.perms.configuracao=p0;ETERNA.render();return tem;});
+  ok(!semPerm,'sem configuracao.u o botão não aparece');
+  let dlg=null;pg.once('dialog',d=>{dlg=d.message();d.dismiss();});const n0=R.cfg.length;
+  await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(300);
+  ok(dlg==='O acerto ainda está abaixo da meta. Algumas fotos fora do gramado podem virar fundo de IA. Ligar mesmo assim?'&&R.cfg.length===n0,'a confirmação diz o risco e Cancelar não liga: '+J(dlg));
+  R.semRot=true;pg.once('dialog',d=>d.accept());await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(500);
+  await espera(pg,()=>document.querySelector('.tr-med-forcar-aviso'));
+  const tRot=await pg.evaluate(()=>{const a=document.querySelector('.tr-med-forcar-aviso');return {toast:document.getElementById('toast').textContent,ponto:ETERNA.state.agent.treino.analise.ponto,
+    aviso:a?a.textContent:'',itens:a?a.querySelectorAll('li').length:0,html:a?a.innerHTML:''};});
+  ok(/gramado e de pelo menos um outro ponto/.test(tRot.aviso)&&/outro ponto marcadas e já lidas pelo reconhecimento: 0 \(precisa 1\)/.test(tRot.aviso)&&tRot.itens===1&&!/&amp;|&lt;/.test(tRot.html)
+    &&/Veja o que falta na Medição/.test(tRot.toast)&&tRot.ponto==='medir','409 rotulos: o que falta fica na Medição, em texto puro: '+J(tRot));
+  R.semRot=false;R.atraso=900;pg.once('dialog',d=>d.accept());await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(250);
+  const voo=await pg.evaluate(()=>{const b=document.querySelector('[data-act="tr-forcar"]');if(b)b.click();return {dis:b&&b.disabled};}); // 2º clique no meio do pedido
+  ok(voo.dis===true,'o botão fica travado enquanto o pedido está em voo: '+J(voo));
+  await espera(pg,()=>document.querySelector('.tr-med-abaixo'));
+  const lg=await pg.evaluate(()=>({selo:(document.querySelector('.tr-med-abaixo')||{}).textContent||'',ponto:ETERNA.state.agent.treino.analise.ponto,nome:ETERNA.state.user.name,
+    faltas:document.querySelectorAll('.tr-med-faltas li').length,botao:(document.querySelector('[data-act="tr-forcar"]')||{}).textContent||null,toast:document.getElementById('toast').textContent}));
+  ok(J(R.cfg[R.cfg.length-1])===J({ponto:'ligada',forcar:true}),'o POST leva forcar: '+J(R.cfg.slice(-1)));
+  ok(lg.ponto==='ligada'&&lg.selo.startsWith('Ligado abaixo da meta por '+lg.nome+' em ')&&/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/.test(lg.selo),'selo Ligado abaixo da meta por <nome> em <data>: '+J(lg));
+  ok(lg.faltas===7,'continua mostrando quanto falta: '+lg.faltas);
+  ok(lg.botao==='Ligar de novo com as marcações de agora','ligado, a versão medida diferente da ligada oferece religar: '+J(lg.botao));
+  ok(/abaixo da meta/.test(lg.toast),'aviso de ligado abaixo da meta: '+J(lg.toast));
+  ok(R.cfg.filter(b=>b.forcar).length===2,'um clique, um pedido (o botão travado não manda outro): '+R.cfg.filter(b=>b.forcar).length);
+  ok(!await pg.$('.tr-med-zero')&&!await pg.$('.tr-med-sem-modelo'),'com fotos congeladas e modelo instalado, sem os avisos');
+  if(process.env.ETERNA_PRINT){await pg.waitForTimeout(300);await pg.screenshot({path:require('path').join(process.env.ETERNA_PRINT,'treino-medicao-abaixo.png'),fullPage:true});}
+  ok(await pg.evaluate(()=>ETERNA.state.agent.treino.modelo_ponto.congelados)===312,'a resposta do POST atualiza as fotos congeladas na hora');
+  // revisão: Ligada igual (nada mudou) não vai para o auditLog; 429 tem aviso próprio
+  const nAud=()=>pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').filter(e=>e.acao==='treino_analise').length);
+  R.atraso=0;const a0=await nAud();R.igual=true;pg.once('dialog',d=>d.accept());await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(500);
+  const ig=await pg.evaluate(()=>document.getElementById('toast').textContent);const a1=await nAud();R.igual=false;
+  ok(/Nada mudou/.test(ig)&&a1===a0,'Ligada igual: aviso de que nada mudou e nada no auditLog: '+J({ig,a0,a1}));
+  R.limite=true;pg.once('dialog',d=>d.accept());await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(500);
+  const lm=await pg.evaluate(()=>document.getElementById('toast').textContent);R.limite=false;
+  ok(lm==='Muitas mudanças seguidas, espere um minuto','429: muitas mudanças seguidas: '+J(lm));
+  // revisão: com 0 fotos congeladas (modelo instalado), o aviso de ligar de novo
+  R.cong=0;await pg.evaluate(()=>{Object.assign(ETERNA.state.agent.treino.modelo_ponto,{congelados:0});ETERNA.render();});
+  await espera(pg,()=>document.querySelector('.tr-med-zero'));
+  const z0=await pg.evaluate(()=>({zero:(document.querySelector('.tr-med-zero')||{}).textContent||'',sm:!!document.querySelector('.tr-med-sem-modelo')}));
+  ok(z0.zero==='Ligado com 0 fotos: ligue de novo'&&!z0.sm,'0 fotos congeladas: Ligado com 0 fotos: '+J(z0));
+  // sem modelo: só "Modelo não instalado... Depois de instalar, ligue de novo" (sem o aviso de 0 fotos)
+  R.semMod=true;await pg.evaluate(()=>{Object.assign(ETERNA.state.agent.treino.modelo_ponto,{erro:'sem_modelo',aviso:'sem_modelo',congelados:0});ETERNA.render();});
+  await espera(pg,()=>document.querySelector('.tr-med-sem-modelo'));
+  const z=await pg.evaluate(()=>({zero:!!document.querySelector('.tr-med-zero'),sm:(document.querySelector('.tr-med-sem-modelo')||{}).textContent||''}));
+  ok(!z.zero&&z.sm==='Modelo não instalado: nada é reconhecido. Depois de instalar, ligue de novo','sem modelo: só a pílula de instalar e ligar de novo: '+J(z));
   // 5 línguas de cada chave nova
   const sem=await pg.evaluate(()=>Object.keys(ETERNA.EQ).filter(k=>/^(tr_med_|tr_aba_medida|tr_an_criterio|tr_an_expo_sem|tr_m_duvidas|up_iam_cena_|up_iam_sem_gramado)/.test(k)).filter(k=>!Array.isArray(ETERNA.EQ[k])||ETERNA.EQ[k].length!==5||ETERNA.EQ[k].some(v=>v==null||v==='')));
   ok(!sem.length,'cada chave nova do EQ com 5 textos: '+J(sem));
   ok(!errs.length,'sem erro de página: '+errs.slice(0,3).join(' | '));
 }catch(e){fails.push('exceção: '+(e&&e.stack||e).toString().slice(0,500));}
 await b.close();
-console.log((fails.length?'FALHA':'OK')+' treino-medida: aba Medição (situação, critério, faltam por classe, matriz, pistas, erros), lupa, Abrir no Marcar, Ligada travado e 409'+(fails.length?' · '+fails.join(' | '):''));
+console.log((fails.length?'FALHA':'OK')+' treino-medida: aba Medição (situação, critério, faltam por classe, matriz, pistas, erros), lupa, Abrir no Marcar, Ligada travado e 409, Ligar mesmo assim (permissão, confirmação, selo)'+(fails.length?' · '+fails.join(' | '):''));
 process.exit(fails.length?1:0);})();

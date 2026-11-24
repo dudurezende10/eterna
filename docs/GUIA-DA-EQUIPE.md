@@ -849,6 +849,7 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 3. O instalador (passo 6) cria o atalho **Eterna** na Área de Trabalho e na inicialização do Windows: um Chrome só do Eterna (`--user-data-dir=C:\Eterna\chrome --kiosk-printing`) aberto em **https://posto.eterna.photo/#posto**. Desde 15/11 esse Chrome acha o servidor pelo IP 192.168.10.10 sem depender do DNS da internet (`--host-resolver-rules`), então o posto vende mesmo sem internet. Abra o Eterna sempre por esse atalho.
 4. O posto imprime na DNP ligada nele quando o servidor tem `ETERNA_IMPRESSORA_POSTOS="*=local"` (veja a documentação técnica).
 5. O `preparar-posto-eterna.cmd` também instala o **programa de impressão**: a foto vai direto para a DNP, sem a prévia do Chrome aparecer. Ele liga sozinho com o Windows, escondido. Se ele estiver parado, o Eterna imprime pelo Chrome como antes (a prévia pisca e fecha sozinha).
+   **Notebook com monitor para o cliente (19/11):** rodado com o botão direito › **Executar como administrador**, o arquivo também libera no Chrome, só para o Eterna, ver as telas e abrir janela. Daí o **Abrir Checkout** abre sozinho, em tela cheia, no monitor ligado ao notebook (a tela que não é a do notebook), sem o Chrome perguntar nada; o vendedor segue no notebook. Sem administrador, o Chrome pergunta uma vez "Gerenciar janelas": toque em **Permitir** e o Checkout vai para o monitor.
 6. **Pelo navegador (desde 15/11):** na estação (rede do estádio ou VPN), abra **https://posto.eterna.photo/instalar**. Baixa o `preparar-posto-eterna.cmd`; abra o arquivo baixado e, se o Windows avisar, toque em **Mais informações › Executar assim mesmo**. Sem e-mail nem pendrive. Ou, no PowerShell do posto, a mesma linha de sempre (baixa do ramo `idiomas-base` e roda; estação instalada antes de 15/11 roda de novo para trocar o servidor de teste pelo do estádio):
 
    ```powershell
@@ -1280,6 +1281,50 @@ Lista de operação no servidor do ponto:
 7. **Teste com a câmera Canon.** Uma hora, com uma foto a cada 6 minutos e a câmera em RAW+JPEG. O FTP embutido recebe só JPEG. Se a câmera travar a fila por causa do RAW, use `ETERNA_FTP_RAW=descartar` (o RAW é recebido e descartado, sem erro).
 8. **Configurações inválidas são ignoradas.** `ftp-remoto.json` com servidor fora da rede do ponto ou porta diferente de 21/990, e `roverpix.json` com endereço que não é o oficial, agora são ignorados. Confira o log do agente depois de reiniciar e, se preciso, refaça a configuração pelo Painel de controle. Servidor FTP do estádio com nome (ou IP fora da rede interna): um por linha em `~/Eterna/ftp-remoto-hosts.txt`.
 9. **Status.** Sem login, o `/status` mostra só que o Eterna está no ar. Impressora, nuvem e rostos se conferem no app, com login de administrador.
+
+## Novidades da v99.37 (19/11/2026): fotos especiais montadas no servidor
+
+Duas mudanças nas fotos especiais (os fundos de IA):
+
+- O Eterna pode reconhecer as fotos do gramado mesmo antes de atingir a meta de acerto. Quem liga é quem pode alterar a Configuração, e fica registrado.
+- A montagem da foto com o fundo passa a ser feita no servidor do estádio, não mais no computador do Checkout.
+
+### Depois desta atualização
+
+1. Feche e abra de novo todos os Postos de venda e todos os Checkouts.
+2. Só depois siga a ordem abaixo para ligar.
+
+### Ordem para ligar (Admin ou técnico, uma vez)
+
+1. **Modelo instalado.** O TI confirma que o reconhecimento do gramado está instalado no servidor.
+2. **Só medir.** Em **Curadoria › Treino da IA › Medição**, deixe o reconhecimento em **Só medir** até não sobrar foto marcada esperando leitura ("Na fila" em 0 e nada faltando em "já lidas pelo reconhecimento").
+3. **Ligar mesmo assim.** Na mesma tela, toque em **Ligar mesmo assim** e confirme. A Medição passa a mostrar "Ligado abaixo da meta por (seu nome) em (data)".
+4. **Montagem em Sombra.** Em **Sistema › Fundos de IA (técnico)**, quadro Recorte local, parte **Montagem no servidor**, escolha **Sombra**. Faça 2 ou 3 sessões de teste no gramado. O TI confere no registro do servidor: modo sombra, pasta no HD e nenhum erro.
+5. **Montagem Ligada.** Na mesma tela, escolha **Ligada**. Faça uma venda de teste: as fotos especiais aparecem e a impressão sai.
+
+Para voltar atrás: **Sombra** ou **Desligada** na mesma tela. O Checkout volta a funcionar como antes.
+
+### Selos da Medição
+
+| Selo | O que fazer |
+| --- | --- |
+| Ligado abaixo da meta por (nome) em (data) | Nada. Mostra quem ligou. A lista do que falta continua aparecendo. |
+| Modelo não instalado: nada é reconhecido | Avise o TI. Depois de instalado, toque em Ligar mesmo assim de novo. |
+| Ligado com 0 fotos: ligue de novo | Toque em Ligar mesmo assim de novo. |
+
+- **Marcou fotos novas no Treino?** Elas só passam a valer quando alguém tocar em **Ligar de novo com as marcações de agora**.
+- **O botão não aparece?** Só quem pode alterar a Configuração vê o botão.
+- **Não ligou?** A Medição mostra o que falta. O servidor precisa de fotos marcadas do gramado e de pelo menos outro ponto.
+
+### Para o vendedor e o anfitrião
+
+- Com a montagem Ligada, uma foto especial que ainda não ficou pronta aparece como **Preparando no servidor...** e não pode ser escolhida. Espere um instante. Se o cliente tocar nela, aparece "Ainda preparando, aguarde um instante".
+- Se o servidor não conseguir montar uma foto especial, ela sai da venda. As outras fotos seguem normais.
+- Reimpressão de foto especial de um dia antigo só sai se ela já foi vendida.
+
+### Detalhe conhecido
+
+No celular (tela estreita), com o reconhecimento ligado, o texto "Versão ligada" na Medição sai do cartão e a página rola para o lado. Use a Medição no computador ou no tablet.
 
 ---
 

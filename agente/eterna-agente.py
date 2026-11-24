@@ -1656,6 +1656,7 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             md = {"pid": pid, "nome": nome, "apagada": time.time(), "motivo": "lgpd", "sessao": sessao or None, "posto": posto or None, "por": quem or None}
             metricas.append(md); metrica_grava(md)
     falhas += treino_lgpd(alvo)             # 16/11: marcações do treino e ajuste, aviso, descarte e treino antigo do estado.db
+    falhas += poses_lgpd(alvo)              # 23/11: a classificação de pose da foto
     try:
         sess_esquecer_disco(apagados_sess)   # v91 (S14): o pid sai também dos arquivos de sessão dos dias anteriores
     except Exception as ex:
@@ -3926,12 +3927,19 @@ def rec_arquivo(pid, lado=REC_LADO_MAX):
     return os.path.join(RECORTES, pid + (".png" if lado >= REC_LADO_MAX else "_%d.png" % lado))
 
 
-def _grava_png(im, destino):
+def _grava_png(im, destino, eterna=None):
+    """eterna: o tEXt do recorte de 3000 (joelho e pernas, D8) vai junto na cópia de 2400: a prévia corta no joelho como a
+    impressão (sem ele, o fiaJoelho do app não achava o joelho na prévia)."""
     os.makedirs(RECORTES, exist_ok=True)
     tmp = destino + ".%d.tmp" % threading.get_ident()
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    pinfo = None
+    if isinstance(eterna, str) and len(eterna) < 2000:
+        from PIL.PngImagePlugin import PngInfo
+        pinfo = PngInfo()
+        pinfo.add_text("eterna", eterna)
     with os.fdopen(fd, "wb") as f:
-        im.save(f, "PNG", compress_level=3)
+        im.save(f, "PNG", compress_level=3, pnginfo=pinfo)
     os.replace(tmp, destino)
 
 
@@ -3981,9 +3989,10 @@ def rec_fazer(pid, origem, lado=REC_LADO_MAX):
             rec["ms_ultimo"] = ms
     if destino != cheio:
         with Image.open(cheio) as im:
+            info = im.info.get("eterna")
             im = im.copy()
         im.thumbnail((lado, lado), Image.LANCZOS)
-        _grava_png(im, destino)
+        _grava_png(im, destino, info)
     return destino
 
 
@@ -4067,6 +4076,8 @@ def rec_trabalho(i=0):
         except Exception as ex:
             job["err"] = str(ex)[:200]
         finally:
+            if job["prio"] <= REC_PRIO_IA:
+                poses_marca_prio("rec")              # 23/11: as poses voltam POSE_OCUPADO_SEG depois do último
             with rec_lock:
                 if rec_jobs.get(job["pid"]) is job:
                     del rec_jobs[job["pid"]]
@@ -4080,6 +4091,7 @@ def rec_trabalho(i=0):
                         if job.get("u"):
                             ia["atrasos"].append(max(0.0, time.time() - job["u"]))
             job["ev"].set()
+            mtg_recorte_pronto(job["pid"], job.get("err"))   # montagem no servidor: só anota (fila leve, sem lock)
 
 
 def rec_apagar(pid):
@@ -4110,6 +4122,8 @@ def rec_enfileirar(pid, origem, lado=REC_LADO_MAX, prio=REC_PRIO_CHECKOUT, ia=Fa
             t = threading.Thread(target=rec_trabalho, args=(len(rec_threads),), daemon=True)
             t.start()
             rec_threads.append(t)
+        if prio <= REC_PRIO_IA:
+            poses_marca_prio("rec")                  # 23/11: a classificação de poses cede a placa (D11)
         job = rec_jobs.get(pid)
         if job is None:
             if prio == REC_PRIO_CHECKOUT and rec["fila0"] >= REC_FILA_MAX:
@@ -4193,14 +4207,17 @@ def rec_pre_loop():
                                 key=lambda x: -(x.get("ultima_chegada") or x.get("fechada_em") or 0))
                     fotos_ss = [(list(x["fotos"]), {"ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {})}) for x in ss]
                 pids = []
+                cand = set()                            # as bases dos fundos de IA (as que a montagem no servidor espera)
                 for fs, xx in fotos_ss:
                     if gpu:
                         pids += [p for p in fs if p not in sem_pessoa]
+                        cand.update(rec_pre_escolha(fs, xx, sem_pessoa))
                     else:
                         pids += rec_pre_escolha(fs, xx, sem_pessoa)
                 falta = [p for p in pids if p not in vistos and not os.path.exists(rec_arquivo(p))]
                 if gpu:
-                    falta = sorted(falta, key=lambda p: -((meta.get(p) or {}).get("u") or 0))[:12]   # a mais nova primeiro; refaz a lista a cada 12
+                    # as candidatas a base primeiro; depois a mais nova primeiro; refaz a lista a cada 12
+                    falta = sorted(falta, key=lambda p: (p not in cand, -((meta.get(p) or {}).get("u") or 0)))[:12]
                 with rec_lock:
                     rec["pre_falta"] = len(falta)
                     rec["pre_escolhidas"] = len(pids)
@@ -4295,6 +4312,995 @@ def rec_ia_loop():
                     andando[pid] = (job, pr, andando_n.pop(pid, 0))
         except Exception as ex:
             print("  recorte das bases de IA:", str(ex)[:160])
+
+
+# ---------- Montagem dos fundos de IA no servidor (E1; plano docs/planos/2026-11-16-montagem-no-servidor.md) ----------
+# O servidor monta os fundos ativos assim que o recorte da base fica pronto, com o mesmo enquadramento do navegador, e guarda
+# a prévia e o arquivo de impressão em ~/Eterna/montagens/<pid>/<fundo>-<versao>-<p|i>.jpg. Quem monta é um processo à
+# parte (agente/eterna-montagem.py, só processador, prioridade baixa, 1 montagem por vez), aberto no padrão do recorte.
+# Chave única config/montagem.modo no estado.db: "desligada" (padrão: nada roda, nenhuma pasta é criada), "sombra" (monta
+# e guarda, nenhuma tela lê) ou "ligada" (E2: Checkout e Posto leem). ETERNA_MONTAGEM=0 força "desligada".
+# É cache (refaz do recorte, como ~/Eterna/recortes): sem banco. Os nomes mont_*/montagens_* são de outra coisa (contagem
+# das montagens vistas, POST /ponto/montagens); aqui tudo é mtg_/MTG_.
+MONTAGENS = os.path.join(HOME, "montagens")
+MTG_VERSAO = "m2"
+MTG_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-montagem.py")   # testes podem trocar (m.MTG_FILHO)
+MTG_MOTOR = MTG_FILHO    # de onde saem as regras para a versão (sempre o motor de verdade, mesmo com o filho dos testes)
+MTG_DIAS = 2             # prazo do que não foi vendido (igual ao dos recortes)
+try:
+    MTG_TETO_GB = float(os.environ.get("ETERNA_MONTAGENS_GB") or 20)
+except ValueError:
+    MTG_TETO_GB = 20.0
+MTG_FILA_MAX = 500
+MTG_P0_MAX = 40          # pedidos do Checkout esperando; acima disso 429 (o item fica em "Preparando" e o app tenta de novo; o navegador não monta)
+MTG_TAXA = 240           # pedidos por minuto por IP em cada uma das duas rotas; a impressão (t=i) tem a conta dela (as prévias não a barram)
+MTG_ESPERA_FILHO = 60    # s numa montagem; acima disso o filho é reiniciado
+MTG_CARGA_SEG = 60       # s para o filho abrir (numpy, Pillow, OpenCV)
+MTG_ERRO_SEG = 60
+MTG_MORTES_MAX = 3
+MTG_ERRO_DE_NOVO = 600   # s: montagem que deu erro só volta sozinha depois disto (o pedido do Checkout tenta antes, ver MTG_ERRO_RECENTE)
+MTG_PISO_DURO = 0.5      # fração do REC_PISO_GB abaixo da qual nada é montado, nem o pedido do Checkout (503 disco)
+MTG_ERRO_FOTO_SEG = 5    # s: espera para reabrir depois que o processo parou numa foto (ela vai para mtg_ruins; as outras seguem)
+MTG_PAGAS_DIAS = RETENCAO_DIAS   # vendas pagas lidas para a reimpressão: o prazo da biblioteca (galeria e selfie)
+MTG_ERRO_RECENTE = 30    # s: erro do motor tão recente que as rotas respondem "erro" sem pôr na fila (a mesma janela no GET e no pedir)
+MTG_P_PEDIDO, MTG_P_VIVO, MTG_P_RESERVA, MTG_P_IMPRESSAO, MTG_P_REFAZER = 0, 1, 2, 3, 4
+MTG_MODOS = ("desligada", "sombra", "ligada")
+# os fundos com montagem local: o mesmo conteúdo de FUNDOS do eterna-montagem.py e de DATA.backgrounds do app (caminhos do
+# app); conferido por testes/app_offline_agente.py e testes/montagem-paridade.js
+MTG_FUNDOS = {
+    "mirantedia": {"previa": "img/bg-mirantedia.jpg", "hi": "img/fundos-5k/mirantedia.jpg", "mono": False, "impAlto": False, "telao": None},
+    "arq1950": {"previa": "img/bg-maracana1950.jpg", "hi": "img/fundos-5k/maracana1950.jpg", "mono": True, "impAlto": True, "telao": None},
+    "telao": {"previa": "img/bg-telao-v2.jpg", "hi": "img/bg-telao-v2.jpg", "mono": False, "impAlto": False,
+              "telao": {"w": 4096, "h": 2924, "quad": [[884, 181], [3485, 525], [3582, 1931], [848, 1681]]}},
+    "campeao2": {"previa": "img/bg-campeao-v81.jpg", "hi": "img/fundos-5k/campeao.jpg", "mono": False, "impAlto": False, "telao": None},
+    "mirante": {"previa": "img/bg-mirantesol.jpg", "hi": "img/fundos-5k/mirantesol.jpg", "mono": False, "impAlto": False, "telao": None},
+    "tunel": {"previa": "img/bg-tunel-v2.jpg", "hi": "img/fundos-5k/tunel-v2.jpg", "mono": False, "impAlto": True, "telao": None},
+    "podio": {"previa": "img/bg-podio.jpg", "hi": "img/fundos-5k/podio.jpg", "mono": False, "impAlto": False, "telao": None},
+}
+MTG_ATIVOS = ("mirantedia", "arq1950", "telao", "tunel")   # os que o servidor monta sozinho (BG_DEF do app); os outros, só sob pedido
+# qual base (0 = 1ª, 1 = 2ª) cada fundo prefere: cópia de FIA_BASE do app, conferida por teste
+MTG_BASE = {"arq1950": 0, "podio": 0, "telao": 1, "mirantedia": 1, "campeao2": 1, "campeaoarg": 1, "campeaocol": 1, "mirante": 1, "tunel": 0}
+MTG_PIDS = os.path.join(HOME, "ponto", "montagem-filhos.json")
+_re_mtg = re.compile(r"^(ag_)?([0-9a-f]{6,40})/([a-z0-9]{2,40})\.jpg$")
+_re_mtg_arq = re.compile(r"^([a-z0-9]{2,40})-([0-9a-f]{8})-([pif])\.jpg$")
+_re_mtg_pid = re.compile(r"^[0-9a-f]{6,40}$")
+mtg = {"erro": None, "erro_em": 0, "espera_s": MTG_ERRO_SEG, "mortes_mem": 0, "parado": None, "reinicios": 0, "abriu": False,
+       "feitas": 0, "erros": 0, "ms_total": 0, "ms_n": 0, "fila0": 0, "atrasos": collections.deque(maxlen=200),
+       "pausa_disco": False, "bytes": None, "versoes": {}, "log_em": 0.0, "log_n": (0, 0)}
+mtg_lock = threading.Lock()        # só contadores e a fila (nunca junto do lock, do sess_lock ou do rec_lock)
+mtg_fila = queue.PriorityQueue()   # (prioridade, seq, trabalho)
+mtg_jobs = {}                      # (pid, fundo) -> trabalho na fila ou em andamento (sob o mtg_lock)
+_mtg_seq = itertools.count()
+mtg_filho = {"p": None, "fila": None, "lock": threading.Lock(), "seq": 0}
+mtg_threads = []
+mtg_prontos = collections.deque(maxlen=4000)   # (pid, erro) dos recortes que terminaram (fila leve: o rec_trabalho só anota)
+mtg_acorda = threading.Event()
+mtg_sem_pessoa = {}                # pid -> quando (recorte ou montagem sem pessoa: não se tenta de novo)
+mtg_ruins = {}                     # (pid, fundo) -> (versão, erro, quando)
+mtg_espera_rec = {}                # pid -> {fundo: (tipos, prioridade)}: montagem pedida antes de o recorte existir
+mtg_completas = set()              # (pid, fundo, versão, preferida) que já tem tudo em disco (o laço não confere de novo)
+mtg_refeitas = set()               # (pid, fundo, versão) postas na fila na partida ou na troca de versão: seguem com a prioridade 4
+_mtg_cfg = {"t": 0.0, "v": None}
+_mtg_sha = {}                      # caminho -> (tamanho, mtime, sha256)
+_mtg_dims = {}                     # caminho -> (tamanho, mtime, (w, h))
+_mtg_motor = {"m": None, "chave": None}
+_mtg_baixa_falhou = {}             # caminho do fundo -> (até quando não tenta de novo, espera atual em s)
+MTG_BAIXA_ESPERA, MTG_BAIXA_TETO = 30, 300   # fundo que a origem não entregou: 30 s, dobrando até 5 min
+
+
+def montagem_valida(j):
+    """config/montagem gravada pelo Painel de controle: só {"modo": desligada|sombra|ligada, "por", "em"}; o resto = None."""
+    if not isinstance(j, dict) or j.get("modo") not in MTG_MODOS or set(j) - {"modo", "por", "em"}:
+        return None
+    return {"modo": j["modo"], "por": str(j.get("por") or "")[:120] or None, "em": str(j.get("em") or "")[:40] or None}
+
+
+def mtg_cfg():
+    """{"modo"} da montagem no servidor (estado.db config/montagem), relida a cada 3 s; sem documento, "desligada".
+    ETERNA_MONTAGEM=0 vence tudo. Nunca chamar com sess_lock, rec_lock ou mtg_lock na mão."""
+    if os.environ.get("ETERNA_MONTAGEM") == "0":
+        return {"modo": "desligada", "forcada": True}
+    agora = time.time()
+    if agora - _mtg_cfg["t"] < 3 and _mtg_cfg["v"] is not None:
+        return _mtg_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'montagem' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                v = montagem_valida(json.loads(r[0])) or {"modo": "desligada"}     # gravado mas ilegível: desligada
+    except Exception:                                # erro de leitura (banco ocupado): fica o último valor lido
+        v = _mtg_cfg["v"]
+    v = v or {"modo": "desligada"}
+    _mtg_cfg.update(t=agora, v=v)
+    return v
+
+
+def mtg_motor():
+    """As tabelas do eterna-montagem.py (REGRAS, FUNDOS, regra_do_fundo), lidas do arquivo para a versão da montagem:
+    regra nova = montagem nova. O arquivo só importa a biblioteca padrão no topo; nada é gravado ao lado dele. None se faltar."""
+    try:
+        st = os.stat(MTG_MOTOR)
+    except OSError:
+        return None
+    k = (MTG_MOTOR, st.st_size, st.st_mtime)
+    if _mtg_motor["chave"] != k:
+        mod = None
+        try:
+            import types
+            mod = types.ModuleType("eterna_montagem_regras")
+            mod.__file__ = MTG_MOTOR
+            with open(MTG_MOTOR, encoding="utf8") as f:
+                exec(compile(f.read(), MTG_MOTOR, "exec"), mod.__dict__)
+            mod.regra_do_fundo("telao")
+        except Exception:
+            mod = None
+        _mtg_motor.update(m=mod, chave=k)
+    return _mtg_motor["m"]
+
+
+def mtg_fundo_arquivo(fundo, hi, baixar=True):
+    """Arquivo do fundo (prévia ou impressão) no app-cache; se faltar, baixa da origem do app. Sem o arquivo: ValueError("fundo")."""
+    f = MTG_FUNDOS.get(fundo)
+    rel = f and f["hi" if hi else "previa"]
+    p = rel and app_disco(rel)
+    if not p:
+        raise ValueError("fundo")
+    if os.path.isfile(p):
+        return p
+    if not baixar:
+        raise ValueError("fundo")
+    falha = _mtg_baixa_falhou.get(rel)
+    if falha and time.time() < falha[0]:
+        raise ValueError("fundo")                    # a origem acabou de falhar: espera crescente (não baixa a cada volta de 2 s)
+    try:
+        data = app_baixar(rel)
+        if not data or not app_disco_gravar(rel, data) or not os.path.isfile(p):
+            raise ValueError("fundo")
+    except Exception:
+        espera = min(MTG_BAIXA_TETO, (falha[1] * 2) if falha else MTG_BAIXA_ESPERA)
+        _mtg_baixa_falhou[rel] = (time.time() + espera, espera)
+        raise ValueError("fundo")
+    _mtg_baixa_falhou.pop(rel, None)
+    return p
+
+
+def _mtg_sha_arquivo(p):
+    st = os.stat(p)
+    v = _mtg_sha.get(p)
+    if v is None or v[0] != st.st_size or v[1] != st.st_mtime:
+        h = hashlib.sha256()
+        with open(p, "rb") as f:
+            for b in iter(lambda: f.read(1 << 20), b""):
+                h.update(b)
+        v = (st.st_size, st.st_mtime, h.hexdigest())
+        _mtg_sha[p] = v
+    return v[2]
+
+
+def mtg_versao(fundo, baixar=False):
+    """8 hex que mudam quando muda o motor (MTG_VERSAO), o recorte (REC_VERSAO), a regra ou a geometria do fundo, ou um
+    dos dois arquivos dele. None sem o motor ou sem os arquivos (baixar=True busca os que faltam)."""
+    mod = mtg_motor()
+    if mod is None or fundo not in MTG_FUNDOS:
+        return None
+    try:
+        a, b = mtg_fundo_arquivo(fundo, False, baixar), mtg_fundo_arquivo(fundo, True, baixar)
+        txt = "|".join((MTG_VERSAO, REC_VERSAO, json.dumps(mod.regra_do_fundo(fundo), sort_keys=True),
+                        json.dumps(MTG_FUNDOS[fundo], sort_keys=True), _mtg_sha_arquivo(a), _mtg_sha_arquivo(b)))
+    except (ValueError, OSError, TypeError):
+        return None
+    return hashlib.sha256(txt.encode("utf8")).hexdigest()[:8]
+
+
+def mtg_dims(fundo):
+    """(w, h) da prévia: o tamanho natural do arquivo de prévia do fundo. (None, None) sem o arquivo."""
+    try:
+        p = mtg_fundo_arquivo(fundo, False, False)
+        st = os.stat(p)
+    except (ValueError, OSError):
+        return None, None
+    v = _mtg_dims.get(p)
+    if v is None or v[0] != st.st_size or v[1] != st.st_mtime:
+        v = (st.st_size, st.st_mtime, jpeg_cabecalho(p) or (None, None))
+        _mtg_dims[p] = v
+    return v[2]
+
+
+def mtg_arquivo(pid, fundo, tipo, versao=None):
+    versao = versao or mtg_versao(fundo)
+    return os.path.join(MONTAGENS, pid, "%s-%s-%s.jpg" % (fundo, versao, tipo)) if versao else None
+
+
+def mtg_info(pid):
+    return os.path.join(MONTAGENS, pid, "info-%s.json" % MTG_VERSAO)
+
+
+def mtg_candidatas(x):
+    """As bases de IA da sessão x ({"fotos", "ia", "ia_regra"}), na ordem (1ª, 2ª): só x["ia"], as fotos de gramado que o
+    servidor reconheceu (regra 19, o mesmo que o rec_pre_escolha recorta e o lojaAIBase do app lê). Sem bases, nada
+    (não existe plano B: nunca as 2 primeiras fotos de qualquer ponto); leva cuja visita já tem as bases: nada."""
+    if (x.get("ia_regra") or {}).get("motivo") == "visita_ja_tem":
+        return []
+    return [p for p in (x.get("ia") or []) if isinstance(p, str)][:2]
+
+
+_mtg_pagas = {"chave": None, "v": frozenset()}
+
+
+_mtg_pagas_lock = threading.Lock()
+
+
+def mtg_pagas():
+    """(pid, fundo) das montagens de vendas pagas e não canceladas nos últimos MTG_PAGAS_DIAS (aiSel 'ai:<id>|<fundo>' do
+    evento criar de venda com pagar e sem cancelar). Relido só quando o banco muda, uma leitura por vez: quem chega durante
+    a leitura usa o último valor lido. Sem nenhum valor lido ainda (ou erro de leitura): a exceção sobe para quem chama."""
+    if not os.path.exists(VENDAS_DB):
+        return frozenset()
+    chave = (_ff_hoje(),) + tuple(os.stat(p).st_mtime_ns if os.path.exists(p) else 0 for p in (VENDAS_DB, VENDAS_DB + "-wal"))
+    if _mtg_pagas["chave"] == chave:
+        return _mtg_pagas["v"]
+    if not _mtg_pagas_lock.acquire(blocking=False):
+        if _mtg_pagas["chave"] is None:
+            raise RuntimeError("vendas em leitura")
+        return _mtg_pagas["v"]
+    try:
+        return _mtg_pagas_ler(chave)
+    finally:
+        _mtg_pagas_lock.release()
+
+
+def _mtg_pagas_ler(chave):
+    desde = _ff_hoje(time.time() - MTG_PAGAS_DIAS * 86400)
+    # conexão própria, só de leitura e sem o ev_lock: o WAL deixa ler junto com a gravação, então o registro de vendas
+    # nunca espera por esta leitura (o pior caso é ler a fotografia de um instante antes); só os dias do prazo (índice evento_dia)
+    db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=2, check_same_thread=False)
+    try:
+        db.execute("pragma query_only=1")
+        rs = db.execute("select dados from evento where tipo = 'criar' and dia >= ?"
+                        " and venda in (select venda from evento where tipo = 'pagar' and dia >= ?)"
+                        " and venda not in (select venda from evento where tipo = 'cancelar' and dia >= ?)", (desde, desde, desde)).fetchall()
+    finally:
+        db.close()
+    out = set()
+    for (dados,) in rs:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            continue
+        for k in d.get("aiSel") or []:
+            a, _, f = re.sub(r"^ai:", "", str(k)).partition("|")
+            if pid_ok(a) and f:
+                out.add((pid_lib(a), f))
+    _mtg_pagas.update(chave=chave, v=frozenset(out))
+    return _mtg_pagas["v"]
+
+
+def mtg_base_ok(pid, fundo=None):
+    """Montagem nova só sai de base de IA (regra 19). Foto de leva carregada (ontem e hoje): só se é base de alguma leva.
+    Foto fora das levas carregadas: só a reimpressão de montagem vendida (venda paga no vendas.db com aquela base naquele
+    fundo). Sem como ler as vendas: None (as rotas respondem 503)."""
+    with sess_lock:
+        c = sess_pid.get(pid)
+        x = sess.get(c) if c else None
+        if x is not None:
+            if pid in (x.get("ia") or ()):
+                return True
+            return any(pid in (y.get("ia") or ()) for y in sess.values())
+    try:
+        pagas = mtg_pagas()
+    except Exception:
+        return None                                    # sem como ler as vendas agora: quem chama responde 503 (o item não sai da venda)
+    return any(p == pid and (fundo is None or f == fundo) for p, f in pagas)
+
+
+def mtg_preferida(fundo, n):
+    """Índice (entre n candidatas) da base que o fundo prefere: MTG_BASE, como o FIA_BASE do app (fundo fora do mapa = 2ª)."""
+    return max(0, min(MTG_BASE.get(fundo, 1), n - 1))
+
+
+def mtg_livre_gb():
+    try:
+        return shutil.disk_usage(MONTAGENS if os.path.isdir(MONTAGENS) else HOME).free / 1024 ** 3
+    except OSError:
+        return None
+
+
+def mtg_no_hd():
+    """A pasta das montagens está fora do disco do ~/Eterna (no servidor: link para o HD de mídia, feito pelo instalar.sh)."""
+    try:
+        return os.path.realpath(MONTAGENS) != os.path.join(os.path.realpath(HOME), "montagens")
+    except OSError:
+        return False
+
+
+def mtg_espera():
+    """(ok, motivo) do último erro do processo de montagem (igual ao rec_espera)."""
+    with mtg_lock:
+        if mtg["parado"]:
+            return False, mtg["parado"]
+        if mtg["erro"]:
+            if time.time() - mtg["erro_em"] < mtg["espera_s"]:
+                return False, mtg["erro"]
+            mtg["erro"] = None
+    return True, None
+
+
+def mtg_estado():
+    """(ok, motivo): chave ligada (sombra ou ligada), motor e pacotes presentes e processo sem erro recente."""
+    cfg = mtg_cfg()
+    if cfg["modo"] == "desligada":
+        return False, "desligada no servidor (ETERNA_MONTAGEM=0)" if cfg.get("forcada") else "desligada"
+    if not os.path.isfile(MTG_FILHO) or mtg_motor() is None:
+        return False, "não instalado: falta o eterna-montagem.py na pasta do agente"
+    import importlib.util
+    falta = [x for x in ("PIL", "numpy") if importlib.util.find_spec(x) is None]
+    if falta:
+        return False, "não instalado: faltam pacotes (" + ", ".join(falta) + ")"
+    return mtg_espera()
+
+
+def _mtg_pids_gravar():
+    p = mtg_filho.get("p")
+    lst = [{"pid": p.pid, "agente": os.getpid(), "criado": mtg_filho.get("criado")}] if p is not None and p.poll() is None else []
+    try:
+        os.makedirs(os.path.dirname(MTG_PIDS), exist_ok=True)
+        _grava_privado(MTG_PIDS, json.dumps(lst))
+    except OSError:
+        pass
+
+
+def _mtg_e_filho(pid, criado=None):
+    """True se o processo pid é um processo de montagem (psutil; sem psutil, /proc no Linux). Nunca mata outro tipo."""
+    nomes = {os.path.basename(MTG_FILHO), "eterna-montagem.py"}
+    try:
+        import psutil
+        p = psutil.Process(pid)
+        if criado and abs(p.create_time() - criado) > 2:
+            return False
+        return any(os.path.basename(c) in nomes for c in p.cmdline())
+    except ImportError:
+        pass
+    except Exception:
+        return False
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as f:
+            return any(os.path.basename(c.decode("utf8", "replace")) in nomes for c in f.read().split(b"\0") if c)
+    except OSError:
+        return False
+
+
+def mtg_orfaos_encerrar():
+    """Na partida: o processo de montagem deixado por um agente que caiu (MTG_PIDS) é encerrado. Devolve quantos."""
+    import signal
+    n = 0
+    try:
+        with open(MTG_PIDS, encoding="utf8") as f:
+            lst = json.load(f)
+    except (OSError, ValueError):
+        return 0
+    for x in lst if isinstance(lst, list) else []:
+        pid = x.get("pid") if isinstance(x, dict) else None
+        if not isinstance(pid, int) or pid == os.getpid() or not _mtg_e_filho(pid, x.get("criado")):
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM if hasattr(signal, "SIGTERM") else 9)
+            n += 1
+        except OSError:
+            pass
+    try:
+        os.remove(MTG_PIDS)
+    except OSError:
+        pass
+    if n:
+        print("  montagem-srv: %d processo(s) de uma partida anterior encerrado(s)" % n)
+    return n
+
+
+def _mtg_filho_fim(p, padrao):
+    try:
+        rc = p.wait(timeout=5)
+    except Exception:
+        rc = None
+    if rc in (-9, 137, 9):
+        return "montagem parou: memória insuficiente (código %s)" % rc
+    return "%s (código %s)" % (padrao, rc)
+
+
+def _mtg_erro(motivo, chave=None):
+    """Erro do processo: espera MTG_ERRO_SEG; morte por memória dobra a espera a cada vez e para na MTG_MORTES_MAX-ésima.
+    chave = (pid, fundo) quando o processo parou no meio de uma montagem: a foto vai para mtg_ruins (quem chama), a espera
+    para reabrir é curta (MTG_ERRO_FOTO_SEG, as outras fotos seguem) e uma morte repetida na mesma foto não conta de novo
+    para a parada."""
+    with mtg_lock:
+        mtg["erro"] = motivo[:200]
+        mtg["erro_em"] = time.time()
+        if "memória insuficiente (código" in motivo:
+            if not (chave and chave == mtg.get("morte_chave")):
+                mtg["mortes_mem"] += 1
+            mtg["espera_s"] = MTG_ERRO_SEG * 2 ** (max(1, mtg["mortes_mem"]) - 1)
+            if mtg["mortes_mem"] >= MTG_MORTES_MAX:
+                mtg["parado"] = ("montagem parada: o processo foi encerrado por falta de memória %d vezes seguidas. Reinicie o agente"
+                                 % mtg["mortes_mem"])
+        else:
+            mtg["espera_s"] = MTG_ERRO_SEG
+        if chave:
+            mtg["morte_chave"] = chave
+            if not mtg["parado"]:
+                mtg["espera_s"] = min(mtg["espera_s"], MTG_ERRO_FOTO_SEG)
+        parado = mtg["parado"]
+    print("  montagem-srv: processo parou: %s" % (parado or motivo)[:160])
+
+
+def _mtg_abrir():
+    """Com o mtg_filho["lock"]: o processo de montagem vivo, ou abre um novo (só aqui a pasta das montagens é criada)."""
+    f = mtg_filho
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:                             # morreu entre uma montagem e outra
+        motivo = _mtg_filho_fim(f["p"], "a montagem parou")
+        f["p"] = None
+        _mtg_erro(motivo)
+        raise RuntimeError(motivo)
+    okp, mot = mtg_espera()
+    if not okp:
+        raise RuntimeError(mot)
+    t0 = time.time()
+    try:
+        os.makedirs(MONTAGENS, exist_ok=True)
+        p = subprocess.Popen([sys.executable, "-I", MTG_FILHO, "--recortes", RECORTES, "--fundos", APP_CACHE_DIR,
+                              "--montagens", MONTAGENS, "--modelos", MODELOS],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1,
+                             encoding="utf-8", env=rec_env(), close_fds=True)
+    except Exception as ex:
+        _mtg_erro("erro ao abrir a montagem: %s" % type(ex).__name__)
+        raise RuntimeError("abrir")
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila, criado=time.time())
+    _mtg_pids_gravar()
+    try:
+        j = fila.get(timeout=MTG_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "demorou mais de %d s para abrir" % MTG_CARGA_SEG}
+    if j is None:
+        motivo = _mtg_filho_fim(p, "a montagem parou ao abrir")
+        _rec_filho_matar(f)
+        _mtg_erro(motivo)
+        raise RuntimeError(motivo)
+    if not j.get("pronto") or j.get("versao") != MTG_VERSAO:
+        _rec_filho_matar(f)
+        _mtg_erro("erro ao abrir a montagem: %s" % (str(j.get("erro") or "")[:120] or "versão %s" % str(j.get("versao"))[:20]))
+        raise RuntimeError("abrir")
+    with mtg_lock:
+        if mtg["abriu"]:
+            mtg["reinicios"] += 1
+        mtg["abriu"] = True
+        mtg["erro"] = None
+    print("  montagem-srv: processo aberto em %d ms" % int((time.time() - t0) * 1000))
+    return f
+
+
+class MtgMorte(RuntimeError):
+    """O processo parou (ou passou do tempo) no meio desta montagem."""
+
+
+def mtg_filho_montar(req, chave=None):
+    """Manda uma montagem ao processo e espera (até MTG_ESPERA_FILHO). Devolve a resposta {"ok": True, ...}. Resposta de
+    erro do motor: ValueError(código). Processo que morre ou demora: RuntimeError (reabre depois, com espera crescente)."""
+    f = mtg_filho
+    with f["lock"]:
+        _mtg_abrir()
+        f["seq"] += 1
+        rid = str(f["seq"])
+        try:
+            f["p"].stdin.write(json.dumps(dict(req, id=rid, op="montar")) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            motivo = _mtg_filho_fim(f["p"], "a montagem parou")
+            _rec_filho_matar(f)
+            _mtg_erro(motivo, chave)
+            raise MtgMorte(motivo)
+        fim = time.time() + MTG_ESPERA_FILHO
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _rec_filho_matar(f)
+                _mtg_erro("montagem demorou mais de %d s: reiniciada" % MTG_ESPERA_FILHO, chave)
+                raise MtgMorte("tempo")
+            if j is None:
+                motivo = _mtg_filho_fim(f["p"], "a montagem parou no meio de uma foto")
+                f["p"] = None
+                _mtg_erro(motivo, chave)
+                raise MtgMorte(motivo)
+            if j.get("id") == rid:
+                break
+    if not j.get("ok"):
+        raise ValueError(str(j.get("erro") or "interno")[:40])
+    with mtg_lock:
+        mtg["mortes_mem"] = 0
+        mtg["espera_s"] = MTG_ERRO_SEG
+    return j
+
+
+def mtg_fechar_filho():
+    """Chave desligada: o processo de montagem sai da memória."""
+    with mtg_filho["lock"]:
+        if mtg_filho.get("p") is not None:
+            _rec_filho_matar(mtg_filho)
+            _mtg_pids_gravar()
+
+
+def _mtg_limita(d, n):
+    """Tira os mais antigos até sobrar n. Outras linhas mexem no mesmo dicionário (rotas, trabalhador, laço): sem quebrar
+    se ele mudar no meio."""
+    erros = 0
+    while len(d) > n and erros < 1000:
+        try:
+            d.pop(next(iter(d)), None)
+        except (RuntimeError, StopIteration):
+            erros += 1
+
+
+def _mtg_info_gravar(pid, j):
+    """info-m2.json da foto: a medida de frente e do recorte que o motor devolveu (a E3 decide com isso; a E1 só guarda)."""
+    try:
+        m = j.get("medida") if isinstance(j.get("medida"), dict) else {}
+        fr = j.get("frente") if isinstance(j.get("frente"), dict) else None
+        info = {"v": MTG_VERSAO, "frente": fr and {"rostos": int(fr.get("rostos") or 0), "frontais": int(fr.get("frontais") or 0), "ok": bool(fr.get("ok"))},
+                "trunc": bool(m.get("trunc")), "q": m.get("q") if isinstance(m.get("q"), (int, float)) else None, "em": int(time.time())}
+        _grava_privado(mtg_info(pid), json.dumps(info))
+    except OSError:
+        pass
+
+
+def _mtg_fazer(job):
+    """Uma montagem (uma base num fundo). Nunca com lock, sess_lock ou rec_lock na mão."""
+    pid, fundo = job["pid"], job["fundo"]
+    if job.get("cancel") or mtg_cfg()["modo"] == "desligada":
+        return "cancelado"
+    with lock:
+        e = lib.get(pid)
+    if not e:
+        return "cancelado"
+    versao = mtg_versao(fundo, baixar=True)
+    if not versao:
+        return "fundo"
+    with mtg_lock:
+        pedidos = set(job["tipos"])
+    tipos = [t for t in ("p", "i") if t in pedidos and not os.path.exists(mtg_arquivo(pid, fundo, t, versao))]
+    if not tipos:
+        return None
+    rec_p = rec_arquivo(pid)
+    if not os.path.exists(rec_p):
+        # o recorte ainda não existe: pede sem esperar (a fila da montagem não para) e volta quando ele ficar pronto
+        if pid in mtg_sem_pessoa:
+            return "sem_pessoa"
+        with mtg_lock:
+            mtg_espera_rec.setdefault(pid, {})[fundo] = (set(tipos), job["prio"])
+            _mtg_limita(mtg_espera_rec, 2000)
+        if e.get("file") and os.path.exists(e["file"]) and rec_estado()[0]:
+            rec_enfileirar(pid, e["file"], REC_LADO_MAX, REC_PRIO_CHECKOUT if job["prio"] == MTG_P_PEDIDO else REC_PRIO_ANTECIPADO)
+        return "recorte_espera"
+    livre = mtg_livre_gb()
+    if livre is not None and (livre < REC_PISO_GB * MTG_PISO_DURO or (job["prio"] != MTG_P_PEDIDO and livre < REC_PISO_GB)):
+        return "disco"
+    yunet = os.path.join(MODELOS, MOD_DET)
+    req = {"recorte": rec_p, "fundo": fundo, "yunet": yunet if os.path.isfile(yunet) else None,
+           "previa_fundo": mtg_fundo_arquivo(fundo, False), "hi_fundo": mtg_fundo_arquivo(fundo, True),
+           "p": mtg_arquivo(pid, fundo, "p", versao) if "p" in tipos else None,
+           "i": mtg_arquivo(pid, fundo, "i", versao) if "i" in tipos else None}
+    t0 = time.time()
+    try:
+        j = mtg_filho_montar(req, (pid, fundo))
+    except MtgMorte:
+        # o processo parou ou passou do tempo nesta foto: ela espera MTG_ERRO_DE_NOVO antes de voltar à fila (não derruba as outras)
+        mtg_ruins[(pid, fundo)] = (versao, "processo", time.time())
+        _mtg_limita(mtg_ruins, 20000)
+        return "processo"
+    except ValueError as ex:
+        erro = str(ex) if str(ex) in ("sem_pessoa", "fundo", "recorte", "imagem_grande", "caminho_recusado") else "interno"
+        if erro == "sem_pessoa":
+            mtg_sem_pessoa[pid] = time.time()
+            _mtg_limita(mtg_sem_pessoa, 20000)
+        else:
+            mtg_ruins[(pid, fundo)] = (versao, erro, time.time())
+            _mtg_limita(mtg_ruins, 20000)
+        return erro
+    except RuntimeError:
+        return "processo"
+    ms = int((time.time() - t0) * 1000)
+    with lock:
+        viva = pid in lib
+    if not viva or job.get("cancel"):                 # LGPD no meio da montagem: nada dela fica
+        mtg_apagar(pid)
+        return "cancelado"
+    _mtg_info_gravar(pid, j)
+    mtg_ruins.pop((pid, fundo), None)
+    by = j.get("bytes") if isinstance(j.get("bytes"), dict) else {}
+    feitas = [t for t in tipos if os.path.exists(mtg_arquivo(pid, fundo, t, versao))]
+    atraso = None
+    if job.get("pref") and "p" in feitas and job.get("u") \
+            and all(os.path.exists(mtg_arquivo(pid, f, "p") or "") for f in job.get("grupo") or ()):
+        atraso = max(0.0, time.time() - job["u"])    # da chegada da foto até as prévias preferidas dela prontas
+    with mtg_lock:
+        mtg["feitas"] += len(feitas)
+        mtg["ms_total"] += ms
+        mtg["ms_n"] += 1
+        if mtg["bytes"] is not None:
+            mtg["bytes"] += sum(int(v) for v in by.values() if isinstance(v, (int, float)))
+        if atraso is not None:
+            mtg["atrasos"].append(atraso)
+    return None
+
+
+def mtg_trabalho():
+    """O único trabalhador da fila de montagem (1 por vez: a montagem é processador e não disputa com a chegada das fotos)."""
+    while True:
+        _, _, job = mtg_fila.get()
+        with mtg_lock:
+            if job["pego"]:
+                continue                             # o mesmo trabalho entrou de novo com prioridade maior: já foi
+            job["pego"] = True
+            if job["p0"]:
+                mtg["fila0"] = max(0, mtg["fila0"] - 1)
+        erro = "interno"
+        for _ in range(int(MTG_ERRO_SEG * 2 ** MTG_MORTES_MAX / 0.5)):   # processo em espera depois de um erro: o trabalho espera (não falha)
+            okp, _m = mtg_espera()
+            if okp or mtg["parado"] or job.get("cancel"):
+                break
+            time.sleep(0.5)
+        try:
+            erro = _mtg_fazer(job)
+        except Exception as ex:
+            print("  montagem-srv: erro numa montagem (%s)" % type(ex).__name__)   # nunca o id nem o caminho
+        finally:
+            job["err"] = erro
+            if job["prio"] <= MTG_P_VIVO:
+                poses_marca_prio("mtg")
+            with mtg_lock:
+                if mtg_jobs.get((job["pid"], job["fundo"])) is job:
+                    del mtg_jobs[(job["pid"], job["fundo"])]
+                if erro and erro not in ("cancelado", "recorte_espera", "disco", "sem_pessoa"):
+                    mtg["erros"] += 1
+            job["ev"].set()
+
+
+def mtg_enfileirar(pid, fundo, tipos, prio, u=None, pref=False, grupo=()):
+    """Põe a montagem (uma base num fundo) na fila sem esperar e devolve (trabalho, erro). Um trabalho por (pid, fundo):
+    pedido repetido só sobe a prioridade e soma os tipos. Recusa com a fila cheia; abaixo do piso de disco só passa a
+    prioridade 0 (pedido do Checkout). Erros: desligada, disco, fila_cheia."""
+    if mtg_cfg()["modo"] == "desligada":
+        return None, "desligada"
+    livre = mtg_livre_gb()
+    pausa = livre is not None and livre < REC_PISO_GB
+    if livre is not None and livre < REC_PISO_GB * MTG_PISO_DURO:
+        with mtg_lock:
+            mtg["pausa_disco"] = True
+        return None, "disco"                         # piso duro: nem o pedido do Checkout grava
+    with mtg_lock:
+        if pausa and not mtg["pausa_disco"]:
+            print("  montagem-srv: em pausa: %.1f GB livres (piso %.0f GB); só os pedidos do Checkout montam" % (livre, REC_PISO_GB))
+        mtg["pausa_disco"] = pausa
+        if pausa and prio != MTG_P_PEDIDO:
+            return None, "disco"
+        if not mtg_threads:
+            t = threading.Thread(target=mtg_trabalho, daemon=True)
+            t.start()
+            mtg_threads.append(t)
+        if prio <= MTG_P_VIVO:
+            poses_marca_prio("mtg")                  # 23/11: a classificação de poses cede a placa (D11)
+        k = (pid, fundo)
+        job = mtg_jobs.get(k)
+        if job is None:
+            if sum(1 for x in mtg_jobs.values() if not x["pego"]) >= MTG_FILA_MAX or (prio == MTG_P_PEDIDO and mtg["fila0"] >= MTG_P0_MAX):
+                return None, "fila_cheia"
+            job = {"pid": pid, "fundo": fundo, "tipos": set(tipos), "prio": prio, "p0": prio == MTG_P_PEDIDO, "pego": False,
+                   "ev": threading.Event(), "u": u, "pref": bool(pref), "grupo": tuple(grupo), "err": None}
+            mtg_jobs[k] = job
+            if job["p0"]:
+                mtg["fila0"] += 1
+            mtg_fila.put((prio, next(_mtg_seq), job))
+            return job, None
+        if not job["pego"]:
+            job["tipos"] |= set(tipos)
+            if prio < job["prio"]:
+                if prio == MTG_P_PEDIDO and not job["p0"]:
+                    if mtg["fila0"] >= MTG_P0_MAX:
+                        return job, None             # segue com a prioridade que tinha
+                    job["p0"] = True
+                    mtg["fila0"] += 1
+                job["prio"] = prio
+                mtg_fila.put((prio, next(_mtg_seq), job))
+        return job, None
+
+
+def mtg_recorte_pronto(pid, erro=None):
+    """Chamado pelo rec_trabalho quando um recorte termina: só anota numa fila leve (quem olha a sessão é o mtg_loop)."""
+    mtg_prontos.append((pid, erro))
+    mtg_acorda.set()
+
+
+def mtg_ruim_recente(pid, fundo, versao):
+    """Erro recente desta versão no motor: MTG_ERRO_RECENTE; o processo parou nesta foto: MTG_ERRO_DE_NOVO."""
+    ruim = mtg_ruins.get((pid, fundo))
+    if not ruim or ruim[0] != versao:
+        return False
+    return time.time() - ruim[2] < (MTG_ERRO_DE_NOVO if ruim[1] == "processo" else MTG_ERRO_RECENTE)
+
+
+def mtg_cancelar(pid):
+    """LGPD: o que há do pid na fila ou em andamento não deixa arquivo."""
+    with mtg_lock:
+        for (p, _), j in mtg_jobs.items():
+            if p == pid:
+                j["cancel"] = True
+        mtg_espera_rec.pop(pid, None)
+
+
+def mtg_apagar(pid):
+    """LGPD e limpeza: apaga ~/Eterna/montagens/<pid>/ inteira, sem seguir link (um link no lugar da pasta é só desfeito), e
+    tira a foto do que fica na memória (completas, sem pessoa, erros). Devolve True se havia pasta."""
+    if not isinstance(pid, str) or not _re_mtg_pid.match(pid):
+        return False
+    p = os.path.join(MONTAGENS, pid)
+    havia = False
+    try:
+        if os.path.islink(p):
+            os.remove(p)
+            havia = True
+        elif os.path.isdir(p):
+            shutil.rmtree(p)                           # o rmtree não segue links de dentro da pasta
+            havia = True
+    except OSError:
+        havia = False
+    try:                                               # cópia: o mtg_loop pode estar anotando ao mesmo tempo
+        for k in [k for k in mtg_completas.copy() if k[0] == pid]:
+            mtg_completas.discard(k)
+        mtg_sem_pessoa.pop(pid, None)
+        for k in [k for k in list(mtg_ruins) if k[0] == pid]:
+            mtg_ruins.pop(k, None)
+    except Exception:
+        mtg_completas.clear()                          # só memória (o laço confere o disco de novo); a pasta já saiu
+    return havia
+
+
+def limpar_montagens(agora=None):
+    """De hora em hora (galeria_loop): apaga a pasta de foto que saiu da biblioteca, arquivo de versão antiga, arquivo com
+    mais de MTG_DIAS, .tmp com mais de 1 h e, acima de MTG_TETO_GB, os mais antigos. Não toca em vendidas/ (E4) nem em
+    ~/Eterna/recortes. Devolve quantos arquivos apagou."""
+    agora = agora or time.time()
+    if not os.path.isdir(MONTAGENS):
+        with mtg_lock:
+            mtg["bytes"] = 0
+        return 0
+    with lock:
+        vivas = set(lib)
+    atuais = {f: mtg_versao(f) for f in MTG_FUNDOS}
+    itens, n = [], 0
+
+    def apaga(p):
+        try:
+            os.remove(p)
+            return 1
+        except OSError:
+            return 0
+    try:
+        pastas = sorted(os.listdir(MONTAGENS))
+    except OSError:
+        return 0
+    for pid in pastas:
+        d = os.path.join(MONTAGENS, pid)
+        if pid == "vendidas" or not _re_mtg_pid.match(pid) or os.path.islink(d) or not os.path.isdir(d):
+            continue
+        if pid not in vivas:
+            try:
+                n += len(os.listdir(d))
+            except OSError:
+                pass
+            mtg_apagar(pid)
+            continue
+        try:
+            nomes = os.listdir(d)
+        except OSError:
+            continue
+        for nome in nomes:
+            p = os.path.join(d, nome)
+            try:
+                st = os.lstat(p)
+            except OSError:
+                continue
+            velho = agora - st.st_mtime > MTG_DIAS * 86400
+            m_ = _re_mtg_arq.match(nome)
+            if nome.endswith(".tmp"):
+                if agora - st.st_mtime > 3600:
+                    n += apaga(p)
+            elif m_:
+                atual = atuais.get(m_.group(1))
+                if velho or (atual and m_.group(2) != atual) or m_.group(1) not in MTG_FUNDOS:
+                    n += apaga(p)
+                else:
+                    itens.append((st.st_mtime, st.st_size, p))
+            elif nome.startswith("info-") and nome.endswith(".json"):
+                if velho or nome != "info-%s.json" % MTG_VERSAO:
+                    n += apaga(p)
+            elif velho:
+                n += apaga(p)
+        try:
+            if not [x for x in os.listdir(d) if not x.startswith("info-")]:
+                shutil.rmtree(d)                       # só sobrou o info (ou nada): a pasta sai
+        except OSError:
+            pass
+    total = sum(x[1] for x in itens)
+    for _, tam, p in sorted(itens):
+        if total <= MTG_TETO_GB * 1024 ** 3:
+            break
+        if apaga(p):
+            total -= tam
+            n += 1
+    mtg_completas.clear()
+    with mtg_lock:
+        mtg["bytes"] = total
+    return n
+
+
+def mtg_status():
+    """/status.montagem (fora do lock, como o rec_status)."""
+    cfg = mtg_cfg()
+    ok, motivo = mtg_estado()
+    livre = mtg_livre_gb()
+    p = mtg_filho.get("p")
+    with mtg_lock:
+        n = mtg["ms_n"]
+        return {"v": 1, "modo": cfg["modo"], "ok": ok, "motivo": motivo, "versao": MTG_VERSAO,
+                "fundos": dict(mtg["versoes"]) if cfg["modo"] != "desligada" else {},
+                "filho": {"vivo": p is not None and p.poll() is None, "reinicios": mtg["reinicios"]}, "parado": mtg["parado"],
+                "fila": sum(1 for j in mtg_jobs.values() if not j["pego"]), "feitas": mtg["feitas"], "erros": mtg["erros"],
+                "ms_medio": int(mtg["ms_total"] / n) if n else None,
+                "atraso_p50_s": _pct(mtg["atrasos"], 0.5), "atraso_p90_s": _pct(mtg["atrasos"], 0.9),
+                "guardado_gb": round((mtg["bytes"] or 0) / 1024 ** 3, 2), "livre_gb": round(livre, 1) if livre is not None else None,
+                "piso_gb": REC_PISO_GB, "pausa_disco": bool(mtg["pausa_disco"]), "no_hd": mtg_no_hd(),
+                "imprime": True, "montaveis": sorted(MTG_FUNDOS), "ativos": list(MTG_ATIVOS)}   # E2: Checkout e Posto leem e imprimem (modo ligada)
+
+
+def _mtg_linha_partida(modo, versoes):
+    print("  montagem-srv: modo=%s versao=%s fundos=%s pasta=%s no_hd=%s" % (
+        modo, MTG_VERSAO, ",".join("%s:%s" % (f, versoes.get(f) or "sem-arquivo") for f in MTG_ATIVOS), MONTAGENS,
+        "sim" if mtg_no_hd() else "nao"))
+
+
+def _mtg_linha_5min(agora):
+    with mtg_lock:
+        n = (mtg["feitas"], mtg["erros"])
+        if agora - mtg["log_em"] < 300 or n == mtg["log_n"]:
+            return
+        mtg["log_em"], mtg["log_n"] = agora, n
+        fila = sum(1 for j in mtg_jobs.values() if not j["pego"])
+        ms = int(mtg["ms_total"] / mtg["ms_n"]) if mtg["ms_n"] else 0
+        p50, p90 = _pct(mtg["atrasos"], 0.5), _pct(mtg["atrasos"], 0.9)
+        gb = (mtg["bytes"] or 0) / 1024 ** 3
+    livre = mtg_livre_gb()
+    print("  montagem-srv: feitas=%d fila=%d erros=%d ms_medio=%d atraso p50/p90=%s/%s s disco=%.2f GB guardados, %s GB livres" % (
+        n[0], fila, n[1], ms, "--" if p50 is None else p50, "--" if p90 is None else p90, gb, "?" if livre is None else "%.1f" % livre))
+
+
+def mtg_passada(refazer=False):
+    """Uma volta do mtg_loop: para cada sessão de hoje, as candidatas (mtg_candidatas) e o que falta da versão atual de
+    cada fundo ativo: prévia da base preferida (prioridade 1), prévia da outra base (2) e, com a prévia pronta, a impressão
+    da preferida (3). refazer (partida do agente ou troca de versão): tudo com prioridade 4. Devolve quantos enfileirou."""
+    versoes = dict(mtg["versoes"])
+    hoje = _ff_hoje()
+    with sess_lock:
+        ss = sorted((x for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
+                    key=lambda x: -(x.get("ultima_chegada") or x.get("fechada_em") or 0))
+        ss = [{"fotos": list(x["fotos"]), "ia": list(x.get("ia") or []), "ia_regra": dict(x.get("ia_regra") or {}),
+               "fechada_em": _num(x.get("fechada_em"))} for x in ss]
+    n = 0
+    for x in ss:
+        cands = mtg_candidatas(x)
+        if not cands:
+            continue
+        pref = {f: cands[mtg_preferida(f, len(cands))] for f in MTG_ATIVOS}
+        for fundo in MTG_ATIVOS:
+            v = versoes.get(fundo)
+            if not v:
+                continue
+            for pid in cands:
+                e_pref = pref[fundo] == pid
+                k = (pid, fundo, v, e_pref)
+                if k in mtg_completas or pid in mtg_sem_pessoa or not os.path.exists(rec_arquivo(pid)):
+                    continue
+                ruim = mtg_ruins.get((pid, fundo))
+                if ruim and ruim[0] == v and time.time() - ruim[2] < MTG_ERRO_DE_NOVO:
+                    continue
+                tem_p = os.path.exists(mtg_arquivo(pid, fundo, "p", v))
+                if tem_p and (not e_pref or os.path.exists(mtg_arquivo(pid, fundo, "i", v))):
+                    mtg_completas.add(k)
+                    continue
+                if refazer:
+                    mtg_refeitas.add((pid, fundo, v))
+                velha = (pid, fundo, v) in mtg_refeitas
+                if not tem_p:
+                    with lock:
+                        u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
+                    # o atraso conta de quando a base passou a existir: chegada da foto ou fechamento da leva (regra 19: as
+                    # bases saem no fechamento, 60 s sem clique, ou depois, quando o reconhecimento do gramado termina)
+                    u = max(u, x.get("fechada_em") or 0.0)
+                    job, _ = mtg_enfileirar(pid, fundo, ("p",), MTG_P_REFAZER if velha else MTG_P_VIVO if e_pref else MTG_P_RESERVA,
+                                            u=None if velha else u or None, pref=e_pref,
+                                            grupo=[f for f in MTG_ATIVOS if pref[f] == pid and versoes.get(f)])
+                else:
+                    job, _ = mtg_enfileirar(pid, fundo, ("i",), MTG_P_REFAZER if velha else MTG_P_IMPRESSAO)
+                n += 1 if job is not None else 0
+    if len(mtg_completas) > 200000:
+        mtg_completas.clear()
+    return n
+
+
+def mtg_volta(visto):
+    """Uma volta do mtg_loop (visto guarda o modo e as versões da volta anterior). Com a chave desligada não faz nada:
+    nenhuma pasta, nenhum processo."""
+    modo = mtg_cfg()["modo"]
+    if modo == "desligada":
+        mtg_prontos.clear()
+        if visto["modo"] not in (None, "desligada"):
+            print("  montagem-srv: modo=desligada versao=%s" % MTG_VERSAO)
+            mtg_fechar_filho()
+        visto["modo"] = modo
+        return
+    if not mtg_estado()[0]:                              # parada, ou esperando o prazo depois de um erro do processo
+        mtg_prontos.clear()
+        return
+    versoes = {f: mtg_versao(f, baixar=True) for f in MTG_ATIVOS}
+    refazer = False
+    if modo != visto["modo"] or versoes != visto["versoes"]:
+        with mtg_lock:
+            mtg["versoes"] = dict(versoes)
+        mtg_completas.clear()
+        mtg_refeitas.clear()
+        _mtg_linha_partida(modo, versoes)
+        refazer = visto["versoes"] != versoes            # partida do agente, chave recém-ligada ou troca de versão
+        visto.update(modo=modo, versoes=versoes)
+        if mtg["bytes"] is None:
+            limpar_montagens()                           # mede o que já está guardado (e tira o que é de versão antiga)
+    while mtg_prontos:
+        pid, erro = mtg_prontos.popleft()
+        if erro == "sem_pessoa":
+            mtg_sem_pessoa[pid] = time.time()
+            _mtg_limita(mtg_sem_pessoa, 20000)
+        with mtg_lock:
+            esp = mtg_espera_rec.pop(pid, None)
+        if esp and not erro:
+            for fundo, (tipos, prio) in esp.items():
+                mtg_enfileirar(pid, fundo, tipos, prio)
+    mtg_passada(refazer)
+    agora = time.time()
+    _mtg_linha_5min(agora)
+    with mtg_lock:
+        cheio = mtg["bytes"] is not None and mtg["bytes"] > MTG_TETO_GB * 1024 ** 3
+    if cheio and agora - visto.get("limpeza", 0) > 600:  # passou do teto antes da limpeza de hora em hora
+        visto["limpeza"] = agora
+        limpar_montagens()
+
+
+def mtg_loop():
+    """A cada 2 s (ou quando um recorte termina): com a chave em sombra ou ligada, mantém em disco as montagens das
+    sessões de hoje."""
+    visto = {"modo": None, "versoes": None, "limpeza": 0.0}
+    while True:
+        mtg_acorda.wait(2)
+        mtg_acorda.clear()
+        try:
+            mtg_volta(visto)
+        except Exception as ex:
+            print("  montagem-srv: erro no laço (%s)" % type(ex).__name__)
+            time.sleep(5)
 
 
 # v84 (segurança): o Photoroom só monta quando o interruptor do Painel de controle estiver em "Photoroom" também aqui.
@@ -5014,6 +6020,10 @@ def galeria_loop():
                 limpar_recortes()
             except Exception as ex:
                 print("  recortes: erro na limpeza", ex)
+            try:
+                limpar_montagens()
+            except Exception as ex:
+                print("  montagem-srv: erro na limpeza (%s)" % type(ex).__name__)
         if time.time() - ultima_cli > 3600:
             ultima_cli = time.time()
             try:
@@ -6124,6 +7134,8 @@ def sess_esquecer(pid):
     v93: sai também das bases de IA, e os recortes dela são apagados na hora (o trabalho na fila é cancelado)."""
     rec_cancelar(pid)
     rec_apagar(pid)
+    mtg_cancelar(pid)                   # montagem no servidor: o trabalho na fila ou em andamento não deixa arquivo
+    mtg_apagar(pid)
     _sess_esquecer(pid)
 
 
@@ -8583,15 +9595,9 @@ def ativ_venda_tablet(v):
     ing = str(v.get("ingresso") or "").strip().upper()[:20]
     ing = ing if _re_ingresso.match(ing) else ""
     foto = None
-    if v.get("cliente_foto"):
-        f = str(v["cliente_foto"])
-        if not f.startswith("data:image/jpeg;base64,") or len(f) > ATIV_FOTO_MAX * 4 // 3 + 40:
-            return None
-        try:
-            foto = base64.b64decode(f.split(",", 1)[1], validate=True)
-        except (ValueError, TypeError):
-            return None
-        if not foto.startswith(b"\xff\xd8") or len(foto) > ATIV_FOTO_MAX:
+    if v.get("cliente_foto"):                  # tablet com o app de antes de 23/11 ainda manda a foto da venda
+        foto = ativ_foto_jpeg(v["cliente_foto"])
+        if foto is None:
             return None
     return {"origem": "eterna", "id": v["id"], "tipo": v["tipo"], "dia": v["criado"][:10], "criado": v["criado"], "itens": itens,
             "valor": v["valor"], "pagamento": v["pagamento"], "vendedor": v.get("vendedor") or "", "vendedor_n": None,
@@ -8607,6 +9613,52 @@ def ativ_venda_tablet(v):
 
 def ativ_cliente_foto(vid):
     return os.path.join(ATIV_CLIENTES_DIR, "%s.jpg" % vid)
+
+
+ATIV_FOTO_OBRIGATORIA = ("drone", "snap")
+
+
+def ativ_foto_jpeg(f):
+    """data URL JPEG da foto do cliente (até ATIV_FOTO_MAX) -> bytes, ou None."""
+    f = str(f or "")
+    if not f.startswith("data:image/jpeg;base64,") or len(f) > ATIV_FOTO_MAX * 4 // 3 + 40:
+        return None
+    try:
+        b = base64.b64decode(f.split(",", 1)[1], validate=True)
+    except (ValueError, TypeError):
+        return None
+    return b if b.startswith(b"\xff\xd8") and len(b) <= ATIV_FOTO_MAX else None
+
+
+def ativ_cliente_foto_entrega(body):
+    """POST /ativ/cliente-foto {id, foto}: 23/11, a foto do cliente é tirada na entrega (câmera do computador do campo). Grava
+    por cima da anterior, marca a venda para procurar as fotos do Tour (como a foto da venda fazia desde a v99.29.1) e procura
+    em seguida, fora do pedido. Some com a limpeza de sempre (ativ_clientes_limpa). -> None ou o erro."""
+    vid = str(body.get("id") or "")
+    foto = ativ_foto_jpeg(body.get("foto"))
+    if not _re_ativ_id.match(vid) or foto is None:
+        return "dados"
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select situacao from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            if not r:
+                return "nao_achou"
+            if (r[0] or "ativa") != "ativa":
+                return "cancelada"
+            c.execute("update ativ_venda set foto_busca=1 where origem='eterna' and id=?", (vid,))
+            c.commit()
+        finally:
+            c.close()
+    ativ_cliente_foto_grava(vid, foto)
+
+    def procura():
+        try:
+            ativ_tour_atualiza(vid)
+        except Exception as ex:
+            print("  tour: busca pela foto da entrega falhou (%s)" % str(ex)[:120])
+    threading.Thread(target=procura, daemon=True).start()
+    return None
 
 
 def ativ_cliente_foto_grava(vid, foto):
@@ -9289,6 +10341,10 @@ def ativ_video_checa(vid, qr):
             return "sem_video" if not prev and r[2] != "chute" else "completa", None
     finally:
         c.close()
+    # 23/11 (Ronaldo): a foto do cliente saiu da venda e é tirada na entrega; no Drone e no Snap Pop ela é obrigatória para
+    # entregar (Chute a Gol: opcional)
+    if r[2] in ATIV_FOTO_OBRIGATORIA and not os.path.isfile(ativ_cliente_foto(vid)):
+        return "sem_foto", None
     try:
         if REPO.ler_manifesto(qr):              # cartão já usado numa galeria de fotos
             return "qr_usado", None
@@ -10413,6 +11469,19 @@ def posto_quem(token, ip=""):
     return {"id": r[0], "nome": r[1], "num": r[2], "auto": str(r[3] or "").startswith("auto:")} if r else None
 
 
+def postos_lado_valida(v):
+    """config/postos-lado (23/11): {lados: {<id do posto>: "esq"}, por, em}; só "esq" fica gravado (sem entrada = direita), até 200 postos."""
+    if not isinstance(v, dict) or not isinstance(v.get("lados"), dict) or len(v["lados"]) > 200:
+        return None
+    lados = {}
+    for k, x in v["lados"].items():
+        if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k) or x not in ("esq", "dir"):
+            return None
+        if x == "esq":
+            lados[k] = "esq"
+    return {"lados": lados, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
+
+
 def posto_lista():
     with estado_lock:
         db = auth_db()
@@ -10920,6 +11989,9 @@ def estado_gravar(body, quem=""):
                 if d["col"] == "config" and d["id"] == "treino":    # 16/11: o interruptor da análise só pela rota /treino/config
                     print("  config/treino recusada pela sincronização (só POST /treino/config) · de %s" % (quem or "?"))
                     continue
+                if d["col"] == "config" and d["id"] == "poses":     # 23/11: a chave das poses só pela rota /poses/config
+                    print("  config/poses recusada pela sincronização (só POST /poses/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
                     if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
                         print("  config/ia: apagar recusado · de %s" % (quem or "?"))
@@ -10932,6 +12004,16 @@ def estado_gravar(body, quem=""):
                         v = {**ok_, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
                     r_ = db.execute("select valor from doc where col = 'config' and id = 'ia'").fetchone()
                     auditoria.append((r_[0] if r_ else None, v))
+                if d["col"] == "config" and d["id"] == "postos-lado" and v is not None:   # 23/11: lado da barra do Checkout por posto
+                    v = postos_lado_valida(v)
+                    if v is None:
+                        print("  config/postos-lado recusada (formato inválido) · de %s" % (quem or "?"))
+                        continue
+                if d["col"] == "config" and d["id"] == "montagem" and v is not None:   # montagem no servidor: só {modo, por, em}
+                    v = montagem_valida(v)
+                    if v is None:
+                        print("  config/montagem recusada (formato inválido) · de %s" % (quem or "?"))
+                        continue
                 txt = None if v is None else json.dumps(v, ensure_ascii=False)
                 if txt is not None and len(txt) > ESTADO_MAX:
                     continue
@@ -10954,6 +12036,8 @@ def estado_gravar(body, quem=""):
     if any(isinstance(d, dict) and d.get("col") == "config" for d in docs[:500]):
         _busca_cfg["t"] = 0.0            # janela da selfie mudada no Painel vale na próxima busca
         _ia_cfg["t"] = 0.0               # v93: regra dos cliques de IA vale na próxima sessão que fechar
+        _mtg_cfg["t"] = 0.0              # chave da montagem no servidor vale na hora
+        mtg_acorda.set()
     if ag_datas:
         dia_marcar(ag_datas)
     for de_, para in auditoria:          # v93 (segurança): quem mudou a regra dos cliques de IA, no console
@@ -11608,7 +12692,7 @@ def backup_loop():
             backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
             print("  backup na nuvem (arquivos):", str(ex)[:160])
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB, TREINO_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
+            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB, TREINO_DB, POSES_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino; 23/11: poses
             if not bancos:
                 continue
             marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
@@ -12454,6 +13538,8 @@ def treino_db():
     c.execute("create index if not exists rotulo_hist_pid on rotulo_hist(pid)")
     c.execute("create table if not exists lote (id text primary key, dados text, por text, em text)")
     c.execute("create table if not exists medida (pid text, tipo text, valor text, em text, primary key (pid, tipo))")
+    # 18/11 (ligar já): auditoria de cada Ligada do reconhecimento do ponto (só acrescenta; números, nenhuma foto)
+    c.execute("create table if not exists liga_log (em text, por text, abaixo integer, versao text, dados text)")
     return c
 
 
@@ -12878,6 +13964,15 @@ def treino_cfg_valida(j):
 _re_cena_versao = re.compile(r"^c1-[a-z0-9-]{1,80}$")
 
 
+def _treino_abaixo(j):
+    """18/11 (Eduardo, ligar já): {por, em} de quem ligou o reconhecimento abaixo da meta (forcar), ou None. Só o servidor grava
+    (treino_cfg_gravar); outro formato = None."""
+    a = j.get("abaixo") if isinstance(j, dict) else None
+    if not isinstance(a, dict) or not isinstance(a.get("em"), str) or not isinstance(a.get("por"), (str, type(None))):
+        return None
+    return {"por": (a.get("por") or "")[:100] or None, "em": a["em"][:40]}
+
+
 def _treino_cfg_escreve(v):
     with estado_lock:
         db = estado_db()
@@ -12908,16 +14003,16 @@ def treino_cfg():
                 j = json.loads(r[0])
                 v = treino_cfg_valida(j)
                 if v is not None:
-                    v = {**v, "por": j.get("por"), "em": j.get("em")}
+                    v = {**v, "por": j.get("por"), "em": j.get("em"), "abaixo": _treino_abaixo(j) if v["ponto"] == "ligada" else None}
     except Exception:
         v = _treino_cfg["v"]
-    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None)
+    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None)
     # 18/11 (Eduardo): o "Ligada" gravado antes desta versão não comandava nada. Sem um modelo congelado que passou no critério,
     # Ligada vira Só medir sozinho (e fica no log); a exposição ainda não tem medida: Ligada vira Só medir também.
     mig = []
     if v["ponto"] == "ligada" and cena_modelo_existe(v.get("ponto_versao")) is False:
         mig.append(("ponto", v.get("ponto_versao")))
-        v = dict(v, ponto="medir", ponto_versao=None)
+        v = dict(v, ponto="medir", ponto_versao=None, abaixo=None)
     if v["exposicao"] == "ligada":
         mig.append(("exposicao", None))
         v = dict(v, exposicao="medir")
@@ -12935,9 +14030,14 @@ def treino_cfg():
 
 
 def treino_cfg_gravar(corpo, quem):
-    """POST /treino/config {ponto?, exposicao?}: muda uma das análises (ou as duas). por = usuário da sessão. -> (status, resposta)"""
-    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"ponto", "exposicao"}:
+    """POST /treino/config {ponto?, exposicao?, forcar?}: muda uma das análises (ou as duas). por = usuário da sessão (a rota
+    exige configuracao.u). forcar (só com ponto "ligada"): liga o reconhecimento mesmo abaixo do critério (Eduardo, 18/11),
+    com a linha no liga_log. -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"ponto", "exposicao", "forcar"}:
         return 400, {"ok": False, "error": "campo"}
+    forcar = corpo.get("forcar", False)
+    if not isinstance(forcar, bool) or (forcar and corpo.get("ponto") != "ligada"):
+        return 400, {"ok": False, "error": "valor"}
     de = treino_cfg()
     novo = {"ponto": corpo.get("ponto", de["ponto"]), "exposicao": corpo.get("exposicao", de["exposicao"])}
     if treino_cfg_valida(novo) is None:
@@ -12945,24 +14045,90 @@ def treino_cfg_gravar(corpo, quem):
     if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 18/11: ainda não existe a medida da exposição
         return 409, {"ok": False, "error": "criterio", "falta": [{"k": "exposicao_sem_modelo", "tem": 0, "precisa": 1}]}
     pv = de.get("ponto_versao") if novo["ponto"] == "ligada" else None
+    abaixo = de.get("abaixo") if novo["ponto"] == "ligada" else None
     if corpo.get("ponto") == "ligada":
-        # 18/11 (D4, D10): Ligada só acima do critério, com os rótulos de agora congelados (ligada -> ligada = recongelar)
+        # 18/11 (D4, D10): Ligada acima do critério, com os rótulos de agora congelados (ligada -> ligada = recongelar).
+        # 18/11 (Eduardo, ligar já): com forcar, liga abaixo do critério, desde que haja gramado e outra classe para comparar.
         crit, base_ok = cena_criterio_agora()
-        if not crit.get("passa"):
+        passa = bool(crit.get("passa"))
+        if not passa and not forcar:
             return 409, {"ok": False, "error": "criterio", "falta": crit.get("falta") or []}
-        pv = cena_congelar(quem, base_ok, de.get("ponto_versao") if de["ponto"] == "ligada" else None)
+        if not passa:
+            if base_ok is None:                       # sem numpy: não há como medir nem classificar
+                return 409, {"ok": False, "error": "criterio", "falta": crit.get("falta") or []}
+            falta_rot = cena_forcar_falta(base_ok)
+            if falta_rot:
+                return 409, {"ok": False, "error": "rotulos", "falta": falta_rot}
+        if (de["ponto"] == "ligada" and base_ok is not None and base_ok["versao"] == de.get("ponto_versao")
+                and bool(de.get("abaixo")) == (not passa) and novo["exposicao"] == de["exposicao"]):
+            # revisão de segurança: Ligada de novo com a mesma versão congelada e a mesma situação: nada muda, nada no liga_log
+            r = {"ok": True, "analise": {"ponto": de["ponto"], "exposicao": de["exposicao"]}, "por": de.get("por"), "em": de.get("em"),
+                 "abaixo": de.get("abaixo"), "ponto_versao": de.get("ponto_versao"), "igual": True,
+                 "congelados": cena_congelados(de.get("ponto_versao"))}
+            if not cena_modelo_ok()[0]:
+                r["aviso"] = "sem_modelo"
+            return 200, r
+        antes = {}
+        pv = cena_congelar(quem, base_ok, de.get("ponto_versao") if de["ponto"] == "ligada" else None, limpar=False, antes=antes)
         if not pv:                                    # rótulo novo entre a medida e o congelamento: mede de novo
             return 409, {"ok": False, "error": "criterio", "falta": [{"k": "versao_mudou", "tem": 0, "precisa": 1}]}
-    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": _iso()}
-    _treino_cfg_escreve(v)
+    em_v = _iso()
+    if corpo.get("ponto") == "ligada":
+        abaixo = None if passa else {"por": str(quem or "")[:100] or None, "em": em_v}
+    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": em_v, "abaixo": abaixo}
+    liga = corpo.get("ponto") == "ligada"
+    try:
+        _treino_cfg_escreve(v)
+    except Exception:
+        if liga:
+            _treino_desfaz(None, pv, antes)           # o config/treino não mudou: só a versão congelada volta
+        raise
+    if liga:
+        # revisão: a linha de auditoria só depois do Ligada gravado; sem a linha, o interruptor e a tabela modelo voltam ao que
+        # eram (sem log, não liga). A retenção (apagar as outras versões) só depois da linha gravada.
+        try:
+            cena_liga_log(quem, v["em"], pv, crit, base_ok, not passa)
+        except Exception as ex:
+            print("  treino: liga_log não gravou (%s); o interruptor volta ao que era" % type(ex).__name__)
+            _treino_desfaz(de, pv, antes)
+            return 500, {"ok": False, "error": "auditoria"}
+        try:
+            cena_modelo_limpa(pv, de.get("ponto_versao") if de["ponto"] == "ligada" else None)
+        except Exception as ex:                       # retenção atrasada: a próxima vez que ligar limpa
+            print("  treino: versões antigas do reconhecimento não apagadas agora (%s)" % type(ex).__name__)
     _treino_cfg.update(t=time.time(), v=dict(v))
     _cena_base_t[0] = time.time()
-    print("  treino: análise do ponto %s -> %s%s, da exposição %s -> %s · por %s" % (de["ponto"], v["ponto"], " (%s)" % pv if pv else "",
-                                                                                    de["exposicao"], v["exposicao"], v["por"] or "?"))
-    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"]}
+    print("  treino: análise do ponto %s -> %s%s%s, da exposição %s -> %s · por %s" % (
+        de["ponto"], v["ponto"], " (%s)" % pv if pv else "", " ABAIXO DA META" if abaixo and corpo.get("ponto") == "ligada" else "",
+        de["exposicao"], v["exposicao"], v["por"] or "?"))
+    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"], "abaixo": abaixo,
+         "congelados": cena_congelados(pv) if v["ponto"] == "ligada" else None}
     if pv:
         r["ponto_versao"] = pv
+    if v["ponto"] == "ligada" and not cena_modelo_ok()[0]:
+        r["aviso"] = "sem_modelo"                     # gravou, mas nada é reconhecido até o modelo ser instalado (falha fechada)
     return 200, r
+
+
+def _treino_desfaz(de, pv, antes):
+    """Desfaz um Ligada que não ficou: o config/treino volta ao de antes (de; None = não chegou a mudar) e a versão congelada
+    volta como estava (antes["linha"]). Se o próprio desfazer falhar, um aviso claro no console (sem dado de visitante)."""
+    falhou = []
+    if de is not None:
+        try:
+            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo")})
+            _treino_cfg.update(t=time.time(), v=dict(de))
+        except Exception as ex:
+            _treino_cfg.update(t=0.0)
+            falhou.append("interruptor (%s)" % type(ex).__name__)
+    try:
+        cena_modelo_desfaz(pv, (antes or {}).get("linha"))
+        _cena_congelados.clear()
+    except Exception as ex:
+        falhou.append("versão congelada %s (%s)" % (pv, type(ex).__name__))
+    if falhou:
+        print("  ATENÇÃO treino: o Ligada sem auditoria NÃO foi desfeito por completo: %s. Confira Treino da IA › Medição e "
+              "ponha o reconhecimento em Só medir" % "; ".join(falhou))
 
 
 def treino_status():
@@ -12995,7 +14161,8 @@ def treino_status():
 # vetor de foto sem rótulo some em CENA_VET_DIAS e a linha em CENA_DIAS. Interruptor: config/treino.ponto
 #   desligada  nada roda (o filho nem abre); o Checkout fica sem fundos de IA (D1)
 #   medir      classifica e mostra na aba Medição; o Checkout fica sem fundos de IA
-#   ligada     só com o critério (cena_criterio) e com os rótulos CONGELADOS no momento de ligar (D10, tabela modelo)
+#   ligada     com o critério (cena_criterio) ou abaixo dele com forcar (configuracao.u, liga_log), sempre com os rótulos
+#              CONGELADOS no momento de ligar (D10, tabela modelo)
 # Locks: cena_lock nunca junto do sess_lock; quem está com o sess_lock só lê cena_mem (dict trocado por item) e cena_pend
 # (mexido só com o sess_lock). treino_cfg_mem() nunca abre banco.
 CENA_DB = os.path.join(HOME, "ponto", "cena.db")
@@ -13081,9 +14248,22 @@ def cena_sha_confere(sha):
             if r and r[0] == sha:
                 return False
             mudou = r is not None
+            vazias = []
             if mudou:
                 db.execute("update cena set vet = null, rotulo = null, conf = null, g = 0, versao = null")
                 db.execute("delete from modelo")      # revisão: o conjunto congelado era do modelo velho; Ligada passa pelo critério de novo
+            else:
+                # 18/11 (revisão do ligar já): primeiro modelo instalado. Versão congelada sem modelo (params.sha vazio) ou sem
+                # nenhuma foto não reconhece nada: sai, e o Ligada dela vira Só medir pela migração do treino_cfg (religar)
+                for ver, rot, par in db.execute("select versao, rotulos, params from modelo").fetchall():
+                    try:
+                        vazia = not json.loads(rot or "[]") or not (json.loads(par or "{}") or {}).get("sha")
+                    except ValueError:
+                        vazia = True
+                    if vazia:
+                        vazias.append(ver)
+                for ver in vazias:
+                    db.execute("delete from modelo where versao = ?", (ver,))
             db.execute("insert into meta values ('sha', ?) on conflict(k) do update set v = excluded.v", (sha,))
             db.commit()
         finally:
@@ -13100,6 +14280,16 @@ def cena_sha_confere(sha):
             treino_cfg()                              # sem modelo congelado, Ligada vira Só medir na hora (migração, com linha no log)
         except Exception as ex:
             print("  cena: interruptor não relido depois da troca do modelo (%s)" % str(ex)[:80])
+    elif vazias:
+        with _cena_cache_lock:
+            _cena_base.clear()
+        _cena_congelados.clear()
+        print("  cena: primeiro modelo instalado; %d versão(ões) congelada(s) sem modelo ou sem fotos apagada(s): ligue de novo" % len(vazias))
+        _treino_cfg["t"] = 0.0
+        try:
+            treino_cfg()                              # o Ligada dela vira Só medir (migração, com linha no log; o abaixo sai)
+        except Exception as ex:
+            print("  cena: interruptor não relido depois do primeiro modelo (%s)" % str(ex)[:80])
     return mudou
 
 
@@ -13107,7 +14297,7 @@ def treino_cfg_mem():
     """O último interruptor lido (sem abrir o banco): para quem está com o sess_lock na mão. Atualizado a cada 3 s pelo
     treino_cfg_loop."""
     v = _treino_cfg["v"]
-    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None)
+    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None)
 
 
 def treino_cfg_loop():
@@ -13449,7 +14639,8 @@ def cena_base(modo="medir"):
     base = {"versao": lv if modo == "ligada" else _cena_versao([(p, CENA_CLASSES[k]) for p, k in zip(ps, y)]), "modo": modo,
             "X": np.stack(X).astype(np.float32) if X else np.zeros((0, 512), np.float32), "y": np.array(y, dtype=np.int32),
             "pids": ps, "cards": cards, "dias": dias, "fotografos": quem, "verde": verde, "sinais": sinais, "em": ems, "prev0": prev0,
-            "vetos": vetos, "sem_vetor": sem, "total": len(rot)}
+            "vetos": vetos, "sem_vetor": sem, "total": len(rot),
+            "rot_n": dict(collections.Counter(x[1] for x in rot[:CENA_MEDIDA_MAX]))}   # marcados por classe, com ou sem vetor
     with _cena_cache_lock:
         _cena_base[chave] = {"t": agora, "base": base}
         if len(_cena_base) > 6:
@@ -13869,7 +15060,11 @@ def cena_medida(metodo="sessao", forcar=False):
             c = _cena_med[(base["versao"], metodo)]
     r = dict(c["r"])
     r["criterio"] = _cena_crit["r"] if _cena_crit.get("versao") == r.get("versao") and _cena_crit.get("r") else {"passa": False, "falta": []}
-    r["ligada_versao"] = treino_cfg_mem().get("ponto_versao") if treino_cfg_mem().get("ponto") == "ligada" else None
+    cfg = treino_cfg_mem()
+    r["ligada_versao"] = cfg.get("ponto_versao") if cfg.get("ponto") == "ligada" else None
+    r["ligada_abaixo"] = cfg.get("abaixo") if cfg.get("ponto") == "ligada" else None   # 18/11: ligado abaixo da meta {por, em}
+    r["modelo_ok"] = bool(cena_modelo_ok()[0])          # False: modelo não instalado, nada é reconhecido
+    r["congelados"] = cena_congelados(r["ligada_versao"]) if r["ligada_versao"] else None
     return r
 
 
@@ -13984,10 +15179,12 @@ def cena_criterio_agora():
     return (_cena_crit.get("r") if _cena_crit.get("versao") == base["versao"] else None) or {"passa": False, "falta": []}, base
 
 
-def cena_congelar(quem, base=None, anterior=None):
+def cena_congelar(quem, base=None, anterior=None, limpar=True, antes=None):
     """Liga: grava os rótulos (pid, ponto, card, dia, fotógrafo, em) da base que passou no critério (a mesma que foi medida) na
     tabela modelo. 18/11 (revisão de segurança): se os rótulos mudaram entre a medida e o congelamento, None (o POST responde
-    409). Retenção: ficam só a versão ligada agora e a anterior (anterior). -> versão ou None."""
+    409). Retenção: ficam só a versão ligada agora e a anterior (anterior). -> versão ou None.
+    18/11 (revisão do ligar já): limpar=False deixa a retenção para depois da auditoria (cena_modelo_limpa); antes (dict)
+    recebe em "linha" o (por, em) que a versão já tinha, ou None se ela não existia (para cena_modelo_desfaz)."""
     atual = cena_base("medir")
     base = base or atual
     if base is None or atual is None or atual["versao"] != base["versao"]:
@@ -13997,14 +15194,114 @@ def cena_congelar(quem, base=None, anterior=None):
     with cena_db_lock:
         db = cena_db()
         try:
+            if isinstance(antes, dict):
+                antes["linha"] = db.execute("select por, em from modelo where versao = ?", (base["versao"],)).fetchone()
             db.execute("insert into modelo values (?,?,?,?,?) on conflict(versao) do update set por = excluded.por, em = excluded.em",
                        (base["versao"], json.dumps(rot), json.dumps(params), str(quem or "")[:100] or None, _iso()))
-            fica = [base["versao"]] + ([anterior] if anterior and anterior != base["versao"] else [])
+            db.commit()
+        finally:
+            db.close()
+    if limpar:
+        cena_modelo_limpa(base["versao"], anterior)
+    return base["versao"]
+
+
+def cena_modelo_limpa(versao, anterior=None):
+    """Retenção da tabela modelo: ficam só a versão ligada agora e a anterior."""
+    fica = [versao] + ([anterior] if anterior and anterior != versao else [])
+    with cena_db_lock:
+        db = cena_db()
+        try:
             db.execute("delete from modelo where versao not in (%s)" % ",".join("?" * len(fica)), fica)
             db.commit()
         finally:
             db.close()
-    return base["versao"]
+
+
+def cena_modelo_desfaz(versao, linha):
+    """Desfaz o cena_congelar(limpar=False) de um Ligada que não ficou: versão nova sai; versão que já existia volta ao por/em."""
+    with cena_db_lock:
+        db = cena_db()
+        try:
+            if linha is None:
+                db.execute("delete from modelo where versao = ?", (versao,))
+            else:
+                db.execute("update modelo set por = ?, em = ? where versao = ?", (linha[0], linha[1], versao))
+            db.commit()
+        finally:
+            db.close()
+
+
+def cena_forcar_falta(base):
+    """18/11 (Eduardo, ligar já): ligar abaixo do critério exige com o que comparar: fotos de gramado e de pelo menos uma outra
+    classe no conjunto que vai ser congelado (rótulos com vetor; só gramado faria tudo virar gramado). Sem o modelo instalado e
+    sem nenhum vetor, contam os rótulos marcados: grava, mas nada é reconhecido (falha fechada) até instalar e religar.
+    -> [] ou [{k, tem, precisa}]"""
+    lidas = cena_modelo_ok()[0] or len(base["y"]) > 0
+    n = collections.Counter(CENA_CLASSES[k] for k in base["y"]) if lidas else collections.Counter(base.get("rot_n") or {})
+    g = n.get("gramado", 0)
+    o = sum(v for c, v in n.items() if c != "gramado")
+    suf = "_lidas" if lidas else ""
+    falta = []
+    if g < 1:
+        falta.append({"k": "rot_gramado" + suf, "tem": g, "precisa": 1})
+    if o < 1:
+        falta.append({"k": "rot_outra" + suf, "tem": o, "precisa": 1})
+    return falta
+
+
+def cena_liga_log(quem, em, versao, crit, base, abaixo):
+    """Auditoria de cada Ligada do ponto (no critério ou abaixo dele, forcar): quem, quando, a versão congelada, o acerto e o
+    que faltava por classe naquele momento. treino.db (vai no backup), tabela liga_log, só acrescenta; nenhuma foto, só números.
+    Uma linha no console também (sem dado de cliente)."""
+    with _cena_cache_lock:
+        ms = (_cena_med.get((base["versao"], "sessao")) or {}).get("r") or {}
+        mp = (_cena_med.get((base["versao"], "prospectivo")) or {}).get("r") or {}
+    okm = bool(cena_modelo_ok()[0])
+    d = {"criterio_passa": not abaixo, "falta": crit.get("falta") or [], "rotulos": ms.get("rotulos"), "metas": dict(CENA_META),
+         "faltam": ms.get("faltam"), "acerto": ms.get("classe"), "gramado_base": ms.get("gramado_base"),
+         "prospectivo": mp.get("gramado_base"), "congelados": len(base["y"]), "sem_vetor": base.get("sem_vetor", 0), "modelo_ok": okm}
+    with treino_lock:
+        db = treino_db()
+        try:
+            db.execute("insert into liga_log values (?,?,?,?,?)", (em, str(quem or "")[:100] or None, 1 if abaixo else 0, versao,
+                                                                   json.dumps(d, ensure_ascii=False)))
+            db.commit()
+        finally:
+            db.close()
+    gb = ms.get("gramado_base") or {}
+    pct = lambda x: "-" if x is None else "%.1f%%" % (100 * x)
+    print("  treino: reconhecer o ponto LIGADO%s por %s (%s) · gramado: precisão %s, cobertura %s · faltam %s%s" % (
+        " ABAIXO DA META" if abaixo else "", str(quem or "?")[:100], versao, pct(gb.get("precisao")), pct(gb.get("cobertura")),
+        ", ".join("%s %d" % (c, f) for c, f in (ms.get("faltam") or {}).items() if f) or "nada",
+        "" if okm else " · modelo não instalado: nada é reconhecido"))
+
+
+_cena_congelados = {}                      # versão -> (t, quantas fotos congeladas)
+
+
+def cena_congelados(versao):
+    """Quantas fotos estão no conjunto congelado da versão ligada (None sem versão ou sem leitura). Cache de 30 s."""
+    if not versao:
+        return None
+    c = _cena_congelados.get(versao)
+    if c and time.time() - c[0] < 30:
+        return c[1]
+    n = None
+    try:
+        if os.path.exists(CENA_DB):
+            with cena_db_lock:
+                db = cena_db()
+                try:
+                    r = db.execute("select rotulos from modelo where versao = ?", (versao,)).fetchone()
+                finally:
+                    db.close()
+            n = len(json.loads(r[0] or "[]")) if r else 0
+    except Exception:
+        return None
+    _cena_congelados.clear()
+    _cena_congelados[versao] = (time.time(), n)
+    return n
 
 
 def cena_modelo_existe(versao):
@@ -14040,6 +15337,9 @@ def cena_status():
     return {"v": 1, "pronto": bool(vivo and c["carregado"] and not erro), "erro": erro, "provedor": c["provedor"], "modelo": CENA_NOME,
             "versao": base["versao"] if base else None,
             "ligada_versao": cfg.get("ponto_versao") if cfg.get("ponto") == "ligada" else None,
+            "abaixo": cfg.get("abaixo") if cfg.get("ponto") == "ligada" else None,     # 18/11: ligado abaixo da meta {por, em}
+            "congelados": cena_congelados(cfg.get("ponto_versao")) if cfg.get("ponto") == "ligada" else None,   # 0 = nada reconhecido
+            "aviso": "sem_modelo" if erro == "sem_modelo" else None,      # código; o texto é da tela
             "fila": fila, "feitas_hoje": c["feitas_hoje"] if c["feitas_dia"] == hoje else 0,
             "ms_medio": int(c["ms_total"] / c["ms_n"]) if c["ms_n"] else None,
             "criterio_passa": bool(_cena_crit.get("passa") and base and _cena_crit.get("versao") == base["versao"])}
@@ -14179,6 +15479,816 @@ def cena_loop():
             time.sleep(2)
 
 
+# ---------- Poses: classificar à noite cada foto (P1 do plano docs/planos/2026-11-23-poses-estatistica.md) ----------
+# Um processo filho (agente/eterna-poses.py) sobe um llama-server do llama.cpp, só no 127.0.0.1, com o Qwen3-VL-8B-Instruct
+# (Apache 2.0) em GGUF Q4_K_M, e responde para cada foto um JSON curto e fechado (POSE_SAIDA): set, quem aparece, adereço,
+# pose, enquadramento e vibração. A orientação vem da miniatura (sem IA) e o set do reconhecimento do ponto (cena), quando
+# ele está Ligado e com confiança de CENA_LIMIAR ou mais (D3). Tudo local: nenhuma foto sai do servidor.
+# Prioridade da placa (D11): o recorte e a montagem dos fundos de IA vêm antes. A classificação só roda dentro da janela
+# (padrão 20:00 às 07:00), sem trabalho de prioridade 0 ou 1 no recorte e na montagem nos últimos POSE_OCUPADO_SEG e com
+# POSE_VRAM_LIVRE_MB livres na placa (só conferido antes de abrir: aberto, o próprio modelo ocupa a placa). Entre um lote
+# e outro tudo é conferido de novo; se não pode, termina o lote e fecha o processo (libera a placa).
+# Chave config/poses no estado.db (só pela rota POST /poses/config; o estado_gravar recusa):
+#   desligada (padrão)  nada roda, o filho nem abre e o poses.db nem é criado
+#   sombra              classifica (e na P3 agrega); a tela mostra "Em teste", sem alertas nem fechamento
+#   ligada              alertas e fechamento mensal (P4 e P5); só com a Medição em POSE_MEDIDA_MIN ou mais (409 criterio)
+# ETERNA_POSES=0 força desligada. ~/Eterna/ponto/poses.db vai para o backup (só texto: nenhum pixel, nenhuma chave).
+POSES_DB = os.path.join(HOME, "ponto", "poses.db")
+POSE_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-poses.py")
+POSE_BIN = "/opt/eterna/visao/bin/llama-server"     # root:root 755 (servidor/linux/visao-instalar.sh); os testes trocam
+POSE_NVSMI = "nvidia-smi"                           # memória livre da placa; os testes trocam
+POSE_ARQ = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"        # em ~/Eterna/modelos (agente/instalar-poses-modelos.py)
+POSE_MMPROJ_ARQ = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
+# SHA-256 dos dois arquivos: o Ronaldo confere o download no servidor (instalar-poses-modelos.py --conferir) e o
+# programador fixa aqui e no instalar-poses-modelos.py, como foi com o CENA_SHA. Vazio = sem SHA fixo: o filho não abre
+# (motivo sem_modelo) e nada é classificado (falha fechada).
+POSE_SHA = ""
+POSE_MMPROJ_SHA = ""
+POSE_NOME = "qwen3vl-8b-q4"
+POSE_PROMPT_V = "p1"           # o mesmo POSE_PROMPT_V do eterna-poses.py (o filho que responde outro não é usado)
+POSE_TAXO_V = 1
+POSE_JANELA_PADRAO = ("20:00", "07:00")
+POSE_LOTE = 8
+POSE_VRAM_LIVRE_MB = 9000
+POSE_DIAS = 7                  # quantos dias (hoje incluído) a noite cobre
+POSE_MORTES_MAX = 3            # na 3ª morte seguida do filho, parado até a próxima noite
+POSE_OCUPADO_SEG = 120         # recorte ou montagem com prioridade 0 ou 1: a classificação volta só depois disto
+POSE_DORME = 30                # s entre uma conferência e outra quando não pode rodar
+POSE_FILA_SEG = 300            # a lista de pendentes é refeita a cada 5 min (ou quando acaba)
+POSE_ERRO_SEG = 60             # s antes de tentar abrir o filho de novo depois de um erro
+POSE_ESPERA_SEG = 600          # prazo de um lote no filho
+POSE_CARGA_SEG = 360           # prazo para o filho conferir o SHA e o llama-server abrir o modelo
+POSE_LINHA_DIAS = 60           # a linha de cada foto vence nisto (os agregados da P3 ficam)
+POSE_MEDIDA_MIN = 150          # conferidas no Marcar para aceitar Ligada (D10; a medida é da P2)
+POSE_MODOS = ("desligada", "sombra", "ligada")
+POSE_PIDS = os.path.join(HOME, "ponto", "poses-filho.json")    # filho e llama-server abertos (a partida encerra órfãos)
+POSE_TAXO = {
+    "set": TREINO_PONTOS,
+    "quem": ("individual", "dupla", "grupo_adultos", "familia_crianca", "so_criancas", "ninguem"),
+    "adereco": ("bandeira", "trofeu", "ambos", "nenhum"),
+    "pose": ("bandeira_frente", "bandeira_atras", "bandeira_capa", "bandeira_outra", "trofeu_segura", "trofeu_comemora",
+             "trofeu_ao_lado", "arq_sentado", "arq_em_pe", "chute_bola_ar", "chute_parado", "chute_comemora", "abraco_beijo",
+             "posado", "comemora_sem", "outra"),
+    "enq": ("inteiro", "meio", "close"),
+    "vib": ("braco", "punho", "pulo", "movimento"),     # lista; vazia = parado
+    "orient": ("h", "v", "q"),                          # do servidor (miniatura), nunca do modelo
+}
+POSE_CURTAS = (("s", "set"), ("q", "quem"), ("a", "adereco"), ("p", "pose"), ("e", "enq"), ("vb", "vib"))
+POSE_SAIDA = {"type": "object", "additionalProperties": False, "required": [c for c, _ in POSE_CURTAS],
+              "properties": {**{c: {"type": "string", "enum": list(POSE_TAXO[k])} for c, k in POSE_CURTAS if c != "vb"},
+                             "vb": {"type": "array", "items": {"type": "string", "enum": list(POSE_TAXO["vib"])}, "maxItems": 4}}}
+POSE_ERROS_FOTO = ("caminho_recusado", "pid", "imagem", "imagem_grande")   # a foto em si não serve: linha nao_classificavel
+_re_pose_hm = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+poses_lock = threading.Lock()                # estado e contadores (nunca junto do rec_lock, do mtg_lock ou do lock)
+poses_db_lock = threading.Lock()
+poses_filho_lock = threading.Lock()
+poses_st = {"erro": None, "erro_em": 0.0, "mortes": 0, "parado": None, "carregado": False, "carga_ms": None, "pendentes": 0,
+            "pend_t": 0.0, "noite_k": None, "rodando": False, "falhou": set(), "abriu": False,
+            "noite": {"ini": None, "fim": None, "feitas": 0, "duvidas": 0, "erros": 0, "ms_total": 0, "ms_n": 0, "parou_por": None}}
+poses_filho = {"p": None, "fila": None, "seq": 0, "criado": None, "llama": None}
+poses_parar = threading.Event()              # só os testes ligam: o poses_loop termina
+POSE_PRIO_EM = {"rec": 0.0, "mtg": 0.0}      # último trabalho de prioridade 0 ou 1 no recorte e na montagem (posto ou tirado)
+_poses_cfg = {"t": 0.0, "v": None}
+_poses_ok = {}                               # ((caminho, tamanho, mtime), ...) -> os dois SHA conferem
+
+
+def poses_marca_prio(tipo):
+    """Chamada pelo recorte (rec_enfileirar, rec_trabalho) e pela montagem (mtg_enfileirar, mtg_trabalho) em todo trabalho
+    de prioridade 0 ou 1: a classificação de poses espera POSE_OCUPADO_SEG depois do último."""
+    POSE_PRIO_EM[tipo] = time.time()
+
+
+def pose_versao():
+    """8 hex: SHA do modelo, SHA do mmproj, versão do prompt e da taxonomia. Mudou = todas as fotos da janela de
+    POSE_DIAS são classificadas de novo."""
+    return hashlib.sha256(("%s|%s|%s|t%d" % (POSE_SHA, POSE_MMPROJ_SHA, POSE_PROMPT_V, POSE_TAXO_V)).encode()).hexdigest()[:8]
+
+
+def _poses_agora():
+    return time.time()       # os testes trocam (janela)
+
+
+def poses_cfg_valida(j):
+    """config/poses: {modo, janela:{ini, fim}} (por e em são de auditoria). Outro formato = None."""
+    if not isinstance(j, dict) or j.get("modo") not in POSE_MODOS:
+        return None
+    ja = j.get("janela")
+    if not isinstance(ja, dict) or set(ja) != {"ini", "fim"}:
+        return None
+    ini, fim = ja.get("ini"), ja.get("fim")
+    if not all(isinstance(x, str) and _re_pose_hm.match(x) for x in (ini, fim)) or ini == fim:
+        return None
+    return {"modo": j["modo"], "janela": {"ini": ini, "fim": fim}}
+
+
+def poses_cfg():
+    """A chave (estado.db config/poses), relida a cada 3 s; sem documento: desligada na janela padrão. ETERNA_POSES=0 vence
+    o que estiver gravado (forcada). Nunca cria banco."""
+    agora = time.time()
+    if agora - _poses_cfg["t"] >= 3 or _poses_cfg["v"] is None:
+        v = None
+        try:
+            if os.path.exists(ESTADO_DB):
+                with estado_lock:
+                    db = estado_db()
+                    try:
+                        r = db.execute("select valor from doc where col = 'config' and id = 'poses' and valor is not null").fetchone()
+                    finally:
+                        db.close()
+                if r:
+                    j = json.loads(r[0])
+                    v = poses_cfg_valida(j)
+                    if v is not None:
+                        v.update(por=j.get("por"), em=j.get("em"))
+        except Exception:
+            v = _poses_cfg["v"]
+        _poses_cfg.update(t=agora, v=v or {"modo": "desligada", "janela": {"ini": POSE_JANELA_PADRAO[0], "fim": POSE_JANELA_PADRAO[1]},
+                                          "por": None, "em": None})
+    v = dict(_poses_cfg["v"], janela=dict(_poses_cfg["v"]["janela"]))
+    v["forcada"] = os.environ.get("ETERNA_POSES") == "0"
+    if v["forcada"]:
+        v["modo"] = "desligada"
+    return v
+
+
+def poses_medida():
+    """Quantas fotos a equipe conferiu no Marcar (P2). Na P1 ainda não existe a conferência: n = 0."""
+    return {"v": 1, "n": 0}
+
+
+def poses_cfg_gravar(corpo, quem):
+    """POST /poses/config {modo?, janela?:{ini, fim}} (configuracao.u, pela tabela ROTAS). Ligada só com a Medição em
+    POSE_MEDIDA_MIN ou mais (409 criterio com falta). -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"modo", "janela"}:
+        return 400, {"ok": False, "error": "campo"}
+    de = poses_cfg()
+    novo = poses_cfg_valida({"modo": corpo.get("modo", _poses_cfg["v"]["modo"]), "janela": corpo.get("janela", de["janela"])})
+    if novo is None:
+        return 400, {"ok": False, "error": "valor"}
+    if novo["modo"] == "ligada" and _poses_cfg["v"]["modo"] != "ligada":
+        n = int(poses_medida().get("n") or 0)
+        if n < POSE_MEDIDA_MIN:
+            return 409, {"ok": False, "error": "criterio", "falta": POSE_MEDIDA_MIN - n}
+    v = dict(novo, por=str(quem or "")[:100] or None, em=_iso())
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "poses", json.dumps(v, ensure_ascii=False), rev, v["em"]))
+            db.commit()
+        finally:
+            db.close()
+    _poses_cfg.update(t=time.time(), v=dict(v))
+    print("  poses: modo %s -> %s · janela %s às %s · por %s" % (_poses_cfg_txt(de), v["modo"], v["janela"]["ini"], v["janela"]["fim"], v["por"] or "?"))
+    f = poses_cfg()
+    return 200, {"ok": True, "modo": v["modo"], "janela": v["janela"], "por": v["por"], "em": v["em"], "forcada": f["forcada"]}
+
+
+def _poses_cfg_txt(c):
+    return "desligada (ETERNA_POSES=0)" if c.get("forcada") else c["modo"]
+
+
+def _poses_hm(t):
+    return time.strftime("%H:%M", time.localtime(t))
+
+
+def poses_na_janela(cfg=None, t=None):
+    cfg = cfg or poses_cfg()
+    hm, ini, fim = _poses_hm(_poses_agora() if t is None else t), cfg["janela"]["ini"], cfg["janela"]["fim"]
+    return ini <= hm < fim if ini < fim else (hm >= ini or hm < fim)
+
+
+def _poses_noite_chave(cfg=None, t=None):
+    """O dia em que a noite começou (a janela que atravessa a meia-noite é da véspera depois das 00:00)."""
+    cfg = cfg or poses_cfg()
+    t = _poses_agora() if t is None else t
+    ini, fim = cfg["janela"]["ini"], cfg["janela"]["fim"]
+    return _ff_hoje(t - 86400) if ini > fim and _poses_hm(t) < fim else _ff_hoje(t)
+
+
+def poses_db():
+    """Conexão ao poses.db (chamar com o poses_db_lock). Só existe depois da primeira classificação."""
+    os.makedirs(os.path.dirname(POSES_DB), exist_ok=True)
+    c = sqlite3.connect(POSES_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("create table if not exists pose (pid text primary key, dia text, card text, fotografo text, w integer, h integer,"
+              " orient text, set_ia text, set_cena text, dados text, duvida integer, motivo text, versao text, ms integer, em text)")
+    c.execute("create index if not exists pose_dia on pose(dia)")
+    c.execute("create index if not exists pose_card on pose(card)")
+    return c
+
+
+def pose_valida(d, origem="ia"):
+    """A única validação de uma classificação de pose: a resposta da IA (origem "ia", chaves curtas de POSE_SAIDA) ou a
+    marcação humana (origem "mao", chaves longas, cada uma podendo ser null; P2). -> (dados, motivo)
+      formato     algum campo fora de POSE_TAXO, chave a mais ou a menos, ou não é um objeto (JSON quebrado): dados None
+      incoerente  bandeira_* sem bandeira, trofeu_* sem troféu, arq_* fora da arquibancada, chute_* fora do chute: dados None
+      sem_pessoa  quem = ninguem: dados ficam, mas a foto sai das contas
+      None        válida"""
+    if not isinstance(d, dict):
+        return None, "formato"
+    campos = ("set", "quem", "adereco", "pose", "enq", "vib")
+    if origem == "ia":
+        if set(d) != {c for c, _ in POSE_CURTAS}:
+            return None, "formato"
+        x = {k: d[c] for c, k in POSE_CURTAS}
+    else:
+        if not d or set(d) - set(campos):
+            return None, "formato"
+        x = {k: d.get(k) for k in campos}
+    out = {}
+    for k in campos[:-1]:
+        v = x.get(k)
+        if v is None and origem != "ia":
+            out[k] = None
+        elif isinstance(v, str) and v in POSE_TAXO[k]:
+            out[k] = v
+        else:
+            return None, "formato"
+    vb = x.get("vib")
+    if vb is None and origem != "ia":
+        out["vib"] = None
+    elif isinstance(vb, list) and len(vb) <= 8 and all(isinstance(i, str) and i in POSE_TAXO["vib"] for i in vb):
+        out["vib"] = [i for i in POSE_TAXO["vib"] if i in vb]
+    else:
+        return None, "formato"
+    p, a, s = out["pose"], out["adereco"], out["set"]
+    if p and ((p.startswith("bandeira_") and a is not None and a not in ("bandeira", "ambos"))
+              or (p.startswith("trofeu_") and a is not None and a not in ("trofeu", "ambos"))
+              or (p.startswith("arq_") and s is not None and s != "arquibancada")
+              or (p.startswith("chute_") and s is not None and s != "chute")):
+        return None, "incoerente"
+    if out["quem"] == "ninguem":
+        return out, "sem_pessoa"
+    return out, None
+
+
+def pose_orient(pid):
+    """(w, h, orient) da miniatura (a rotação do EXIF já está aplicada nela): h acima de 1,05, v abaixo de 0,95, senão q."""
+    with lock:
+        e = lib.get(pid)
+    th = (e or {}).get("thumb")
+    wh = jpeg_cabecalho(th) if th and os.path.exists(th) else None
+    if not wh or not wh[0] or not wh[1]:
+        return None, None, None
+    r = wh[0] / wh[1]
+    return wh[0], wh[1], "h" if r > 1.05 else "v" if r < 0.95 else "q"
+
+
+def poses_modelo_ok(conferir=True):
+    """(ok, erro) do binário e dos dois arquivos do modelo, com o SHA-256 fixado (cache por tamanho e data). conferir=False
+    (o /status) nunca lê os 6 GB: sem conferência ainda, "conferindo"."""
+    if not all(re.fullmatch(r"[0-9a-f]{64}", s or "") for s in (POSE_SHA, POSE_MMPROJ_SHA)):
+        return False, "sem_modelo"
+    if not os.path.isfile(POSE_BIN) or not os.access(POSE_BIN, os.X_OK):
+        return False, "sem_modelo"
+    ps = (os.path.join(MODELOS, POSE_ARQ), os.path.join(MODELOS, POSE_MMPROJ_ARQ))
+    try:
+        k = tuple((p, os.stat(p).st_size, os.stat(p).st_mtime) for p in ps) + (POSE_SHA, POSE_MMPROJ_SHA)
+    except OSError:
+        return False, "sem_modelo"
+    v = _poses_ok.get(k)
+    if v is None:
+        if not conferir:
+            return False, "conferindo"
+        try:
+            v = True
+            for p, sha in zip(ps, (POSE_SHA, POSE_MMPROJ_SHA)):
+                h = hashlib.sha256()
+                with open(p, "rb") as f:
+                    for b in iter(lambda: f.read(1 << 20), b""):
+                        h.update(b)
+                v = v and h.hexdigest() == sha
+        except OSError:
+            v = False
+        _poses_ok.clear()
+        _poses_ok[k] = v
+    return (True, None) if v else (False, "sem_modelo")
+
+
+def poses_vram_livre_mb():
+    """Memória livre da placa (MB, a primeira placa) pelo nvidia-smi; None sem o comando ou sem resposta."""
+    try:
+        r = subprocess.run([POSE_NVSMI, "--query-gpu=memory.free", "--format=csv,noheader,nounits"], capture_output=True,
+                           text=True, timeout=10)
+    except Exception:
+        return None
+    if r.returncode != 0:
+        return None
+    vals = [int(x.strip()) for x in (r.stdout or "").splitlines() if x.strip().isdigit()]
+    return vals[0] if vals else None
+
+
+def _poses_ocupado(tipo):
+    """Recorte (rec) ou montagem (mtg) com trabalho de prioridade 0 ou 1 agora, ou há menos de POSE_OCUPADO_SEG."""
+    if tipo == "rec":
+        with rec_lock:
+            ativo = any((j.get("prio") if j.get("prio") is not None else 9) <= REC_PRIO_IA for j in list(rec_jobs.values()))
+    else:
+        with mtg_lock:
+            ativo = any((j.get("prio") if j.get("prio") is not None else 9) <= MTG_P_VIVO for j in list(mtg_jobs.values()))
+    if ativo:
+        POSE_PRIO_EM[tipo] = time.time()
+        return True
+    return time.time() - POSE_PRIO_EM[tipo] < POSE_OCUPADO_SEG
+
+
+def _poses_vivo():
+    p = poses_filho.get("p")
+    return p is not None and p.poll() is None
+
+
+def poses_pode_rodar(aberto=None):
+    """(bool, motivo). Motivos: fora_janela, parado, sem_modelo, recorte_ocupado, montagem_ocupada, vram. A memória da placa
+    só é conferida com o filho fechado (aberto, o próprio modelo ocupa a placa)."""
+    cfg = poses_cfg()
+    if not poses_na_janela(cfg):
+        return False, "fora_janela"
+    k = _poses_noite_chave(cfg)
+    with poses_lock:
+        if poses_st["parado"]:
+            if poses_st["parado"] == k:
+                return False, "parado"
+            poses_st.update(parado=None, mortes=0)       # noite nova: tenta de novo
+    if not poses_modelo_ok()[0]:
+        return False, "sem_modelo"
+    if _poses_ocupado("rec"):
+        return False, "recorte_ocupado"
+    if _poses_ocupado("mtg"):
+        return False, "montagem_ocupada"
+    if not (_poses_vivo() if aberto is None else aberto):
+        livre = poses_vram_livre_mb()
+        if livre is None or livre < POSE_VRAM_LIVRE_MB:
+            return False, "vram"
+    return True, None
+
+
+def poses_pendentes():
+    """As fotos das sessões fechadas de hoje até POSE_DIAS para trás sem linha da pose_versao() atual, do dia mais antigo
+    para o mais novo e em ordem de clique. -> [{pid, dia, card, fotografo, origem}] (a miniatura; sem ela, o original)."""
+    agora = time.time()
+    dias = [_ff_hoje(agora - i * 86400) for i in range(POSE_DIAS - 1, -1, -1)]
+    feitos = set()
+    if os.path.exists(POSES_DB):
+        with poses_db_lock:
+            db = poses_db()
+            try:
+                feitos = {r[0] for r in db.execute("select pid from pose where versao = ? and dia >= ?", (pose_versao(), dias[0]))}
+            finally:
+                db.close()
+    with poses_lock:
+        falhou = set(poses_st["falhou"])
+    out = []
+    for dia in dias:
+        fotos = [f for f in _treino_ler_dia(dia)[0] if f["pid"] not in feitos and f["pid"] not in falhou]   # sem o cache do Treino (4 dias)
+        fotos.sort(key=lambda f: (f.get("t") or 0.0, f["card"], f["ordem"]))
+        with lock:
+            orig = {f["pid"]: (lib.get(f["pid"]) or {}) for f in fotos}
+        for f in fotos:
+            e = orig.get(f["pid"])
+            o = e.get("thumb") if e.get("thumb") and os.path.exists(e["thumb"]) else e.get("file")
+            if o:
+                out.append({"pid": f["pid"], "dia": dia, "card": f["card"], "fotografo": f.get("fotografo"), "origem": o})
+    return out
+
+
+def _poses_e_nosso(pid, llama=False):
+    """True se o processo é o nosso filho (eterna-poses.py) ou o llama-server que ele abriu (a linha tem o arquivo da chave
+    dentro da pasta ponto). Nunca mata processo de outro tipo."""
+    try:
+        import psutil
+        cmd = psutil.Process(pid).cmdline()
+    except ImportError:
+        try:
+            with open("/proc/%d/cmdline" % pid, "rb") as f:
+                cmd = [c.decode("utf8", "replace") for c in f.read().split(b"\0") if c]
+        except OSError:
+            return False
+    except Exception:
+        return False
+    if llama:
+        i = cmd.index("--api-key-file") if "--api-key-file" in cmd else -1
+        return 0 <= i < len(cmd) - 1 and os.path.realpath(cmd[i + 1]).startswith(os.path.realpath(os.path.dirname(POSES_DB)) + os.sep)
+    return any(os.path.basename(c) == os.path.basename(POSE_FILHO) for c in cmd)
+
+
+def _poses_pids_gravar():
+    f = poses_filho
+    p = f.get("p")
+    try:
+        if p is not None and p.poll() is None:
+            os.makedirs(os.path.dirname(POSE_PIDS), exist_ok=True)
+            _grava_privado(POSE_PIDS, json.dumps({"filho": p.pid, "llama": f.get("llama"), "agente": os.getpid(), "criado": f.get("criado")}))
+        elif os.path.exists(POSE_PIDS):
+            os.remove(POSE_PIDS)
+    except OSError:
+        pass
+
+
+def _poses_mata_llama(pid):
+    import signal
+    if not isinstance(pid, int) or pid <= 1 or not _poses_e_nosso(pid, llama=True):
+        return False
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(pid, signal.SIGKILL)       # o llama-server abre no próprio grupo (start_new_session)
+        else:
+            os.kill(pid, 9)
+        return True
+    except OSError:
+        return False
+
+
+def poses_orfaos_encerrar():
+    """Na partida: o filho e o llama-server deixados por um agente que caiu (POSE_PIDS) são encerrados (libera a placa)."""
+    import signal
+    try:
+        with open(POSE_PIDS, encoding="utf8") as f:
+            j = json.load(f)
+    except (OSError, ValueError):
+        return 0
+    n = 0
+    fp = j.get("filho") if isinstance(j, dict) else None
+    if isinstance(fp, int) and fp != os.getpid() and _poses_e_nosso(fp):
+        try:
+            os.kill(fp, signal.SIGTERM if hasattr(signal, "SIGTERM") else 9)
+            n += 1
+        except OSError:
+            pass
+    if isinstance(j, dict) and _poses_mata_llama(j.get("llama")):
+        n += 1
+    if n:
+        print("  poses: %d processo(s) de uma partida anterior encerrado(s)" % n)
+    try:
+        os.remove(POSE_PIDS)
+    except OSError:
+        pass
+    return n
+
+
+def _poses_erro(motivo, morte=False):
+    k = _poses_noite_chave()
+    with poses_lock:
+        poses_st.update(erro=motivo, erro_em=time.time(), carregado=False)
+        if morte:
+            poses_st["mortes"] += 1
+            if poses_st["mortes"] >= POSE_MORTES_MAX and not poses_st["parado"]:
+                poses_st["parado"] = k
+                print("  poses: o processo do classificador parou %d vezes seguidas; fica parado até a próxima noite" % poses_st["mortes"])
+
+
+def _poses_matar():
+    """Com o poses_filho_lock: fecha o stdin (o filho fecha o llama-server e apaga a chave), espera e, se preciso, mata o
+    filho e o grupo do llama-server."""
+    f = poses_filho
+    p, f["p"] = f.get("p"), None
+    if p is None:
+        return
+    try:
+        p.stdin.close()
+    except Exception:
+        pass
+    try:
+        p.wait(timeout=15)
+    except Exception:
+        try:
+            p.kill()
+            p.wait(timeout=5)
+        except Exception:
+            pass
+    _poses_mata_llama(f.get("llama"))
+    f["llama"] = None
+    _poses_pids_gravar()
+
+
+def _poses_abrir():
+    """Com o poses_filho_lock: o filho vivo, ou abre um novo. Exceção com o motivo se não deu."""
+    f = poses_filho
+    if f["p"] is not None and f["p"].poll() is None:
+        return f
+    if f["p"] is not None:                           # morreu entre um lote e outro
+        _poses_matar()
+        _poses_erro("filho", morte=True)
+        raise RuntimeError("filho")
+    cmd = [sys.executable, "-I", POSE_FILHO, "--inbox", INBOX, "--thumbs", THUMBS, "--modelos", MODELOS, "--bin", POSE_BIN,
+           "--modelo-arq", POSE_ARQ, "--mmproj-arq", POSE_MMPROJ_ARQ, "--sha", POSE_SHA or "-", "--mmproj-sha", POSE_MMPROJ_SHA or "-",
+           "--ponto", os.path.dirname(POSES_DB)]
+    os.makedirs(os.path.dirname(POSES_DB), exist_ok=True)
+    try:
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1, encoding="utf-8",
+                             env=rec_env(), close_fds=True)
+    except Exception as ex:
+        _poses_erro("filho")
+        raise RuntimeError("filho: %s" % type(ex).__name__)
+    fila = queue.Queue()
+    threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
+    f.update(p=p, fila=fila, criado=time.time(), llama=None)
+    _poses_pids_gravar()
+    try:
+        j = fila.get(timeout=POSE_CARGA_SEG)
+    except queue.Empty:
+        j = {"pronto": False, "erro": "tempo"}
+    if not j or not j.get("pronto"):
+        erro = (j or {}).get("erro")
+        _poses_matar()
+        if erro == "sem_modelo":
+            _poses_erro("sem_modelo")
+        else:
+            _poses_erro("filho", morte=True)
+        raise RuntimeError(poses_st["erro"] or "filho")
+    if j.get("prompt_v") != POSE_PROMPT_V:           # o deploy leva os dois arquivos juntos; versão trocada não classifica
+        _poses_matar()
+        _poses_erro("versao")
+        raise RuntimeError("versao")
+    f["llama"] = j.get("llama_pid") if isinstance(j.get("llama_pid"), int) else None
+    _poses_pids_gravar()
+    with poses_lock:
+        poses_st.update(carregado=True, erro=None, carga_ms=j.get("carga_ms"), abriu=True)
+    print("  poses: modelo de visão aberto em %.1f s" % ((j.get("carga_ms") or 0) / 1000.0))
+    return f
+
+
+def poses_fechar():
+    """O filho e o llama-server saem da memória (e da placa)."""
+    with poses_filho_lock:
+        if poses_filho.get("p") is not None:
+            _poses_matar()
+        with poses_lock:
+            poses_st["carregado"] = False
+
+
+def poses_mandar(itens):
+    """[(pid, origem)] -> lista res do filho. Exceção se o filho morreu, demorou ou não abriu."""
+    with poses_filho_lock:
+        f = _poses_abrir()
+        f["seq"] += 1
+        mid = "p.%d" % f["seq"]
+        try:
+            f["p"].stdin.write(json.dumps({"id": mid, "itens": [{"pid": p, "origem": o} for p, o in itens[:POSE_LOTE]], "esquema": POSE_SAIDA}) + "\n")
+            f["p"].stdin.flush()
+        except Exception:
+            _poses_matar()
+            _poses_erro("filho", morte=True)
+            raise RuntimeError("filho")
+        fim = time.time() + POSE_ESPERA_SEG
+        while True:
+            try:
+                j = f["fila"].get(timeout=max(0.1, fim - time.time()))
+            except queue.Empty:
+                _poses_matar()
+                _poses_erro("filho", morte=True)
+                raise RuntimeError("tempo")
+            if j is None:
+                _poses_matar()
+                _poses_erro("filho", morte=True)
+                raise RuntimeError("filho")
+            if j.get("id") == mid:
+                break
+        if not j.get("ok"):
+            if j.get("erro") == "servidor":              # o llama-server caiu: o filho sai
+                _poses_matar()
+                _poses_erro("filho", morte=True)
+            raise RuntimeError(str(j.get("erro") or "erro")[:80])
+    with poses_lock:
+        poses_st["mortes"] = 0
+    return [r for r in (j.get("res") or []) if isinstance(r, dict)]
+
+
+def poses_gravar(res, info):
+    """Junta a resposta da IA com o set do reconhecimento do ponto (D3), valida (pose_valida), grava em pose e conta na
+    noite. info: pid -> {dia, card, fotografo}. Foto que saiu da biblioteca no meio do lote não é gravada. -> (feitas,
+    dúvidas, erros)"""
+    ver, em = pose_versao(), _iso()
+    with lock:
+        vivas = {r.get("pid") for r in res if r.get("pid") in lib}
+    cena_lig = treino_cfg_mem().get("ponto") == "ligada"
+    cdb = {}
+    if cena_lig and os.path.exists(CENA_DB):
+        faltam = [r.get("pid") for r in res if r.get("pid") in vivas and r.get("pid") not in cena_mem]
+        if faltam:
+            with cena_db_lock:
+                db = cena_db()
+                try:
+                    cdb = {p: (rt, c) for p, rt, c in db.execute("select pid, rotulo, conf from cena where pid in (%s)" % ",".join("?" * len(faltam)), faltam)}
+                finally:
+                    db.close()
+    linhas, feitas, duvs, erros, ms = [], 0, 0, 0, []
+    for r in res:
+        pid = r.get("pid")
+        i = info.get(pid)
+        if not i or pid not in vivas:
+            continue
+        w, h, o = pose_orient(pid)
+        if "erro" in r:
+            erros += 1
+            if r.get("erro") in POSE_ERROS_FOTO:
+                linhas.append((pid, i["dia"], i["card"], i.get("fotografo"), w, h, o, None, None, None, 1, "nao_classificavel", ver, None, em))
+            else:
+                with poses_lock:
+                    poses_st["falhou"].add(pid)          # tenta de novo na próxima noite
+            continue
+        b = r.get("bruto")
+        d, mot = pose_valida(b, "ia")
+        set_ia = b.get("s") if isinstance(b, dict) and isinstance(b.get("s"), str) and b.get("s") in POSE_TAXO["set"] else None
+        set_cena = None
+        if cena_lig:
+            c = cena_mem.get(pid)
+            rt, cf = (c.get("r"), c.get("c")) if c else cdb.get(pid, (None, None))
+            if rt in CENA_CLASSES and isinstance(cf, (int, float)) and cf >= CENA_LIMIAR:
+                set_cena = rt
+        duvida = 1 if mot in ("formato", "incoerente") else 0
+        if d is not None:
+            if set_cena and set_ia and set_cena != set_ia:
+                duvida, mot = 1, mot or "set_diverge"
+            elif set_cena:
+                d["set"] = set_cena
+            d["orient"] = o
+        feitas += 1
+        duvs += duvida
+        m_ = r.get("ms") if isinstance(r.get("ms"), int) and 0 <= r.get("ms") < 10 ** 7 else None
+        if m_ is not None:
+            ms.append(m_)
+        linhas.append((pid, i["dia"], i["card"], i.get("fotografo"), w, h, o, set_ia, set_cena,
+                       json.dumps(d, ensure_ascii=False) if d is not None else None, duvida, mot, ver, m_, em))
+    if linhas:
+        with poses_db_lock:
+            db = poses_db()
+            try:
+                db.executemany("insert or replace into pose values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", linhas)
+                db.commit()
+            finally:
+                db.close()
+    with poses_lock:
+        n = poses_st["noite"]
+        n["feitas"] += feitas
+        n["duvidas"] += duvs
+        n["erros"] += erros
+        n["ms_total"] += sum(ms)
+        n["ms_n"] += len(ms)
+    return feitas, duvs, erros
+
+
+def poses_agregar():
+    """Agregados da noite (P3). Na P1 não faz nada."""
+    return None
+
+
+def poses_lgpd(pids):
+    """LGPD: a linha de pose da foto sai (e ela não volta à fila). Nunca cria o banco. -> falhas"""
+    pids = [p for p in pids if pid_ok(p)]
+    with poses_lock:
+        poses_st["falhou"].difference_update(pids)
+    if not pids or not os.path.exists(POSES_DB):
+        return []
+    try:
+        with poses_db_lock:
+            db = poses_db()
+            try:
+                for p in pids:
+                    db.execute("delete from pose where pid = ?", (p,))
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        return ["poses: " + str(ex)[:80]]
+    return []
+
+
+def poses_limpa(agora=None):
+    """De hora em hora: a linha de foto com mais de POSE_LINHA_DIAS sai (os agregados e os meses da P3 e da P5 ficam)."""
+    if not os.path.exists(POSES_DB):
+        return 0
+    lim = _ff_hoje((agora or time.time()) - POSE_LINHA_DIAS * 86400)
+    with poses_db_lock:
+        db = poses_db()
+        try:
+            n = db.execute("delete from pose where dia < ?", (lim,)).rowcount
+            db.commit()
+        finally:
+            db.close()
+    return n
+
+
+def _poses_comeca(cfg):
+    """Antes de cada lote: a noite começa (ou segue) e os contadores são da noite de agora."""
+    k = _poses_noite_chave(cfg)
+    with poses_lock:
+        n = poses_st["noite"]
+        novo = poses_st["noite_k"] != k
+        if novo:
+            poses_st.update(noite_k=k, falhou=set(), mortes=0)
+            poses_st["noite"] = {"ini": _iso(), "fim": None, "feitas": 0, "duvidas": 0, "erros": 0, "ms_total": 0, "ms_n": 0, "parou_por": None}
+        elif not poses_st["rodando"]:
+            n.update(fim=None, parou_por=None)
+        if not poses_st["rodando"]:
+            print("  poses: classificação %s (%d pendentes)" % ("começou" if novo else "voltou", poses_st["pendentes"]))
+        poses_st["rodando"] = True
+
+
+def _poses_para(motivo):
+    """Não pode rodar (ou acabou a fila): fecha o filho. Se a noite estava rodando, ela termina com o motivo e os agregados
+    são refeitos; senão o motivo fica em parou_por (fora_janela não apaga o motivo da noite que já terminou)."""
+    if poses_filho.get("p") is not None:
+        poses_fechar()
+    fim = None
+    with poses_lock:
+        n = poses_st["noite"]
+        if poses_st["rodando"]:
+            poses_st["rodando"] = False
+            n.update(fim=_iso(), parou_por=motivo)
+            fim = dict(n)
+        elif motivo != "fora_janela" or n["parou_por"] is None:
+            n["parou_por"] = motivo
+    if fim:
+        print("  poses: noite parou (%s) · %d feitas · %d dúvidas · %d erros · média %s ms por foto" % (
+            motivo, fim["feitas"], fim["duvidas"], fim["erros"], int(fim["ms_total"] / fim["ms_n"]) if fim["ms_n"] else "--"))
+        try:
+            poses_agregar()
+        except Exception as ex:
+            print("  poses: agregados %s" % type(ex).__name__)
+
+
+def poses_status():
+    """/status.poses: só números e códigos (nenhum pid, caminho ou chave)."""
+    cfg = poses_cfg()
+    ok, erro = poses_modelo_ok(conferir=False)
+    with poses_lock:
+        st = {k: poses_st[k] for k in ("erro", "parado", "carregado", "carga_ms", "pendentes", "noite_k", "rodando")}
+        n = dict(poses_st["noite"])
+    parado = bool(st["parado"] and st["parado"] == _poses_noite_chave(cfg))
+    if parado:
+        erro = "parado"
+    elif ok and st["erro"]:
+        erro = st["erro"]
+    return {"v": 1, "modo": cfg["modo"], "forcada": cfg["forcada"], "versao": pose_versao(),
+            "modelo": {"ok": bool(ok), "erro": erro, "nome": POSE_NOME, "pronto": bool(_poses_vivo() and st["carregado"]),
+                       "carga_ms": st["carga_ms"] if isinstance(st["carga_ms"], int) else None},
+            "janela": cfg["janela"], "na_janela": poses_na_janela(cfg), "pendentes": int(st["pendentes"]) if cfg["modo"] != "desligada" else 0,
+            "parado": parado, "rodando": bool(st["rodando"]),
+            "noite": {"ini": n["ini"], "fim": n["fim"], "feitas": n["feitas"], "duvidas": n["duvidas"], "erros": n["erros"],
+                      "ms_med": int(n["ms_total"] / n["ms_n"]) if n["ms_n"] else 0, "parou_por": n["parou_por"]}}
+
+
+def poses_loop():
+    """A thread da classificação de poses (padrão do cena_loop). Fora de sombra ou ligada, ou quando não pode rodar: fecha o
+    filho e dorme POSE_DORME. Dentro: lotes de POSE_LOTE, conferindo poses_pode_rodar() entre um e outro. Limpeza de hora
+    em hora."""
+    t_limpa, t_mod, fila, fila_t = time.time(), 0.0, [], 0.0
+    while not poses_parar.is_set():
+        try:
+            if time.time() - t_mod >= 600:
+                t_mod = time.time()
+                poses_modelo_ok()                    # o /status nunca lê os 6 GB: a conferência do SHA é daqui (cache)
+            if time.time() - t_limpa >= 3600:
+                t_limpa = time.time()
+                n = poses_limpa()
+                if n:
+                    print("  poses: %d linha(s) com mais de %d dias apagada(s)" % (n, POSE_LINHA_DIAS))
+            cfg = poses_cfg()
+            if cfg["modo"] not in ("sombra", "ligada"):
+                with poses_lock:
+                    rodando = poses_st["rodando"]
+                if rodando or poses_filho.get("p") is not None:
+                    _poses_para("desligada")
+                poses_parar.wait(POSE_DORME)
+                continue
+            pode, mot = poses_pode_rodar()
+            if not pode:
+                _poses_para(mot)
+                poses_parar.wait(POSE_DORME)
+                continue
+            with poses_lock:
+                espera = poses_st["erro"] and time.time() - poses_st["erro_em"] < POSE_ERRO_SEG
+            if espera:
+                poses_parar.wait(min(POSE_DORME, 5))
+                continue
+            if not fila or time.time() - fila_t >= POSE_FILA_SEG:   # a lista é refeita no fim dela ou a cada POSE_FILA_SEG
+                fila, fila_t = poses_pendentes(), time.time()
+                with poses_lock:
+                    poses_st.update(pendentes=len(fila), pend_t=fila_t)
+            if not fila:
+                _poses_para("fim_fila")
+                poses_parar.wait(POSE_DORME)
+                continue
+            lote = fila[:POSE_LOTE]
+            _poses_comeca(cfg)
+            try:
+                res = poses_mandar([(x["pid"], x["origem"]) for x in lote])
+            except Exception:
+                poses_parar.wait(1)
+                continue
+            poses_gravar(res, {x["pid"]: x for x in lote})
+            del fila[:len(lote)]
+            with poses_lock:
+                poses_st["pendentes"] = len(fila)
+        except Exception as ex:
+            print("  poses: %s" % type(ex).__name__)
+            poses_parar.wait(2)
+    poses_fechar()
+
+
 # Quem pode cada rota do agente. Nada abre sem estar aqui: rota fora da tabela responde 404 sem tocar o disco.
 #   publica          qualquer um: o app, o /status mínimo, a galeria do cliente (/g/) e o webhook do adquirente
 #   posto_ou_sessao  aparelho pareado (cookie eterna_posto) ou pessoa conectada com um dos módulos (vazio = qualquer pessoa)
@@ -14227,6 +16337,7 @@ ROTAS = (
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
     ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
     ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
+    ("GET", "/montagem/", "posto_ou_sessao", VENDER), ("POST", "/montagens/pedir", "posto_ou_sessao", VENDER),   # montagem feita no servidor
     ("GET", "/photoroom/status", "posto_ou_sessao", VENDER + ("configuracao.r",)),    # sem Painel de controle: só {configured, fundos_modo}
     ("GET", "/photoroom/result/", "posto_ou_sessao", VENDER), ("POST", "/photoroom/compose", "posto_ou_sessao", VENDER),
     ("GET", "/fila-fotografo", "posto_ou_sessao", ("filafoto.r",)),
@@ -14241,6 +16352,7 @@ ROTAS = (
     ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),
     ("GET", "/ativ/cliente-foto", "sessao", ("ativentrega.r",)),     # foto do cliente para quem entrega (some com a limpeza)   # vídeos de demonstração (lista e arquivo)
     ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
+    ("POST", "/ativ/cliente-foto", "sessao", ("ativentrega.c",)),   # 23/11: a foto do cliente é tirada na entrega
     ("GET", "/ativ/pulseira", "sessao", ("ativentrega.r", "ativvenda.c")),     # v99.25: de quem é a pulseira
     ("POST", "/ativ/pulseiras", "sessao", ("ativvenda.c", "ativvenda.u", "ativvenda.d", "financeiro.u")),   # v99.28: corrigir a pulseira
     ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
@@ -14258,6 +16370,7 @@ ROTAS = (
     ("POST", "/agenda/atualizar", "sessao", ("escala.u", "configuracao.u")), ("POST", "/ponto/entradas/totais", "sessao", ("estatisticas.c",)),
     ("POST", "/agenda/fonte", "sessao", ("configuracao.u",)), ("POST", "/agenda/testar", "sessao", ("configuracao.u",)),
     ("GET", "/visitas", "posto_ou_sessao", FOTOS_LER), ("POST", "/visitas/juntar", "posto_ou_sessao", ("venda.u",)),   # v97-recorte (Eduardo); a rota confere o resto
+    ("POST", "/posto/lado", "posto_ou_sessao", ("venda.u",)),   # 23/11: o próprio aparelho pareado escolhe o lado da barra do Checkout
     ("POST", "/visitas/separar", "posto_ou_sessao", ("venda.u",)), ("POST", "/visitas/config", "sessao", ("configuracao.u",)),
     ("GET", "/impressao/fila", "sessao", ("venda.r",)), ("GET", "/impressao/miniatura", "sessao", ("venda.r",)),
     ("POST", "/imprimir", "sessao", ("venda.c", "venda.u")), ("POST", "/impressao/acao", "sessao", ("venda.u",)),
@@ -14272,6 +16385,7 @@ ROTAS = (
     ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
+    ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa)
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -15055,7 +17169,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
 
 
 # 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
@@ -15651,11 +17765,16 @@ class H(BaseHTTPRequestHandler):
             if e:
                 return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409, "cadastro": 400, "pulseira": 409}[e])
             return self.js({"ok": True})
+        if rota == "/ativ/cliente-foto":
+            e = ativ_cliente_foto_entrega(body)
+            if e:
+                return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409}[e])
+            return self.js({"ok": True})
         if rota == "/ativ/video/liga":
             e, n = ativ_video_liga(body, eu.get("usuario") or "")
             if e:
                 return self.js({"error": e}, {"dados": 400, "rascunho": 410, "nao_achou": 404, "cancelada": 409, "qr_usado": 409,
-                                              "pulseira": 409, "pulseira_usada": 409,
+                                              "pulseira": 409, "pulseira_usada": 409, "sem_foto": 409,
                                               "completa": 409, "sem_video": 409, "formato": 415,
                                               "cartao_desconhecido": 409, "cartao_cancelado": 409}[e])
             return self.js({"ok": True, "qr": body["qr"], "codigo": cartao_codigo(body["qr"]), "n": n})
@@ -15787,6 +17906,44 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, cod, nostore=True)
 
+    def posto_lado_post(self):
+        """23/11 (Ronaldo): POST /posto/lado {lado: "esq"|"dir"}: o vendedor troca no Posto de venda o lado da barra do Checkout
+        DESTE aparelho (o id vem do cookie do posto, nunca do corpo). Grava config/postos-lado no estado.db, como a coluna do Painel."""
+        pa = self.posto_atual()
+        if not pa or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "só num aparelho pareado como posto"}, 403)
+        if not limite_ok(self.client_address[0], "posto-lado", 20):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(256)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        lado = body.get("lado") if isinstance(body, dict) else None
+        if lado not in ("esq", "dir"):
+            return self.js({"error": "lado deve ser esq ou dir"}, 400)
+        quem_ = ((self.sessao() or {}).get("usuario") or ("posto " + str(pa.get("nome") or "")))[:120]
+        with estado_lock:
+            db = estado_db()
+            try:
+                r_ = db.execute("select valor from doc where col = 'config' and id = 'postos-lado'").fetchone()
+                try:
+                    at = postos_lado_valida(json.loads(r_[0])) if r_ and r_[0] else None
+                except ValueError:
+                    at = None
+                lados = dict((at or {}).get("lados") or {})
+                if lado == "esq":
+                    lados[pa["id"]] = "esq"
+                else:
+                    lados.pop(pa["id"], None)
+                v = {"lados": lados, "por": quem_, "em": _iso()}
+                rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+                db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                           ("config", "postos-lado", json.dumps(v, ensure_ascii=False), rev, _iso()))
+                db.commit()
+            finally:
+                db.close()
+        print("  posto %s: barra do Checkout à %s · por %s" % (pa.get("nome"), "esquerda" if lado == "esq" else "direita", quem_))
+        return self.js(v, 200, nostore=True)
+
     def visitas_config_post(self):
         """B1: POST /visitas/config {rosto: bool, por, posto}: liga ou desliga a ligação automática por rosto. Posto +
         origem + X-Eterna: 1 + 10 por minuto, corpo só com rosto booleano. O app só mostra o interruptor ao Admin."""
@@ -15845,12 +18002,13 @@ class H(BaseHTTPRequestHandler):
 
     def treino_post(self, path):
         """16/11: POST /treino/rotulo (qualidade.u) e /treino/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
-        (conferido no autoriza), 120 por minuto por pessoa e corpo até 4 KB. O console nunca imprime o corpo."""
+        (conferido no autoriza), 120 por minuto por pessoa nas marcações e 6 no interruptor, corpo até 4 KB. O console nunca imprime o corpo."""
         if not self.origem_local():
             return self.js({"ok": False, "error": "origem"}, 403)
         eu = self.sessao() or {}
         quem = eu.get("usuario") or ""
-        if not limite_ok("u:" + quem, "treino", 120):
+        # 18/11 (revisão de segurança): o interruptor tem limite próprio (6 por minuto por pessoa), separado das marcações
+        if not (limite_ok("u:" + quem, "treino", 120) if path == "/treino/rotulo" else limite_ok("u:" + quem, "treino_cfg", 6)):
             return self.js({"ok": False, "error": "limite"}, 429)
         body, err = self.corpo(4096)
         if err:
@@ -15859,6 +18017,24 @@ class H(BaseHTTPRequestHandler):
             st, r = treino_gravar(quem, body) if path == "/treino/rotulo" else treino_cfg_gravar(body, quem)
         except Exception as ex:
             print("  treino: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        return self.js(r, st, nostore=True)
+
+    def poses_post(self):
+        """23/11 (P1 de poses): POST /poses/config {modo?, janela?} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
+        (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "poses_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        try:
+            st, r = poses_cfg_gravar(body, quem)
+        except Exception as ex:
+            print("  poses: %s" % type(ex).__name__)
             return self.js({"ok": False, "error": "erro no servidor"}, 500)
         return self.js(r, st, nostore=True)
 
@@ -16390,6 +18566,119 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(d)
         return None
+
+    def montagem_get(self, u, q):
+        """GET /montagem/<pid>/<fundo>.jpg?t=p|i[&v=<versao>]: a prévia ou o arquivo de impressão que o servidor montou.
+        Posto pareado ou pessoa com módulo de venda (ROTAS). Pronta: o JPEG, sem cache no aparelho. Ainda não feita: 202 e o
+        pedido sobe para a prioridade 0. Tudo que não existe responde o mesmo 404 (a rota não diz se a foto existe)."""
+        nf = {"error": "not found"}
+        if mtg_cfg()["modo"] == "desligada":
+            return self.js({"error": "montagem_desligada"}, 503, True)
+        m = _re_mtg.match(u.path[len("/montagem/"):])
+        t = q.get("t", [""])[0]
+        v = q.get("v", [""])[0]
+        if not m or t not in ("p", "i") or m.group(3) not in MTG_FUNDOS or (v and not re.match(r"^[0-9a-f]{8}$", v)):
+            return self.js(nf, 404, True)
+        if not limite_ok(self.client_address[0], "montagem-i" if t == "i" else "montagem", MTG_TAXA):
+            return self.js({"error": "muitos pedidos"}, 429, True)
+        pid, fundo = m.group(2), m.group(3)
+        with lock:
+            viva = pid in lib
+        if not viva or pid in mtg_sem_pessoa:
+            return self.js(nf, 404, True)
+        if mtg["parado"]:
+            return self.js({"error": "montagem_parada"}, 503, True)
+        versao = mtg_versao(fundo)
+        if versao and v and v != versao:
+            return self.js({"error": "versao"}, 409, True)
+        arq = mtg_arquivo(pid, fundo, t, versao) if versao else None
+        if arq and os.path.isfile(arq):
+            base = os.path.realpath(MONTAGENS)
+            if os.path.commonpath([os.path.realpath(arq), base]) != base:
+                return self.js(nf, 404, True)
+            try:
+                with open(arq, "rb") as f:
+                    data = f.read()
+            except OSError:
+                return self.js(nf, 404, True)
+            self.send_response(200)
+            self.cors()
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "private, no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Eterna-Montagem", versao)
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        base = mtg_base_ok(pid, fundo)
+        if base is None:
+            return self.js({"error": "vendas_indisponivel"}, 503, True)   # sem ler as vendas agora: o app tenta de novo
+        if not base:                                   # regra 19: montagem nova só de base de IA (mesmo 404 de foto desconhecida)
+            return self.js(nf, 404, True)
+        with mtg_lock:
+            na_fila = (pid, fundo) in mtg_jobs
+        if mtg_ruim_recente(pid, fundo, versao) and not na_fila:
+            return self.js({"estado": "erro"}, 422, True)  # acabou de falhar: estado final, sem fila (depois da janela, tenta de novo)
+        job, erro = mtg_enfileirar(pid, fundo, (t,), MTG_P_PEDIDO)
+        if erro == "fila_cheia":
+            return self.js({"error": "muitos pedidos"}, 429, True)
+        if erro:
+            return self.js({"error": erro if erro in ("disco", "desligada") else "montagem_desligada"}, 503, True)
+        return self.js({"estado": "fila"}, 202, True)
+
+    def montagens_pedir_post(self):
+        """POST /montagens/pedir {pids (até 4), fundos (até 5), tipos ["p"] ou ["p","i"]}: o estado de cada montagem e, para
+        as que faltam, um pedido com a prioridade 0 (passa na frente de tudo que o servidor monta sozinho)."""
+        if mtg_cfg()["modo"] == "desligada":
+            return self.js({"error": "montagem_desligada"}, 503, True)
+        if not limite_ok(self.client_address[0], "montagens-pedir-todos", 2 * MTG_TAXA):
+            return self.js({"error": "muitos pedidos"}, 429, True)   # conta geral antes de ler o corpo; a de cada tipo vem depois
+        body, err = self.corpo(2048)
+        if err:
+            return self.js({"error": "corpo inválido"}, err, True)
+        pids, fundos, tipos = body.get("pids"), body.get("fundos"), body.get("tipos", ["p"])
+        if not limite_ok(self.client_address[0], "montagens-pedir-i" if tipos == ["p", "i"] else "montagens-pedir", MTG_TAXA):
+            return self.js({"error": "muitos pedidos"}, 429, True)   # a impressão tem a conta dela: as prévias não a barram
+        if not isinstance(pids, list) or not 1 <= len(pids) <= 4 or not all(isinstance(p, str) and _re_pid.match(p) for p in pids) \
+                or not isinstance(fundos, list) or not 1 <= len(fundos) <= 5 or not all(isinstance(f, str) and f in MTG_FUNDOS for f in fundos) \
+                or tipos not in (["p"], ["p", "i"]) or set(body) - {"pids", "fundos", "tipos"}:
+            return self.js({"error": "pedido inválido"}, 400, True)
+        if mtg["parado"]:
+            return self.js({"error": "montagem_parada"}, 503, True)
+        pids = list(dict.fromkeys(pid_lib(p) for p in pids))
+        fundos = list(dict.fromkeys(fundos))
+        with lock:
+            fora = [p for p in pids if p not in lib]
+        if fora:
+            return self.js({"error": "foto não encontrada no agente"}, 404, True)
+        itens = []
+        for pid in pids:
+            for fundo in fundos:
+                base = mtg_base_ok(pid, fundo)
+                if base is None:
+                    return self.js({"error": "vendas_indisponivel"}, 503, True)
+                versao = mtg_versao(fundo)
+                w, h = mtg_dims(fundo)
+                tem = {t: bool(versao) and os.path.isfile(mtg_arquivo(pid, fundo, t, versao)) for t in ("p", "i")}
+                ruim = mtg_ruins.get((pid, fundo))
+                if all(tem[t] for t in tipos):
+                    estado = "pronta"
+                elif pid in mtg_sem_pessoa:
+                    estado = "sem_pessoa"
+                elif not base:
+                    estado = "nao_base"                      # regra 19: só as bases de IA viram montagem
+                elif mtg_ruim_recente(pid, fundo, versao) and (pid, fundo) not in mtg_jobs:
+                    estado = "erro"                          # acabou de falhar: depois da janela o pedido seguinte tenta de novo
+                else:
+                    job, erro = mtg_enfileirar(pid, fundo, [t for t in tipos if not tem[t]], MTG_P_PEDIDO)
+                    if erro == "fila_cheia":
+                        return self.js({"error": "muitos pedidos"}, 429, True)
+                    if erro == "disco":
+                        return self.js({"error": "disco"}, 503, True)
+                    estado = "fila" if job is not None else "erro"
+                itens.append({"pid": "ag_" + pid, "fundo": fundo, "versao": versao, "estado": estado, "p": tem["p"], "i": tem["i"], "w": w, "h": h})
+        return self.js({"ok": True, "v": 1, "itens": itens}, nostore=True)
 
     def recorte_post(self):
         """v84: POST /recorte {pid}: a pessoa recortada (PNG transparente). Só este computador (loopback, Host e Origin do
@@ -16934,22 +19223,27 @@ class H(BaseHTTPRequestHandler):
             if not eu and not (confiavel and self.posto_atual()):
                 return self.js(minimo, nostore=True)     # sem pessoa conectada nem aparelho pareado: só que o agente está no ar
             ss_, rs_ = sess_status(), rec_status()     # v91 (revisão C5): sess_lock e o recorte nunca dentro do lock
+            mt_ = mtg_status()                         # montagem no servidor: também fora do lock
             ag_ = agenda_status(publico=True)          # v97: sem os 4 últimos da chave e sem quem salvou (CORS aberto)
             try:
                 tr_ = treino_status()                  # 16/11: Treino da IA (contagem e interruptor), fora do lock
             except Exception:
                 tr_ = None
+            try:
+                ps_ = poses_status()                   # 23/11: classificação de poses (só números e códigos), fora do lock
+            except Exception:
+                ps_ = None
             with lock:
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
                            platform=sys.platform, ftp=ftp_,
-                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, fundos_modo=fundos_modo(),
+                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
                            estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
                            app_offline_pronto=app_offline_pronto(), agenda=ag_,
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
-                           pagamento="teste" if compra_online() else "desligado", treino=tr_,
+                           pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
@@ -17235,6 +19529,8 @@ class H(BaseHTTPRequestHandler):
             if not self.posto() or not m:
                 return self.js({"error": "not found"}, 404)
             return self.png_bytes(os.path.join(RECORTES, m.group(2) + ".png"))
+        if u.path.startswith("/montagem/"):
+            return self.montagem_get(u, q)
         if u.path.startswith("/thumb/") or u.path.startswith("/file/"):
             # v91 (segurança, 01/11): o /file/ (original) pela rede (ETERNA_ORIGENS) fica aceito até o pareamento da v83 etapa 2,
             # com limite por IP: FILE_TAXA por minuto. O computador do ponto (loopback) não tem limite (Checkout e pré-carga).
@@ -17279,6 +19575,8 @@ class H(BaseHTTPRequestHandler):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
+        if u.path == "/montagens/pedir":
+            return self.montagens_pedir_post()
         if u.path == "/fotos/enviar":
             return self.fotos_enviar_post()
         if ("POST", u.path) in AGENDA_ROTAS:         # v97
@@ -17287,7 +19585,7 @@ class H(BaseHTTPRequestHandler):
             return self.ff_funcao_post()
         if u.path == "/ativ/video":
             return self.ativ_video_post(u)
-        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao"):
+        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao", "/ativ/cliente-foto"):
             return self.ativ_post(u.path)
         if u.path in ("/ativ/venda", "/ativ/cancelar", "/ativ/pulseiras"):
             return self.ativ_post(u.path)
@@ -17295,8 +19593,12 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
             return self.visitas_config_post()
+        if u.path == "/posto/lado":
+            return self.posto_lado_post()
         if u.path in ("/treino/rotulo", "/treino/config"):
             return self.treino_post(u.path)
+        if u.path == "/poses/config":
+            return self.poses_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
@@ -17521,6 +19823,11 @@ def main():
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=treino_cfg_loop, daemon=True).start()  # 18/11: interruptor do treino em memória (treino_cfg_mem)
     threading.Thread(target=cena_loop, daemon=True).start()        # 18/11 (regra 19): reconhecer o ponto pela imagem
+    poses_orfaos_encerrar()             # 23/11: classificador de poses de uma partida anterior não segura a placa
+    threading.Thread(target=poses_loop, daemon=True).start()       # 23/11: poses à noite (chave config/poses, padrão desligada)
+    mtg_orfaos_encerrar()               # processo de montagem de uma partida anterior
+    print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta
+    threading.Thread(target=mtg_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
     # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
     # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.

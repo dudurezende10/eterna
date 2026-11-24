@@ -197,9 +197,13 @@ O que mudou e já está no código (`servidor/galeria-nuvem/imply.py`, `app.py`,
 - **Checkout:** `https://maracanatour.eleventickets.com/pt/checkout?urlreturncheckout=<volta?idpedido=ON-...>`. A volta vai com URL-encode e o checkout inteiro em Base64 no `url` do `/OAuth2/external`. A volta agora leva o nosso código. Antes ia `urlreturn` sem o `idpedido`, e a galeria não saberia qual pedido conferir.
 - `informacoes_extras` só vai quando há carrinho (string vazia invalida a chamada); `end_numero`, se um dia for enviado, é inteiro.
 
+**Seção 7 (recebida em 23/11, Maurício, com o retorno do checkout para o `urlreturncheckout` já ajustado no front da Imply):** `POST <admin>/api/SuperIngressoV02/v01/GetCart/`, mesma chave (`Authorization: Server`), corpo `["", "PA;RE;CA;AP;TP;PC;EX", "", 1, 100, "-2 months", "now", <ON-...>]` (idpessoa, status, idpurchase, page, results_per_page, date_start, date_end, idreferencia). Devolve a lista de pedidos da referência com `pag[].status` e `itens[].status`/`valor`; `[]` = não existe pedido. No código (`imply.situacao`):
+- **pago** só com um pedido da nossa referência com o pagamento PA e **todos** os itens PA; o valor é a soma dos itens. Pagou menos que o nosso pedido (carrinho mexido no checkout da Imply): não libera, o pedido fica em `erro` com o valor pago e o esperado, para a TI conferir.
+- **cancelado** quando todos os itens de todos os pedidos da referência estão em CA, EX ou PC; **pendente** em qualquer outro caso (RE, AP, TP, `[]`), conferido a cada 5 min até 24 h e depois expirado sem liberar.
+- Pedido de outra referência nunca libera. A volta do cliente (`?idpedido=`) só dispara a consulta; nunca libera sozinha.
+
 Ainda falta da Imply:
-1. **Seção 7, consulta de status pela referência.** O documento a cita duas vezes, mas ela não veio. Sem ela nenhum pedido é liberado (`ImplyConsulta` vazio).
-2. Lista dos produtos online com `idproduto` ou `depara`, incluindo os de escola e do Drone (vídeo), se forem vendidos online.
+1. Lista dos produtos online com `idproduto` ou `depara`, incluindo os de escola e do Drone (vídeo), se forem vendidos online.
 3. Quanto tempo vale o token e se é de uso único.
 4. Aviso automático (webhook) de pago, cancelado ou estornado.
 

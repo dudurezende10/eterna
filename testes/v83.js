@@ -222,6 +222,7 @@ try{
 
   // ---- 25 (Eduardo, 29/10: foto com fundo de IA imprime): 3 do campo + 1 de IA num pacote de 4: imprime as 4 com a montagem do fundo de 5000 px
   composeLog.length=0;composeFalha=false;
+  await require('./_status_agente.js')(ctx,ORIG,A); // agente sem `montagem`: o navegador monta no canvas (E2, mtgCanvasOk)
   await injPend(A,{card:'LPV83C',id:'L00-v83c0000aaaa',sel:F5.slice(0,3),ai:['ag_aaaa00000001|campeao2'],cart:[{id:'gramado',v:150}],total:150,prints:4});await confirmar(A,'L00-v83c0000aaaa','');
   const s25=(await sim(A)).sessions.LPV83C;ok(s25.impressao.semFoto===0&&s25.impressao.alvo===4,'25: semFoto 0 e 4 para imprimir: '+J(s25.impressao));
   ok(await A.evaluate(()=>!!document.querySelector('[data-imp="LPV83C"] .imp-ia')),'25: a foto de IA aparece na grade com o selo IA');

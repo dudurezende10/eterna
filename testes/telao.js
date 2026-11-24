@@ -1,3 +1,4 @@
+const statusSemMontagem=require('./_status_agente.js');
 // v97 (E8, Eduardo 10/11): fundo "Telão do Maracanã". A família aparece DENTRO da tela do telão (quadrilátero em perspectiva),
 // do peito ou da cintura para cima, grande e embaixo; fora da tela a foto do fundo fica igual. Entra no lugar do Pódio de
 // campeão (que vai para Laboratório › Fundos em teste). Recorte sintético (nunca foto de cliente).
@@ -27,6 +28,7 @@ try{const ctx=await b.newContext({viewport:{width:1366,height:900}});
     return R.map(([x,y])=>{const z=H[6]*x+H[7]*y+H[8];return [Math.round((H[0]*x+H[1]*y+H[2])/z),Math.round((H[3]*x+H[4]*y+H[5])/z)];}).map((p,i)=>Math.hypot(p[0]-q[i][0],p[1]-q[i][1]));});
   ok(h.every(e=>e<1),'homografia leva o quadro aos 4 cantos: '+J(h));
   await pg.evaluate(()=>{ETERNA.state.agent.on=true;ETERNA.state.agent.recorte={ok:true};});
+  await statusSemMontagem(ctx,ORIG,pg); // o agente responde sem `montagem` (modo conhecido): o navegador monta no canvas
   const m=await pg.evaluate(async()=>{const r=await ETERNA.fiaMontar('ag_7e1a00000001','telao');if(!r.canvas)return r;const c=r.canvas,x=c.getContext('2d');
     const pl=await new Promise(z=>{const i=new Image();i.onload=()=>z(i);i.src='img/bg-telao-v2.jpg';});const c2=document.createElement('canvas');c2.width=c.width;c2.height=c.height;const x2=c2.getContext('2d');x2.drawImage(pl,0,0);
     const px=(cx,X,Y)=>Array.from(cx.getImageData(X,Y,1,1).data.slice(0,3));const T=ETERNA.bgOf('telao').telao,kq=c.width/T.w;const q=T.quad.map(([X,Y])=>[X*kq,Y*kq]);
