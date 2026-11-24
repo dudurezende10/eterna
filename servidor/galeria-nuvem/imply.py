@@ -98,6 +98,26 @@ def checkout(token_pessoa, ref, volta):
     return "%s/OAuth2/external?token=%s&url=%s" % (ADMIN, urllib.parse.quote(token_pessoa, safe=""), urllib.parse.quote(url64, safe=""))
 
 
+# 24/11 (log da 1ª compra real): o result do GetCart veio como objeto, não como lista. Aceita lista de pedidos, um pedido
+# sozinho, a lista dentro de uma chave do objeto ou um objeto de pedidos por id. O mesmo vale para pag e itens.
+_CAMPOS_PEDIDO = ("idmovimentacao", "idreferencia", "localizador", "pag", "itens")
+
+
+def _dicts(x):
+    if isinstance(x, list):
+        return [p for p in x if isinstance(p, dict)]
+    if isinstance(x, dict):
+        if any(k in x for k in _CAMPOS_PEDIDO):
+            return [x]
+        listas = [v for v in x.values() if isinstance(v, list) and any(isinstance(p, dict) for p in v)]
+        if listas:
+            return [p for v in listas for p in v if isinstance(p, dict)]
+        if "status" in x:
+            return [x]
+        return [v for v in x.values() if isinstance(v, dict)]
+    return []
+
+
 def _st(x):
     return str((x or {}).get("status") or "").strip().upper()
 
@@ -112,26 +132,29 @@ def situacao(ref):
         if j.get("error"):
             raise ImplyErro("GetCart: %s" % json.dumps(j["error"])[:160])
         j = j.get("result")
-    lista = [p for p in j if isinstance(p, dict)] if isinstance(j, list) else []
+    lista = _dicts(j)
     # 24/11 (1º teste real, "sem pedido" com o PIX pago): a referência é procurada em idreferencia e, se não vier aí, em qualquer
     # campo do pedido com o valor exato do nosso código (o nome do campo na resposta não estava na seção 7)
     peds = [p for p in lista if str(p.get("idreferencia") or "") == ref] or [p for p in lista if any(str(v) == ref for v in p.values())
-            or any(isinstance(i, dict) and any(str(v) == ref for v in i.values()) for i in (p.get("itens") or []))]
+            or any(any(str(v) == ref for v in i.values()) for i in _dicts(p.get("itens")))]
     if not peds:
         # sem dado de pessoa no log: só o formato da resposta (tipo, quantos pedidos e os nomes dos campos do primeiro)
         forma = "%s, %d pedidos, campos: %s" % (type(j).__name__, len(lista), ",".join(sorted(lista[0].keys()))[:300] if lista else "-")
-        if lista and isinstance(lista[0].get("itens"), list) and lista[0]["itens"] and isinstance(lista[0]["itens"][0], dict):
-            forma += "; campos do item: " + ",".join(sorted(lista[0]["itens"][0].keys()))[:300]
+        if isinstance(j, dict):
+            forma += "; chaves do result: " + ",".join("%s=%s" % (k[:30], type(v).__name__) for k, v in list(j.items())[:12])[:300]
+        it0 = _dicts(lista[0].get("itens")) if lista else []
+        if it0:
+            forma += "; campos do item: " + ",".join(sorted(it0[0].keys()))[:300]
         print("GetCart %s: sem pedido com a referência (%s)" % (ref, forma))
         return "pendente", {"bruto": ("sem pedido (%d na resposta)" % len(lista))[:60]}
     for p in peds:
-        itens = [i for i in (p.get("itens") or []) if isinstance(i, dict)]
-        pags = [_st(x) for x in (p.get("pag") or []) if isinstance(x, dict)]
+        itens = _dicts(p.get("itens"))
+        pags = [_st(x) for x in _dicts(p.get("pag"))]
         if itens and "PA" in pags and all(_st(i) == "PA" for i in itens):
             valor = round(sum(float(i.get("valor") or 0) for i in itens), 2)
             return "pago", {"idpedido": p.get("localizador") or p.get("idmovimentacao"), "valor": valor, "meio": None,
                             "bruto": "PA %d itens" % len(itens)}
-    todos = [_st(i) for p in peds for i in (p.get("itens") or []) if isinstance(i, dict)]
+    todos = [_st(i) for p in peds for i in _dicts(p.get("itens"))]
     bruto = ",".join(sorted(set(todos)))[:60] or "sem itens"
     if todos and all(t in ST_FIM for t in todos):
         return "cancelado", {"idpedido": peds[0].get("localizador") or peds[0].get("idmovimentacao"), "bruto": bruto}

@@ -264,6 +264,13 @@ ok(m_ == "POST" and u_ == "https://maracanatouradmin.eleventickets.com/api/Super
 ok(st_ == "pago" and d_["valor"] == 145.0 and d_["idpedido"] == "LOC1", "GetCart: pagamento PA e itens PA = pago, valor somado: %r" % ((st_, d_),))
 ok(gc({"id": None, "error": None, "result": [{"idreferencia": "ON-ABC", "pag": [{"status": "PA"}], "itens": [it_("PA")]}]})[0] == "pago", "GetCart: aceita a resposta dentro de result")
 ok(gc([])[0] == "pendente", "GetCart: [] = cliente ainda não fechou: pendente")
+# 24/11 (log real): o result veio como objeto, não lista
+P_ = {"idmovimentacao": "9", "idreferencia": "ON-ABC", "localizador": "LOC2", "pag": [{"status": "PA"}], "itens": [it_("PA", 35.0)]}
+ok(gc({"id": None, "error": None, "result": P_}) == ("pago", gc([P_])[1]) and gc({"result": P_})[1]["idpedido"] == "LOC2", "GetCart: result com um pedido sozinho (objeto)")
+ok(gc({"result": {"9": P_}})[0] == "pago", "GetCart: result com pedidos por id")
+ok(gc({"result": {"total": 1, "status": True, "pedidos": [P_]}})[0] == "pago", "GetCart: result com a lista dentro de uma chave")
+ok(gc({"result": dict(P_, pag={"status": "PA"}, itens={"a": it_("PA", 35.0)})})[0] == "pago", "GetCart: pag e itens como objeto")
+ok(gc({"result": {}})[0] == "pendente" and gc({"result": dict(P_, idreferencia="OUTRO", localizador="X")})[0] == "pendente", "GetCart: objeto vazio ou de outra referência não libera")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "RE"}], "itens": [it_("RE")]}])[0] == "pendente", "GetCart: reservado = pendente")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "PA"}], "itens": [it_("PA"), it_("CA")]}])[0] == "pendente", "GetCart: item cancelado no meio não libera")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "CA"}], "itens": [it_("CA"), it_("EX")]}])[0] == "cancelado", "GetCart: todos CA/EX = cancelado")
