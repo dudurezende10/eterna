@@ -302,5 +302,10 @@ prontas da AWS, começando só contando.
 - 17/11: no ar. Firewall `eterna-galeria` (us-east-1, contando), CloudFront `https://dxsulr2e9z91t.cloudfront.net`, API com `OrigemSha256` e `ExigirBorda=0`. App (idiomas-base, producao e main, que publica o eterna.photo), `galeria-ligar.sh` e `instalar.sh` apontam para o CloudFront; o servidor do estádio já publica por ele.
 - Falta: depois de uns dias olhando as métricas, o passo 5 (regras bloqueando e `ExigirBorda=1`). Passo a passo e custo: `servidor/galeria-nuvem/README.md`, seção "Firewall (WAF)".
 
+## 9e. Compra online: nuvem com a consulta do pagamento (24/11)
+- 24/11: `eterna-galeria` atualizada pelo Ronaldo no CloudShell a partir de `idiomas-base` (inclui o GetCart de `96f9cf7`), com a compra ainda desligada (`CompraOnline=0`).
+- Para ligar: chave da Imply em `/eterna/imply-chave` (SSM, SecureString) e deploy com `CompraOnline=1 ImplyChaveParametro=/eterna/imply-chave`; desligar é o mesmo deploy com `CompraOnline=0`. Antes, os produtos da venda online no Catálogo têm de estar marcados como online e com o `idproduto` da Imply.
+- Falta: compra de teste real (paga e cancelada na Imply) para fechar.
+
 ## 10. Antes da produção
 As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.
