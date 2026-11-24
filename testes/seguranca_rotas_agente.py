@@ -116,6 +116,20 @@ try:
             ok(st in (403, 404) if tipo == "teste" else st == 403, "POST sem X-Eterna %s: %s" % (rota, st))
 
     # 3. casos fixos
+    # 24/11: zerar a fase de teste. Só o Admin do cadastro, pela sessão, fora do "ver como"; o POST só com confirma == "ZERAR".
+    # Neste teste (sem systemd nem modo de teste) o POST certo dá 409 sem_supervisor: nada é gravado
+    sup = S.cookie_sessao(m, "sup-zerar", {"configuracao": {"r": True, "u": True}})
+    vc = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("sup-zerar", por="admin-rotas"))
+    st, j, hs = pede("GET", "/zerar/previa", cookie=adm)
+    ok(st == 200 and j.get("ok") and "sem_supervisor" in j.get("bloqueios", []) and hs.get("cache-control") == "no-store"
+       and set(j.get("vai") or {}) >= {"fotos", "sessoes", "vendas", "galerias", "rostos"}, "zerar: prévia do Admin: %s %s" % (st, j))
+    ok(pede("GET", "/zerar/previa", cookie=sup)[1].get("error") == "so_admin" and pede("GET", "/zerar/previa", cookie=vc)[1].get("error") == "so_admin",
+       "zerar: prévia só do Admin (não Admin com configuracao.u e ver como)")
+    ok(pede("POST", "/zerar/fase-teste", {"confirma": "ZERAR"}, cookie=sup)[1].get("error") == "so_admin"
+       and pede("POST", "/zerar/fase-teste", {"confirma": "ZERAR"}, cookie=vc)[1].get("erro") == "so_ver", "zerar: POST de não Admin e ver como")
+    st, j, _ = pede("POST", "/zerar/fase-teste", {"confirma": "ZERAR"}, cookie=adm)
+    ok(st in (400, 409, 429) and not os.path.exists(m.ZERAR_PEDIDO), "zerar: POST sem supervisor não grava pedido: %s %s" % (st, j))
+    ok(pede("GET", "/status")[1].get("zerada", "x") is None, "zerar: /status mínimo traz zerada (null)")
     st, j, _ = pede("GET", "/postos/eu")
     ok(st == 401 and j.get("erro") == "sem_posto", "/postos/eu sem posto: %s %s" % (st, j))
     # /file/ (original) e /sessoes: pessoa sem módulo de foto não lê
@@ -204,13 +218,13 @@ try:
     ok(j.get("recusados") == 1, "último acesso de outra pessoa: %s" % j)
     # /status: mínimo sem credencial; sem logins do FTP, pasta nem caminhos
     st, j, _ = pede("GET", "/status")
-    ok(st == 200 and set(j) == {"ok", "agent", "version", "boot"}, "/status anônimo: %s" % sorted(j))
+    ok(st == 200 and set(j) == {"ok", "agent", "version", "boot", "zerada"}, "/status anônimo (24/11: e a zerada): %s" % sorted(j))
     st, j, _ = pede("GET", "/status", cookie=posto)
     ok(st == 200 and "sessoes" in j and "inbox" not in j and "users" not in j.get("ftp", {}) and "impressora_locais" not in j, "/status do posto: %s" % sorted(j))
     st, j, _ = pede("GET", "/status", cookie=adm)
     ok(st == 200 and "inbox" not in j and "users" not in j.get("ftp", {}) and "impressora_locais" in j, "/status da equipe: %s" % sorted(j))
     st, j, _ = pede("GET", "/status", cookie=adm, extra={"Host": "evil.example:%d" % m.PORT})
-    ok(set(j) == {"ok", "agent", "version", "boot"}, "/status com Host de fora: mínimo")
+    ok(set(j) == {"ok", "agent", "version", "boot", "zerada"}, "/status com Host de fora: mínimo")
     st, j, _ = pede("GET", "/photoroom/status", cookie=posto)
     ok(st == 200 and set(j) == {"configured", "fundos_modo"}, "/photoroom/status do posto: %s" % j)
     # montagem feita no servidor (E1): as duas rotas são do Checkout (posto pareado ou módulo de venda), sem CORS aberto, e

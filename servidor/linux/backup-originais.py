@@ -31,6 +31,8 @@ def env():
 def arquivos():
     """(caminho, chave): originais das fotos por dia + vídeos e fotos das ativações (Drone, Chute a Gol, Snap Pop, 15/11)."""
     for dia in sorted(os.listdir(INBOX)):
+        if dia.startswith("."):            # 24/11: inbox/.arquivo (zeragem da fase de teste) não sobe nem conta como foto
+            continue
         pasta = os.path.join(INBOX, dia)
         if os.path.isdir(pasta):
             for nome in sorted(os.listdir(pasta)):

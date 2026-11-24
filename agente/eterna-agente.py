@@ -602,7 +602,8 @@ if os.path.exists(INDEX):
 
 
 def load_lib():
-    for root, _, files in os.walk(INBOX):
+    for root, dirs, files in os.walk(INBOX):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]   # 24/11: inbox/.arquivo (zeragem da fase de teste) não volta para a biblioteca
         for fn in files:
             if "_" in fn and fn.endswith(EXT):
                 pid = fn.split("_", 1)[0]
@@ -12737,6 +12738,703 @@ def backup_loop():
         backup_rodada(pc, ultimo, est)
 
 
+# ---------- Zerar a fase de teste (24/11, plano docs/planos/2026-11-24-zerar-fase-teste.md) ----------
+# O Admin aperta o botão em Sistema › Repositório (POST /zerar/fase-teste): o agente grava o pedido e sai; o systemd religa e, na
+# partida, ANTES de qualquer thread, filho ou HTTP (zerar_partida no __main__), o que o Eterna gerou no teste vai para uma pasta de
+# arquivo no próprio servidor (nada é apagado de vez; nada sai do servidor). Fica: Roverpix, bilheteria, Treino da IA, usuários,
+# configurações e o índice das fotos (index.json, D4). Mover é sempre os.rename no mesmo disco, só o conteúdo de cada pasta.
+# Uso único (zerada.json). Desfazer: python eterna-agente.py --desfazer-zeragem <id> [--sobrescrever], com o agente parado.
+ZERAR_PEDIDO = os.path.join(HOME, "ponto", "zerar-pedido.json")
+ZERAR_ANDA = os.path.join(HOME, "ponto", "zerar-andamento.json")
+ZERAR_FALHOU = os.path.join(HOME, "ponto", "zerar-falhou.json")
+ZERAR_EXPIRADO = os.path.join(HOME, "ponto", "zerar-expirado.json")
+ZERAR_FEITA = os.path.join(HOME, "ponto", "zerada.json")
+ARQUIVO_DIR = os.path.join(HOME, "arquivo")                              # NVMe: bancos, sessões, métricas, galerias, miniaturas, rostos
+ARQUIVO_MIDIA = os.path.join(os.path.realpath(INBOX), ".arquivo")        # HD das fotos: o ponto esconde a pasta de quem varre a inbox
+ZERAR_PEDIDO_MAX_S = 600                 # pedido mais velho que isto na partida não executa (vira zerar-expirado.json)
+ZERAR_TENTATIVAS = 3                     # parou no meio 3 vezes: zerar-falhou.json e o agente sobe normal
+ZERAR_PRAZO_DIAS = 30                    # D9 (Eduardo, 24/11): a pasta de arquivo fica 30 dias; a data vai no resumo e no console.
+                                         # Ninguém apaga sozinho: passado o prazo, o Ronaldo apaga as duas pastas à mão.
+# D1: as ativações (Drone, Chute a Gol, Snap Pop) geradas pelo Eterna vão para o arquivo. Se o Eduardo confirmar que as vendas do
+# tablet desde 13/11 foram reais, trocar para False: vendas do tablet, entregas, pulseiras, fotos e vídeos das ativações, as galerias
+# de vídeo (tipo "video") e as do Tour ligadas a elas (tour_token) ficam; os cartões entregues não mudam de lote.
+ZERAR_ATIVACOES = True
+if os.environ.get("ETERNA_MODO_TESTE") == "1" and os.environ.get("ETERNA_ZERAR_ATIVACOES") == "0":
+    ZERAR_ATIVACOES = False              # só nos testes
+BACKUP_ORIGINAIS_DB = os.path.join(HOME, "backup-originais.db")   # registro do servidor/linux/backup-originais.py (outro processo)
+ZERAR_LOTE = "fase-teste"                # D2: cartões entregues no teste, num lote cancelado (a Entrega recusa)
+_re_zerada = re.compile(r"^fase-teste-\d{8}-\d{4}(-\d+)?$")
+# o que se move (caminhos relativos à pasta Eterna). Pastas: só o conteúdo, nunca a pasta (inbox, recortes, montagens e ativ-* são
+# links para o HD; a pasta fica e o agente segue gravando nela). Nome que começa com ponto fica (.arquivo, .versao).
+ZERAR_NVME_PASTAS = ("thumbs", "galerias", "ponto/sessoes", "ponto/metricas", "ponto/visitas")
+ZERAR_NVME_ARQS = ("meta.json", "metricas.jsonl", "envio-dia.json", "leitor-dia.json", "rostos.db", "rostos.db-wal", "rostos.db-shm",
+                   "ponto/poses.db", "ponto/poses.db-wal", "ponto/poses.db-shm", "ponto/visitas-log.jsonl", "ponto/visitas-log.jsonl.1",
+                   "ponto/visitas-calibracao.jsonl", "ponto/visitas-calibracao.jsonl.1", "impressao/fila.json")
+ZERAR_BANCOS = ("VENDAS_DB", "OPERACAO_DB", "NUVEM_DB", "ESTADO_DB", "TREINO_DB", "CENA_DB", "BACKUP_ORIGINAIS_DB")   # copiados antes de mudar
+
+
+def zerar_midia_pastas():
+    return ("inbox", "recortes", "montagens") + (("ativ-videos", "ativ-clientes") if ZERAR_ATIVACOES else ())
+
+
+def _zh(rel):
+    return os.path.join(HOME, *rel.split("/"))
+
+
+def _zerar_ler(arq):
+    try:
+        with open(arq, encoding="utf8") as f:
+            j = json.load(f)
+        return j if isinstance(j, dict) else None
+    except Exception:
+        return None
+
+
+def _zerar_id_lido():
+    j = _zerar_ler(ZERAR_FEITA)
+    v = (j or {}).get("id")
+    return v if isinstance(v, str) and _re_zerada.match(v) else None
+
+
+ZERADA_ID = _zerar_id_lido()             # /status.zerada: o navegador limpa a cópia local quando muda
+
+
+class ZerarErro(Exception):
+    def __init__(self, codigo):
+        Exception.__init__(self, codigo)
+        self.codigo = codigo
+
+
+def _zerar_ls(d):
+    """Nomes do primeiro nível de d, sem os que começam com ponto ([] se a pasta não existe)."""
+    try:
+        return sorted(n for n in os.listdir(d) if not n.startswith("."))
+    except OSError:
+        return []
+
+
+def _zerar_n(path, sql, args=()):
+    """Uma contagem num banco aberto só para leitura (0 sem banco ou sem tabela)."""
+    if not os.path.exists(path):
+        return 0
+    for uri in (True, False):
+        try:
+            c = sqlite3.connect("file:%s?mode=ro" % quote(os.path.abspath(path)), uri=True, timeout=10) if uri else sqlite3.connect(path, timeout=10)
+            try:
+                r = c.execute(sql, args).fetchone()
+                return int(r[0] or 0) if r else 0
+            finally:
+                c.close()
+        except sqlite3.OperationalError as ex:
+            if "no such table" in str(ex):
+                return 0
+        except sqlite3.Error:
+            return 0
+    return 0
+
+
+def _zerar_gal_fica():
+    """Galerias que ficam: nenhuma com ZERAR_ATIVACOES; senão as de vídeo e as do Tour ligadas a uma venda do tablet."""
+    if ZERAR_ATIVACOES:
+        return set()
+    fica = set()
+    if os.path.exists(VENDAS_DB):
+        c = sqlite3.connect(VENDAS_DB, timeout=30)
+        try:
+            fica |= {r[0] for r in c.execute("select tour_token from ativ_venda where origem='eterna' and tour_token is not null")}
+        except sqlite3.Error:
+            pass
+        finally:
+            c.close()
+    for t in _zerar_ls(GALERIAS):
+        if token_ok(t) and os.path.isdir(os.path.join(GALERIAS, t)):
+            try:
+                if (REPO.ler_manifesto(t) or {}).get("tipo") == "video":
+                    fica.add(t)
+            except Exception:
+                pass
+    return fica
+
+
+def _zerar_ha_lote(c):
+    return bool(c.execute("select 1 from cartao_lote where id != ? limit 1", (ZERAR_LOTE,)).fetchone())
+
+
+def zerar_inventario():
+    """Prévia: só contagens do que vai para o arquivo e do que fica. Só leitura."""
+    vai, fica = {}, {}
+    fotos = dias = 0
+    for d in _zerar_ls(INBOX):
+        p = os.path.join(INBOX, d)
+        if os.path.isdir(p):
+            k = sum(1 for n in _zerar_ls(p) if "_" in n and n.endswith(EXT))
+            fotos += k
+            dias += 1 if k else 0
+    vai["fotos"], vai["dias_fotos"] = fotos, dias
+    vai["miniaturas"] = len(_zerar_ls(THUMBS))
+    ns = nd = 0
+    for n in _zerar_ls(SESS_DIR):
+        if n.endswith(".json"):
+            nd += 1
+            j = _zerar_ler(os.path.join(SESS_DIR, n)) or {}
+            ns += len(j.get("sessoes") or []) if isinstance(j.get("sessoes"), list) else 0
+    vai["sessoes"], vai["dias_sessoes"] = ns, nd
+    vai["vendas"] = _zerar_n(VENDAS_DB, "select count(distinct venda) from evento")
+    vai["eventos"] = _zerar_n(VENDAS_DB, "select count(*) from evento")
+    vai["pedidos"] = _zerar_n(ESTADO_DB, "select count(*) from pedido")
+    gf = _zerar_gal_fica()
+    vai["galerias"] = sum(1 for t in _zerar_ls(GALERIAS) if token_ok(t) and t not in gf and os.path.isdir(os.path.join(GALERIAS, t)))
+    vai["rostos_fotos"] = _zerar_n(ROSTOS_DB, "select count(*) from foto")
+    vai["rostos"] = _zerar_n(ROSTOS_DB, "select count(*) from rosto")
+    vai["poses"] = _zerar_n(POSES_DB, "select count(*) from pose")
+    vai["dias_metricas"] = sum(1 for n in _zerar_ls(MET_DIR) if n.endswith(".json"))
+    vai["visitas"] = sum(1 for n in _zerar_ls(VIS_DIR) if n.endswith(".json"))
+    vai["recortes"] = len(_zerar_ls(RECORTES))
+    vai["montagens"] = len(_zerar_ls(MONTAGENS))
+    vai["selfies"] = _zerar_n(VENDAS_DB, "select count(*) from selfie")
+    vai["fotografo_dias"] = _zerar_n(OPERACAO_DB, "select count(*) from fotografo_dia")
+    vai["fila_nuvem"] = _zerar_n(NUVEM_DB, "select count(*) from fila")
+    tablet = _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='eterna'")
+    entregas = _zerar_n(VENDAS_DB, "select count(*) from ativ_entrega")
+    videos = len(_zerar_ls(ATIV_VIDEOS_DIR))
+    bloq = 0
+    if ZERAR_ATIVACOES and os.path.exists(VENDAS_DB):
+        bloq = _zerar_n(VENDAS_DB, "select count(distinct e.qr) from ativ_entrega e left join cartao k on k.token = e.qr"
+                                   " where (k.token is not null and k.lote != ?) or (k.token is null and exists"
+                                   " (select 1 from cartao_lote where id != ?))", (ZERAR_LOTE, ZERAR_LOTE))
+    vai["ativ_vendas"], vai["ativ_entregas"], vai["ativ_videos"] = (tablet, entregas, videos) if ZERAR_ATIVACOES else (0, 0, 0)
+    vai["cartoes_bloqueados"] = bloq
+    fica["usuarios"] = _zerar_n(ESTADO_DB, "select count(*) from doc where col='usuarios' and valor is not null")
+    fica["postos"] = _zerar_n(ESTADO_DB, "select count(*) from posto where revogado_em is null")
+    fica["leitores"] = _zerar_n(ESTADO_DB, "select count(*) from leitor where revogado_em is null")
+    fica["treino_marcacoes"] = _zerar_n(TREINO_DB, "select count(*) from rotulo")
+    fica["dias_roverpix"] = sum(1 for n in _zerar_ls(os.path.join(ROVER_DIR, "agg")) if n.endswith(".json"))
+    fica["dias_entradas"] = _zerar_n(OPERACAO_DB, "select count(*) from (select dia from entrada union select dia from entrada_total)")
+    fica["cartoes"] = max(0, _zerar_n(VENDAS_DB, "select count(*) from cartao") - bloq)
+    fica["ativ_vendas_antigas"] = _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='antigo'")
+    if not ZERAR_ATIVACOES:
+        fica["ativ_vendas_tablet"], fica["ativ_entregas"], fica["ativ_videos"] = tablet, entregas, videos
+    return {"vai": vai, "fica": fica}
+
+
+def zerar_bloqueios():
+    """Códigos que impedem a zeragem agora (lista vazia = pode)."""
+    b = []
+    if os.path.exists(ZERAR_FEITA):
+        b.append("ja_zerado")
+    if os.path.exists(ZERAR_PEDIDO) or os.path.exists(ZERAR_ANDA):
+        b.append("em_andamento")
+    teste = os.environ.get("ETERNA_MODO_TESTE") == "1"
+    if not os.environ.get("INVOCATION_ID") and not teste:
+        b.append("sem_supervisor")                       # sem o systemd, ninguém religa o agente depois do pedido
+    if os.name != "posix":
+        b.append("sistema")
+    rin = os.path.realpath(INBOX)
+    if not os.path.isdir(rin) or not os.access(rin, os.W_OK):
+        b.append("pasta_midia")
+    link = outro = False
+    for rel in ZERAR_NVME_PASTAS + ("ponto", "impressao", "arquivo"):
+        if os.path.islink(_zh(rel)):
+            link = True
+    for rel in ZERAR_NVME_ARQS:
+        if os.path.islink(_zh(rel)):
+            link = True
+    try:
+        dev_nvme = os.stat(HOME).st_dev
+        dev_hd = os.stat(rin).st_dev
+        for rel in ZERAR_NVME_PASTAS + ZERAR_NVME_ARQS:
+            p = _zh(rel)
+            if os.path.exists(p) and not os.path.islink(p) and os.stat(p).st_dev != dev_nvme:
+                outro = True
+        for rel in zerar_midia_pastas():
+            p = _zh(rel)
+            if os.path.exists(p) and os.stat(p).st_dev != dev_hd:
+                outro = True
+        for p, dv in ((ARQUIVO_DIR, dev_nvme), (ARQUIVO_MIDIA, dev_hd)):
+            if os.path.exists(p) and os.stat(p).st_dev != dv:
+                outro = True
+    except OSError:
+        outro = True
+    if link:
+        b.append("link_inesperado")
+    if outro:
+        b.append("outro_disco")
+    soma = 0
+    for n in ZERAR_BANCOS:
+        for x in (globals()[n], globals()[n] + "-wal"):
+            try:
+                soma += os.path.getsize(x)
+            except OSError:
+                pass
+    folga = 1024 ** 3
+    if teste and os.environ.get("ETERNA_ZERAR_FOLGA_GB"):
+        try:
+            folga = float(os.environ["ETERNA_ZERAR_FOLGA_GB"]) * 1024 ** 3
+        except ValueError:
+            pass
+    try:
+        if shutil.disk_usage(HOME).free < 2 * soma + folga:
+            b.append("espaco")
+    except OSError:
+        b.append("espaco")
+    return b
+
+
+def zerar_id(agora=None):
+    """fase-teste-AAAAMMDD-HHMM no fuso do venue; -2, -3 se a pasta já existir."""
+    base = time.strftime("fase-teste-%Y%m%d-%H%M", time.localtime(agora or time.time()))
+    zid, i = base, 1
+    while os.path.lexists(os.path.join(ARQUIVO_DIR, zid)) or os.path.lexists(os.path.join(ARQUIVO_MIDIA, zid)):
+        i += 1
+        zid = "%s-%d" % (base, i)
+    return zid
+
+
+def _zerar_dir(p):
+    os.makedirs(p, mode=0o700, exist_ok=True)
+    os.chmod(p, 0o700)                    # o umask pode ter tirado bits; a pasta é só do usuário do agente
+
+
+def _zerar_mover(src_dir, dst_dir, fica=None):
+    """Move cada entrada do primeiro nível de src_dir (menos nomes com ponto e as de fica) para dst_dir. Idempotente: o que já
+    foi não está mais em src_dir. Destino que já existe = erro (nunca sobrescreve)."""
+    nomes = [n for n in _zerar_ls(src_dir) if not (fica and n in fica)]
+    if not nomes:
+        return 0
+    os.makedirs(dst_dir, mode=0o700, exist_ok=True)
+    for n in nomes:
+        dst = os.path.join(dst_dir, n)
+        if os.path.lexists(dst):
+            raise ZerarErro("destino_existe")
+        os.rename(os.path.join(src_dir, n), dst)
+    return len(nomes)
+
+
+def _zerar_mover_arq(src, dst):
+    """Um arquivo solto. Origem sumiu = já feito (ou não havia)."""
+    if not os.path.lexists(src):
+        return 0
+    if os.path.lexists(dst):
+        raise ZerarErro("destino_existe")
+    os.makedirs(os.path.dirname(dst), mode=0o700, exist_ok=True)
+    os.rename(src, dst)
+    return 1
+
+
+def _zerar_imp_arqs():
+    """Fila de impressão solta (as fotos e as listas); os scripts .ps1 ficam."""
+    out = []
+    for n in _zerar_ls(IMP_DIR):
+        if n.lower().endswith(".jpg") or (n.startswith("lista_") and n.endswith(".txt")):
+            out.append("impressao/" + n)
+    return out
+
+
+def _zp_preparo(ctx):
+    bq = [x for x in zerar_bloqueios() if x not in ("ja_zerado", "em_andamento")]
+    if bq:
+        raise ZerarErro(",".join(bq))
+    for p in (ARQUIVO_DIR, ARQUIVO_MIDIA, ctx["arq"], ctx["midia"]):
+        _zerar_dir(p)
+    _grava_privado(os.path.join(ctx["arq"], "antes.json"), json.dumps(zerar_inventario()))
+    return 0
+
+
+def _zp_copias(ctx):
+    pasta = os.path.join(ctx["arq"], "bancos")
+    _zerar_dir(pasta)
+    n = 0
+    for nome in ZERAR_BANCOS:
+        src = globals()[nome]
+        dst = os.path.join(pasta, os.path.basename(src))
+        if not os.path.exists(src) or os.path.exists(dst):     # cópia feita numa tentativa anterior fica (o banco já pode ter mudado)
+            continue
+        a, b = sqlite3.connect(src, timeout=30), sqlite3.connect(dst + ".tmp")
+        try:
+            a.backup(b)
+        finally:
+            b.close()
+            a.close()
+        os.chmod(dst + ".tmp", 0o600)
+        os.replace(dst + ".tmp", dst)
+        n += 1
+    return n
+
+
+def _zp_vendas(ctx):
+    c = vendas_db()
+    try:
+        with c:
+            n = 0
+            if ZERAR_ATIVACOES:
+                qrs = [r[0] for r in c.execute("select distinct qr from ativ_entrega where qr is not null")]
+                if qrs and _zerar_ha_lote(c):
+                    c.execute("insert or ignore into cartao_lote (id, n, em, por, situacao, baixado_n) values (?, 0, ?, 'Eterna', 'cancelado', 0)",
+                              (ZERAR_LOTE, time.strftime("%Y-%m-%dT%H:%M:%S")))
+                    for q in qrs:            # cartão entregue que não estava em lote nenhum também fica preso (o QR já está na nuvem)
+                        c.execute("insert or ignore into cartao (token, codigo, lote) values (?, ?, ?)", (q, cartao_codigo(q), ZERAR_LOTE))
+                    c.execute("update cartao set lote = ? where token in (select qr from ativ_entrega)", (ZERAR_LOTE,))
+                    c.execute("update cartao_lote set n = (select count(*) from cartao where lote = ?) where id = ?", (ZERAR_LOTE, ZERAR_LOTE))
+                n += c.execute("delete from ativ_venda where origem = 'eterna'").rowcount
+                for t in ("ativ_entrega", "ativ_pulseira", "ativ_pulseira_log", "ativ_foto"):
+                    n += c.execute("delete from %s" % t).rowcount
+            n += c.execute("delete from evento").rowcount
+            n += c.execute("delete from selfie").rowcount
+        return n
+    finally:
+        c.close()
+
+
+def _zp_operacao(ctx):
+    c = operacao_db()
+    try:
+        with c:
+            n = 0
+            for t in ("fotografo_dia", "fotografo_mes", "fotografo_dia_calc", "montagem_vista"):
+                n += c.execute("delete from %s" % t).rowcount
+            # dia_consolidar nunca zera uma fonte que sumiu; com null, o dia_completo da partida refaz pela Roverpix (ou deixa vazio)
+            n += c.execute("update dia set fonte_vendas = null, vendas = null, receita = null, fotos = null, sessoes = null,"
+                           " sessoes_com_venda = null where fonte_vendas = 'eterna'").rowcount
+        return n
+    finally:
+        c.close()
+
+
+def _zp_nuvem(ctx):
+    fica = _zerar_gal_fica()
+    c = nuvem_db()
+    try:
+        tem = {r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+        with c:
+            n = c.execute("delete from fila").rowcount
+            if "galerias" in tem:
+                if fica:
+                    n += c.execute("delete from galerias where token not in (%s)" % ",".join("?" * len(fica)), tuple(fica)).rowcount
+                else:
+                    n += c.execute("delete from galerias").rowcount
+            if "videos" in tem and ZERAR_ATIVACOES:
+                n += c.execute("delete from videos").rowcount
+        return n
+    finally:
+        c.close()
+
+
+def _zp_estado(ctx):
+    c = pedidos_db()
+    try:
+        with c:
+            return c.execute("delete from pedido").rowcount
+    finally:
+        c.close()
+
+
+def _zp_originais(ctx):
+    """O registro do backup-originais.py: as linhas das fotos que foram para o arquivo saem de "feito" (senão o script acha que
+    faltam fotos para sempre e trava toda exclusão LGPD na nuvem) e ficam na tabela "arquivado", com o id da zeragem."""
+    if not os.path.exists(BACKUP_ORIGINAIS_DB):
+        return 0
+    c = sqlite3.connect(BACKUP_ORIGINAIS_DB, timeout=30)
+    try:
+        c.execute("create table if not exists feito (chave text primary key, tam integer, mtime real, md5 text, em real)")
+        c.execute("create table if not exists arquivado (chave text, tam integer, mtime real, md5 text, em real, arquivo text,"
+                  " primary key (arquivo, chave))")
+        cond = "chave like 'originais/%'" + ("" if ZERAR_ATIVACOES else " and chave not like 'originais/ativ-videos/%' and chave not like 'originais/ativ-clientes/%'")
+        with c:
+            c.execute("insert or ignore into arquivado select chave, tam, mtime, md5, em, ? from feito where " + cond, (ctx["id"],))
+            return c.execute("delete from feito where " + cond).rowcount
+    finally:
+        c.close()
+
+
+def _zp_mover_nvme(ctx):
+    base = os.path.join(ctx["arq"], "home")
+    n = 0
+    gf = _zerar_gal_fica()
+    for rel in ZERAR_NVME_PASTAS:
+        n += _zerar_mover(_zh(rel), os.path.join(base, *rel.split("/")), gf if rel == "galerias" else None)
+        os.makedirs(_zh(rel), exist_ok=True)         # a pasta fica (vazia) para o agente
+    for rel in ZERAR_NVME_ARQS + tuple(_zerar_imp_arqs()):
+        n += _zerar_mover_arq(_zh(rel), os.path.join(base, *rel.split("/")))
+    return n
+
+
+def _zp_mover_midia(ctx):
+    n = 0
+    for rel in zerar_midia_pastas():
+        n += _zerar_mover(_zh(rel), os.path.join(ctx["midia"], rel))
+        os.makedirs(_zh(rel), exist_ok=True)
+    return n
+
+
+def _zerar_prazo(em_t):
+    return time.strftime("%Y-%m-%d", time.localtime(em_t + ZERAR_PRAZO_DIAS * 86400))
+
+
+def _zp_fim(ctx):
+    agora = time.time()
+    antes = _zerar_ler(os.path.join(ctx["arq"], "antes.json")) or {}
+    try:
+        with open(__file__, "rb") as f:
+            versao = hashlib.sha256(f.read()).hexdigest()[:12]
+    except OSError:
+        versao = None
+    prazo = _zerar_prazo(agora)
+    resumo = {"id": ctx["id"], "por": ctx["por"], "em": _iso(agora), "agente": versao, "ativacoes": ZERAR_ATIVACOES,
+              "antes": antes, "depois": zerar_inventario(), "prazo_dias": ZERAR_PRAZO_DIAS, "apagar_a_partir_de": prazo,
+              "prazo_nota": "a pasta guarda fotos e rostos de visitantes: apagar as duas pastas de arquivo a partir desta data"}
+    _grava_privado(os.path.join(ctx["arq"], "resumo.json"), json.dumps(resumo, ensure_ascii=False, indent=1))
+    _grava_privado(ZERAR_FEITA, json.dumps({"id": ctx["id"], "em": _iso(agora), "por": ctx["por"], "por_nome": ctx["por_nome"],
+                                            "pasta": "arquivo/" + ctx["id"], "apagar_a_partir_de": prazo}))
+    _zerar_log("zerar_feito", ctx["por"])
+    try:
+        os.remove(ZERAR_ANDA)
+    except OSError:
+        pass
+    v = antes.get("vai") or {}
+    print("  zerar: %s feito (%d fotos, %d sessões, %d vendas, %d galerias, %d rostos); arquivo até %s (%d dias)"
+          % (ctx["id"], v.get("fotos", 0), v.get("sessoes", 0), v.get("vendas", 0), v.get("galerias", 0), v.get("rostos", 0), prazo, ZERAR_PRAZO_DIAS))
+    return 0
+
+
+def zerar_passos():
+    """Ordem da execução (a mesma lista guia o desfazer, ao contrário)."""
+    return [("preparo", _zp_preparo), ("copias", _zp_copias), ("vendas", _zp_vendas), ("operacao", _zp_operacao), ("nuvem", _zp_nuvem),
+            ("estado", _zp_estado), ("originais", _zp_originais), ("mover_nvme", _zp_mover_nvme), ("mover_midia", _zp_mover_midia),
+            ("fim", _zp_fim)]
+
+
+def _zerar_log(acao, por, ip=""):
+    try:
+        with estado_lock:
+            db = auth_db()
+            try:
+                auth_log(db, por or "", acao, por or "", ip)
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  zerar: login_log não gravado (%s)" % type(ex).__name__)
+
+
+def _zerar_passo_log(ctx, passo, ok_, n=0, erro=None):
+    if not os.path.isdir(ctx["arq"]):
+        return
+    linha = json.dumps({"passo": passo, "ok": ok_, "n": n, "erro": erro, "em": _iso()})
+    fd = os.open(os.path.join(ctx["arq"], "passos.jsonl"), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a") as f:
+        f.write(linha + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def _zerar_feitos(arq):
+    feitos = set()
+    try:
+        with open(os.path.join(arq, "passos.jsonl"), encoding="utf8") as f:
+            for ln in f:
+                try:
+                    j = json.loads(ln)
+                except ValueError:
+                    continue
+                if j.get("ok"):
+                    feitos.add(j.get("passo"))
+    except OSError:
+        pass
+    return feitos
+
+
+def _zerar_falhou(zid, passo, motivo, por):
+    _grava_privado(ZERAR_FALHOU, json.dumps({"id": zid, "em": _iso(), "passo": passo, "motivo": motivo}))
+    try:
+        os.remove(ZERAR_ANDA)
+    except OSError:
+        pass
+    _zerar_log("zerar_falhou", por)
+    print("  zerar: não feito, parou em %s (%s); o agente sobe normal" % (passo, motivo))
+
+
+def zerar_partida():
+    """No __main__, antes do main(): sem thread, filho nem HTTP. -> None (nada a fazer ou recusado: segue o main), "execv" (feito:
+    reabrir o agente do zero, sem cache velho em memória) ou "sair" (parou no meio: o systemd religa e retoma)."""
+    if not (os.path.exists(ZERAR_PEDIDO) or os.path.exists(ZERAR_ANDA)):
+        return None
+    fuso_ajusta()
+    agora = time.time()
+    if os.path.exists(ZERAR_ANDA):
+        j = _zerar_ler(ZERAR_ANDA) or {}
+    else:
+        j = _zerar_ler(ZERAR_PEDIDO) or {}
+        try:
+            t = float(j.get("t"))
+        except (TypeError, ValueError):
+            t = 0.0
+        if not (0 <= agora - t <= ZERAR_PEDIDO_MAX_S):
+            os.replace(ZERAR_PEDIDO, ZERAR_EXPIRADO)
+            _zerar_log("zerar_expirado", j.get("por"))
+            print("  zerar: pedido vencido (mais de %d min), nada feito" % (ZERAR_PEDIDO_MAX_S // 60))
+            return None
+        os.replace(ZERAR_PEDIDO, ZERAR_ANDA)
+    zid = j.get("id")
+    por = j.get("por") if isinstance(j.get("por"), str) else ""
+    if not isinstance(zid, str) or not _re_zerada.match(zid):
+        _zerar_falhou(None, "preparo", "pedido", por)
+        return None
+    j["tentativas"] = int(j.get("tentativas") or 0) + 1
+    _grava_privado(ZERAR_ANDA, json.dumps(j))
+    ctx = {"id": zid, "arq": os.path.join(ARQUIVO_DIR, zid), "midia": os.path.join(ARQUIVO_MIDIA, zid), "por": por,
+           "por_nome": j.get("por_nome") if isinstance(j.get("por_nome"), str) else por}
+    feitos = _zerar_feitos(ctx["arq"])
+    print("  zerar: %s, tentativa %d de %d" % (zid, j["tentativas"], ZERAR_TENTATIVAS))
+    falha_teste = os.environ.get("ETERNA_ZERAR_FALHA_PASSO") if os.environ.get("ETERNA_MODO_TESTE") == "1" else None
+    for nome, fn in zerar_passos():
+        if nome in feitos:
+            continue
+        try:
+            if falha_teste == nome:
+                raise ZerarErro("falha_teste")
+            n = fn(ctx)
+        except Exception as ex:
+            codigo = ex.codigo if isinstance(ex, ZerarErro) else type(ex).__name__
+            if nome == "preparo":                     # nada foi tocado: recusa e o agente sobe normal
+                _zerar_falhou(zid, nome, codigo, por)
+                return None
+            _zerar_passo_log(ctx, nome, False, 0, codigo)
+            if j["tentativas"] >= ZERAR_TENTATIVAS:
+                _zerar_falhou(zid, nome, codigo, por)
+                return None
+            print("  zerar: parou em %s (%s); o agente sai e o systemd religa para continuar" % (nome, codigo))
+            return "sair"
+        _zerar_passo_log(ctx, nome, True, n)
+    return "execv"
+
+
+def _zerar_volta(src_dir, dst_dir, pos):
+    """Desfazer: devolve cada entrada de src_dir (arquivo) a dst_dir; o que já existe no lugar vai antes para pos."""
+    n = 0
+    for nome in _zerar_ls(src_dir):
+        dst = os.path.join(dst_dir, nome)
+        os.makedirs(dst_dir, exist_ok=True)
+        if os.path.lexists(dst):
+            os.makedirs(pos, mode=0o700, exist_ok=True)
+            os.rename(dst, os.path.join(pos, nome))
+        os.rename(os.path.join(src_dir, nome), dst)
+        n += 1
+    return n
+
+
+def zerar_desfazer(zid, sobrescrever=False):
+    """--desfazer-zeragem <id> [--sobrescrever]: com o agente parado, devolve arquivos e bancos. -> código de saída."""
+    if not isinstance(zid, str) or not _re_zerada.match(zid):
+        print("id inválido (formato fase-teste-AAAAMMDD-HHMM)")
+        return 2
+    arq, midia = os.path.join(ARQUIVO_DIR, zid), os.path.join(ARQUIVO_MIDIA, zid)
+    if not os.path.isdir(arq):
+        print("pasta de arquivo não encontrada: arquivo/%s" % zid)
+        return 2
+    try:
+        s = socket.create_connection(("127.0.0.1", PORT), timeout=1)
+        s.close()
+        print("o agente está no ar (porta %d): pare o serviço antes (sudo systemctl stop eterna-vigia eterna)" % PORT)
+        return 3
+    except OSError:
+        pass
+    bancos = os.path.join(arq, "bancos")
+    if os.path.exists(VENDAS_DB) and (_zerar_n(VENDAS_DB, "select count(*) from evento")
+                                      or _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='eterna'")) and not sobrescrever:
+        print("há vendas feitas depois da zeragem: só com --sobrescrever (elas ficam guardadas em arquivo/%s/pos-zeragem/)" % zid)
+        return 4
+    pos = os.path.join(arq, "pos-zeragem")
+    voltou = {}
+    # arquivos: ao contrário da ordem da zeragem (HD, depois NVMe)
+    for rel in ("inbox", "recortes", "montagens", "ativ-videos", "ativ-clientes"):
+        voltou[rel] = _zerar_volta(os.path.join(midia, rel), _zh(rel), os.path.join(pos, *rel.split("/")))
+    base = os.path.join(arq, "home")
+    for rel in ZERAR_NVME_PASTAS:
+        voltou[rel] = _zerar_volta(os.path.join(base, *rel.split("/")), _zh(rel), os.path.join(pos, *rel.split("/")))
+    n = 0
+    for raiz, _d, nomes in os.walk(base):
+        for nome in nomes:
+            a = os.path.join(raiz, nome)
+            rel = os.path.relpath(a, base).replace(os.sep, "/")
+            if any(rel.startswith(p + "/") for p in ZERAR_NVME_PASTAS):
+                continue
+            dst = _zh(rel)
+            if os.path.lexists(dst):
+                os.makedirs(os.path.dirname(os.path.join(pos, *rel.split("/"))), mode=0o700, exist_ok=True)
+                os.rename(dst, os.path.join(pos, *rel.split("/")))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            os.rename(a, dst)
+            n += 1
+    voltou["arquivos_soltos"] = n
+    # bancos trocados pela cópia (o atual vai para pos-zeragem/bancos)
+    for nome in ("VENDAS_DB", "OPERACAO_DB", "NUVEM_DB"):
+        banco = globals()[nome]
+        copia = os.path.join(bancos, os.path.basename(banco))
+        if not os.path.exists(copia):
+            continue
+        pb = os.path.join(pos, "bancos")
+        os.makedirs(pb, mode=0o700, exist_ok=True)
+        for x in (banco, banco + "-wal", banco + "-shm"):
+            if os.path.lexists(x):
+                os.rename(x, os.path.join(pb, os.path.basename(x)))
+        shutil.copy2(copia, banco)
+        os.chmod(banco, 0o600)
+        voltou[os.path.basename(banco)] = "copia"
+    copia = os.path.join(bancos, os.path.basename(ESTADO_DB))
+    if os.path.exists(copia):
+        c = pedidos_db()
+        try:
+            c.execute("attach database ? as antes", (copia,))
+            with c:
+                voltou["pedidos"] = c.execute("insert or ignore into pedido select * from antes.pedido").rowcount
+            c.execute("detach database antes")
+        finally:
+            c.close()
+    if os.path.exists(BACKUP_ORIGINAIS_DB):
+        c = sqlite3.connect(BACKUP_ORIGINAIS_DB, timeout=30)
+        try:
+            tem = {r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+            if "arquivado" in tem:
+                with c:
+                    voltou["originais"] = c.execute("insert or ignore into feito select chave, tam, mtime, md5, em from arquivado where arquivo = ?",
+                                                    (zid,)).rowcount
+                    c.execute("delete from arquivado where arquivo = ?", (zid,))
+        finally:
+            c.close()
+    z = _zerar_ler(ZERAR_FEITA)
+    if z and z.get("id") == zid:
+        os.replace(ZERAR_FEITA, os.path.join(HOME, "ponto", "zerada-desfeita-%s.json" % zid))
+    _zerar_log("zerar_desfeito", "linha de comando")
+    print("zeragem %s desfeita: %s" % (zid, json.dumps(voltou)))
+    print("abra o agente de novo (sudo systemctl start eterna eterna-vigia) e feche e abra os postos e Checkouts")
+    return 0
+
+
+def _zerar_sair():
+    time.sleep(1.5)
+    os._exit(0)
+
+
+def zerar_previa():
+    """GET /zerar/previa: contagens, bloqueios, a última zeragem e a falha (só código, nunca caminho nem texto de exceção)."""
+    inv = zerar_inventario()
+    bq = zerar_bloqueios()
+    ultima = None
+    z = _zerar_ler(ZERAR_FEITA)
+    if z and isinstance(z.get("id"), str) and _re_zerada.match(z["id"]):
+        r = _zerar_ler(os.path.join(ARQUIVO_DIR, z["id"], "resumo.json")) or {}
+        ultima = {"id": z["id"], "em": z.get("em"), "por": z.get("por_nome") or z.get("por"), "pasta": "arquivo/" + z["id"],
+                  "apagar_a_partir_de": z.get("apagar_a_partir_de") or r.get("apagar_a_partir_de"), "resumo": {"vai": (r.get("antes") or {}).get("vai")}}
+    falha = None
+    f = _zerar_ler(ZERAR_FALHOU)
+    if f:
+        falha = {"id": f.get("id") if isinstance(f.get("id"), str) and _re_zerada.match(f.get("id")) else None, "em": f.get("em"),
+                 "passo": f.get("passo") if f.get("passo") in dict(zerar_passos()) else None,
+                 "motivo": ",".join(x for x in str(f.get("motivo") or "").split(",") if re.match(r"^[A-Za-z_]{1,40}$", x)) or None}
+    return {"ok": True, "pode": not bq, "bloqueios": bq, "vai": inv["vai"], "fica": inv["fica"], "ultima": ultima, "falha": falha,
+            "prazo_dias": ZERAR_PRAZO_DIAS, "ativacoes": ZERAR_ATIVACOES}
+
+
 def metricas_periodo(de, ate):
     out = []
     try:
@@ -16101,11 +16799,11 @@ def cena_limpa(agora=None):
                 vivas = {p for p, _, _ in rows if p in lib}
             n = 0
             for p, dia, tem in rows:
+                if p in guardar:                 # 24/11: antes de olhar a biblioteca (a foto rotulada pode ter ido para o arquivo)
+                    continue
                 if p not in vivas:
                     db.execute("delete from cena where pid = ?", (p,))
                     n += 1
-                elif p in guardar:
-                    continue
                 elif (dia or "") < lim_lin:
                     db.execute("delete from cena where pid = ?", (p,))
                     n += 1
@@ -17730,6 +18428,9 @@ ROTAS = (
     # é da Medição (qualidade.r); os limites, de configuracao.u E desempenho.r (o segundo conferido no fotografos_post)
     ("GET", "/fotografos/alertas", "sessao", ("desempenho.r",)), ("GET", "/fotografos/dias", "sessao", ("desempenho.r",)),
     ("GET", "/fotografos/luz/medida", "sessao", ("qualidade.r",)), ("POST", "/fotografos/config", "sessao", ("configuracao.u",)),
+    # 24/11: zerar a fase de teste (Sistema › Repositório). A rota confere também: Admin do cadastro pela sessão, sem "ver como",
+    # posto + origem local; o POST, X-Eterna, 2 por minuto, corpo até 1 KB e confirma == "ZERAR"
+    ("GET", "/zerar/previa", "sessao", ("configuracao.u",)), ("POST", "/zerar/fase-teste", "sessao", ("configuracao.u",)),
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -19410,6 +20111,71 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": False, "error": "erro no servidor"}, 500)
         return self.js(r, st, nostore=True)
 
+    def zerar_guarda(self):
+        """24/11: zerar a fase de teste. Só deste servidor (posto + origem local) e só o Admin do cadastro, pela sessão (nunca pelo
+        corpo), fora do "ver como". True = segue; False = a resposta já foi dada."""
+        if not self.posto() or not self.origem_local():
+            self.js({"error": "origem"}, 403, True)
+            return False
+        eu = self.sessao()
+        if not eu or eu.get("assumido_por") or (eu.get("cadastro") or {}).get("preset") != "admin":
+            self.js({"error": "so_admin"}, 403, True)
+            return False
+        return True
+
+    def zerar_get(self):
+        if not self.zerar_guarda():
+            return None
+        if not limite_ok(self.client_address[0], "zerar_previa", 6):
+            return self.js({"error": "limite"}, 429, True)
+        try:
+            return self.js(zerar_previa(), nostore=True)
+        except Exception as ex:
+            print("  zerar (prévia): %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500, True)
+
+    def zerar_post(self):
+        """POST /zerar/fase-teste {confirma: "ZERAR"}: grava o pedido, responde 202 e sai em 1,5 s; o systemd religa e a partida
+        (zerar_partida) faz a zeragem antes de abrir o HTTP."""
+        if self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem"}, 403, True)
+        if not self.zerar_guarda():
+            return None
+        ip = self.client_address[0]
+        if not limite_ok(ip, "zerar", 2):
+            return self.js({"error": "limite"}, 429, True)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"error": "corpo"}, err, True)
+        if body.get("confirma") != "ZERAR":
+            return self.js({"error": "confirma"}, 400, True)
+        try:
+            bq = zerar_bloqueios()
+            if bq:
+                return self.js({"error": "bloqueado", "bloqueios": bq}, 409, True)
+            eu = self.sessao()
+            falha = _zerar_ler(ZERAR_FALHOU)
+            # parou no meio numa vez anterior: o mesmo id, para retomar do passo em que parou (os bancos já foram copiados antes)
+            zid = falha["id"] if falha and falha.get("passo") != "preparo" and isinstance(falha.get("id"), str) and _re_zerada.match(falha["id"]) else zerar_id()
+            vai = zerar_inventario()["vai"]
+            _grava_privado(ZERAR_PEDIDO, json.dumps({"id": zid, "por": eu["usuario"], "por_nome": (eu.get("cadastro") or {}).get("name") or eu["usuario"],
+                                                     "em": _iso(), "t": time.time(), "ip": ip}))
+            if falha:
+                os.remove(ZERAR_FALHOU)
+            _zerar_log("zerar_pedido", eu["usuario"], ip)
+        except Exception as ex:
+            print("  zerar: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500, True)
+        print("  zerar: pedido recebido (%s); o agente reinicia em 1,5 s" % zid)
+        self.close_connection = True
+        self.js({"ok": True, "id": zid, "vai": vai, "reinicia": True}, 202, True)
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
+        threading.Thread(target=_zerar_sair, daemon=True).start()
+        return None
+
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
         Mesma guarda do /ponto/entradas (posto + origem + X-Eterna + 30 por minuto), corpo até 1 KB. O console nunca imprime o corpo."""
@@ -20587,8 +21353,10 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/leitores":
             return self.leitores_get()
+        if u.path == "/zerar/previa":
+            return self.zerar_get()
         if u.path == "/status":
-            minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT}
+            minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "zerada": ZERADA_ID}   # 24/11: id da zeragem (o navegador limpa a cópia local)
             o = (self.headers.get("Origin") or "").rstrip("/").lower()
             confiavel = host_ok((self.headers.get("Host") or "").lower()) and (not o or o in self.origens_aceitas())
             eu = self.sessao() if confiavel else None
@@ -20981,6 +21749,8 @@ class H(BaseHTTPRequestHandler):
             return self.poses_post()
         if u.path == "/fotografos/config":
             return self.fotografos_post()
+        if u.path == "/zerar/fase-teste":
+            return self.zerar_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
@@ -21260,4 +22030,13 @@ if __name__ == "__main__":
         sys.exit(auth_cli_excluir(sys.argv[2:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
         sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--desfazer-zeragem":
+        sys.exit(zerar_desfazer(sys.argv[2], "--sobrescrever" in sys.argv[3:]))
+    # 24/11: zeragem da fase de teste pedida pelo botão (zerar_partida): aqui, antes do main(), sem thread, filho nem HTTP
+    _zr = zerar_partida()
+    if _zr == "sair":
+        sys.exit(1)                                  # parou no meio: o systemd religa e a próxima partida continua de onde parou
+    if _zr == "execv":
+        sys.stdout.flush()
+        os.execv(sys.executable, sys.orig_argv)      # o módulo já tinha lido meta, biblioteca e índice da pasta antiga
     main()
