@@ -93,6 +93,90 @@ Cadastro da equipe por comando (`vendedores.sh`, senha digitada pelo Ronaldo, se
 - Galeria online (QR do recibo, selfie e vídeo do cartão fora do estádio): `galeria-ligar.sh` grava `ETERNA_GALERIA_API` no `nuvem.env`, confere se a nuvem reconhece o segredo do servidor (se não, mostra o SHA-256 para a stack `eterna-galeria`) e reinicia; as galerias que ficaram para trás sobem sozinhas. Sem ela o celular abre "Galeria não encontrada" (16/11: o servidor novo veio sem essa linha).
 - Escola pelo voucher: `escola-ligar.sh` pede o token do painel do Viva Parceiros (o mesmo valor de `PARCEIROS_PAINEL_TOKEN` do Render) sem mostrar, confere se o Viva Parceiros aceita, grava `ETERNA_PARCEIROS_TOKEN` no `nuvem.env` e reinicia o Eterna.
 
+## Zerar a fase de teste (24/11, para o Ronaldo)
+
+O Admin aperta **Zerar fase de teste** no fim de Sistema › Repositório. O servidor reinicia e leva vendas, sessões, fotos, rostos, galerias e números do teste para duas pastas de arquivo, no próprio servidor. Nada vai para a nuvem e nada é apagado de vez. Plano: `docs/planos/2026-11-24-zerar-fase-teste.md`. Detalhe técnico: `docs/DOCUMENTACAO-TECNICA.md`, seção v99.44.0, item 8.
+
+O nome da zeragem (`<id>`) tem o formato `fase-teste-AAAAMMDD-HHMM`. Ele aparece no cartão do Repositório e no `zerada.json`. As duas pastas:
+
+- `/srv/eterna/Eterna/arquivo/<id>/` (disco do sistema): `bancos/` (cópia dos bancos antes da zeragem), `home/` (miniaturas, galerias, sessões, métricas, `rostos.db`, `poses.db`), `passos.jsonl` e `resumo.json`.
+- `/srv/eterna-midia/inbox/.arquivo/<id>/` (HD das fotos): `inbox/<dia>/` (originais), `recortes/`, `montagens/`, `ativ-videos/` e `ativ-clientes/`.
+
+### (a) Zerar às 23h
+
+**Antes (até 22h55)**
+1. Conferir que o commit da v99.44.0 está no ar: `ssh srv-viva-maracana 'curl -s http://127.0.0.1:8797/'`.
+2. Em cada tablet das ativações (Venda e Entrega), abrir **Minhas vendas** e conferir que nenhuma venda está esperando para subir ao servidor. Só então fechar.
+3. Fechar todos os Postos de venda, Checkouts e tablets. Aberto, um aparelho com fila antiga pode mandar dados do teste antes de limpar a própria cópia.
+4. O Admin abre Repositório › **Ver o que vai ser guardado** e confere que não há bloqueio. Guardar um print das contagens.
+
+**Durante**
+1. Deixar o registro do agente aberto: `ssh -t srv-viva-maracana 'journalctl -u eterna -f -n 0 --no-pager'`.
+2. O Admin digita ZERAR e confirma. Linhas esperadas, só com números:
+   - `zerar: pedido recebido (<id>); o agente reinicia em 1,5 s`
+   - `zerar: <id>, tentativa 1 de 3`
+   - `zerar: <id> feito (N fotos, N sessões, N vendas, N galerias, N rostos); arquivo até <data> (30 dias)`
+3. `parou em <passo> (<motivo>)` quer dizer que o systemd religa e a zeragem continua de onde parou. Na 3ª vez aparece `não feito, parou em <passo>`, o agente sobe normal e o cartão mostra o motivo. Nesse caso, não apertar de novo: ver o motivo (disco cheio, permissão de pasta) e chamar o programador.
+
+**Depois**
+1. `ssh srv-viva-maracana 'sudo cat /srv/eterna/Eterna/ponto/zerada.json'`: tem `id`, `em`, `por`, `pasta` e `apagar_a_partir_de` (a data dos 30 dias).
+2. `ssh srv-viva-maracana 'curl -s http://127.0.0.1:8765/status'`: o campo `zerada` traz o mesmo `<id>`.
+3. `ssh srv-viva-maracana 'sudo cat /srv/eterna/Eterna/arquivo/<id>/passos.jsonl'`: todos os passos com `"ok": true`, até `fim`.
+4. Reabrir os Postos e Checkouts. Cada tela limpa a própria cópia e recarrega uma vez sozinha. Conferir Painel e Minhas fotos vazios, Estatísticas com Roverpix e bilheteria, Treino › Resultado com as marcações.
+
+### (b) Desfazer
+
+Só com o serviço parado. Se já houve venda depois da zeragem, o comando avisa e só segue com `--sobrescrever` (o que estava no lugar vai para `arquivo/<id>/pos-zeragem/`).
+
+```bash
+sudo systemctl stop eterna-vigia eterna
+sudo -u eterna env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/eterna-agente.py --desfazer-zeragem <id> [--sobrescrever]
+sudo systemctl start eterna eterna-vigia
+```
+
+Depois, fechar e abrir de novo os Postos e Checkouts. O desfazer funciona mesmo sem o `rostos.db` do arquivo.
+
+### (c) Exclusão LGPD de uma foto que ficou no arquivo
+
+Pedido de exclusão de um visitante cuja foto (`<pid>`) é da fase de teste: a tela não acha mais a foto, então a exclusão é à mão. Com `sudo`:
+
+1. **Listar o que tem o pid no HD** (original em `inbox/<dia>/<pid>_*`, recorte `recortes/<pid>.png` e `<pid>_*.png`, montagens em `montagens/<pid>/`):
+   `sudo find /srv/eterna-midia/inbox/.arquivo/<id> -name '<pid>*'`
+   Conferir a lista e apagar: `sudo find /srv/eterna-midia/inbox/.arquivo/<id> -name '<pid>*' -prune -exec rm -rf {} +`
+2. **Miniatura:** `sudo rm -f /srv/eterna/Eterna/arquivo/<id>/home/thumbs/<pid>.jpg`
+3. **Rostos** (se o `rostos.db` do arquivo ainda existir):
+   `sudo -u eterna /opt/eterna/venv/bin/python -I -c "import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);[c.execute('delete from '+t+' where pid=?',(sys.argv[2],)) for t in ('rosto','rosto_q')];c.commit();c.execute('vacuum')" /srv/eterna/Eterna/arquivo/<id>/home/rostos.db <pid>`
+4. **Original na nuvem:** a chave do arquivo fica na tabela `arquivado` de `/srv/eterna/Eterna/backup-originais.db` (`originais/<dia>/<pid>_...`). Apagar esse objeto no bucket com a mesma conta que o `backup-originais.py` usa (perfil e bucket do `nuvem.env`) e depois apagar a linha dele em `arquivado`.
+5. Registrar a exclusão como nas outras (data, quem pediu, pid), sem foto.
+
+Se a foto também tinha marcação no Treino da IA, as linhas dela continuam no `treino.db` e no `cena.db` do servidor e nas cópias em `arquivo/<id>/bancos/`. Pedir ao programador o comando para tirar.
+
+### (d) Em até 7 dias: apagar os rostos do arquivo
+
+Depois de conferir que a zeragem deu certo, apagar só o banco de rostos do arquivo. O desfazer continua funcionando sem ele.
+
+```bash
+sudo rm -f /srv/eterna/Eterna/arquivo/<id>/home/rostos.db /srv/eterna/Eterna/arquivo/<id>/home/rostos.db-wal /srv/eterna/Eterna/arquivo/<id>/home/rostos.db-shm
+```
+
+### (e) Em 30 dias: apagar as imagens do arquivo
+
+A data está em `apagar_a_partir_de` (`zerada.json` e `resumo.json`). A partir dela, apagar fotos, miniaturas, recortes, montagens e rostos:
+
+```bash
+sudo rm -rf /srv/eterna-midia/inbox/.arquivo/<id>
+sudo rm -rf /srv/eterna/Eterna/arquivo/<id>/home/thumbs
+sudo rm -f /srv/eterna/Eterna/arquivo/<id>/home/rostos.db /srv/eterna/Eterna/arquivo/<id>/home/rostos.db-wal /srv/eterna/Eterna/arquivo/<id>/home/rostos.db-shm
+```
+
+Escreva os caminhos inteiros, sem `*`: a pasta é do usuário `eterna` e o seu terminal não consegue expandir o `*` lá dentro.
+
+Ficam pelo prazo legal os bancos de venda (`arquivo/<id>/bancos/`) e os consentimentos (`arquivo/<id>/home/galerias/consentimentos.jsonl`). Depois deste passo, o desfazer não devolve mais as fotos.
+
+### (f) O botão só vale até 25/11
+
+Depois de 25/11 (data do servidor), a prévia e o botão mostram o bloqueio `prazo`. Para liberar de novo (outro venue, emergência), gravar `ETERNA_ZERAR_LIBERA=1` no `nuvem.env` e reiniciar o `eterna`. O botão também é de uso único: com uma zeragem feita, é preciso renomear o `ponto/zerada.json` antes. Tirar a linha do `nuvem.env` depois de usar.
+
 ## Recorte só na placa de vídeo (19/11, inegociável)
 
 Toda foto é recortada no servidor assim que chega, na placa NVIDIA, antes de o cliente chegar ao Checkout. O Checkout nunca prepara recorte na frente do cliente. Com `ETERNA_RECORTE_GPU=obrigatoria` no `nuvem.env` (o `instalar.sh` grava sozinho quando há placa NVIDIA), o modelo que abrir fora da placa (driver caído, CUDA faltando) é fechado na hora: `/status.recorte` fica com `ok: false` e o motivo "recorte fora da placa de vídeo", o Checkout não oferece fundo de IA e o agente tenta a placa de novo a cada minuto. Nunca cai no processador. Teste: `testes/recorte_placa_obrigatoria_agente.py`.
