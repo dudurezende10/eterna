@@ -10,7 +10,7 @@ const PX=Buffer.from('/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP////////////////////////
 const DIA='2026-11-15';const PIDS=Array.from({length:12},(_,i)=>(0xabc000000000+i+1).toString(16));
 const ITENS=PIDS.map((p,i)=>({pid:p,card:'LPTR'+String(Math.floor(i/6)).padStart(4,'0'),fotografo:i<6?'carlos':'yago',t:Date.parse(DIA+'T13:00:00Z')/1000+i*20,ordem:i%6+1,n_sessao:6,rostos:2,rotulo:null}));
 async function agente(ctx,R){
-  R.posts=[];R.thumbs=[];R.cfg=[];R.cols=new Set();R.amostra=[];R.rotuloStatus=200;R.analise={ponto:'desligada',exposicao:'desligada'};
+  R.posts=[];R.thumbs=[];R.cfg=[];R.cols=new Set();R.amostra=[];R.rotuloStatus=200;R.rot={};R.guarda=false;R.atraso=0;R.ordem=[];R.analise={ponto:'desligada',exposicao:'desligada'};
   const js=(r,b,st)=>r.fulfill({status:st||200,contentType:'application/json',body:J(b)});
   await ctx.route(ORIG+'/status',r=>js(r,{ok:true,agent:'eterna-agente',version:3,boot:'bT',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:true},sessoes:{v:2,pausa:60,rostos:true,rev:1,gen:'gT',hoje:0,abertas:0},
     treino:{v:1,rotulos:7,analise:R.analise,modelo_ponto:null,ajuste:null}}));
@@ -23,11 +23,14 @@ async function agente(ctx,R){
   await ctx.route(ORIG+'/ponto/docs',r=>{let n=0;try{n=(r.request().postDataJSON().docs||[]).length;}catch(e){}js(r,{ok:true,gravados:n,recusados:0});});
   await ctx.route(ORIG+'/thumb/**',r=>{R.thumbs.push(new URL(r.request().url()).pathname.split('/').pop());r.fulfill({status:200,contentType:'image/jpeg',body:PX});});
   await ctx.route(ORIG+'/treino/dias',r=>js(r,{v:1,dias:[{dia:DIA,fotos:12,sessoes:2,rotuladas:0},{dia:'2026-11-14',fotos:30,sessoes:5,rotuladas:3}]}));
-  await ctx.route(ORIG+'/treino/amostra?*',r=>{const q=new URL(r.request().url()).searchParams;R.amostra.push(Object.fromEntries(q));js(r,{v:1,dia:q.get('dia'),modo:q.get('modo'),semente:'abc',total_dia:12,itens:ITENS});});
-  await ctx.route(ORIG+'/treino/rotulo',r=>{const b=r.request().postDataJSON();const h=r.request().headers();R.posts.push({b,x:h['x-eterna']});
+  await ctx.route(ORIG+'/treino/amostra?*',r=>{const q=new URL(r.request().url()).searchParams;R.amostra.push(Object.fromEntries(q));js(r,{v:1,dia:q.get('dia'),modo:q.get('modo'),semente:'abc',total_dia:12,itens:ITENS.map(x=>R.rot[x.pid]?Object.assign({},x,{rotulo:R.rot[x.pid]}):x)});});
+  await ctx.route(ORIG+'/treino/rotulo',async r=>{const b=r.request().postDataJSON();const h=r.request().headers();R.posts.push({b,x:h['x-eterna']});
+    if(R.atraso)await new Promise(ok=>setTimeout(ok,R.atraso));R.ordem.push('rotulo');
     if(R.rotuloStatus===409)return js(r,{ok:false,error:'outro_marcou',doc:{v:1,pid:b.pid,ponto:'arquibancada',qual:{nivel:null,motivos:[],ajuste:[]},ia:{serve:null,motivos:[],frente:null},duvida:false,obs:'',por:'outra.pessoa',em:'2026-11-16T10:00:00.000'}},409);
     if(R.rotuloStatus!==200)return js(r,{ok:false,error:'servidor'},R.rotuloStatus);
-    js(r,{ok:true,doc:Object.assign({v:1,dia:DIA,fotografo:'carlos',card:'LPTR0000',ordem:1,por:'quem',em:'2026-11-16T11:00:00.'+String(R.posts.length).padStart(3,'0'),origem:'mao',lote:null},b,{base_em:undefined})});});
+    // como o treino_valida: a observação volta sem caracteres de controle e sem espaços nas pontas
+    const doc=Object.assign({v:1,dia:DIA,fotografo:'carlos',card:'LPTR0000',ordem:1,por:'quem',em:'2026-11-16T11:00:00.'+String(R.posts.length).padStart(3,'0'),origem:'mao',lote:null},b,{base_em:undefined,obs:String(b.obs||'').replace(/[\u0000-\u001f\u007f]/g,'').trim()});
+    if(R.guarda)R.rot[b.pid]=doc;js(r,{ok:true,doc});});
   await ctx.route(ORIG+'/treino/config',r=>{const b=r.request().postDataJSON();R.cfg.push(b);Object.assign(R.analise,b);js(r,{ok:true,analise:Object.assign({},R.analise),por:'quem',em:'x'});});
 }
 const espera=async(pg,fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||8000)){if(await pg.evaluate(fn,arg).catch(()=>false))return true;await pg.waitForTimeout(100);}return false;};
@@ -189,6 +192,108 @@ try{
     await pg.evaluate(()=>ETERNA.go('painel'));await pg.waitForTimeout(500);
     ok(R.posts.length===0&&await pg.evaluate(()=>ETERNA.trFila().length)===0,'sem qualidade.u: Próxima, seta, grade e sair da tela não fazem POST: '+J(R.posts));
     ok(!/permiss/i.test(await pg.evaluate(()=>(document.querySelector('#toast')||{}).textContent||'')),'sem qualidade.u: nenhum aviso a cada passo');
+    await ctx.close();}
+  // ---------- revisão 23/11: rascunho velho depois de Carregar, observação com espaço, recusa, "ver como", aba escondida, Z, Sair ----------
+  {const {ctx,pg,R}=await nova();await entrar(pg,null,true);
+    const borda=i=>pg.$eval(`[data-act="tr-go"][data-i="${i}"]`,b=>b.style.borderColor+(b.classList.contains('tr-mini-nova')?' nova':''));
+    const blur=()=>pg.evaluate(()=>document.activeElement&&document.activeElement.blur());
+    const toastTxt=()=>pg.evaluate(()=>(document.querySelector('#toast')||{}).textContent||'');const semToast=()=>pg.evaluate(()=>{const t=document.querySelector('#toast');if(t)t.textContent='';});
+    const lab=(pid,ponto,em,por)=>({v:1,pid,ponto,qual:{nivel:'boa',motivos:[],ajuste:[]},ia:{serve:null,motivos:[],frente:null},duvida:false,obs:'',por,em});
+    const carregar=async n=>{await pg.click('[data-act="tr-carregar"]');const t0=Date.now();while(R.amostra.length<n&&Date.now()-t0<8000)await pg.waitForTimeout(50);
+      await espera(pg,()=>!ETERNA.state.train.carregando&&ETERNA.state.train.itens.length===12,8000);await pg.waitForTimeout(150);};
+    await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
+    R.rot[PIDS[0]]=lab(PIDS[0],'gramado','2026-11-16T09:00:00.000','ana');R.rot[PIDS[7]]=lab(PIDS[7],'gramado','2026-11-16T09:00:00.000','ana');
+    await carregar(1);
+    ok(await pg.evaluate(p=>{const r=ETERNA.state.train.rasc[p];return !!r&&r.ponto==='gramado'&&r.base==='2026-11-16T09:00:00.000';},PIDS[0]),'a foto aberta tem o rascunho com a base do servidor');
+    // 1. mudou em outro aparelho e a foto volta por um Carregar: a tela mostra o servidor e Próxima não grava o valor velho
+    R.rot[PIDS[0]]=Object.assign(lab(PIDS[0],'arquibancada','2026-11-16T10:00:00.000','bia'),{qual:{nivel:'fraca',motivos:['desfocada'],ajuste:[]}});
+    await carregar(2);
+    ok(await pg.$eval('[data-act="tr-ponto"][data-p="arquibancada"]',b=>b.getAttribute('aria-pressed'))==='true'&&!/nova/.test(await borda(0)),'depois de Carregar a foto mostra o rótulo novo do servidor, sem tracejado: '+await borda(0));
+    await pg.click('[data-act="tr-next"]');await pg.waitForTimeout(400);
+    ok(R.posts.length===0,'rascunho velho de antes do Carregar não vira gravação com Próxima: '+J(R.posts.map(x=>x.b)));
+    // a escolha que já subiu continua valendo depois de Carregar (mesma base)
+    R.guarda=true;await blur();await pg.keyboard.press('c');await pg.click('[data-act="tr-next"]');await espera(pg,()=>ETERNA.trFila().length===0);await pg.waitForTimeout(200);
+    ok(R.posts.length===1&&R.posts[0].b.pid===PIDS[1]&&R.posts[0].b.ponto==='chute','C e Próxima gravam: '+J(R.posts.map(x=>x.b.pid)));
+    await carregar(3);await pg.click('[data-act="tr-go"][data-i="1"]');
+    ok(await pg.$eval('[data-act="tr-ponto"][data-p="chute"]',b=>b.getAttribute('aria-pressed'))==='true','a escolha que já subiu aparece depois de Carregar');
+    await pg.click('[data-act="tr-next"]');await pg.waitForTimeout(400);
+    ok(R.posts.length===1,'a escolha que já subiu não grava de novo depois de Carregar: '+R.posts.length);
+    // a escolha que ainda está só na fila também continua (amarela, sem gravar de novo)
+    R.guarda=false;R.rotuloStatus=503;await blur();await pg.keyboard.press('t');await pg.click('[data-act="tr-next"]');await pg.waitForTimeout(400);
+    const f1=await pg.evaluate(()=>ETERNA.trFila());
+    await carregar(4);await pg.click('[data-act="tr-go"][data-i="2"]');
+    ok(await pg.$eval('[data-act="tr-ponto"][data-p="trofeu"]',b=>b.getAttribute('aria-pressed'))==='true'&&/warn/.test(await borda(2)),'a escolha ainda na fila aparece depois de Carregar, amarela: '+await borda(2));
+    await pg.click('[data-act="tr-next"]');await pg.waitForTimeout(300);
+    const f2=await pg.evaluate(()=>ETERNA.trFila());
+    ok(f1.length===1&&f2.length===1&&f2[0].pid===PIDS[2]&&f2[0].t===f1[0].t&&f2[0].corpo.ponto==='trofeu','a escolha na fila não é regravada depois de Carregar: '+J([f1,f2]));
+    R.rotuloStatus=200;await pg.evaluate(()=>ETERNA.trEnviar());await espera(pg,()=>ETERNA.trFila().length===0,5000);const nA=R.posts.length;
+    // 2. observação: "ok " grava uma vez ("ok", como o servidor guarda) e passar de novo não grava; só espaços não grava
+    await pg.click('[data-act="tr-go"][data-i="4"]');await pg.fill('[data-act="tr-obs"]','ok ');await pg.click('[data-act="tr-next"]');await espera(pg,()=>ETERNA.trFila().length===0);await pg.waitForTimeout(200);
+    ok(R.posts.length===nA+1&&R.posts[nA].b.pid===PIDS[4]&&R.posts[nA].b.obs==='ok','observação "ok " grava uma vez, sem o espaço: '+J(R.posts.slice(nA).map(x=>x.b.obs)));
+    await pg.click('[data-act="tr-prev"]');await pg.click('[data-act="tr-next"]');await pg.click('[data-act="tr-prev"]');await pg.click('[data-act="tr-next"]');await pg.waitForTimeout(400);
+    ok(R.posts.length===nA+1,'passar de novo pela foto com "ok " não faz POST: '+J(R.posts.slice(nA).map(x=>x.b.obs)));
+    await pg.click('[data-act="tr-go"][data-i="5"]');await pg.fill('[data-act="tr-obs"]','   ');await pg.click('[data-act="tr-next"]');await pg.waitForTimeout(400);
+    ok(R.posts.length===nA+1&&await pg.evaluate(()=>ETERNA.trFila().length)===0&&!/good|warn/.test(await borda(5)),'observação só de espaços não grava: '+J(R.posts.slice(nA).map(x=>x.b)));
+    // 4. recusa do servidor (403): a miniatura não fica verde; volta ao que o servidor tem
+    R.rotuloStatus=403;const nB=R.posts.length;await semToast();
+    await pg.click('[data-act="tr-go"][data-i="6"]');await blur();await pg.keyboard.press('g');await pg.click('[data-act="tr-next"]');await espera(pg,()=>ETERNA.trFila().length===0);await pg.waitForTimeout(300);
+    ok(R.posts.length===nB+1&&/recusou/.test(await toastTxt()),'403: avisa que o servidor recusou: '+await toastTxt());
+    {const b6=await borda(6);const d6=await pg.evaluate(p=>ETERNA.state.train.docs[p]||null,PIDS[6]);
+      ok(!/good|warn/.test(b6)&&!d6,'403 sem rótulo no servidor: a miniatura não fica verde e a foto segue sem marcação: '+b6+' '+J(d6));}
+    await blur();await pg.keyboard.press('a');await pg.click('[data-act="tr-next"]');await espera(pg,()=>ETERNA.trFila().length===0);await pg.waitForTimeout(300);
+    {const d7=await pg.evaluate(p=>ETERNA.state.train.docs[p]||null,PIDS[7]);
+      ok(R.posts.length===nB+2&&d7&&d7.ponto==='gramado'&&!d7.pend,'403 com rótulo no servidor: volta ao do servidor (gramado), sem pendência: '+J(d7));}
+    await pg.click('[data-act="tr-go"][data-i="7"]');
+    ok(await pg.$eval('[data-act="tr-ponto"][data-p="gramado"]',b=>b.getAttribute('aria-pressed'))==='true'&&!/nova/.test(await borda(7)),'voltando à foto recusada, a tela mostra o que o servidor tem');
+    R.rotuloStatus=200;
+    // 4. "ver como": sair da foto não grava nem avisa
+    const nC=R.posts.length;await pg.evaluate(()=>{ETERNA.state.assumido={por:'admin.teste@exemplo.com',nome:'Admin de teste'};ETERNA.render();});await semToast();
+    await pg.click('[data-act="tr-go"][data-i="9"]');await blur();await pg.keyboard.press('c');await pg.click('[data-act="tr-next"]');await blur();await pg.keyboard.press('ArrowLeft');await pg.waitForTimeout(400);
+    ok(R.posts.length===nC&&await pg.evaluate(()=>ETERNA.trFila().length)===0&&!/recusou/.test(await toastTxt())&&!/good|warn/.test(await borda(9)),'"ver como": sair da foto não grava, não avisa e não pinta de verde: '+await toastTxt()+' '+await borda(9));
+    await pg.evaluate(p=>{ETERNA.state.assumido=null;delete ETERNA.state.train.rasc[p];ETERNA.render();},PIDS[9]);
+    // 5. aba escondida (iOS sem pagehide): vai para a fila uma vez só
+    R.rotuloStatus=503;const nD=R.posts.length;await pg.click('[data-act="tr-go"][data-i="10"]');await blur();await pg.keyboard.press('o');
+    const esconde=()=>pg.evaluate(()=>{Object.defineProperty(document,'visibilityState',{value:'hidden',configurable:true});document.dispatchEvent(new Event('visibilitychange'));});
+    await esconde();const g1=await pg.evaluate(()=>ETERNA.trFila());
+    await esconde();await pg.evaluate(()=>window.dispatchEvent(new Event('pagehide')));await pg.waitForTimeout(300);const g2=await pg.evaluate(()=>ETERNA.trFila());
+    await pg.evaluate(()=>{delete document.visibilityState;});
+    ok(g1.length===1&&g1[0].pid===PIDS[10]&&g1[0].corpo.ponto==='outro','aba escondida: a escolha vai para a fila local: '+J(g1));
+    ok(g2.length===1&&g2[0].t===g1[0].t&&R.posts.length===nD+1,'esconder de novo e o pagehide não gravam em duplicidade: '+J(g2)+' posts '+(R.posts.length-nD));
+    R.rotuloStatus=200;await pg.evaluate(()=>ETERNA.trEnviar());await espera(pg,()=>ETERNA.trFila().length===0,5000);
+    await ctx.close();}
+  // ---------- revisão 23/11: Z com escolha na foto atual; Sair espera o POST ----------
+  {const {ctx,pg,R}=await nova();await entrar(pg,null,true);
+    const borda=i=>pg.$eval(`[data-act="tr-go"][data-i="${i}"]`,b=>b.style.borderColor+(b.classList.contains('tr-mini-nova')?' nova':''));
+    const blur=()=>pg.evaluate(()=>document.activeElement&&document.activeElement.blur());
+    await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
+    await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12);
+    await pg.click('[data-act="tr-go"][data-i="6"]');await blur();await pg.keyboard.press('g');await pg.click('[data-act="tr-next"]');await espera(pg,()=>ETERNA.trFila().length===0&&ETERNA.state.train.j===7);
+    // marca na 7 e aperta Z: a 7 é gravada (entra no Desfazer) e a 6 é desfeita; a tela volta para a 6
+    await blur();await pg.keyboard.press('a');await pg.keyboard.press('z');await espera(pg,()=>ETERNA.trFila().length===0&&ETERNA.state.train.j===6);await pg.waitForTimeout(200);
+    {const z=R.posts.slice(1).map(x=>x.b);const g7=z.find(b=>b.pid===PIDS[7]),v6=z.find(b=>b.pid===PIDS[6]);
+      ok(R.posts.length===3&&g7&&g7.ponto==='arquibancada'&&v6&&v6.ponto===null&&v6.qual.nivel===null,'Z com escolha na foto atual: grava a 7 e desfaz a 6: '+J(z));
+      ok(/good/.test(await borda(7))&&!/good|warn/.test(await borda(6))&&await pg.evaluate(()=>ETERNA.state.train.j)===6,'depois do primeiro Z: a 7 verde, a 6 sem marcação e a tela na 6: '+await borda(7)+' '+await borda(6));}
+    // segundo Z desfaz a 7 (a gravação feita pelo primeiro Z) e volta para ela; a 6 desfeita não grava de novo
+    await blur();await pg.keyboard.press('z');await espera(pg,()=>ETERNA.trFila().length===0&&ETERNA.state.train.j===7);await pg.waitForTimeout(200);
+    {const z=R.posts[3]&&R.posts[3].b;
+      ok(R.posts.length===4&&z.pid===PIDS[7]&&z.ponto===null&&z.qual.nivel===null&&!/good|warn/.test(await borda(7)),'segundo Z desfaz a 7 e não regrava a 6: '+J(R.posts.slice(3).map(x=>x.b)));}
+    await blur();await pg.keyboard.press('z');await pg.waitForTimeout(300);
+    ok(R.posts.length===4&&/Nada para desfazer|nada/i.test(await pg.evaluate(()=>(document.querySelector('#toast')||{}).textContent||'')),'terceiro Z: nada para desfazer');
+    // 3. sair da conta espera o POST da escolha (até 2 s) antes do /auth/sair
+    await pg.route('**/auth/sair',r=>{R.ordem.push('sair');r.fallback();});
+    R.atraso=600;R.ordem.length=0;await pg.click('[data-act="tr-go"][data-i="3"]');await blur();await pg.keyboard.press('t');
+    await pg.evaluate(()=>ETERNA.logout());await pg.waitForTimeout(1500);
+    ok(J(R.ordem)===J(['rotulo','sair'])&&R.posts.some(x=>x.b.pid===PIDS[3]&&x.b.ponto==='trofeu')&&await pg.evaluate(()=>ETERNA.trFila().length)===0,'sair da conta: o POST da escolha termina antes do /auth/sair: '+J(R.ordem));
+    ok(await pg.evaluate(()=>!ETERNA.state.user&&ETERNA.state.view==='entrar'&&!Object.keys(ETERNA.state.train.docs).length),'sair da conta: a tela troca na hora e a próxima pessoa não recebe a marcação');
+    // servidor fora: não segura mais de 2 s e a escolha fica na fila
+    R.atraso=0;R.rotuloStatus=503;await entrarTeste(pg,'admin.teste@exemplo.com');await espera(pg,()=>ETERNA.state.agent.on,8000);
+    await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
+    await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12);
+    R.ordem.length=0;await pg.click('[data-act="tr-go"][data-i="8"]');await blur();await pg.keyboard.press('c');
+    const t0=Date.now();await pg.evaluate(()=>ETERNA.logout());await espera(pg,()=>true,10);
+    while(Date.now()-t0<4000&&!R.ordem.includes('sair'))await pg.waitForTimeout(50);
+    const fs3=await pg.evaluate(()=>ETERNA.trFila());
+    ok(R.ordem.includes('sair')&&Date.now()-t0<2800&&fs3.some(x=>x.pid===PIDS[8]&&x.corpo.ponto==='chute'),'sem servidor: o /auth/sair não espera além de 2 s e a escolha fica na fila: '+J(R.ordem)+' '+(Date.now()-t0)+'ms '+J(fs3.map(x=>x.pid)));
     await ctx.close();}
   // ---------- Supervisora: marca, muda o interruptor; migração única ----------
   {const {ctx,pg,R}=await nova();await pg.goto(U);await pg.waitForTimeout(200);

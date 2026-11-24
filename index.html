@@ -7725,7 +7725,7 @@ function trainSet(){
 let TRAIN_OUT=null;const trainOut=()=>TRAIN_OUT||(TRAIN_OUT=trainSet());
 const TR_PONTOS=[['gramado','g'],['arquibancada','a'],['trofeu','t'],['chute','c'],['outro','o']],TR_MODOS=['misto','ia','qualidade','duvidas'],TR_ANALISE=['desligada','medir','ligada'];
 const TR_FILA='eterna.treino.fila.v1',TR_FILA_MAX=500;
-state.train={i:0,labels:{},note:'',aba:'marcar',dia:'',foto:'',modo:'misto',itens:[],j:0,docs:{},rasc:{},desfaz:[],dias:null,diasPedido:false,carregando:false,erro:null,
+state.train={i:0,labels:{},note:'',aba:'marcar',dia:'',foto:'',modo:'misto',itens:[],j:0,docs:{},srv:{},rasc:{},desfaz:[],dias:null,diasPedido:false,carregando:false,erro:null,
   med:{metodo:'sessao',j:null,carregando:false,erro:null}}; // 18/11: aba Medição (GET /treino/medida)
 state.iaCfg=null;try{const b=JSON.parse(localStorage.getItem('eterna.ia.v1')||'null');if(b&&typeof b==='object')state.iaCfg=b;}catch(e){} // v93: cópia da regra dos cliques de IA (o servidor do ponto é o dono)
 state.buscaCfg=null;try{const b=JSON.parse(localStorage.getItem('eterna.busca.v1')||'null');if(b&&typeof b==='object')state.buscaCfg=b;}catch(e){} // v91: cópia da janela da selfie (o servidor do ponto é o dono)
@@ -7738,7 +7738,9 @@ function trFila(){try{const f=JSON.parse(localStorage.getItem(TR_FILA)||'[]');re
 function trFilaGrava(f){try{localStorage.setItem(TR_FILA,JSON.stringify(f.slice(-TR_FILA_MAX)));}catch(e){}}
 const trMinha=x=>!!(x&&state.user&&x.u===state.user.email);
 // marcação sem nada (o Z grava assim a primeira marcação desfeita): conta como não marcada, como o treino_vazio do agente
-function trVazio(d){if(!d||typeof d!=='object')return true;const q=d.qual||{},ia=d.ia||{};return !(d.ponto||d.duvida||d.obs||q.nivel||(q.motivos||[]).length||(q.ajuste||[]).length||(ia.motivos||[]).length||ia.serve!=null||ia.frente!=null);}
+// observação como o treino_valida do agente a grava: sem caracteres de controle e sem espaços nas pontas (até TREINO_OBS_MAX = 200)
+const trObs=s=>String(s||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,200).trim();
+function trVazio(d){if(!d||typeof d!=='object')return true;const q=d.qual||{},ia=d.ia||{};return !(d.ponto||d.duvida||trObs(d.obs)||q.nivel||(q.motivos||[]).length||(q.ajuste||[]).length||(ia.motivos||[]).length||ia.serve!=null||ia.frente!=null);}
 const trMarcada=pid=>{const d=state.train.docs[pid];return !!d&&(d.pend||!trVazio(d));};
 async function trDias(){const u=trAg();if(!u)return;const t=state.train;t.diasPedido=true;
   try{const r=await agFetch(u+'/treino/dias');const j=r.ok?await r.json():null;t.dias=j&&Array.isArray(j.dias)?j.dias:[];if(!t.dia&&t.dias.length)t.dia=t.dias[0].dia;}catch(e){t.dias=[];}
@@ -7748,7 +7750,12 @@ async function trCarregar(o){o=o||{};const u=trAg(),t=state.train;if(t.vendo){tr
     const r=await agFetch(u+'/treino/amostra?'+q);const j=r.ok?await r.json():null;
     if(!j||!Array.isArray(j.itens)){t.erro='tr_e_carregar';}
     else{t.itens=j.itens.filter(x=>x&&/^[0-9a-f]{6,40}$/.test(x.pid)).map(x=>({id:'ag_'+x.pid,pid:x.pid,card:x.card,key:x.fotografo,t:x.t,ordem:x.ordem,n_sessao:x.n_sessao,rostos:x.rostos}));
-      j.itens.forEach(x=>{if(x&&x.rotulo)t.docs[x.pid]=x.rotulo;});t.total=j.total_dia;t.j=0;t.desfaz=[];
+      // revisão 23/11: rascunho feito sobre outra versão (mudou em outro aparelho) sai, senão a tela mostra o valor velho e Próxima o grava.
+      // A escolha ainda na fila continua por cima do servidor (pend) e a que já subiu tem a mesma base, então fica.
+      const fila=trFila().filter(trMinha);
+      j.itens.forEach(x=>{if(!x||!/^[0-9a-f]{6,40}$/.test(x.pid))return;t.srv[x.pid]=x.rotulo||null;if(!x.rotulo)return;t.docs[x.pid]=x.rotulo;const r=t.rasc[x.pid];if(r&&r.base!==(x.rotulo.em||null))delete t.rasc[x.pid];});
+      fila.forEach(y=>{const c=y.corpo;if(!c||!t.itens.some(x=>x.pid===y.pid))return;t.docs[y.pid]=Object.assign({},t.docs[y.pid]||{},{pid:y.pid,ponto:c.ponto,ia:c.ia,qual:c.qual,duvida:c.duvida,obs:c.obs,pend:true});});
+      t.total=j.total_dia;t.j=0;t.desfaz=[];
       if(o.pid){const k=t.itens.findIndex(x=>x.pid===o.pid);if(k>=0)t.j=k;}}}
   catch(e){t.erro='tr_e_carregar';}
   t.carregando=false;if(state.view==='treino')render();trPrecarga();trEnviar();}
@@ -7760,19 +7767,24 @@ function trRasc(pid){const t=state.train;if(!t.rasc[pid]){const d=t.docs[pid],q=
 // "pode" = nível boa; "não pode" = fraca com os motivos de hoje (a F2 refina os níveis); "dúvida" é a marca duvida
 function trCorpo(pid,r){const d=state.train.docs[pid]||{},q=d.qual||{};
   return {pid,v:1,ponto:r.ponto||null,ia:d.ia&&typeof d.ia==='object'?{serve:d.ia.serve==null?null:!!d.ia.serve,motivos:(d.ia.motivos||[]).slice(0,8),frente:d.ia.frente==null?null:!!d.ia.frente}:{serve:null,motivos:[],frente:null},
-    qual:{nivel:r.nivel||null,motivos:r.nivel==='fraca'?(r.motivos||[]).slice(0,12):[],ajuste:(q.ajuste||[]).slice(0,8)},duvida:!!r.duvida,obs:String(r.obs||'').slice(0,200),base_em:r.base||null};}
+    qual:{nivel:r.nivel||null,motivos:r.nivel==='fraca'?(r.motivos||[]).slice(0,12):[],ajuste:(q.ajuste||[]).slice(0,8)},duvida:!!r.duvida,obs:trObs(r.obs),base_em:r.base||null};}
 function trGravar(pid,corpo){const t=state.train;const ant=t.docs[pid]||null;
   t.docs[pid]=Object.assign({},ant||{},{pid,ponto:corpo.ponto,ia:corpo.ia,qual:corpo.qual,duvida:corpo.duvida,obs:corpo.obs,pend:true});
   const f=trFila().filter(x=>!(x.pid===pid&&trMinha(x)));f.push({pid,u:state.user?state.user.email:'',t:Date.now(),corpo});trFilaGrava(f);trEnviar();return ant;}
 async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user)return;trEnviar.on=true;let mudou=false;
-  try{for(;;){const x=trFila().find(trMinha);if(!x)break;let r=null,j=null;
+  // revisão 23/11: a volta é de quem a começou. Ao sair da conta ela segue enquanto o /auth/sair espera (logout.sair) e para quando outra pessoa entra
+  const em=state.user.email,minha=x=>!!(x&&x.u===em),vale=()=>state.user?state.user.email===em:!!logout.sair;
+  try{for(;;){if(!vale())break;const x=trFila().find(minha);if(!x)break;let r=null,j=null;
       try{r=await agFetch(u+'/treino/rotulo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(x.corpo)});j=await r.json().catch(()=>null);}catch(e){r=null;}
       if(!r||r.status===401||r.status===429||r.status>=500){clearTimeout(trEnviar.tm);trEnviar.tm=setTimeout(()=>{trEnviar.tm=null;trEnviar();},15000);break;} // sem rede, sessão, limite ou servidor: a fila espera
-      const resto=trFila().filter(y=>!(y.pid===x.pid&&y.t===x.t&&trMinha(y)));const t=state.train;
-      if(r.ok&&j&&j.doc){const mais=resto.find(y=>y.pid===x.pid&&trMinha(y));if(mais)mais.corpo.base_em=j.doc.em;else t.docs[x.pid]=j.doc;
+      const resto=trFila().filter(y=>!(y.pid===x.pid&&y.t===x.t&&minha(y)));const t=state.train;const mais=resto.find(y=>y.pid===x.pid&&minha(y));
+      if(!state.user||state.user.email!==em){if(r.ok&&j&&j.doc&&mais)mais.corpo.base_em=j.doc.em;} // saiu da conta: a tela seguinte não recebe a marcação
+      else if(r.ok&&j&&j.doc){t.srv[x.pid]=j.doc;if(mais)mais.corpo.base_em=j.doc.em;else t.docs[x.pid]=j.doc;
         if(t.rasc[x.pid])t.rasc[x.pid].base=j.doc.em;}
-      else if(r.status===409&&j&&j.doc){t.docs[x.pid]=j.doc;delete t.rasc[x.pid];toast(TE('tr_conflito',String(j.doc.por||'')));}
-      else{if(t.docs[x.pid])delete t.docs[x.pid].pend;toast(TE('tr_recusada'));}
+      else if(r.status===409&&j&&j.doc){t.srv[x.pid]=j.doc;t.docs[x.pid]=j.doc;delete t.rasc[x.pid];toast(TE('tr_conflito',String(j.doc.por||'')));}
+      else{ // revisão 23/11: recusada (4xx) não fica verde. Volta ao que o servidor tem; a foto aberta guarda o rascunho (tracejado, não gravada)
+        if(!mais){const s=t.srv[x.pid];if(s)t.docs[x.pid]=s;else delete t.docs[x.pid];if(t.vendo!==x.pid)delete t.rasc[x.pid];}
+        toast(TE('tr_recusada'));}
       trFilaGrava(resto);mudou=true;}}
   finally{trEnviar.on=false;if(mudou&&state.view==='treino')render();}}
 function trAtual(){const t=state.train;return t.itens[Math.max(0,Math.min(t.itens.length-1,t.j))]||null;}
@@ -7781,10 +7793,13 @@ function trAtual(){const t=state.train;return t.itens[Math.max(0,Math.min(t.iten
 // e entra no Desfazer. Só grava se o rascunho tem alguma escolha e é diferente do que já está gravado; sem qualidade.u não faz nada.
 function trRascNovo(pid){const t=state.train;const r=pid&&t.rasc[pid];if(!r)return null;const c=trCorpo(pid,r);if(trVazio(c))return null;
   const d=t.docs[pid]||{},q=d.qual||{};const mot=(n,m)=>n==='fraca'?(m||[]).slice().sort().join(','):'';
-  const igual=c.ponto===(d.ponto||null)&&c.qual.nivel===(q.nivel||null)&&mot(c.qual.nivel,c.qual.motivos)===mot(q.nivel,q.motivos)&&c.duvida===!!d.duvida&&c.obs===String(d.obs||'').slice(0,200);
+  const igual=c.ponto===(d.ponto||null)&&c.qual.nivel===(q.nivel||null)&&mot(c.qual.nivel,c.qual.motivos)===mot(q.nivel,q.motivos)&&c.duvida===!!d.duvida&&c.obs===trObs(d.obs);
   return igual?null:c;}
+// sair da conta com escolha nova: espera o POST dela (até ms) antes do /auth/sair; sem servidor (a fila espera) não segura
+async function trEsperaEnvio(pid,em,ms){if(!trAg())return;const t0=Date.now();
+  while(Date.now()-t0<ms&&trFila().some(x=>x&&x.u===em&&x.pid===pid)&&!(trEnviar.tm&&!trEnviar.on))await new Promise(r=>setTimeout(r,100));}
 function trDesfazPoe(pid,j,ant){const t=state.train;t.desfaz.push({pid,j,ant});if(t.desfaz.length>50)t.desfaz.shift();}
-function trSaiDaFoto(pid){if(!pid||!state.user||!can('qualidade','u'))return false;const c=trRascNovo(pid);if(!c)return false;const t=state.train;
+function trSaiDaFoto(pid){if(!pid||!state.user||state.assumido||!can('qualidade','u'))return false; /* "ver como" só olha: não grava nem avisa */const c=trRascNovo(pid);if(!c)return false;const t=state.train;
   const k=t.itens.findIndex(x=>x.pid===pid);const ant=trGravar(pid,c);if(k>=0)trDesfazPoe(pid,k,ant);return true;}
 // no começo de cada render: a foto que estava na tela (t.vendo) saiu dela (outra foto, outra aba, outra tela)? grava a escolha
 function trConfere(){const t=state.train;const v=t&&t.vendo;if(!v)return;const p=state.view==='treino'&&t.aba==='marcar'?trAtual():null;if(p&&p.pid===v)return;t.vendo=null;trSaiDaFoto(v);}
@@ -9964,7 +9979,7 @@ const EQ={
   tr_recusada:["O servidor recusou esta marcação","The server refused this label","El servidor rechazó esta marcación","Le serveur a refusé cette étiquette","Der Server hat dieses Label abgelehnt"],
   tr_sem_perm:["Sem permissão para marcar no treino","No permission to label in training","Sin permiso para marcar en el entrenamiento","Pas d'autorisation pour étiqueter","Keine Berechtigung zum Labeln"],
   tr_teclas:["Teclas: G A T C O escolhem o ponto · P pode · N não pode · 1 a 9 motivo · D dúvida · Enter grava e vai para a próxima sem marcação · setas gravam e mudam de foto · Z desfaz","Keys: G A T C O pick the spot · P OK · N not OK · 1 to 9 reason · D unsure · Enter saves and goes to the next unlabeled photo · arrows save and change photo · Z undoes","Teclas: G A T C O eligen el punto · P sí · N no · 1 a 9 motivo · D duda · Enter guarda y va a la próxima sin marcar · flechas guardan y cambian de foto · Z deshace","Touches : G A T C O choisissent le point · P oui · N non · 1 à 9 motif · D doute · Entrée enregistre et va à la prochaine photo non étiquetée · flèches enregistrent et changent de photo · Z annule","Tasten: G A T C O wählen den Spot · P ok · N nicht ok · 1 bis 9 Grund · D unsicher · Enter speichert und springt zum nächsten Foto ohne Label · Pfeile speichern und wechseln das Foto · Z macht rückgängig"],
-  tr_mini_nota2:["Toque para ir direto. Ao sair de uma foto, a escolha feita nela é gravada. Verde marcada, amarelo enviando, vermelho tracejado escolhida e ainda não gravada.","Tap to jump there. Leaving a photo saves the choice made on it. Green labeled, yellow sending, dashed red chosen but not saved yet.","Toque para ir directo. Al salir de una foto, la elección hecha en ella se guarda. Verde marcada, amarillo enviando, rojo punteado elegida y aún no guardada.","Touchez pour y aller. En quittant une photo, le choix fait sur elle est enregistré. Vert étiquetée, jaune en cours d'envoi, rouge en pointillés choisie mais pas encore enregistrée.","Tippen, um direkt hinzuspringen. Beim Verlassen eines Fotos wird die Wahl gespeichert. Grün gelabelt, Gelb wird gesendet, Rot gestrichelt gewählt, aber noch nicht gespeichert."],
+  tr_mini_nota2:["Toque para ir direto. Ao sair de uma foto, a escolha feita nela é gravada. Verde marcada, amarelo enviando, vermelho tracejado escolhida e ainda não gravada.","Tap to jump there. Leaving a photo saves the choice made on it. Green labeled, yellow sending, dashed red chosen but not saved yet.","Toque para ir directo. Al salir de una foto, la elección hecha en ella se guarda. Verde marcada, amarillo enviando, rojo discontinuo elegida y aún no guardada.","Touchez pour y aller. En quittant une photo, votre choix est enregistré. Vert étiquetée, jaune en cours d'envoi, rouge en pointillés choisie mais pas encore enregistrée.","Tippen, um direkt hinzuspringen. Beim Verlassen eines Fotos wird die Wahl gespeichert. Grün gelabelt, Gelb wird gesendet, Rot gestrichelt gewählt, aber noch nicht gespeichert."],
   pm_a_migracao_treino16:["migrou (Supervisora marca no Treino da IA)","migrated (Supervisor labels in AI training)","migró (Supervisora marca en el Entrenamiento de la IA)","a migré (la Superviseure étiquette dans l'Entraînement de l'IA)","migriert (Supervisorin labelt im KI-Training)"],
   pm_a_treino_analise:["mudou a análise do servidor no Treino da IA","changed the server analysis in AI training","cambió el análisis del servidor en el Entrenamiento de la IA","a modifié l'analyse du serveur dans l'Entraînement de l'IA","hat die Serveranalyse im KI-Training geändert"],
   pm_a_poses_modo:["mudou a classificação de poses no servidor","changed pose labeling on the server","cambió la clasificación de poses en el servidor","a modifié le classement des poses sur le serveur","hat die Posen-Klassifizierung auf dem Server geändert"],
@@ -11611,10 +11626,11 @@ state.user=null;state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',e
 function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;if(sessaoVencida(s,u)){try{localStorage.removeItem('eterna.session')}catch(e){}return false;} /* v92 (D2): sessão de fotógrafo de ontem pede login de novo */state.user=u;state.assumido=s.assumido&&s.assumido.por?s.assumido:null;return true;}catch(e){return false}}
 function login(email){const u=userFor(email);if(!u){state.auth.err='sem_cadastro';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;if(!state.assumido)loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString(),assumido:state.assumido||undefined}))}catch(e){}
   state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
-function logout(){if(state.train.vendo){trSaiDaFoto(state.train.vendo);state.train.vendo=null;} // 23/11: a escolha do Treino vai para a fila antes de sair
-  authApi('/auth/sair',{});camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
+function logout(){const tv=state.train.vendo,tem=state.user&&state.user.email;const tsai=!!tv&&trSaiDaFoto(tv);state.train.vendo=null; // 23/11: a escolha do Treino vai para a fila antes de sair
+  // revisão 23/11: com escolha nova, o fim da sessão espera o POST dela por até 2 s; o que não subir fica na fila. authEntrar espera este logout.sair
+  {const p=(tsai?trEsperaEnvio(tv,tem,2000):Promise.resolve()).then(()=>authApi('/auth/sair',{}));logout.sair=p;p.finally(()=>{if(logout.sair===p)logout.sair=null;});}camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   demoDesliga(); // revisão (segurança): o modo demonstração não passa para a próxima pessoa
-  state.user=null;state.assumido=null;Object.assign(state.train,{itens:[],j:0,docs:{},rasc:{},desfaz:[],vendo:null});
+  state.user=null;state.assumido=null;Object.assign(state.train,{itens:[],j:0,docs:{},srv:{},rasc:{},desfaz:[],vendo:null});
   // revisão 23/11 (AF): números por fotógrafo, rascunho dos limites e calibração não ficam para a próxima pessoa
   Object.assign(state.fot,{j:null,chave:null,em:0,erro:null,rasc:{},recusa:null});Object.assign(state.fg.est,{chave:null,dias:null,em:0,erro:null});Object.assign(state.train.luz,{j:null,esc:{},recusa:null});state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
@@ -11625,6 +11641,7 @@ function authEntrou(r){if(r.cadastro&&r.usuario){USERS[r.usuario]=migrateUser(r.
 // o erro fica guardado como chave e é traduzido ao desenhar: trocar a bandeira com o aviso na tela também troca o aviso
 function authErro(r){return r.status===429?'err_tentativas':r.erro==='fraca'?(EQ['fraca_'+r.motivo]?'fraca_'+r.motivo:'fraca_obvia'):r.status===401?'err_incorretos':'err_conexao';}
 async function authEntrar(){const a=state.auth;if(a.busy)return;const u=normEmail(a.usuario);if(!u||!a.senha){a.err='err_digite';render();return;}a.busy=true;a.err=null;render();
+  if(logout.sair)await logout.sair; // o /auth/sair da pessoa anterior (que pode esperar o Treino) termina antes desta sessão começar
   const r=await authApi('/auth/entrar',{usuario:u,senha:a.senha});a.busy=false;
   if(r.status===200&&r.troca){a.step='trocar';a.err=null;a.nova='';a.nova2='';render();return;}
   if(r.status===200&&r.ok){authEntrou(r);return;}a.senha='';a.err=authErro(r);render();}
@@ -13076,7 +13093,8 @@ document.addEventListener('drop',e=>{const z=envioZona(e);if(!z){if(state.view==
   const l=[...((e.dataTransfer&&e.dataTransfer.files)||[])];if(l.length&&guardAct('envio-files'))fotosEnviar(l);});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.classList&&e.target.classList.contains('envio-drop')){e.preventDefault();e.target.click();}});
 window.addEventListener('beforeunload',e=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);if(state.imp&&state.imp.envio){e.preventDefault();e.returnValue='';return '';}});
-window.addEventListener('pagehide',()=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);}); // 23/11: escolha do Treino ainda não gravada vai para a fila local (síncrona), sem pergunta do navegador
+window.addEventListener('pagehide',()=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&state.train.vendo)trSaiDaFoto(state.train.vendo);}); // revisão 23/11: no iOS o pagehide nem sempre vem; o trRascNovo evita gravar de novo a mesma escolha // 23/11: escolha do Treino ainda não gravada vai para a fila local (síncrona), sem pergunta do navegador
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-entrar')authEntrar();if(f==='login-trocar')authTrocar();if(f==='login-esqueci')authEsqueci();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.roloAsk&&!state.lojaRota){state.roloAsk=null;render();e.preventDefault();return;}if(e.key==='Tab'&&state.roloAsk&&!state.lojaRota&&document.querySelector('.rolo-ask')){roloAskTab(e);return;}if(e.key==='Escape'&&state.pend.recAsk&&!state.lojaRota){state.pend.recAsk=null;render();e.preventDefault();return;}if(e.key==='Tab'&&state.pend.recAsk&&!state.lojaRota&&document.querySelector('.pend-recask')){roloAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.sairAsk){state.kiosk.sairAsk=false;render();e.preventDefault();return;}if(e.key==='Tab'&&state.lojaRota&&state.kiosk.sairAsk){lojaAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
     if(e.key==='ArrowRight'||e.key==='ArrowLeft'){k.ver=Math.max(0,Math.min(n-1,k.ver+(e.key==='ArrowRight'?1:-1)));k.i=k.ver;render();e.preventDefault();return;}
