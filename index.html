@@ -7771,7 +7771,7 @@ function trCorpo(pid,r){const d=state.train.docs[pid]||{},q=d.qual||{};
 function trGravar(pid,corpo){const t=state.train;const ant=t.docs[pid]||null;
   t.docs[pid]=Object.assign({},ant||{},{pid,ponto:corpo.ponto,ia:corpo.ia,qual:corpo.qual,duvida:corpo.duvida,obs:corpo.obs,pend:true});
   const f=trFila().filter(x=>!(x.pid===pid&&trMinha(x)));f.push({pid,u:state.user?state.user.email:'',t:Date.now(),corpo});trFilaGrava(f);trEnviar();return ant;}
-async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user)return;trEnviar.on=true;let mudou=false;
+async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user||state.assumido)return; /* "ver como" só olha: a fila (única cópia) fica intacta, como no sobe() */trEnviar.on=true;let mudou=false;
   // revisão 23/11: a volta é de quem a começou. Ao sair da conta ela segue enquanto o /auth/sair espera (logout.sair) e para quando outra pessoa entra
   const em=state.user.email,minha=x=>!!(x&&x.u===em),vale=()=>state.user?state.user.email===em:!!logout.sair;
   try{for(;;){if(!vale())break;const x=trFila().find(minha);if(!x)break;let r=null,j=null;
@@ -7786,7 +7786,8 @@ async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user)return;
         if(!mais){const s=t.srv[x.pid];if(s)t.docs[x.pid]=s;else delete t.docs[x.pid];if(t.vendo!==x.pid)delete t.rasc[x.pid];}
         toast(TE('tr_recusada'));}
       trFilaGrava(resto);mudou=true;}}
-  finally{trEnviar.on=false;if(mudou&&state.view==='treino')render();}}
+  finally{trEnviar.on=false;if(mudou&&state.view==='treino')render();
+    if(state.user&&state.user.email!==em&&!state.assumido&&trFila().some(trMinha))setTimeout(trEnviar,0);}} // outra pessoa entrou durante a volta: a fila dela sobe já
 function trAtual(){const t=state.train;return t.itens[Math.max(0,Math.min(t.itens.length-1,t.j))]||null;}
 // 23/11 (Eduardo no Maracanã: passou 110 fotos com Próxima e só 11 ficaram gravadas): sair de uma foto por qualquer caminho grava a
 // escolha feita nela (Próxima, Anterior, setas, grade, Carregar, outra aba, outra tela, Sair, recarregar). Mesmo trGravar, mesma fila
@@ -11628,7 +11629,8 @@ function login(email){const u=userFor(email);if(!u){state.auth.err='sem_cadastro
   state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
 function logout(){const tv=state.train.vendo,tem=state.user&&state.user.email;const tsai=!!tv&&trSaiDaFoto(tv);state.train.vendo=null; // 23/11: a escolha do Treino vai para a fila antes de sair
   // revisão 23/11: com escolha nova, o fim da sessão espera o POST dela por até 2 s; o que não subir fica na fila. authEntrar espera este logout.sair
-  {const p=(tsai?trEsperaEnvio(tv,tem,2000):Promise.resolve()).then(()=>authApi('/auth/sair',{}));logout.sair=p;p.finally(()=>{if(logout.sair===p)logout.sair=null;});}camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
+  // o /auth/sair tem limite de 4 s (fetch abortado não aplica o Set-Cookie, então a sessão seguinte não é zerada) e encadeia num segundo logout
+  {const p=Promise.all([logout.sair,tsai?trEsperaEnvio(tv,tem,2000):null]).then(()=>authApi('/auth/sair',{},{signal:agLimite(4000)}));logout.sair=p;p.finally(()=>{if(logout.sair===p)logout.sair=null;});}camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   demoDesliga(); // revisão (segurança): o modo demonstração não passa para a próxima pessoa
   state.user=null;state.assumido=null;Object.assign(state.train,{itens:[],j:0,docs:{},srv:{},rasc:{},desfaz:[],vendo:null});
   // revisão 23/11 (AF): números por fotógrafo, rascunho dos limites e calibração não ficam para a próxima pessoa
@@ -11636,7 +11638,7 @@ function logout(){const tv=state.train.vendo,tem=state.user&&state.user.email;co
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
 // e a sessão vale pelo cookie HttpOnly. O site público não fala com o servidor: lá só a galeria e o Checkout abrem.
 const authSite=()=>/^(www\.)?eterna\.photo$/.test(location.hostname); // o site público; posto.eterna.photo é o servidor do ponto (com login)
-async function authApi(rota,corpo){try{const r=await fetch(rota,{method:corpo?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo?JSON.stringify(corpo):undefined});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
+async function authApi(rota,corpo,o){try{const r=await fetch(rota,{method:corpo?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo?JSON.stringify(corpo):undefined,signal:o&&o.signal});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
 function authEntrou(r){if(r.cadastro&&r.usuario){USERS[r.usuario]=migrateUser(r.cadastro)||r.cadastro;}login(r.usuario);} // o cadastro do servidor vale mais que a cópia do navegador
 // o erro fica guardado como chave e é traduzido ao desenhar: trocar a bandeira com o aviso na tela também troca o aviso
 function authErro(r){return r.status===429?'err_tentativas':r.erro==='fraca'?(EQ['fraca_'+r.motivo]?'fraca_'+r.motivo:'fraca_obvia'):r.status===401?'err_incorretos':'err_conexao';}
@@ -11656,10 +11658,12 @@ async function authConferir(){if(authSite()||!state.user)return;const r=await au
   if(r.status===200&&r.ok){const a=r.assumido_por?{por:r.assumido_por,nome:r.assumido_nome||r.assumido_por}:null;if(JSON.stringify(a)!==JSON.stringify(state.assumido)){state.assumido=a;render();}}}
 // 16/11 (Ronaldo): "ver como". Só Admin, só de quem não é Admin. O servidor guarda a sessão do Admin e devolve no "Voltar".
 async function authAssumir(usuario){const me=state.user;if(!me||state.assumido)return;const r=await authApi('/auth/assumir',{usuario});
-  if(r.status===200&&r.ok){state.assumido={por:r.assumido_por,nome:r.assumido_nome||me.name||me.email};state.users.draft=null;authEntrou(r);toast(TE('vc_entrou',(USERS[usuario]||{}).name||usuario));return;}
+  if(r.status===200&&r.ok){Object.assign(state.train,{vendo:null,rasc:{},desfaz:[]}); // a escolha de uma pessoa não é gravada no nome da outra
+    state.assumido={por:r.assumido_por,nome:r.assumido_nome||me.name||me.email};state.users.draft=null;authEntrou(r);toast(TE('vc_entrou',(USERS[usuario]||{}).name||usuario));return;}
   toast(TE(r.erro==='alvo_maior'?'vc_e_maior':r.erro==='sem_cadastro'?'vc_e_cadastro':r.status===403?'vc_e_perm':'vc_e_conexao'));}
 async function authVoltar(){const r=await authApi('/auth/voltar',{});
-  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;state.assumido=null;state.auth_next='usuarios';authEntrou(r);if(quem)toast(TE('vc_voltou'));return;}
+  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;Object.assign(state.train,{vendo:null,rasc:{},desfaz:[]}); // o que o Admin escolheu no "ver como" não vira gravação dele
+    state.assumido=null;state.auth_next='usuarios';authEntrou(r);if(quem)toast(TE('vc_voltou'));return;}
   if(r.status===401){logout();return;}toast(TE('vc_e_conexao'));}
 function assumidoFaixa(){const a=state.assumido,u=state.user;if(!a||!u)return '';
   return `<div class="assumido-faixa" role="status"><span>${TE('vc_faixa',esc(u.name||u.email),esc(presetName(u.preset)))}</span><button class="btn" data-act="assumir-voltar">${TE('vc_voltar',esc(a.nome))}</button></div>`;}
@@ -13093,8 +13097,8 @@ document.addEventListener('drop',e=>{const z=envioZona(e);if(!z){if(state.view==
   const l=[...((e.dataTransfer&&e.dataTransfer.files)||[])];if(l.length&&guardAct('envio-files'))fotosEnviar(l);});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.classList&&e.target.classList.contains('envio-drop')){e.preventDefault();e.target.click();}});
 window.addEventListener('beforeunload',e=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);if(state.imp&&state.imp.envio){e.preventDefault();e.returnValue='';return '';}});
-window.addEventListener('pagehide',()=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);});
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&state.train.vendo)trSaiDaFoto(state.train.vendo);}); // revisão 23/11: no iOS o pagehide nem sempre vem; o trRascNovo evita gravar de novo a mesma escolha // 23/11: escolha do Treino ainda não gravada vai para a fila local (síncrona), sem pergunta do navegador
+window.addEventListener('pagehide',()=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);}); // 23/11: escolha do Treino ainda não gravada vai para a fila local (síncrona), sem pergunta do navegador
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&state.train.vendo)trSaiDaFoto(state.train.vendo);}); // revisão 23/11: no iOS o pagehide nem sempre vem; o trRascNovo evita gravar de novo a mesma escolha
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-entrar')authEntrar();if(f==='login-trocar')authTrocar();if(f==='login-esqueci')authEsqueci();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.roloAsk&&!state.lojaRota){state.roloAsk=null;render();e.preventDefault();return;}if(e.key==='Tab'&&state.roloAsk&&!state.lojaRota&&document.querySelector('.rolo-ask')){roloAskTab(e);return;}if(e.key==='Escape'&&state.pend.recAsk&&!state.lojaRota){state.pend.recAsk=null;render();e.preventDefault();return;}if(e.key==='Tab'&&state.pend.recAsk&&!state.lojaRota&&document.querySelector('.pend-recask')){roloAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.sairAsk){state.kiosk.sairAsk=false;render();e.preventDefault();return;}if(e.key==='Tab'&&state.lojaRota&&state.kiosk.sairAsk){lojaAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
     if(e.key==='ArrowRight'||e.key==='ArrowLeft'){k.ver=Math.max(0,Math.min(n-1,k.ver+(e.key==='ArrowRight'?1:-1)));k.i=k.ver;render();e.preventDefault();return;}

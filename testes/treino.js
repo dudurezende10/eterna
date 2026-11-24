@@ -246,11 +246,22 @@ try{
     await pg.click('[data-act="tr-go"][data-i="7"]');
     ok(await pg.$eval('[data-act="tr-ponto"][data-p="gramado"]',b=>b.getAttribute('aria-pressed'))==='true'&&!/nova/.test(await borda(7)),'voltando à foto recusada, a tela mostra o que o servidor tem');
     R.rotuloStatus=200;
-    // 4. "ver como": sair da foto não grava nem avisa
-    const nC=R.posts.length;await pg.evaluate(()=>{ETERNA.state.assumido={por:'admin.teste@exemplo.com',nome:'Admin de teste'};ETERNA.render();});await semToast();
+    // 4. "ver como" (Admin vê como o Validador): sair da foto não grava nem avisa, a fila pendente da pessoa fica intacta e Voltar não grava no nome do Admin
+    await pg.route('**/auth/assumir',r=>{const c=r.request().postDataJSON();r.fulfill({status:200,contentType:'application/json',body:J({ok:true,usuario:c.usuario,cadastro:null,assumido_por:'admin.teste@exemplo.com',assumido_nome:'Admin de teste'})});});
+    await pg.route('**/auth/voltar',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,usuario:'admin.teste@exemplo.com',cadastro:null})}));
+    const nC=R.posts.length;await pg.evaluate(()=>ETERNA.go('usuarios'));await pg.click('[data-act="user-sel"][data-e="qualidade@eterna.photo"]');await pg.click('[data-act="user-assumir"]');
+    ok(await espera(pg,()=>!!ETERNA.state.assumido&&ETERNA.state.user.email==='qualidade@eterna.photo'),'"ver como": entrou como o Validador');
+    const FV=[{pid:PIDS[11],u:'qualidade@eterna.photo',t:5,corpo:{pid:PIDS[11],v:1,ponto:'outro',ia:{serve:null,motivos:[],frente:null},qual:{nivel:null,motivos:[],ajuste:[]},duvida:false,obs:'',base_em:null}}];
+    await pg.evaluate(f=>localStorage.setItem('eterna.treino.fila.v1',JSON.stringify(f)),FV);
+    await pg.evaluate(()=>ETERNA.go('treino'));await semToast();await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>!ETERNA.state.train.carregando&&ETERNA.state.train.itens.length===12);await pg.waitForTimeout(500);
+    {const f=await pg.evaluate(()=>ETERNA.trFila());ok(J(f)===J(FV)&&!/recusou/.test(await toastTxt())&&R.posts.length===nC,'"ver como": Carregar não mexe na fila pendente da pessoa nem avisa recusa: '+J(f)+' '+await toastTxt());}
     await pg.click('[data-act="tr-go"][data-i="9"]');await blur();await pg.keyboard.press('c');await pg.click('[data-act="tr-next"]');await blur();await pg.keyboard.press('ArrowLeft');await pg.waitForTimeout(400);
-    ok(R.posts.length===nC&&await pg.evaluate(()=>ETERNA.trFila().length)===0&&!/recusou/.test(await toastTxt())&&!/good|warn/.test(await borda(9)),'"ver como": sair da foto não grava, não avisa e não pinta de verde: '+await toastTxt()+' '+await borda(9));
-    await pg.evaluate(p=>{ETERNA.state.assumido=null;delete ETERNA.state.train.rasc[p];ETERNA.render();},PIDS[9]);
+    ok(R.posts.length===nC&&J(await pg.evaluate(()=>ETERNA.trFila()))===J(FV)&&!/recusou/.test(await toastTxt())&&!/good|warn/.test(await borda(9)),'"ver como": sair da foto não grava, não avisa e não pinta de verde: '+await toastTxt()+' '+await borda(9));
+    // a foto 9 segue aberta com a escolha (C) feita no "ver como": Voltar para o Admin não a grava no nome dele
+    await pg.click('[data-act="assumir-voltar"]');await espera(pg,()=>!ETERNA.state.assumido&&ETERNA.state.user.email==='admin.teste@exemplo.com');await pg.waitForTimeout(500);
+    await pg.evaluate(()=>ETERNA.go('treino'));await pg.waitForTimeout(300);await pg.evaluate(()=>ETERNA.go('painel'));await pg.waitForTimeout(300);
+    ok(R.posts.length===nC,'Voltar do "ver como" não grava no nome do Admin o que foi escolhido lá: '+J(R.posts.slice(nC).map(x=>x.b)));
+    await pg.evaluate(()=>{localStorage.setItem('eterna.treino.fila.v1','[]');ETERNA.go('treino');});
     // 5. aba escondida (iOS sem pagehide): vai para a fila uma vez só
     R.rotuloStatus=503;const nD=R.posts.length;await pg.click('[data-act="tr-go"][data-i="10"]');await blur();await pg.keyboard.press('o');
     const esconde=()=>pg.evaluate(()=>{Object.defineProperty(document,'visibilityState',{value:'hidden',configurable:true});document.dispatchEvent(new Event('visibilitychange'));});
@@ -294,6 +305,13 @@ try{
     while(Date.now()-t0<4000&&!R.ordem.includes('sair'))await pg.waitForTimeout(50);
     const fs3=await pg.evaluate(()=>ETERNA.trFila());
     ok(R.ordem.includes('sair')&&Date.now()-t0<2800&&fs3.some(x=>x.pid===PIDS[8]&&x.corpo.ponto==='chute'),'sem servidor: o /auth/sair não espera além de 2 s e a escolha fica na fila: '+J(R.ordem)+' '+(Date.now()-t0)+'ms '+J(fs3.map(x=>x.pid)));
+    // /auth/sair que nunca responde: o login seguinte entra (o fetch do /auth/sair tem limite)
+    await pg.route('**/auth/sair',()=>{R.ordem.push('mudo');});
+    R.rotuloStatus=200;await pg.evaluate(()=>localStorage.setItem('eterna.treino.fila.v1','[]'));
+    await entrarTeste(pg,'admin.teste@exemplo.com');await espera(pg,()=>!!ETERNA.state.user,3000);
+    await pg.evaluate(()=>ETERNA.logout());const t1=Date.now();await entrarTeste(pg,'admin.teste@exemplo.com');
+    {const entrou=await espera(pg,()=>!!ETERNA.state.user&&!ETERNA.state.auth.busy,8000);
+      ok(entrou&&R.ordem.includes('mudo'),'/auth/sair mudo: o login seguinte entra mesmo assim ('+(Date.now()-t1)+' ms, '+J(R.ordem)+')');}
     await ctx.close();}
   // ---------- Supervisora: marca, muda o interruptor; migração única ----------
   {const {ctx,pg,R}=await nova();await pg.goto(U);await pg.waitForTimeout(200);
