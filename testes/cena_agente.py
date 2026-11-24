@@ -214,7 +214,8 @@ try:
     adm = S.cookie_sessao(m, "admin-cena")
     ver = S.cookie_sessao(m, "ver-cena", {"qualidade": {"r": True}})
     nada = S.cookie_sessao(m, "nada-cena", {"set": {"r": True, "u": True}})
-    cfg = S.cookie_sessao(m, "cfg-cena", {"qualidade": {"r": True}, "configuracao": {"c": True, "r": True, "u": True}})
+    cfg = S.cookie_sessao(m, "cfg-cena")                  # 24/11: o /treino/config é só do Admin (cadastro com preset admin)
+    sup_cena = S.cookie_sessao(m, "sup-cena", {"qualidade": {"r": True}, "configuracao": {"c": True, "r": True, "u": True}})
 
     def pede(metodo, rota, corpo=None, cookie=None):
         if metodo == "POST" and rota == "/treino/config":
@@ -294,6 +295,8 @@ try:
     ok(pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=ver)[0] == 403
        and pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=nada)[0] == 403
        and pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True})[0] == 401, "forcar sem configuracao.u: 403 (sem sessão 401)")
+    st_, r_ = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup_cena)
+    ok(st_ == 403 and r_.get("error") == "so_admin", "24/11: configuracao.u sem ser Admin não liga: 403 so_admin: %s %r" % (st_, r_))
     ok(pede("POST", "/treino/config", {"ponto": "medir", "forcar": True}, cookie=cfg)[0] == 400, "forcar só com ponto ligada")
     real_rot = m.cena_rotulos
     for so, falta_k in (({"gramado"}, ["rot_outra_lidas"]), (set(), ["rot_gramado_lidas", "rot_outra_lidas"])):
@@ -652,7 +655,27 @@ try:
     m.cena_limpa(time.time() + 61 * 86400)
     ok(linha(pl) is None and linha(ISO[0]) is not None, "19: a linha some com 60 dias (a rotulada fica)")
     fonte = open(sys.argv[1], encoding="utf8").read()
-    ok("CENA_DB" not in fonte.split("bancos = [b for b in (")[1].split(")")[0], "19: cena.db fora do backup")
+    ok("CENA_DB" not in m.BACKUP_BANCOS and "POSES_DB" not in m.BACKUP_BANCOS, "19: cena.db (e o poses.db, 24/11) fora do backup")
+
+    # ---------- 24/11 (zerar a fase de teste, critério 16): a foto rotulada ou do modelo que saiu da biblioteca (inbox no
+    # arquivo) guarda o vetor; a linha sem rótulo fora da biblioteca sai ----------
+    pz, fz = thumb("outro")
+    biblioteca(pz, fz, HOJE)
+    m.cena_enfileira(pz, fz, 0)
+    ok(espera(lambda: linha(pz) and linha(pz)[4], 6), "16: vetor da foto sem rótulo gravado")
+    db = sqlite3.connect(m.CENA_DB)
+    try:
+        do_modelo = {x[0] for (rot_,) in db.execute("select rotulos from modelo") for x in json.loads(rot_)}
+    finally:
+        db.close()
+    guardadas = [p for p in set(ISO) | do_modelo if linha(p) and linha(p)[4]]
+    with m.lock:
+        tirou = {p: m.lib.pop(p) for p in guardadas + [pz] if p in m.lib}
+    m.cena_limpa(time.time())
+    ok(guardadas and all(linha(p) and linha(p)[4] for p in guardadas) and linha(pz) is None,
+       "16: fora da biblioteca, rotulada e do modelo ficam com o vetor (%d); sem rótulo sai: %r" % (len(guardadas), linha(pz)))
+    with m.lock:
+        m.lib.update(tirou)
 
     # ---------- revisão: rótulo com mais de 60 dias não volta para a fila nem entra na medida ----------
     DIA61 = m._ff_hoje(time.time() - 61 * 86400)

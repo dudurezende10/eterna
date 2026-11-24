@@ -122,6 +122,20 @@ ok(st == 200 and ck.get("eterna_sessao") == "" and ck.get("eterna_sessao_adm") =
 st, j, _ = pede("/auth/eu", None, adm)
 ok(st == 401, "6: a sessão do Admin também acabou: %s" % st)
 
+# 6b. (24/11) entrar com a sessão do ver como ainda no navegador (o Sair não chegou ao servidor) encerra as duas
+adm = entra("ronaldo")
+st, j, ck = pede("/auth/assumir", {"usuario": "caixa.um"}, adm)
+como = {"eterna_sessao": ck.get("eterna_sessao"), "eterna_sessao_adm": ck.get("eterna_sessao_adm")}
+SENHA_V = "Pi-ano-Verde-caixa.um-77"
+st, j, ck = pede("/auth/entrar", {"usuario": "caixa.um", "senha": SENHA_V}, como)
+ok(st == 200 and j.get("usuario") == "caixa.um" and not j.get("assumido_por") and ck.get("eterna_sessao") and ck.get("eterna_sessao_adm") == "",
+   "6b: entrar no ver como: sessão nova e o cookie do Admin limpo: %s %s %s" % (st, j, list(ck)))
+st1, _, _ = pede("/auth/eu", None, {"eterna_sessao": como["eterna_sessao"]})
+st2, _, _ = pede("/auth/eu", None, {"eterna_sessao": como["eterna_sessao_adm"]})
+ok(st1 == 401 and st2 == 401, "6b: entrar apaga a sessão do ver como e a do Admin guardada: %s %s" % (st1, st2))
+st, j, _ = pede("/auth/eu", None, {"eterna_sessao": ck.get("eterna_sessao")})
+ok(st == 200 and j.get("usuario") == "caixa.um" and not j.get("assumido_por"), "6b: a sessão nova vale, sem ver como: %s %s" % (st, j))
+
 # 7. perfil Snap Pop: o servidor recusa venda de outra ativação
 ok(m.ATIV_PERFIL_CATS.get("snap") == ("snap",) and "snap" in m.PERFIS_CLI, "7: perfil snap no servidor")
 

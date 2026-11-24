@@ -28,7 +28,7 @@ Para receber de um servidor FTP que já existe na máquina, vigiando a pasta del
      ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections, tempfile
-import array, itertools, operator
+import array, itertools, operator, errno
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 import unicodedata, ipaddress
@@ -602,7 +602,8 @@ if os.path.exists(INDEX):
 
 
 def load_lib():
-    for root, _, files in os.walk(INBOX):
+    for root, dirs, files in os.walk(INBOX):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]   # 24/11: inbox/.arquivo (zeragem da fase de teste) não volta para a biblioteca
         for fn in files:
             if "_" in fn and fn.endswith(EXT):
                 pid = fn.split("_", 1)[0]
@@ -955,9 +956,12 @@ def varias_pessoas(fs):
     return len(fs) >= 2 and fs[1][0] >= VARIAS_RAZAO * fs[0][0]
 
 
-def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
+def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False, brutos=None):
     """img BGR -> [(largura, vetor 128 normalizado)] do maior para o menor rosto. detalhe=True (v91, sessões):
-    [(largura, vetor, score, frontal)]; frontal = nariz a até SESS_Q_FRONTAL x a distância entre os olhos do meio deles."""
+    [(largura, vetor, score, frontal, caixa)]; frontal = nariz a até SESS_Q_FRONTAL x a distância entre os olhos do meio deles;
+    caixa (23/11, medida de luz) = (x, y, l, a) do rosto nas coordenadas da img recebida (antes da redução para LADO).
+    brutos (24/11, Lixeira da IA): lista opcional que recebe quantos rostos o detector achou em qualquer tamanho, antes do
+    filtro de minimo. Sem o parâmetro, nada muda."""
     np = _cv["np"]; cv2 = _cv["cv2"]
     h, w = img.shape[:2]
     k = min(1.0, LADO / max(h, w))
@@ -965,6 +969,8 @@ def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
         img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
     det.setInputSize((img.shape[1], img.shape[0]))
     _, f = det.detect(img)
+    if brutos is not None:
+        brutos.append(len(f) if f is not None else 0)
     out = []
     for r in (f if f is not None else []):
         if r[2] < minimo:
@@ -975,7 +981,7 @@ def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
             rx, ry, lx, ly, nx = float(r[4]), float(r[5]), float(r[6]), float(r[7]), float(r[8])
             dist = ((lx - rx) ** 2 + (ly - ry) ** 2) ** 0.5
             frontal = dist > 0 and abs(nx - (rx + lx) / 2) <= SESS_Q_FRONTAL * dist
-            out.append((float(r[2]), v, float(r[14]), bool(frontal)))
+            out.append((float(r[2]), v, float(r[14]), bool(frontal), (float(r[0]) / k, float(r[1]) / k, float(r[2]) / k, float(r[3]) / k)))
         else:
             out.append((float(r[2]), v))
     return sorted(out, key=lambda x: -x[0])
@@ -1040,11 +1046,14 @@ def leitor_loop(det, rec, db):
         rostos["fila"] = fila_rostos.qsize()
         t_ini = time.time()
         lidos = None
+        img_l = fs_l = None
+        nb = []                         # 24/11 (Lixeira da IA): rostos achados em qualquer tamanho, antes do filtro ROSTO_MIN
+        _leitor_lendo(1)
         try:
             img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)
             if img is None:
                 continue
-            fs = ler_rostos(img, det, rec, detalhe=True)
+            fs = ler_rostos(img, det, rec, detalhe=True, brutos=nb)
             dia = os.path.basename(os.path.dirname(path))
             db.execute("insert or replace into foto values (?,?,?,?)", (pid, dia, len(fs), time.time()))
             db.execute("delete from rosto where pid=?", (pid,))
@@ -1053,6 +1062,7 @@ def leitor_loop(det, rec, db):
             db.executemany("insert into rosto_q values (?,?,?)", [(pid, dia, f[1].tobytes()) for f in fs
                                                                   if len(f) > 3 and f[2] >= SESS_Q_SCORE and f[3]])
             db.commit()
+            img_l, fs_l = img, fs           # 23/11 (AF-D4): a luz é medida no fim, depois da selfie (abaixo)
             lidos = [(f[0], f[1].tolist(), f[2], f[3]) for f in fs]
             with _cont_lock:
                 rostos["lidas"] += 1; rostos["rostos"] += len(fs)
@@ -1071,6 +1081,34 @@ def leitor_loop(det, rec, db):
                 sess_rostos_lidos(pid, lidos)
             except Exception as ex:
                 print("  sessões (rostos): %s" % str(ex)[:80])
+            _leitor_lendo(-1)
+        # 23/11 (AF-D4, revisão): luz da foto como saiu da câmera, na imagem já decodificada, só DEPOIS de a foto entrar na matriz
+        # da selfie (mat_acrescenta), na fila do fotógrafo (ff_rosto_lido) e na sessão (sess_rostos_lidos): a selfie não espera
+        v_l = None
+        if img_l is not None and luz_ligada():
+            try:
+                t_l = time.time()
+                v_l = luz_medir(img_l, [f[4] for f in fs_l if len(f) > 4])
+                luz_acrescenta(pid, v_l, round((time.time() - t_l) * 1000, 1))
+            except Exception as ex:
+                print("  luz: %s" % type(ex).__name__)
+        # 24/11 (Lixeira da IA): o veredito sai aqui, na mesma imagem e com as mesmas caixas, depois da selfie e da luz
+        if img_l is not None and LX_ON:
+            try:
+                t_x = time.time()
+                d_x = lx_medir(img_l, [f[4] for f in fs_l if len(f) > 4], len(fs_l), nb[0] if nb else None, v_l)
+                lx_acrescenta(pid, os.path.basename(os.path.dirname(path)), d_x, round((time.time() - t_x) * 1000, 1))
+            except Exception as ex:
+                print("  lixeira: %s" % type(ex).__name__)
+        img = img_l = fs_l = None
+
+
+_lendo = [0]                       # 23/11 (AF): fotos sendo lidas agora pelos leitores (a varredura da luz espera)
+
+
+def _leitor_lendo(d):
+    with _cont_lock:
+        _lendo[0] += d
 
 
 def mat_acrescenta(dia, pid, fs):
@@ -1657,6 +1695,9 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             metricas.append(md); metrica_grava(md)
     falhas += treino_lgpd(alvo)             # 16/11: marcações do treino e ajuste, aviso, descarte e treino antigo do estado.db
     falhas += poses_lgpd(alvo)              # 23/11: a classificação de pose da foto
+    with luz_lock:                          # 24/11: a medida de luz que ainda espera o luz_grava_loop não é gravada
+        for pid in alvo:
+            luz_novas.pop(pid, None)
     try:
         sess_esquecer_disco(apagados_sess)   # v91 (S14): o pid sai também dos arquivos de sessão dos dias anteriores
     except Exception as ex:
@@ -1914,6 +1955,10 @@ def nuvem_galerias_loop():
                 nuvem_vendas_online(seg)
             except Exception as ex:
                 nuvem["vendas_online_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+            try:
+                nuvem_compra(seg)
+            except Exception as ex:
+                nuvem["compra_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         if time.time() - nuvem.get("video_eventos_em", 0) > 120:
             nuvem["video_eventos_em"] = time.time()
             try:
@@ -1922,6 +1967,18 @@ def nuvem_galerias_loop():
                 nuvem["video_eventos_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         nuvem_gal_acorda.wait(5)
         nuvem_gal_acorda.clear()
+
+
+def nuvem_compra(seg, ligada=None, por=""):
+    """24/11: chave da compra online, guardada na Nuvem (GET|POST /ponto/compra). Fica em nuvem["compra"] (no /status, sem
+    quem trocou): ligada (a chave do painel), pode (a Nuvem tem CompraOnline=1 e a chave da Imply) e quando mudou."""
+    corpo = None if ligada is None else json.dumps({"ligada": bool(ligada), "por": por}).encode()
+    rq = urllib.request.Request(NUVEM_API + "/ponto/compra", data=corpo, method="POST" if corpo else "GET",
+                                headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente", "Content-Type": "application/json"})
+    with urllib.request.urlopen(rq, timeout=15) as resp_:
+        j = json.loads(resp_.read().decode("utf8"))
+    nuvem["compra"] = {"ligada": bool(j.get("ligada")), "pode": bool(j.get("pode")), "em": str(j.get("em") or "")[:40] or None}
+    return dict(nuvem["compra"], por=str(j.get("por") or "")[:120] or None)
 
 
 def nuvem_vendas_online(seg):
@@ -9309,7 +9366,7 @@ def auth_quem(token):
 # ASSUMIR_S. A sessão do admin fica guardada no cookie ASSUMIR_COOKIE e volta com /auth/voltar.
 ASSUMIR_S = 4 * 3600
 ASSUMIR_COOKIE = "eterna_sessao_adm"
-ASSUMIR_LIVRES = ("/auth/voltar", "/auth/sair")
+ASSUMIR_LIVRES = ("/auth/voltar", "/auth/sair", "/auth/entrar")   # entrar (com senha) encerra o "ver como" deste navegador
 
 
 def auth_assumir_recusa(eu, usuario):
@@ -9440,6 +9497,7 @@ def perfil_recusa(ed, id_doc, v):
     if not isinstance(v.get("name"), str) or not v["name"].strip() or not isinstance(v.get("perms"), dict) or not isinstance(v.get("menu"), list):
         return "invalido"
     return "sem_poder" if auth_acessos({"perms": v["perms"]}) - auth_acessos(ed) else None
+SIM_SO_ADMIN = ("autoAj", "autoAjPor")         # 24/11: só o Admin grava (doc_recusa)
 DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("stock|", ("estoque", "venda")),          # o rolo de papel do posto baixa na impressão, feita no caixa
            ("flags|", ("estoque",)), ("flagList", ("estoque",)),
@@ -11137,6 +11195,10 @@ def doc_recusa(db, quem, d):
     mods = doc_modulos(col, id_doc)
     if not mods:
         return "desconhecido"
+    # 24/11 (Eduardo): o Ajuste automático das fotos (sim/autoAj e quem mexeu, sim/autoAjPor) só o Admin muda, como o /treino/config.
+    # O perfil vem do cadastro da sessão, nunca do pedido; o "ver como" também é recusado. O resto da coleção sim segue a tabela DOC_SIM.
+    if col == "sim" and id_doc in SIM_SO_ADMIN and ((quem.get("cadastro") or {}).get("preset") != "admin" or quem.get("assumido_por")):
+        return "so_admin"
     letras = ("d", "u") if apaga else ("u",) if existe else ("c", "u")
     return None if any(auth_pode(quem["cadastro"], mo, le) for mo in mods for le in letras) else "sem_permissao"
 
@@ -11467,6 +11529,25 @@ def posto_quem(token, ip=""):
         finally:
             db.close()
     return {"id": r[0], "nome": r[1], "num": r[2], "auto": str(r[3] or "").startswith("auto:")} if r else None
+
+
+def porta_retratos_valida(v):
+    """config/porta-retratos (24/11): {itens: [{id: pr1|pr2|pr3, nome, preco, foto (JPEG em data URL, até 300 KB), ativo}], por, em}."""
+    if not isinstance(v, dict) or not isinstance(v.get("itens"), list) or len(v["itens"]) > 3:
+        return None
+    itens, vistos = [], set()
+    for x in v["itens"]:
+        if not isinstance(x, dict) or x.get("id") not in ("pr1", "pr2", "pr3") or x["id"] in vistos:
+            return None
+        nome, preco, foto = x.get("nome"), x.get("preco"), x.get("foto")
+        if not isinstance(nome, str) or not 0 < len(nome.strip()) <= 60 or isinstance(preco, bool) or not isinstance(preco, (int, float)) or not 0 < preco <= 10000:
+            return None
+        if foto is not None and not (isinstance(foto, str) and foto.startswith("data:image/jpeg;base64,") and len(foto) <= 300 * 1024
+                                     and re.fullmatch(r"[A-Za-z0-9+/=]+", foto[23:])):
+            return None
+        vistos.add(x["id"])
+        itens.append({"id": x["id"], "nome": nome.strip(), "preco": round(float(preco), 2), "foto": foto, "ativo": x.get("ativo") is True})
+    return {"itens": itens, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
 
 
 def postos_lado_valida(v):
@@ -11992,6 +12073,12 @@ def estado_gravar(body, quem=""):
                 if d["col"] == "config" and d["id"] == "poses":     # 23/11: a chave das poses só pela rota /poses/config
                     print("  config/poses recusada pela sincronização (só POST /poses/config) · de %s" % (quem or "?"))
                     continue
+                if d["col"] == "config" and d["id"] == "lixeira":      # 24/11: a chave da Lixeira da IA só pela rota /lixeira/config
+                    print("  config/lixeira recusada pela sincronização (só POST /lixeira/config) · de %s" % (quem or "?"))
+                    continue
+                if d["col"] == "config" and d["id"] == "fotografos":   # 23/11 (AF): limites só pela rota /fotografos/config
+                    print("  config/fotografos recusada pela sincronização (só POST /fotografos/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "ia":    # v93 (segurança): regra dos cliques de IA, só o formato conhecido
                     if v is None:                               # apagar religaria a regra pelo padrão: recusado (desliga pelo Painel)
                         print("  config/ia: apagar recusado · de %s" % (quem or "?"))
@@ -12008,6 +12095,11 @@ def estado_gravar(body, quem=""):
                     v = postos_lado_valida(v)
                     if v is None:
                         print("  config/postos-lado recusada (formato inválido) · de %s" % (quem or "?"))
+                        continue
+                if d["col"] == "config" and d["id"] == "porta-retratos" and v is not None:   # 24/11: cadastro dos porta-retratos
+                    v = porta_retratos_valida(v)
+                    if v is None:
+                        print("  config/porta-retratos recusada (formato inválido) · de %s" % (quem or "?"))
                         continue
                 if d["col"] == "config" and d["id"] == "montagem" and v is not None:   # montagem no servidor: só {modo, por, em}
                     v = montagem_valida(v)
@@ -12669,68 +12761,996 @@ def _backup_ok_grava(t):
         pass
 
 
+# Sobem para a nuvem estes bancos (cena.db e poses.db não) e, pela backup_rodada e pela backup_arquivos_lista, os JSON das sessões e
+# das métricas, index.json, metricas.jsonl, os registros da LGPD, funcao.json, fundos-modo.json, visitas-log/visitas-calibracao, a fila
+# de impressão, agenda-fonte.json e o sessao.json de cada galeria: códigos, contagens e registros, sem imagem nem rosto.
+BACKUP_BANCOS = ("VENDAS_DB", "ESTADO_DB", "OPERACAO_DB", "NUVEM_DB", "TREINO_DB")   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
+
+
+def _backup_marca(banco):
+    """A marca de mudança de um banco: o maior mtime entre ele e o -wal (None se não existe)."""
+    ts = [os.path.getmtime(x) for x in (banco, banco + "-wal") if os.path.exists(x)]
+    return max(ts) if ts else None
+
+
+def backup_bancos(s3, pc, ultimo, hoje=None):
+    """Sobe só o banco que mudou desde a última subida e, uma vez por dia, a cópia do dia de cada um. ultimo: banco -> (marca,
+    dia, md5 da cópia enviada), atualizado aqui. Marca igual: nem copia. Marca diferente (o -wal some no checkpoint e muda a
+    marca sem mudar o dado): copia e compara o conteúdo; igual ao enviado no mesmo dia, só guarda a marca nova. -> bancos enviados"""
+    hoje = hoje or _ff_hoje()
+    enviados = []
+    for banco in [globals()[n] for n in BACKUP_BANCOS]:
+        marca = _backup_marca(banco)
+        u = ultimo.get(banco)
+        if marca is None or (u and u[0] == marca and u[1] == hoje):
+            continue
+        tmp = banco + ".backup"
+        src, dst = sqlite3.connect(banco, timeout=30), sqlite3.connect(tmp)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        corpo = open(tmp, "rb").read()
+        os.remove(tmp)
+        md5 = hashlib.md5(corpo).digest()
+        if u and u[1] == hoje and u[2] == md5:
+            ultimo[banco] = (marca, hoje, md5)
+            continue
+        nome = os.path.basename(banco)
+        for chave in ("backup/%s/%s" % (pc, nome), "backup/%s/dia/%s/%s" % (pc, hoje, nome)):
+            s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
+                          ContentMD5=base64.b64encode(md5).decode())
+        ultimo[banco] = (marca, hoje, md5)
+        enviados.append(nome)
+    return enviados
+
+
+def backup_rodada(pc, ultimo, est):
+    """Uma rodada do backup_loop (sem o pulso). ultimo: o do backup_bancos. est: {"ok_em", "json_pend"}, atualizado aqui.
+    24/11: os JSON de métricas e sessões sobem junto com banco mudado; se esse envio falha, json_pend fica verdadeiro e a rodada
+    seguinte repete os JSON mesmo sem banco mudado. Só sem nada pendente a rodada sem mudança renova o ok_em (com falha ele
+    envelhece e o alerta da AWS dispara)."""
+    falhou = False
+    try:
+        backup_arquivos(pc)
+    except Exception as ex:
+        falhou = True
+        backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
+        print("  backup na nuvem (arquivos):", str(ex)[:160])
+    try:
+        s3 = _s3_cliente()
+        hoje = _ff_hoje()
+        # 24/11: só o banco que mudou (cada um com a sua marca), não todos quando um muda
+        if backup_bancos(s3, pc, ultimo, hoje):
+            est["json_pend"] = True
+        if not est.get("json_pend"):
+            if not falhou:
+                est["ok_em"] = time.time()
+                _backup_ok_grava(est["ok_em"])
+            return
+        for d in (_ff_hoje(time.time() - 86400), hoje):
+            for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
+                a = os.path.join(pasta, d + ".json")
+                if os.path.exists(a):
+                    s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
+                                  ContentType="application/json")
+        est["json_pend"] = False
+        if not falhou:
+            est["ok_em"] = time.time()
+            _backup_ok_grava(est["ok_em"])
+            backup.update(em=_iso(), ok=True, erro=None)
+    except Exception as ex:
+        backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
+        print("  backup na nuvem:", str(ex)[:160])
+
+
 def backup_loop():
     if not NUVEM_BUCKET:
         return
     pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
-    ultimo = None
-    ok_em = _backup_ok_le()
+    ultimo = {}
+    est = {"ok_em": _backup_ok_le(), "json_pend": False}
     while True:
         time.sleep(120)
         # 15/11: pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): a cada rodada, mesmo sem mudança. Sem pulso
         # novo há 30 min (servidor desligado, sem internet) ou com ok_em velho (backup falhando), a AWS manda e-mail.
         try:
             _s3_cliente().put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/pulso.json" % pc, ContentType="application/json",
-                                     Body=json.dumps({"em": time.time(), "ok_em": ok_em, "ok": backup.get("ok"), "erro": backup.get("erro")}).encode())
+                                     Body=json.dumps({"em": time.time(), "ok_em": est["ok_em"], "ok": backup.get("ok"), "erro": backup.get("erro")}).encode())
         except Exception as ex:
             print("  backup na nuvem (pulso):", str(ex)[:160])
-        falhou = False
+        backup_rodada(pc, ultimo, est)
+
+
+# ---------- Zerar a fase de teste (24/11, plano docs/planos/2026-11-24-zerar-fase-teste.md) ----------
+# O Admin aperta o botão em Sistema › Repositório (POST /zerar/fase-teste): o agente grava o pedido e sai; o systemd religa e, na
+# partida, ANTES de qualquer thread, filho ou HTTP (zerar_partida no __main__), o que o Eterna gerou no teste vai para uma pasta de
+# arquivo no próprio servidor (nada é apagado de vez; nada sai do servidor). Fica: Roverpix, bilheteria, Treino da IA, usuários,
+# configurações e o índice das fotos (index.json, D4). Mover é sempre os.rename no mesmo disco, só o conteúdo de cada pasta.
+# Uso único (zerada.json). Desfazer: python eterna-agente.py --desfazer-zeragem <id> [--sobrescrever], com o agente parado.
+ZERAR_PEDIDO = os.path.join(HOME, "ponto", "zerar-pedido.json")
+ZERAR_ANDA = os.path.join(HOME, "ponto", "zerar-andamento.json")
+ZERAR_FALHOU = os.path.join(HOME, "ponto", "zerar-falhou.json")
+ZERAR_EXPIRADO = os.path.join(HOME, "ponto", "zerar-expirado.json")
+ZERAR_FEITA = os.path.join(HOME, "ponto", "zerada.json")
+ARQUIVO_DIR = os.path.join(HOME, "arquivo")                              # NVMe: bancos, sessões, métricas, galerias, miniaturas, rostos
+ARQUIVO_MIDIA = os.path.join(os.path.realpath(INBOX), ".arquivo")        # HD das fotos: o ponto esconde a pasta de quem varre a inbox
+ZERAR_PEDIDO_MAX_S = 600                 # pedido mais velho que isto na partida não executa (vira zerar-expirado.json)
+ZERAR_TENTATIVAS = 3                     # parou no meio 3 vezes: zerar-falhou.json e o agente sobe normal
+ZERAR_ATE = "2026-11-25"                 # revisão de segurança (24/11): depois deste dia (data local do servidor) o botão recusa com
+                                         # "prazo"; ETERNA_ZERAR_LIBERA=1 no serviço libera de novo. Pedido ou andamento já gravado retoma normal.
+ZERAR_PRAZO_DIAS = 30                    # D9 (Eduardo, 24/11): a pasta de arquivo fica 30 dias; a data vai no resumo e no console.
+                                         # Ninguém apaga sozinho: passado o prazo, o Ronaldo apaga as duas pastas à mão.
+# D1: as ativações (Drone, Chute a Gol, Snap Pop) geradas pelo Eterna vão para o arquivo. Se o Eduardo confirmar que as vendas do
+# tablet desde 13/11 foram reais, trocar para False: vendas do tablet, entregas, pulseiras, fotos e vídeos das ativações, as galerias
+# de vídeo (tipo "video") e as do Tour ligadas a elas (tour_token) ficam; os cartões entregues não mudam de lote.
+ZERAR_ATIVACOES = True
+if os.environ.get("ETERNA_MODO_TESTE") == "1" and os.environ.get("ETERNA_ZERAR_ATIVACOES") == "0":
+    ZERAR_ATIVACOES = False              # só nos testes
+BACKUP_ORIGINAIS_DB = os.path.join(HOME, "backup-originais.db")   # registro do servidor/linux/backup-originais.py (outro processo)
+ZERAR_LOTE = "fase-teste"                # D2: cartões entregues no teste, num lote cancelado (a Entrega recusa)
+_re_zerada = re.compile(r"^fase-teste-\d{8}-\d{4}(-\d+)?$")
+# o que se move (caminhos relativos à pasta Eterna). Pastas: só o conteúdo, nunca a pasta (inbox, recortes, montagens e ativ-* são
+# links para o HD; a pasta fica e o agente segue gravando nela). Nome que começa com ponto fica (.arquivo, .versao).
+ZERAR_NVME_PASTAS = ("thumbs", "galerias", "ponto/sessoes", "ponto/metricas", "ponto/visitas")
+ZERAR_NVME_ARQS = ("meta.json", "metricas.jsonl", "envio-dia.json", "leitor-dia.json", "rostos.db", "rostos.db-wal", "rostos.db-shm",
+                   "ponto/poses.db", "ponto/poses.db-wal", "ponto/poses.db-shm", "ponto/visitas-log.jsonl", "ponto/visitas-log.jsonl.1",
+                   "ponto/visitas-calibracao.jsonl", "ponto/visitas-calibracao.jsonl.1", "impressao/fila.json")
+ZERAR_BANCOS = ("VENDAS_DB", "OPERACAO_DB", "NUVEM_DB", "ESTADO_DB", "TREINO_DB", "CENA_DB", "BACKUP_ORIGINAIS_DB")   # copiados antes de mudar
+
+
+def zerar_midia_pastas():
+    return ("inbox", "recortes", "montagens") + (("ativ-videos", "ativ-clientes") if ZERAR_ATIVACOES else ())
+
+
+def _zh(rel):
+    return os.path.join(HOME, *rel.split("/"))
+
+
+def _zerar_ler(arq):
+    try:
+        with open(arq, encoding="utf8") as f:
+            j = json.load(f)
+        return j if isinstance(j, dict) else None
+    except Exception:
+        return None
+
+
+def _zerar_id_lido():
+    j = _zerar_ler(ZERAR_FEITA)
+    v = (j or {}).get("id")
+    return v if isinstance(v, str) and _re_zerada.match(v) else None
+
+
+ZERADA_ID = _zerar_id_lido()             # /status.zerada: o navegador limpa a cópia local quando muda
+
+
+class ZerarErro(Exception):
+    def __init__(self, codigo):
+        Exception.__init__(self, codigo)
+        self.codigo = codigo
+
+
+def _zerar_ls(d):
+    """Nomes do primeiro nível de d, sem os que começam com ponto ([] se a pasta não existe)."""
+    try:
+        return sorted(n for n in os.listdir(d) if not n.startswith("."))
+    except OSError:
+        return []
+
+
+def _zerar_n(path, sql, args=()):
+    """Uma contagem num banco aberto só para leitura (0 sem banco ou sem tabela)."""
+    if not os.path.exists(path):
+        return 0
+    for uri in (True, False):
         try:
-            backup_arquivos(pc)
-        except Exception as ex:
-            falhou = True
-            backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
-            print("  backup na nuvem (arquivos):", str(ex)[:160])
+            c = sqlite3.connect("file:%s?mode=ro" % quote(os.path.abspath(path)), uri=True, timeout=10) if uri else sqlite3.connect(path, timeout=10)
+            try:
+                r = c.execute(sql, args).fetchone()
+                return int(r[0] or 0) if r else 0
+            finally:
+                c.close()
+        except sqlite3.OperationalError as ex:
+            if "no such table" in str(ex):
+                return 0
+        except sqlite3.Error:
+            return 0
+    return 0
+
+
+def _zerar_gal_fica():
+    """Galerias que ficam: nenhuma com ZERAR_ATIVACOES; senão as de vídeo e as do Tour ligadas a uma venda do tablet."""
+    if ZERAR_ATIVACOES:
+        return set()
+    fica = set()
+    if os.path.exists(VENDAS_DB):
+        c = sqlite3.connect(VENDAS_DB, timeout=30)
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB, TREINO_DB, POSES_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino; 23/11: poses
-            if not bancos:
-                continue
-            marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
-            if marca == ultimo:
-                if not falhou:
-                    ok_em = time.time()
-                    _backup_ok_grava(ok_em)
-                continue
-            s3 = _s3_cliente()
-            hoje = _ff_hoje()
-            for banco in bancos:
-                tmp = banco + ".backup"
-                src, dst = sqlite3.connect(banco, timeout=30), sqlite3.connect(tmp)
+            fica |= {r[0] for r in c.execute("select tour_token from ativ_venda where origem='eterna' and tour_token is not null")}
+        except sqlite3.Error:
+            pass
+        finally:
+            c.close()
+    for t in _zerar_ls(GALERIAS):
+        if token_ok(t) and os.path.isdir(os.path.join(GALERIAS, t)):
+            try:
+                if (REPO.ler_manifesto(t) or {}).get("tipo") == "video":
+                    fica.add(t)
+            except Exception:
+                pass
+    return fica
+
+
+def _zerar_ha_lote(c):
+    return bool(c.execute("select 1 from cartao_lote where id != ? limit 1", (ZERAR_LOTE,)).fetchone())
+
+
+def zerar_inventario():
+    """Prévia: só contagens do que vai para o arquivo e do que fica. Só leitura."""
+    vai, fica = {}, {}
+    fotos = dias = 0
+    for d in _zerar_ls(INBOX):
+        p = os.path.join(INBOX, d)
+        if os.path.isdir(p):
+            k = sum(1 for n in _zerar_ls(p) if "_" in n and n.endswith(EXT))
+            fotos += k
+            dias += 1 if k else 0
+    vai["fotos"], vai["dias_fotos"] = fotos, dias
+    vai["miniaturas"] = len(_zerar_ls(THUMBS))
+    ns = nd = 0
+    for n in _zerar_ls(SESS_DIR):
+        if n.endswith(".json"):
+            nd += 1
+            j = _zerar_ler(os.path.join(SESS_DIR, n)) or {}
+            ns += len(j.get("sessoes") or []) if isinstance(j.get("sessoes"), list) else 0
+    vai["sessoes"], vai["dias_sessoes"] = ns, nd
+    vai["vendas"] = _zerar_n(VENDAS_DB, "select count(distinct venda) from evento")
+    vai["eventos"] = _zerar_n(VENDAS_DB, "select count(*) from evento")
+    vai["pedidos"] = _zerar_n(ESTADO_DB, "select count(*) from pedido")
+    gf = _zerar_gal_fica()
+    vai["galerias"] = sum(1 for t in _zerar_ls(GALERIAS) if token_ok(t) and t not in gf and os.path.isdir(os.path.join(GALERIAS, t)))
+    vai["rostos_fotos"] = _zerar_n(ROSTOS_DB, "select count(*) from foto")
+    vai["rostos"] = _zerar_n(ROSTOS_DB, "select count(*) from rosto")
+    vai["poses"] = _zerar_n(POSES_DB, "select count(*) from pose")
+    vai["dias_metricas"] = sum(1 for n in _zerar_ls(MET_DIR) if n.endswith(".json"))
+    vai["visitas"] = sum(1 for n in _zerar_ls(VIS_DIR) if n.endswith(".json"))
+    vai["recortes"] = len(_zerar_ls(RECORTES))
+    vai["montagens"] = len(_zerar_ls(MONTAGENS))
+    vai["selfies"] = _zerar_n(VENDAS_DB, "select count(*) from selfie")
+    vai["fotografo_dias"] = _zerar_n(OPERACAO_DB, "select count(*) from fotografo_dia")
+    vai["fila_nuvem"] = _zerar_n(NUVEM_DB, "select count(*) from fila")
+    tablet = _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='eterna'")
+    entregas = _zerar_n(VENDAS_DB, "select count(*) from ativ_entrega")
+    videos = len(_zerar_ls(ATIV_VIDEOS_DIR))
+    bloq = 0
+    if ZERAR_ATIVACOES and os.path.exists(VENDAS_DB):
+        bloq = _zerar_n(VENDAS_DB, "select count(distinct e.qr) from ativ_entrega e left join cartao k on k.token = e.qr"
+                                   " where (k.token is not null and k.lote != ?) or (k.token is null and exists"
+                                   " (select 1 from cartao_lote where id != ?))", (ZERAR_LOTE, ZERAR_LOTE))
+    vai["ativ_vendas"], vai["ativ_entregas"], vai["ativ_videos"] = (tablet, entregas, videos) if ZERAR_ATIVACOES else (0, 0, 0)
+    vai["cartoes_bloqueados"] = bloq
+    fica["usuarios"] = _zerar_n(ESTADO_DB, "select count(*) from doc where col='usuarios' and valor is not null")
+    fica["postos"] = _zerar_n(ESTADO_DB, "select count(*) from posto where revogado_em is null")
+    fica["leitores"] = _zerar_n(ESTADO_DB, "select count(*) from leitor where revogado_em is null")
+    fica["treino_marcacoes"] = _zerar_n(TREINO_DB, "select count(*) from rotulo")
+    fica["dias_roverpix"] = sum(1 for n in _zerar_ls(os.path.join(ROVER_DIR, "agg")) if n.endswith(".json"))
+    fica["dias_entradas"] = _zerar_n(OPERACAO_DB, "select count(*) from (select dia from entrada union select dia from entrada_total)")
+    # 24/11 (testador): os cartões para usar são os da tabela fora do lote fase-teste, menos os entregues que estão na tabela
+    # (um entregue fora da tabela não desconta nada; depois da zeragem os do lote fase-teste não contam).
+    bloq_tab = 0
+    if ZERAR_ATIVACOES:
+        bloq_tab = _zerar_n(VENDAS_DB, "select count(distinct e.qr) from ativ_entrega e join cartao k on k.token = e.qr where k.lote != ?", (ZERAR_LOTE,))
+    fica["cartoes"] = max(0, _zerar_n(VENDAS_DB, "select count(*) from cartao where lote != ?", (ZERAR_LOTE,)) - bloq_tab)
+    fica["ativ_vendas_antigas"] = _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='antigo'")
+    if not ZERAR_ATIVACOES:
+        fica["ativ_vendas_tablet"], fica["ativ_entregas"], fica["ativ_videos"] = tablet, entregas, videos
+    return {"vai": vai, "fica": fica}
+
+
+def _zerar_hoje():
+    """Data local do servidor (a mesma de _ff_hoje); ETERNA_ZERAR_HOJE (aaaa-mm-dd) simula outro dia, só nos testes."""
+    h = os.environ.get("ETERNA_ZERAR_HOJE") or ""
+    if os.environ.get("ETERNA_MODO_TESTE") == "1" and re.match(r"^\d{4}-\d{2}-\d{2}$", h):
+        return h
+    return _ff_hoje()
+
+
+def zerar_bloqueios():
+    """Códigos que impedem a zeragem agora (lista vazia = pode)."""
+    b = []
+    if _zerar_hoje() > ZERAR_ATE and os.environ.get("ETERNA_ZERAR_LIBERA") != "1":
+        b.append("prazo")                                # o botão só valia até ZERAR_ATE
+    if os.path.exists(ZERAR_FEITA):
+        b.append("ja_zerado")
+    if os.path.exists(ZERAR_PEDIDO) or os.path.exists(ZERAR_ANDA):
+        b.append("em_andamento")
+    teste = os.environ.get("ETERNA_MODO_TESTE") == "1"
+    if not os.environ.get("INVOCATION_ID") and not teste:
+        b.append("sem_supervisor")                       # sem o systemd, ninguém religa o agente depois do pedido
+    if os.name != "posix":
+        b.append("sistema")
+    rin = os.path.realpath(INBOX)
+    if not os.path.isdir(rin) or not os.access(rin, os.W_OK):
+        b.append("pasta_midia")
+    link = outro = False
+    for rel in ZERAR_NVME_PASTAS + ("ponto", "impressao", "arquivo"):
+        if os.path.islink(_zh(rel)):
+            link = True
+    for rel in ZERAR_NVME_ARQS:
+        if os.path.islink(_zh(rel)):
+            link = True
+    try:
+        dev_nvme = os.stat(HOME).st_dev
+        dev_hd = os.stat(rin).st_dev
+        for rel in ZERAR_NVME_PASTAS + ZERAR_NVME_ARQS:
+            p = _zh(rel)
+            if os.path.exists(p) and not os.path.islink(p) and os.stat(p).st_dev != dev_nvme:
+                outro = True
+        for rel in zerar_midia_pastas():
+            p = _zh(rel)
+            if os.path.exists(p) and os.stat(p).st_dev != dev_hd:
+                outro = True
+        for p, dv in ((ARQUIVO_DIR, dev_nvme), (ARQUIVO_MIDIA, dev_hd)):
+            if os.path.exists(p) and os.stat(p).st_dev != dv:
+                outro = True
+    except OSError:
+        outro = True
+    if link:
+        b.append("link_inesperado")
+    if outro:
+        b.append("outro_disco")
+    soma = 0
+    for n in ZERAR_BANCOS:
+        for x in (globals()[n], globals()[n] + "-wal"):
+            try:
+                soma += os.path.getsize(x)
+            except OSError:
+                pass
+    folga = 1024 ** 3
+    if teste and os.environ.get("ETERNA_ZERAR_FOLGA_GB"):
+        try:
+            folga = float(os.environ["ETERNA_ZERAR_FOLGA_GB"]) * 1024 ** 3
+        except ValueError:
+            pass
+    try:
+        if shutil.disk_usage(HOME).free < 2 * soma + folga:
+            b.append("espaco")
+    except OSError:
+        b.append("espaco")
+    return b
+
+
+def zerar_id(agora=None):
+    """fase-teste-AAAAMMDD-HHMM no fuso do venue; -2, -3 se a pasta já existir."""
+    base = time.strftime("fase-teste-%Y%m%d-%H%M", time.localtime(agora or time.time()))
+    zid, i = base, 1
+    while os.path.lexists(os.path.join(ARQUIVO_DIR, zid)) or os.path.lexists(os.path.join(ARQUIVO_MIDIA, zid)):
+        i += 1
+        zid = "%s-%d" % (base, i)
+    return zid
+
+
+def _zerar_dir(p):
+    os.makedirs(p, mode=0o700, exist_ok=True)
+    os.chmod(p, 0o700)                    # o umask pode ter tirado bits; a pasta é só do usuário do agente
+
+
+_ZERAR_POS_MARCA = []
+_re_zerar_pos = re.compile(r"\.pos-\d{8}-\d{6}(-\d+)?(-wal|-shm|-journal)?$")
+
+
+def _zerar_ao_lado(dst):
+    """24/11 (testador): nome livre ao lado de dst, dentro do arquivo: <nome>.pos-AAAAMMDD-HHMMSS (-2, -3 se já existir). Para
+    -wal/-shm/-journal a marca vai antes do sufixo (rostos.db.pos-X e rostos.db.pos-X-wal continuam um par do SQLite)."""
+    if not _ZERAR_POS_MARCA:
+        _ZERAR_POS_MARCA.append(time.strftime("%Y%m%d-%H%M%S"))
+    d, n = os.path.split(dst)
+    fim = ""
+    for s in ("-wal", "-shm", "-journal"):
+        if n.endswith(s):
+            n, fim = n[:-len(s)], s
+            break
+    i = 1
+    while True:
+        p = os.path.join(d, "%s.pos-%s%s%s" % (n, _ZERAR_POS_MARCA[0], "" if i == 1 else "-%d" % i, fim))
+        if not os.path.lexists(p):
+            return p
+        i += 1
+
+
+def _zerar_mover(src_dir, dst_dir, fica=None):
+    """Move cada entrada do primeiro nível de src_dir (menos nomes com ponto e as de fica) para dst_dir. Idempotente (24/11,
+    testador): o que já foi não está mais em src_dir e segue. Se o mesmo nome já está no arquivo, o do arquivo é a cópia da fase de
+    teste (movida numa tentativa anterior) e o da origem nasceu depois (o agente subiu entre as tentativas): o novo vai inteiro,
+    arquivo ou pasta, para o lado (_zerar_ao_lado), também dentro do arquivo. Nunca sobrescreve nem junta pastas."""
+    nomes = [n for n in _zerar_ls(src_dir) if not (fica and n in fica)]
+    if not nomes:
+        return 0
+    os.makedirs(dst_dir, mode=0o700, exist_ok=True)
+    lado = 0
+    for n in nomes:
+        dst = os.path.join(dst_dir, n)
+        if os.path.lexists(dst):
+            dst = _zerar_ao_lado(dst)
+            lado += 1
+        os.rename(os.path.join(src_dir, n), dst)
+    if lado:
+        print("  zerar: %d item(ns) de %s já estavam no arquivo; os novos foram ao lado (.pos-)" % (lado, os.path.relpath(src_dir, HOME)))
+    return len(nomes)
+
+
+def _zerar_mover_arq(src, dst):
+    """Um arquivo solto. Origem sumiu = já feito (ou não havia). Origem e destino presentes: o da origem nasceu depois e vai para o
+    lado, dentro do arquivo (ver _zerar_mover)."""
+    if not os.path.lexists(src):
+        return 0
+    if os.path.lexists(dst):
+        dst = _zerar_ao_lado(dst)
+        print("  zerar: %s já estava no arquivo; o novo foi ao lado (.pos-)" % os.path.relpath(src, HOME))
+    os.makedirs(os.path.dirname(dst), mode=0o700, exist_ok=True)
+    os.rename(src, dst)
+    return 1
+
+
+def _zerar_imp_arqs():
+    """Fila de impressão solta (as fotos e as listas); os scripts .ps1 ficam."""
+    out = []
+    for n in _zerar_ls(IMP_DIR):
+        if n.lower().endswith(".jpg") or (n.startswith("lista_") and n.endswith(".txt")):
+            out.append("impressao/" + n)
+    return out
+
+
+def _zerar_sem_escrita():
+    """24/11 (revisão): as pastas cujo conteúdo vai ser movido (e as que guardam os arquivos soltos), sem permissão de escrita.
+    Um EACCES aparece no preparo, antes de mexer em qualquer coisa. Subpasta de primeiro nível também: mover pasta para outro
+    lugar muda o ".." dela."""
+    pastas = [_zh(r) for r in ZERAR_NVME_PASTAS + tuple(zerar_midia_pastas())]
+    pastas += sorted({os.path.dirname(_zh(r)) for r in ZERAR_NVME_ARQS + tuple(_zerar_imp_arqs())})
+    ruins = []
+    for d in pastas:
+        if not os.path.isdir(d):
+            continue
+        if not os.access(d, os.W_OK | os.X_OK):
+            ruins.append(d)
+            continue
+        for n in _zerar_ls(d):
+            sub = os.path.join(d, n)
+            if os.path.isdir(sub) and not os.path.islink(sub) and not os.access(sub, os.W_OK):
+                ruins.append(sub)
+    return list(dict.fromkeys(os.path.relpath(x, HOME) for x in ruins))
+
+
+def _zp_preparo(ctx):
+    bq = [x for x in zerar_bloqueios() if x not in ("ja_zerado", "em_andamento", "prazo")]   # o prazo vale para o pedido novo, não para a retomada
+    if bq:
+        raise ZerarErro(",".join(bq))
+    se = _zerar_sem_escrita()
+    if se:
+        print("  zerar: sem permissão de escrita em %d pasta(s): %s" % (len(se), ", ".join(se[:5])))
+        raise ZerarErro("sem_escrita")
+    for p in (ARQUIVO_DIR, ARQUIVO_MIDIA, ctx["arq"], ctx["midia"]):
+        _zerar_dir(p)
+    _grava_privado(os.path.join(ctx["arq"], "antes.json"), json.dumps(zerar_inventario()))
+    return 0
+
+
+def _zp_copias(ctx):
+    pasta = os.path.join(ctx["arq"], "bancos")
+    _zerar_dir(pasta)
+    n = 0
+    for nome in ZERAR_BANCOS:
+        src = globals()[nome]
+        dst = os.path.join(pasta, os.path.basename(src))
+        if not os.path.exists(src) or os.path.exists(dst):     # cópia feita numa tentativa anterior fica (o banco já pode ter mudado)
+            continue
+        for sobra in (dst + ".tmp", dst + ".tmp-journal", dst + ".tmp-wal", dst + ".tmp-shm"):   # tentativa anterior que caiu no meio
+            if os.path.exists(sobra):
+                os.remove(sobra)
+        a, b = sqlite3.connect(src, timeout=30), sqlite3.connect(dst + ".tmp")
+        try:
+            a.backup(b)
+        finally:
+            b.close()
+            a.close()
+        os.chmod(dst + ".tmp", 0o600)
+        os.replace(dst + ".tmp", dst)
+        n += 1
+    return n
+
+
+def _zp_vendas(ctx):
+    c = vendas_db()
+    try:
+        with c:
+            n = 0
+            if ZERAR_ATIVACOES:
+                qrs = [r[0] for r in c.execute("select distinct qr from ativ_entrega where qr is not null")]
+                if qrs and _zerar_ha_lote(c):
+                    c.execute("insert or ignore into cartao_lote (id, n, em, por, situacao, baixado_n) values (?, 0, ?, 'Eterna', 'cancelado', 0)",
+                              (ZERAR_LOTE, time.strftime("%Y-%m-%dT%H:%M:%S")))
+                    for q in qrs:            # cartão entregue que não estava em lote nenhum também fica preso (o QR já está na nuvem)
+                        c.execute("insert or ignore into cartao (token, codigo, lote) values (?, ?, ?)", (q, cartao_codigo(q), ZERAR_LOTE))
+                    c.execute("update cartao set lote = ? where token in (select qr from ativ_entrega)", (ZERAR_LOTE,))
+                    c.execute("update cartao_lote set n = (select count(*) from cartao where lote = ?) where id = ?", (ZERAR_LOTE, ZERAR_LOTE))
+                n += c.execute("delete from ativ_venda where origem = 'eterna'").rowcount
+                for t in ("ativ_entrega", "ativ_pulseira", "ativ_pulseira_log", "ativ_foto"):
+                    n += c.execute("delete from %s" % t).rowcount
+            n += c.execute("delete from evento").rowcount
+            n += c.execute("delete from selfie").rowcount
+        return n
+    finally:
+        c.close()
+
+
+def _zp_operacao(ctx):
+    c = operacao_db()
+    try:
+        with c:
+            n = 0
+            for t in ("fotografo_dia", "fotografo_mes", "fotografo_dia_calc", "montagem_vista"):
+                n += c.execute("delete from %s" % t).rowcount
+            # dia_consolidar nunca zera uma fonte que sumiu; com null, o dia_completo da partida refaz pela Roverpix (ou deixa vazio)
+            n += c.execute("update dia set fonte_vendas = null, vendas = null, receita = null, fotos = null, sessoes = null,"
+                           " sessoes_com_venda = null where fonte_vendas = 'eterna'").rowcount
+        return n
+    finally:
+        c.close()
+
+
+def _zp_nuvem(ctx):
+    fica = _zerar_gal_fica()
+    c = nuvem_db()
+    try:
+        tem = {r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+        with c:
+            n = c.execute("delete from fila").rowcount
+            if "galerias" in tem:
+                if fica:
+                    n += c.execute("delete from galerias where token not in (%s)" % ",".join("?" * len(fica)), tuple(fica)).rowcount
+                else:
+                    n += c.execute("delete from galerias").rowcount
+            if "videos" in tem and ZERAR_ATIVACOES:
+                n += c.execute("delete from videos").rowcount
+        return n
+    finally:
+        c.close()
+
+
+def _zp_estado(ctx):
+    c = pedidos_db()
+    try:
+        with c:
+            return c.execute("delete from pedido").rowcount
+    finally:
+        c.close()
+
+
+def _zp_originais(ctx):
+    """O registro do backup-originais.py: as linhas das fotos que foram para o arquivo saem de "feito" (senão o script acha que
+    faltam fotos para sempre e trava toda exclusão LGPD na nuvem) e ficam na tabela "arquivado", com o id da zeragem."""
+    if not os.path.exists(BACKUP_ORIGINAIS_DB):
+        return 0
+    c = sqlite3.connect(BACKUP_ORIGINAIS_DB, timeout=30)
+    try:
+        c.execute("create table if not exists feito (chave text primary key, tam integer, mtime real, md5 text, em real)")
+        c.execute("create table if not exists arquivado (chave text, tam integer, mtime real, md5 text, em real, arquivo text,"
+                  " primary key (arquivo, chave))")
+        cond = "chave like 'originais/%'" + ("" if ZERAR_ATIVACOES else " and chave not like 'originais/ativ-videos/%' and chave not like 'originais/ativ-clientes/%'")
+        with c:
+            c.execute("insert or ignore into arquivado select chave, tam, mtime, md5, em, ? from feito where " + cond, (ctx["id"],))
+            return c.execute("delete from feito where " + cond).rowcount
+    finally:
+        c.close()
+
+
+def _zp_mover_nvme(ctx):
+    base = os.path.join(ctx["arq"], "home")
+    n = 0
+    gf = _zerar_gal_fica()
+    for rel in ZERAR_NVME_PASTAS:
+        n += _zerar_mover(_zh(rel), os.path.join(base, *rel.split("/")), gf if rel == "galerias" else None)
+        os.makedirs(_zh(rel), exist_ok=True)         # a pasta fica (vazia) para o agente
+    for rel in ZERAR_NVME_ARQS + tuple(_zerar_imp_arqs()):
+        n += _zerar_mover_arq(_zh(rel), os.path.join(base, *rel.split("/")))
+    return n
+
+
+def _zp_mover_midia(ctx):
+    n = 0
+    for rel in zerar_midia_pastas():
+        n += _zerar_mover(_zh(rel), os.path.join(ctx["midia"], rel))
+        os.makedirs(_zh(rel), exist_ok=True)
+    return n
+
+
+def _zerar_prazo(em_t):
+    return time.strftime("%Y-%m-%d", time.localtime(em_t + ZERAR_PRAZO_DIAS * 86400))
+
+
+def _zp_fim(ctx):
+    agora = time.time()
+    antes = _zerar_ler(os.path.join(ctx["arq"], "antes.json")) or {}
+    try:
+        with open(__file__, "rb") as f:
+            versao = hashlib.sha256(f.read()).hexdigest()[:12]
+    except OSError:
+        versao = None
+    prazo = _zerar_prazo(agora)
+    resumo = {"id": ctx["id"], "por": ctx["por"], "em": _iso(agora), "agente": versao, "ativacoes": ZERAR_ATIVACOES,
+              "antes": antes, "depois": zerar_inventario(), "prazo_dias": ZERAR_PRAZO_DIAS, "apagar_a_partir_de": prazo,
+              "prazo_nota": "a pasta guarda fotos e rostos de visitantes: apagar as duas pastas de arquivo a partir desta data"}
+    _grava_privado(os.path.join(ctx["arq"], "resumo.json"), json.dumps(resumo, ensure_ascii=False, indent=1))
+    _grava_privado(ZERAR_FEITA, json.dumps({"id": ctx["id"], "em": _iso(agora), "por": ctx["por"], "por_nome": ctx["por_nome"],
+                                            "pasta": "arquivo/" + ctx["id"], "apagar_a_partir_de": prazo}))
+    _zerar_log("zerar_feito", ctx["por"])
+    try:
+        os.remove(ZERAR_ANDA)
+    except OSError:
+        pass
+    v = antes.get("vai") or {}
+    print("  zerar: %s feito (%d fotos, %d sessões, %d vendas, %d galerias, %d rostos); arquivo até %s (%d dias)"
+          % (ctx["id"], v.get("fotos", 0), v.get("sessoes", 0), v.get("vendas", 0), v.get("galerias", 0), v.get("rostos", 0), prazo, ZERAR_PRAZO_DIAS))
+    return 0
+
+
+def zerar_passos():
+    """Ordem da execução (o desfazer não depende dela: cada parte volta pelo que está no arquivo)."""
+    return [("preparo", _zp_preparo), ("copias", _zp_copias), ("vendas", _zp_vendas), ("operacao", _zp_operacao), ("nuvem", _zp_nuvem),
+            ("estado", _zp_estado), ("mover_nvme", _zp_mover_nvme), ("mover_midia", _zp_mover_midia), ("originais", _zp_originais),
+            ("fim", _zp_fim)]
+    # 24/11 (revisão): originais só depois de mover_midia. Se mover_midia parar, a tabela feito do backup-originais.db fica
+    # como estava; esvaziada antes, com as fotos de teste ainda na inbox, a rodada seguinte reenviaria todos os originais.
+
+
+def _zerar_log(acao, por, ip=""):
+    try:
+        with estado_lock:
+            db = auth_db()
+            try:
+                auth_log(db, por or "", acao, por or "", ip)
+                db.commit()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  zerar: login_log não gravado (%s)" % type(ex).__name__)
+
+
+def _zerar_passo_log(ctx, passo, ok_, n=0, erro=None):
+    if not os.path.isdir(ctx["arq"]):
+        return
+    linha = json.dumps({"passo": passo, "ok": ok_, "n": n, "erro": erro, "em": _iso()})
+    fd = os.open(os.path.join(ctx["arq"], "passos.jsonl"), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a") as f:
+        f.write(linha + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def _zerar_feitos(arq):
+    feitos = set()
+    try:
+        with open(os.path.join(arq, "passos.jsonl"), encoding="utf8") as f:
+            for ln in f:
                 try:
-                    src.backup(dst)
-                finally:
-                    dst.close()
-                    src.close()
-                corpo = open(tmp, "rb").read()
-                os.remove(tmp)
-                nome = os.path.basename(banco)
-                for chave in ("backup/%s/%s" % (pc, nome), "backup/%s/dia/%s/%s" % (pc, hoje, nome)):
-                    s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
-                                  ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
-            for d in (_ff_hoje(time.time() - 86400), hoje):
-                for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
-                    a = os.path.join(pasta, d + ".json")
-                    if os.path.exists(a):
-                        s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
-                                      ContentType="application/json")
-            ultimo = marca
-            if not falhou:
-                ok_em = time.time()
-                _backup_ok_grava(ok_em)
-                backup.update(em=_iso(), ok=True, erro=None)
+                    j = json.loads(ln)
+                except ValueError:
+                    continue
+                if j.get("ok"):
+                    feitos.add(j.get("passo"))
+    except OSError:
+        pass
+    return feitos
+
+
+def _zerar_codigo(ex):
+    """Código curto e legível de um erro de passo (vai para o zerar-falhou.json e a tela traduz)."""
+    if isinstance(ex, ZerarErro):
+        return ex.codigo
+    if isinstance(ex, OSError):
+        if ex.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)):
+            return "disco_cheio"
+        if ex.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+            return "sem_escrita"
+        if ex.errno == errno.EXDEV:
+            return "outro_disco"
+    if isinstance(ex, sqlite3.Error) and "full" in str(ex).lower():
+        return "disco_cheio"
+    return type(ex).__name__
+
+
+def _zerar_grava_falha(dados, src=None):
+    """24/11 (testador): o zerar-falhou.json sempre com passo e motivo legíveis. Normal: grava pelo .tmp. Sem espaço: src (o
+    andamento ou o pedido) vai para o lugar do zerar-falhou.json (rename não precisa de espaço) e é reescrito no próprio bloco
+    (o texto é pequeno). -> True se o texto legível ficou gravado. src nunca fica no lugar quando há erro."""
+    txt = json.dumps(dados)
+    try:
+        _grava_privado(ZERAR_FALHOU, txt)
+        if src and os.path.exists(src):
+            os.remove(src)
+        return True
+    except Exception:
+        try:
+            os.remove(ZERAR_FALHOU + ".tmp")
+        except OSError:
+            pass
+    if src and os.path.exists(src):
+        os.replace(src, ZERAR_FALHOU)
+    try:
+        with open(ZERAR_FALHOU, "r+b") as f:
+            f.write(txt.encode())
+            f.truncate()
+            f.flush()
+            os.fsync(f.fileno())
+        return True
+    except Exception:
+        return False
+
+
+def _zerar_falhou(zid, passo, motivo, por):
+    if not _zerar_grava_falha({"id": zid, "em": _iso(), "passo": passo, "motivo": motivo}, ZERAR_ANDA):
+        print("  zerar: zerar-falhou.json sem o passo e o motivo (disco cheio?)")
+    try:
+        os.remove(ZERAR_ANDA)
+    except OSError:
+        pass
+    _zerar_log("zerar_falhou", por)
+    print("  zerar: não feito, parou em %s (%s); o agente sobe normal" % (passo, motivo))
+
+
+def zerar_partida():
+    """No __main__, antes do main(): sem thread, filho nem HTTP. -> None (nada a fazer ou recusado: segue o main), "execv" (feito:
+    reabrir o agente do zero, sem cache velho em memória) ou "sair" (parou no meio: o systemd religa e retoma)."""
+    if not (os.path.exists(ZERAR_PEDIDO) or os.path.exists(ZERAR_ANDA)):
+        return None
+    fuso_ajusta()
+    agora = time.time()
+    if os.path.exists(ZERAR_ANDA):
+        j = _zerar_ler(ZERAR_ANDA) or {}
+    else:
+        j = _zerar_ler(ZERAR_PEDIDO) or {}
+        try:
+            t = float(j.get("t"))
+        except (TypeError, ValueError):
+            t = 0.0
+        if not (0 <= agora - t <= ZERAR_PEDIDO_MAX_S):
+            os.replace(ZERAR_PEDIDO, ZERAR_EXPIRADO)
+            _zerar_log("zerar_expirado", j.get("por"))
+            print("  zerar: pedido vencido (mais de %d min), nada feito" % (ZERAR_PEDIDO_MAX_S // 60))
+            return None
+        os.replace(ZERAR_PEDIDO, ZERAR_ANDA)
+    zid = j.get("id")
+    por = j.get("por") if isinstance(j.get("por"), str) else ""
+    if not isinstance(zid, str) or not _re_zerada.match(zid):
+        _zerar_falhou(None, "preparo", "pedido", por)
+        return None
+    try:
+        tent = int(j.get("tentativas") or 0)
+    except (TypeError, ValueError):
+        tent = ZERAR_TENTATIVAS
+    if tent >= ZERAR_TENTATIVAS:                  # 24/11 (revisão): já tentou 3 vezes (mesmo que o registro do passo tenha falhado)
+        _zerar_falhou(zid, _zerar_ultima_falha(os.path.join(ARQUIVO_DIR, zid)) or "partida", "tentativas", por)
+        return None
+    j["tentativas"] = tent + 1
+    _grava_privado(ZERAR_ANDA, json.dumps(j))
+    ctx = {"id": zid, "arq": os.path.join(ARQUIVO_DIR, zid), "midia": os.path.join(ARQUIVO_MIDIA, zid), "por": por,
+           "por_nome": j.get("por_nome") if isinstance(j.get("por_nome"), str) else por}
+    feitos = _zerar_feitos(ctx["arq"])
+    print("  zerar: %s, tentativa %d de %d" % (zid, j["tentativas"], ZERAR_TENTATIVAS))
+    falha_teste = os.environ.get("ETERNA_ZERAR_FALHA_PASSO") if os.environ.get("ETERNA_MODO_TESTE") == "1" else None
+    for nome, fn in zerar_passos():
+        if nome in feitos:
+            continue
+        try:
+            if falha_teste == nome:
+                raise ZerarErro("falha_teste")
+            n = fn(ctx)
+            _zerar_passo_log(ctx, nome, True, n)      # sem o registro, o passo conta como não feito (a próxima tentativa refaz)
         except Exception as ex:
-            backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
-            print("  backup na nuvem:", str(ex)[:160])
+            codigo = _zerar_codigo(ex)
+            if nome == "preparo":                     # nada foi tocado: recusa e o agente sobe normal
+                _zerar_falhou(zid, nome, codigo, por)
+                return None
+            try:
+                _zerar_passo_log(ctx, nome, False, 0, codigo)
+            except Exception as ex2:                  # disco cheio, por exemplo: a tentativa já foi contada no andamento
+                print("  zerar: registro do passo não gravado (%s)" % type(ex2).__name__)
+            if j["tentativas"] >= ZERAR_TENTATIVAS:
+                _zerar_falhou(zid, nome, codigo, por)
+                return None
+            print("  zerar: parou em %s (%s); o agente sai e o systemd religa para continuar" % (nome, codigo))
+            return "sair"
+    return "execv"
+
+
+def _zerar_ultima_falha(arq):
+    """O último passo que falhou no passos.jsonl (None se não há ou não dá para ler)."""
+    ult = None
+    try:
+        with open(os.path.join(arq, "passos.jsonl"), encoding="utf8") as f:
+            for ln in f:
+                try:
+                    x = json.loads(ln)
+                except ValueError:
+                    continue
+                if isinstance(x, dict) and not x.get("ok") and isinstance(x.get("passo"), str):
+                    ult = x["passo"]
+    except OSError:
+        pass
+    return ult
+
+
+def zerar_partida_segura():
+    """24/11 (revisão): o __main__ chama esta. Qualquer erro fora dos passos (gravar o andamento, o registro dos passos, o
+    zerar-falhou.json, com o disco cheio por exemplo) não pode derrubar a partida: senão o systemd religa, cai de novo e o
+    limite de tentativas nunca dispara. No erro: o andamento (ou o pedido) vira zerar-falhou.json e o agente sobe normal.
+    O agente nunca chega ao main() com o zerar-andamento.json no lugar, e sempre chega ao main()."""
+    try:
+        return zerar_partida()
+    except Exception as ex:
+        motivo = _zerar_codigo(ex)
+        if motivo == type(ex).__name__:
+            motivo = "partida"
+        print("  zerar: a partida falhou (%s); o agente sobe normal" % type(ex).__name__)
+    for src in (ZERAR_ANDA, ZERAR_PEDIDO):
+        try:
+            if not os.path.exists(src):
+                continue
+            j = _zerar_ler(src) or {}
+            zid = j.get("id") if isinstance(j.get("id"), str) and _re_zerada.match(j["id"]) else None
+            passo = (zid and _zerar_ultima_falha(os.path.join(ARQUIVO_DIR, zid))) or "partida"
+            # 24/11 (testador): passo e motivo legíveis; sem espaço, src é renomeado e reescrito no lugar (_zerar_grava_falha)
+            if not _zerar_grava_falha({"id": zid, "em": _iso(), "passo": passo, "motivo": motivo}, src):
+                print("  zerar: zerar-falhou.json sem o passo e o motivo (disco cheio?)")
+            if os.path.exists(src):
+                os.remove(src)
+        except Exception as ex:
+            print("  zerar: %s não saiu do lugar (%s)" % (os.path.basename(src), type(ex).__name__))
+            try:
+                os.remove(src)
+            except Exception:
+                pass
+    return None
+
+
+_ZERAR_FICOU = []
+
+
+def _zerar_volta(src_dir, dst_dir, pos):
+    """Desfazer: devolve cada entrada de src_dir (arquivo) a dst_dir; o que já existe no lugar vai antes para pos."""
+    n = 0
+    for nome in _zerar_ls(src_dir):
+        if _re_zerar_pos.search(nome):           # o que nasceu entre tentativas (_zerar_ao_lado) fica no arquivo
+            _ZERAR_FICOU.append(nome)
+            continue
+        dst = os.path.join(dst_dir, nome)
+        os.makedirs(dst_dir, exist_ok=True)
+        if os.path.lexists(dst):
+            os.makedirs(pos, mode=0o700, exist_ok=True)
+            os.rename(dst, os.path.join(pos, nome))
+        os.rename(os.path.join(src_dir, nome), dst)
+        n += 1
+    return n
+
+
+def zerar_desfazer(zid, sobrescrever=False):
+    """--desfazer-zeragem <id> [--sobrescrever]: com o agente parado, devolve arquivos e bancos. -> código de saída."""
+    if not isinstance(zid, str) or not _re_zerada.match(zid):
+        print("id inválido (formato fase-teste-AAAAMMDD-HHMM)")
+        return 2
+    arq, midia = os.path.join(ARQUIVO_DIR, zid), os.path.join(ARQUIVO_MIDIA, zid)
+    if not os.path.isdir(arq):
+        print("pasta de arquivo não encontrada: arquivo/%s" % zid)
+        return 2
+    try:
+        s = socket.create_connection(("127.0.0.1", PORT), timeout=1)
+        s.close()
+        print("o agente está no ar (porta %d): pare o serviço antes (sudo systemctl stop eterna-vigia eterna)" % PORT)
+        return 3
+    except OSError:
+        pass
+    bancos = os.path.join(arq, "bancos")
+    if os.path.exists(VENDAS_DB) and (_zerar_n(VENDAS_DB, "select count(*) from evento")
+                                      or _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='eterna'")) and not sobrescrever:
+        print("há vendas feitas depois da zeragem: só com --sobrescrever (elas ficam guardadas em arquivo/%s/pos-zeragem/)" % zid)
+        return 4
+    pos = os.path.join(arq, "pos-zeragem")
+    voltou = {}
+    # arquivos: ao contrário da ordem da zeragem (HD, depois NVMe)
+    for rel in ("inbox", "recortes", "montagens", "ativ-videos", "ativ-clientes"):
+        voltou[rel] = _zerar_volta(os.path.join(midia, rel), _zh(rel), os.path.join(pos, *rel.split("/")))
+    base = os.path.join(arq, "home")
+    for rel in ZERAR_NVME_PASTAS:
+        voltou[rel] = _zerar_volta(os.path.join(base, *rel.split("/")), _zh(rel), os.path.join(pos, *rel.split("/")))
+    n = 0
+    for raiz, _d, nomes in os.walk(base):
+        for nome in nomes:
+            a = os.path.join(raiz, nome)
+            rel = os.path.relpath(a, base).replace(os.sep, "/")
+            if any(rel.startswith(p + "/") for p in ZERAR_NVME_PASTAS):
+                continue
+            if _re_zerar_pos.search(nome):
+                _ZERAR_FICOU.append(nome)
+                continue
+            dst = _zh(rel)
+            if os.path.lexists(dst):
+                os.makedirs(os.path.dirname(os.path.join(pos, *rel.split("/"))), mode=0o700, exist_ok=True)
+                os.rename(dst, os.path.join(pos, *rel.split("/")))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            os.rename(a, dst)
+            n += 1
+    voltou["arquivos_soltos"] = n
+    # bancos trocados pela cópia (o atual vai para pos-zeragem/bancos)
+    for nome in ("VENDAS_DB", "OPERACAO_DB", "NUVEM_DB"):
+        banco = globals()[nome]
+        copia = os.path.join(bancos, os.path.basename(banco))
+        if not os.path.exists(copia):
+            continue
+        pb = os.path.join(pos, "bancos")
+        os.makedirs(pb, mode=0o700, exist_ok=True)
+        for x in (banco, banco + "-wal", banco + "-shm"):
+            if os.path.lexists(x):
+                os.rename(x, os.path.join(pb, os.path.basename(x)))
+        shutil.copy2(copia, banco)
+        os.chmod(banco, 0o600)
+        voltou[os.path.basename(banco)] = "copia"
+    copia = os.path.join(bancos, os.path.basename(ESTADO_DB))
+    if os.path.exists(copia):
+        c = pedidos_db()
+        try:
+            c.execute("attach database ? as antes", (copia,))
+            with c:
+                voltou["pedidos"] = c.execute("insert or ignore into pedido select * from antes.pedido").rowcount
+            c.execute("detach database antes")
+        finally:
+            c.close()
+    if os.path.exists(BACKUP_ORIGINAIS_DB):
+        c = sqlite3.connect(BACKUP_ORIGINAIS_DB, timeout=30)
+        try:
+            tem = {r[0] for r in c.execute("select name from sqlite_master where type='table'")}
+            if "arquivado" in tem:
+                with c:
+                    voltou["originais"] = c.execute("insert or ignore into feito select chave, tam, mtime, md5, em from arquivado where arquivo = ?",
+                                                    (zid,)).rowcount
+                    c.execute("delete from arquivado where arquivo = ?", (zid,))
+        finally:
+            c.close()
+    z = _zerar_ler(ZERAR_FEITA)
+    if z and z.get("id") == zid:
+        os.replace(ZERAR_FEITA, os.path.join(HOME, "ponto", "zerada-desfeita-%s.json" % zid))
+    _zerar_log("zerar_desfeito", "linha de comando")
+    print("zeragem %s desfeita: %s" % (zid, json.dumps(voltou)))
+    if _ZERAR_FICOU:
+        print("ficaram em arquivo/%s %d item(ns) .pos- (gravados pelo agente entre uma tentativa e outra da zeragem)" % (zid, len(_ZERAR_FICOU)))
+    print("abra o agente de novo (sudo systemctl start eterna eterna-vigia) e feche e abra os postos e Checkouts")
+    return 0
+
+
+def _zerar_sair():
+    time.sleep(1.5)
+    os._exit(0)
+
+
+def zerar_previa():
+    """GET /zerar/previa: contagens, bloqueios, a última zeragem e a falha (só código, nunca caminho nem texto de exceção)."""
+    inv = zerar_inventario()
+    bq = zerar_bloqueios()
+    ultima = None
+    z = _zerar_ler(ZERAR_FEITA)
+    if z and isinstance(z.get("id"), str) and _re_zerada.match(z["id"]):
+        r = _zerar_ler(os.path.join(ARQUIVO_DIR, z["id"], "resumo.json")) or {}
+        ultima = {"id": z["id"], "em": z.get("em"), "por": z.get("por_nome") or z.get("por"), "pasta": "arquivo/" + z["id"],
+                  "apagar_a_partir_de": z.get("apagar_a_partir_de") or r.get("apagar_a_partir_de"), "resumo": {"vai": (r.get("antes") or {}).get("vai")}}
+    falha = None
+    f = _zerar_ler(ZERAR_FALHOU)
+    if f:
+        falha = {"id": f.get("id") if isinstance(f.get("id"), str) and _re_zerada.match(f.get("id")) else None, "em": f.get("em"),
+                 "passo": f.get("passo") if f.get("passo") in dict(zerar_passos()) or f.get("passo") == "partida" else None,
+                 "motivo": ",".join(x for x in str(f.get("motivo") or "").split(",") if re.match(r"^[A-Za-z_]{1,40}$", x)) or None}
+    return {"ok": True, "pode": not bq, "bloqueios": bq, "vai": inv["vai"], "fica": inv["fica"], "ultima": ultima, "falha": falha,
+            "prazo_dias": ZERAR_PRAZO_DIAS, "ativacoes": ZERAR_ATIVACOES}
 
 
 def metricas_periodo(de, ate):
@@ -12937,6 +13957,14 @@ def operacao_db():
         # v97 (selo Edição Maracanã): montagens vistas no Checkout, um número acumulado por dia e terminal (id aleatório do navegador).
         # Sem IP, sessão, rosto, foto ou nome
         c.execute("create table if not exists montagem_vista (dia text, terminal text, vistas int, em real, primary key (dia, terminal))")
+        # 23/11 (AF): por fotógrafo e por dia, só somas (sem pid nem cliente); o mês congelado; os dias já calculados
+        c.execute("create table if not exists fotografo_dia (dia text, fotografo text, dados text, em text, primary key (dia, fotografo))")
+        c.execute("create table if not exists fotografo_mes (mes text primary key, dados text, fechado_em text)")
+        c.execute("create table if not exists fotografo_dia_calc (dia text primary key, em text, ponto integer)")
+        try:                                       # revisão 23/11: o estado do reconhecimento do ponto no dia (1, 0 ou null)
+            c.execute("alter table fotografo_dia_calc add column ponto integer")
+        except sqlite3.OperationalError:
+            pass
         c.commit()
         _op_criado["arq"] = OPERACAO_DB
     return c
@@ -13540,6 +14568,10 @@ def treino_db():
     c.execute("create table if not exists medida (pid text, tipo text, valor text, em text, primary key (pid, tipo))")
     # 18/11 (ligar já): auditoria de cada Ligada do reconhecimento do ponto (só acrescenta; números, nenhuma foto)
     c.execute("create table if not exists liga_log (em text, por text, abaixo integer, versao text, dados text)")
+    # 24/11: Lixeira da IA (veredito na chegada, só números; quem recuperou) e o registro de cada recuperação e mudança da chave
+    c.execute("create table if not exists lixeira (pid text primary key, dia text, v integer, mot text, dados text, em text, rec_por text, rec_em text)")
+    c.execute("create index if not exists lixeira_dia on lixeira(dia)")
+    c.execute("create table if not exists lixeira_log (pid text, acao text, por text, em text)")
     return c
 
 
@@ -13915,11 +14947,12 @@ def treino_lgpd(pids):
             db = treino_db()
             try:
                 for p in pids:
-                    for tab in ("rotulo", "rotulo_hist", "medida"):
+                    for tab in ("rotulo", "rotulo_hist", "medida", "lixeira", "lixeira_log"):
                         db.execute("delete from %s where pid = ?" % tab, (p,))
                 db.commit()
             finally:
                 db.close()
+        lx_lgpd_mem(pids)                  # 24/11: Lixeira da IA (memória e fila)
         _treino_n["t"] = 0.0
         cena_lgpd(pids)                    # 18/11: vetor e classificação da foto (cena.db, memória e fila)
         with treino_lock:
@@ -13958,7 +14991,9 @@ def treino_cfg_valida(j):
     pv = j.get("ponto_versao")
     if pv is not None and not (isinstance(pv, str) and _re_cena_versao.match(pv)):
         return None
-    return {"ponto": j["ponto"], "exposicao": j["exposicao"], "ponto_versao": pv if j["ponto"] == "ligada" else None}
+    # 23/11 (AF-D5): exposicao_ok = a exposição foi ligada pelo servidor passando no LUZ_CRIT (treino_cfg_gravar); só vale com ligada
+    return {"ponto": j["ponto"], "exposicao": j["exposicao"], "ponto_versao": pv if j["ponto"] == "ligada" else None,
+            "exposicao_ok": j.get("exposicao_ok") is True and j["exposicao"] == "ligada"}
 
 
 _re_cena_versao = re.compile(r"^c1-[a-z0-9-]{1,80}$")
@@ -14006,16 +15041,17 @@ def treino_cfg():
                     v = {**v, "por": j.get("por"), "em": j.get("em"), "abaixo": _treino_abaixo(j) if v["ponto"] == "ligada" else None}
     except Exception:
         v = _treino_cfg["v"]
-    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None)
+    v = v or dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None, exposicao_ok=False)
     # 18/11 (Eduardo): o "Ligada" gravado antes desta versão não comandava nada. Sem um modelo congelado que passou no critério,
-    # Ligada vira Só medir sozinho (e fica no log); a exposição ainda não tem medida: Ligada vira Só medir também.
+    # Ligada vira Só medir sozinho (e fica no log). A exposição Ligada sem a marca do servidor (exposicao_ok, 23/11: só o
+    # treino_cfg_gravar põe, passando no LUZ_CRIT) vira Só medir também.
     mig = []
     if v["ponto"] == "ligada" and cena_modelo_existe(v.get("ponto_versao")) is False:
         mig.append(("ponto", v.get("ponto_versao")))
         v = dict(v, ponto="medir", ponto_versao=None, abaixo=None)
-    if v["exposicao"] == "ligada":
+    if v["exposicao"] == "ligada" and not v.get("exposicao_ok"):
         mig.append(("exposicao", None))
-        v = dict(v, exposicao="medir")
+        v = dict(v, exposicao="medir", exposicao_ok=False)
     if mig:
         v = dict(v, por="servidor", em=_iso())
         try:
@@ -14042,8 +15078,12 @@ def treino_cfg_gravar(corpo, quem):
     novo = {"ponto": corpo.get("ponto", de["ponto"]), "exposicao": corpo.get("exposicao", de["exposicao"])}
     if treino_cfg_valida(novo) is None:
         return 400, {"ok": False, "error": "valor"}
-    if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 18/11: ainda não existe a medida da exposição
-        return 409, {"ok": False, "error": "criterio", "falta": [{"k": "exposicao_sem_modelo", "tem": 0, "precisa": 1}]}
+    expo_ok = bool(de.get("exposicao_ok")) and novo["exposicao"] == "ligada"
+    if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 23/11 (AF-D5): Ligada só passando na calibração da luz
+        crit_l = luz_medida(forcar=True)["criterio"]
+        if not crit_l["passa"]:
+            return 409, {"ok": False, "error": "criterio", "falta": crit_l["falta"]}
+        expo_ok = True
     pv = de.get("ponto_versao") if novo["ponto"] == "ligada" else None
     abaixo = de.get("abaixo") if novo["ponto"] == "ligada" else None
     if corpo.get("ponto") == "ligada":
@@ -14075,7 +15115,7 @@ def treino_cfg_gravar(corpo, quem):
     em_v = _iso()
     if corpo.get("ponto") == "ligada":
         abaixo = None if passa else {"por": str(quem or "")[:100] or None, "em": em_v}
-    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": em_v, "abaixo": abaixo}
+    v = {**novo, "ponto_versao": pv, "por": str(quem or "")[:100] or None, "em": em_v, "abaixo": abaixo, "exposicao_ok": expo_ok}
     liga = corpo.get("ponto") == "ligada"
     try:
         _treino_cfg_escreve(v)
@@ -14116,7 +15156,7 @@ def _treino_desfaz(de, pv, antes):
     falhou = []
     if de is not None:
         try:
-            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo")})
+            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo", "exposicao_ok")})
             _treino_cfg.update(t=time.time(), v=dict(de))
         except Exception as ex:
             _treino_cfg.update(t=0.0)
@@ -14127,8 +15167,8 @@ def _treino_desfaz(de, pv, antes):
     except Exception as ex:
         falhou.append("versão congelada %s (%s)" % (pv, type(ex).__name__))
     if falhou:
-        print("  ATENÇÃO treino: o Ligada sem auditoria NÃO foi desfeito por completo: %s. Confira Treino da IA › Medição e "
-              "ponha o reconhecimento em Só medir" % "; ".join(falhou))
+        print("  ATENÇÃO treino: o Ligada sem auditoria NÃO foi desfeito por completo: %s. Confira Treino da IA › Resultado e "
+              "ponha o reconhecimento em Desligado (Configurações › IA automática)" % "; ".join(falhou))
 
 
 def treino_status():
@@ -14151,6 +15191,1772 @@ def treino_status():
         _treino_n.update(t=agora, n=n)
     c = treino_cfg()
     return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": cena_status(), "ajuste": None}
+
+
+# ---------- Luz da foto: escura ou estourada (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md, AF-D4 a AF-D6) ----------
+# Medida da foto COMO SAIU DA CÂMERA: no leitor de rostos (o original já decodificado, cv2.IMREAD_REDUCED_COLOR_2) e, na
+# varredura dos últimos 30 dias, no mesmo original e do mesmo jeito (luz_medir_arquivo: uma fonte só, a calibração não mistura
+# medidas de miniatura e de original). O Ajuste automático e o ajuste à mão são filtro de tela (documentos sim/edits|) e nunca mudam o arquivo: a medida não muda com eles. Só números por pid em
+# treino.db medida(pid, 'luz', valor) (vai para o backup; a exclusão LGPD apaga pelo treino_lgpd). Nada sai do servidor.
+# Liga e desliga: config/treino.exposicao (desligada = não mede; medir = mede e mostra com "Em teste"; ligada = gera alertas,
+# só com o LUZ_CRIT na calibração contra as marcações do Treino). Prioridade baixa: a varredura cede ao leitor de rostos e à
+# selfie, ao recorte e à montagem; de dia só mede as fotos marcadas no Treino (até LUZ_HORA_MAX por hora), o resto de madrugada;
+# nunca usa a placa de vídeo.
+LUZ_V = 1
+LUZ_LIM_PADRAO = {"v": 1, "rosto_p95_alto": 250, "rosto_alto_pct": 8, "rosto_med_baixo": 50,
+                  "quadro_alto_pct": 12, "quadro_med_alto": 170, "quadro_med_baixo": 45, "quadro_baixo_pct": 30}
+LUZ_CRIT = {"escuras": 30, "estouradas": 30, "boas": 150, "precisao": 0.85, "revocacao": 0.70}
+LUZ_CLASSES = ("escura", "estourada")
+LUZ_DIAS = 30               # a varredura mede o que ficou sem medida nestes dias
+LUZ_RET_DIAS = max(RETENCAO_DIAS, LUZ_DIAS)  # 24/11: a medida vence com o prazo da biblioteca, nunca antes da janela da varredura
+#                                               (que mediria de novo); ficam a das fotos marcadas no Treino e a das ainda na biblioteca. luz_limpa
+LUZ_FILA_MAX = 20000
+LUZ_GRAVA_SEG = 5
+LUZ_VARRE_SEG = 3600
+LUZ_HORA_MAX = 200          # revisão 23/11: fora da madrugada, só as fotos marcadas no Treino e no máximo 200 por hora
+LUZ_NOITE = (2, 6)          # o resto da varredura só de madrugada (2h às 6h, hora do servidor)
+LUZ_GRADE = {"rosto_med_baixo": "escura", "quadro_med_baixo": "escura", "rosto_alto_pct": "estourada", "quadro_alto_pct": "estourada"}
+luz_lock = threading.Lock()
+luz_novas = collections.OrderedDict()       # pid -> valor (JSON) esperando o luz_grava_loop
+luz_st = {"dia": "", "hoje": 0, "ms_total": 0.0, "ms_n": 0, "pendentes": None, "rodando": False, "ultima": None, "hora": "", "hora_n": 0,
+          "limpa_dia": "", "limpa_tent": 0.0}
+luz_parar = threading.Event()               # só os testes ligam: o luz_loop termina
+_luz_med = {"t": 0.0, "r": None, "lim": None}
+_luz_det = {"d": None, "ok": None}
+
+
+def _luz_hist(h, n=None):
+    """Histograma de 256 contagens -> {med, p5, p95, alto, baixo}: percentis pelo acumulado; alto = % >= 250, baixo = % <= 8."""
+    n = n if n is not None else sum(h)
+    if not n:
+        return None
+    def pct(p):
+        alvo, c = p * n, 0
+        for i, x in enumerate(h):
+            c += x
+            if c >= alvo:
+                return i
+        return 255
+    return {"med": pct(0.5), "p5": pct(0.05), "p95": pct(0.95),
+            "alto": round(100.0 * sum(h[250:]) / n, 1), "baixo": round(100.0 * sum(h[:9]) / n, 1)}
+
+
+def _luz_cinza(img, x0=0, y0=0, x1=None, y1=None, passo=1):
+    """Recorte [y0:y1, x0:x1] (de passo em passo) da BGR (numpy) -> luminância 0 a 255 (uint8). Só o recorte é convertido
+    (revisão 23/11: os 60% centrais e o rosto, não a foto inteira). Com o OpenCV, o cvtColor; sem ele, a mesma conta em numpy."""
+    c = img[y0:y1:passo, x0:x1:passo]
+    if c.ndim == 2:
+        return c
+    cv2 = _cv.get("cv2")
+    np = _vis_np()
+    if cv2 is not None:
+        return cv2.cvtColor(np.ascontiguousarray(c) if passo > 1 else c, cv2.COLOR_BGR2GRAY)
+    g = (c[..., 0].astype(np.uint32) * 29 + c[..., 1].astype(np.uint32) * 150 + c[..., 2].astype(np.uint32) * 77) >> 8
+    return g.astype(np.uint8)
+
+
+def luz_medir(img, caixas=None, src="original"):
+    """img BGR (numpy) e caixas dos rostos (x, y, l, a) nas coordenadas dela -> {v, src, q:{med,p5,p95,alto,baixo},
+    r:{med,p95,alto,n}|None}. q = os 60% centrais do quadro (o céu fica de fora); r = o maior rosto com a caixa 10% maior."""
+    np = _vis_np()
+    h, w = img.shape[:2]
+    y0, y1 = int(h * 0.2), max(int(h * 0.2) + 1, int(h * 0.8))
+    x0, x1 = int(w * 0.2), max(int(w * 0.2) + 1, int(w * 0.8))
+    passo = 2 if (y1 - y0) * (x1 - x0) > 2_000_000 else 1     # o histograma não precisa de todos os pixels
+    c = _luz_cinza(img, x0, y0, x1, y1, passo)
+    q = _luz_hist(np.bincount(c.ravel(), minlength=256).tolist())
+    r = None
+    cs = [b for b in (caixas or []) if b and len(b) >= 4 and b[2] > 0 and b[3] > 0]
+    if cs:
+        x, y, l, a = max(cs, key=lambda b: b[2] * b[3])[:4]
+        x0, y0 = max(0, int(x - l * 0.05)), max(0, int(y - a * 0.05))
+        x1, y1 = min(w, int(x + l * 1.05) + 1), min(h, int(y + a * 1.05) + 1)
+        if x1 - x0 >= 4 and y1 - y0 >= 4:
+            hr = np.bincount(_luz_cinza(img, x0, y0, x1, y1).ravel(), minlength=256).tolist()
+            s = _luz_hist(hr)
+            if s:
+                r = {"med": s["med"], "p95": s["p95"], "alto": s["alto"], "n": int(sum(hr))}
+    return {"v": LUZ_V, "src": src, "q": q, "r": r}
+
+
+def luz_medir_pil(caminho):
+    """Sem OpenCV: Pillow, só o quadro (r = None), no original reduzido pela metade na decodificação (o mesmo que o
+    cv2.IMREAD_REDUCED_COLOR_2 do leitor; os 60% centrais não dependem da rotação do EXIF)."""
+    from PIL import Image
+    with Image.open(caminho) as im:
+        try:
+            im.draft("RGB", (max(1, im.width // 2), max(1, im.height // 2)))
+        except Exception:
+            pass
+        g = im.convert("L")
+        w, h = g.size
+        g = g.crop((int(w * 0.2), int(h * 0.2), max(int(w * 0.2) + 1, int(w * 0.8)), max(int(h * 0.2) + 1, int(h * 0.8))))
+        return {"v": LUZ_V, "src": "original", "q": _luz_hist(g.histogram()[:256]), "r": None}
+
+
+def luz_medir_arquivo(caminho, det=None):
+    """A varredura mede pela MESMA fonte do leitor de rostos (revisão 23/11): o original com cv2.IMREAD_REDUCED_COLOR_2, os
+    rostos pelo YuNet na mesma escala do ler_rostos (LADO, ROSTO_MIN). Sem OpenCV, o Pillow (só o quadro). None = ilegível."""
+    cv2 = _cv.get("cv2")
+    if cv2 is None:
+        return luz_medir_pil(caminho)
+    img = cv2.imread(caminho, cv2.IMREAD_REDUCED_COLOR_2)
+    if img is None:
+        return None
+    cx = []
+    if det is not None:
+        h, w = img.shape[:2]
+        k = min(1.0, LADO / max(h, w))
+        im2 = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA) if k < 1 else img
+        det.setInputSize((im2.shape[1], im2.shape[0]))
+        _, f = det.detect(im2)
+        cx = [(float(r[0]) / k, float(r[1]) / k, float(r[2]) / k, float(r[3]) / k) for r in (f if f is not None else []) if r[2] >= ROSTO_MIN]
+    return luz_medir(img, cx)
+
+
+def luz_limites():
+    """Os limites da classificação: config/fotografos.luz (o Admin aplica a sugestão da calibração); sem ela, LUZ_LIM_PADRAO."""
+    try:
+        return dict(fotografos_cfg()["luz"])
+    except Exception:
+        return dict(LUZ_LIM_PADRAO)
+
+
+def luz_classe(v, lim=None):
+    """-> estourada | escura | ok | sem_dado, nessa ordem. Com rosto vale o rosto (o céu estourado não pesa); sem rosto, o quadro."""
+    lim = lim or luz_limites()
+    if not isinstance(v, dict):
+        return "sem_dado"
+    r, q = v.get("r"), v.get("q")
+    try:
+        if isinstance(r, dict) and r.get("n"):
+            if r["p95"] >= lim["rosto_p95_alto"] and r["alto"] >= lim["rosto_alto_pct"]:
+                return "estourada"
+            if r["med"] < lim["rosto_med_baixo"]:
+                return "escura"
+            return "ok"
+        if isinstance(q, dict):
+            if q["alto"] >= lim["quadro_alto_pct"] and q["med"] >= lim["quadro_med_alto"]:
+                return "estourada"
+            if q["med"] < lim["quadro_med_baixo"] and q["baixo"] >= lim["quadro_baixo_pct"]:
+                return "escura"
+            return "ok"
+    except (KeyError, TypeError):
+        pass
+    return "sem_dado"
+
+
+def luz_ligada():
+    """A exposição não está desligada (sem abrir banco: o interruptor em memória do treino_cfg_loop)."""
+    return treino_cfg_mem().get("exposicao") in ("medir", "ligada")
+
+
+def luz_acrescenta(pid, valor, ms=None):
+    """Medida nova para o luz_grava_loop (fila em memória; acima de LUZ_FILA_MAX sai a mais antiga)."""
+    with luz_lock:
+        luz_novas.pop(pid, None)
+        luz_novas[pid] = valor
+        while len(luz_novas) > LUZ_FILA_MAX:
+            luz_novas.popitem(last=False)
+        hoje = _ff_hoje()
+        if luz_st["dia"] != hoje:
+            luz_st.update(dia=hoje, hoje=0)
+        luz_st["hoje"] += 1
+        if ms is not None:
+            luz_st["ms_total"] += ms
+            luz_st["ms_n"] += 1
+
+
+def luz_grava():
+    """Grava a fila em lote no treino.db (só fotos que ainda existem: a exclusão LGPD no meio não traz a medida de volta)."""
+    with luz_lock:
+        if not luz_novas:
+            return 0
+        itens = list(luz_novas.items())
+        luz_novas.clear()
+    with lock:
+        itens = [(p, v) for p, v in itens if p in lib]
+    if not itens:
+        return 0
+    em = _iso()
+    with treino_lock:
+        db = treino_db()
+        try:
+            db.executemany("insert into medida (pid, tipo, valor, em) values (?, 'luz', ?, ?) on conflict(pid, tipo) do update set"
+                           " valor = excluded.valor, em = excluded.em", [(p, json.dumps(v, separators=(",", ":")), em) for p, v in itens])
+            db.commit()
+        finally:
+            db.close()
+    # foto que saiu da biblioteca (LGPD) entre a conferência acima e a gravação: a medida sai já. O lgpd_excluir tira a foto da
+    # biblioteca antes do treino_lgpd, então o que foi gravado antes desta conferência é apagado por ele
+    with lock:
+        sairam = [p for p, _ in itens if p not in lib]
+    if sairam:
+        with treino_lock:
+            db = treino_db()
+            try:
+                db.executemany("delete from medida where tipo = 'luz' and pid = ?", [(p,) for p in sairam])
+                db.commit()
+            finally:
+                db.close()
+    return len(itens) - len(sairam)
+
+
+def luz_grava_loop():
+    while not luz_parar.is_set():
+        luz_parar.wait(LUZ_GRAVA_SEG)
+        try:
+            luz_grava()
+        except Exception as ex:
+            print("  luz: gravação %s" % str(ex)[:80])
+
+
+def luz_ler(pids=None, dias=None):
+    """{pid: valor} das medidas de luz (todas, ou só as dos pids)."""
+    if not os.path.exists(TREINO_DB):
+        return {}
+    with treino_lock:
+        db = treino_db()
+        try:
+            if pids is None:
+                rs = db.execute("select pid, valor from medida where tipo = 'luz'").fetchall()
+            else:
+                ps, rs = list(pids), []
+                for i in range(0, len(ps), 500):
+                    bl = ps[i:i + 500]
+                    rs += db.execute("select pid, valor from medida where tipo = 'luz' and pid in (%s)" % ",".join("?" * len(bl)), bl).fetchall()
+        finally:
+            db.close()
+    out = {}
+    for p, v in rs:
+        try:
+            out[p] = json.loads(v)
+        except ValueError:
+            pass
+    return out
+
+
+def _luz_pids_janela(dias, agora=None):
+    """Fotos (e bases dos fundos de IA) das sessões não removidas dos últimos `dias` dias."""
+    agora = agora or time.time()
+    out = set()
+    for i in range(dias):
+        a = os.path.join(SESS_DIR, _ff_hoje(agora - i * 86400) + ".json")
+        try:
+            ss = json.load(open(a, encoding="utf8")).get("sessoes") or []
+        except Exception:
+            continue
+        for x in ss:
+            if isinstance(x, dict) and not x.get("removida"):
+                out.update(p for p in list(x.get("fotos") or []) + list(x.get("ia") or []) if isinstance(p, str))
+    return out
+
+
+def luz_limpa(agora=None):
+    """24/11: a medida de luz vence com o prazo da biblioteca (LUZ_RET_DIAS): sai a de foto que não está nas sessões desses dias.
+    Ficam a das fotos marcadas no Treino (rotulo, a calibração usa), a das fotos ainda na biblioteca (lib) e a gravada nas últimas
+    24 h (foto que ainda não entrou numa sessão). Roda de madrugada pelo luz_loop. -> linhas apagadas"""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    agora = agora or time.time()
+    janela = _luz_pids_janela(LUZ_RET_DIAS, agora)
+    with lock:
+        janela.update(lib)
+    recente = _iso(agora - 86400)
+    with treino_lock:
+        db = treino_db()
+        try:
+            rot = {r[0] for r in db.execute("select pid from rotulo")}
+            fora = [p for p, em in db.execute("select pid, em from medida where tipo = 'luz'")
+                    if p not in janela and p not in rot and (em or "") < recente]
+            for i in range(0, len(fora), 500):
+                bl = fora[i:i + 500]
+                db.execute("delete from medida where tipo = 'luz' and pid in (%s)" % ",".join("?" * len(bl)), bl)
+            db.commit()
+        finally:
+            db.close()
+    return len(fora)
+
+
+def _luz_prio_baixa():
+    """A thread da varredura fica com a menor prioridade do sistema (Linux: por thread; outros: nada muda)."""
+    try:
+        os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), 19)
+    except Exception:
+        pass
+
+
+def _luz_detector():
+    """Só o YuNet (detector de rostos), sem o reconhecedor; None sem OpenCV ou sem o modelo no disco (a varredura não baixa)."""
+    if _luz_det["ok"] is None:
+        _luz_det["ok"] = False
+        try:
+            cv2 = _cv.get("cv2")
+            arq = os.path.join(MODELOS, MOD_DET)
+            if cv2 is not None and os.path.exists(arq) and os.path.getsize(arq) >= 100000:
+                _luz_det["d"] = cv2.FaceDetectorYN.create(arq, "", (320, 320), 0.7, 0.3, 5000)
+                _luz_det["ok"] = True
+        except Exception:
+            _luz_det["d"] = None
+    return _luz_det["d"]
+
+
+def _luz_noite(t=None):
+    """A janela da madrugada (LUZ_NOITE, hora do servidor): a varredura mede tudo; fora dela, só as fotos marcadas no Treino."""
+    return LUZ_NOITE[0] <= time.localtime(t if t is not None else time.time()).tm_hour < LUZ_NOITE[1]
+
+
+def _luz_ocupado():
+    """Leitor de rostos com foto na fila ou lendo (o caminho da selfie), selfie buscando, recorte ou montagem com trabalho de
+    prioridade 0 ou 1, classificação de poses rodando: a varredura espera.
+    Luz e poses: a luz cede às poses, nunca o contrário (poses_pode_rodar não olha a luz, então não há espera circular). As
+    poses rodam de 20h às 7h, carregam um modelo de 6 GB e fecham o filho quando param; a luz é uma thread de prioridade 19 e
+    retoma de onde parou. Com a fila das poses vencida (em geral antes das 2h), a madrugada da luz (2h às 6h) fica livre."""
+    return (fila_rostos.qsize() > 0 or _lendo[0] > 0 or _busca_lock.locked()
+            or _poses_ocupado("rec") or _poses_ocupado("mtg") or bool(poses_st.get("rodando")))
+
+
+def luz_pendentes():
+    """Fotos das sessões dos últimos LUZ_DIAS sem medida de luz -> (marcadas no Treino, resto), da mais nova para a mais
+    antiga. Fica de fora a foto que o leitor de rostos ainda não leu (com o leitor ligado): ele mesmo mede, sem medir duas vezes.
+    Medida de miniatura (src thumb, de antes da revisão de 23/11) conta como pendente: a fonte é sempre o original."""
+    pids = []
+    for i in range(LUZ_DIAS):
+        a = os.path.join(SESS_DIR, _ff_hoje(time.time() - i * 86400) + ".json")
+        try:
+            ss = json.load(open(a, encoding="utf8")).get("sessoes") or []
+        except Exception:
+            continue
+        for x in ss:
+            if isinstance(x, dict) and not x.get("removida"):
+                pids += [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+    if not pids:
+        return [], []
+    feitas, rot = set(), set()
+    if os.path.exists(TREINO_DB):
+        with treino_lock:
+            db = treino_db()
+            try:
+                feitas = {r[0] for r in db.execute("select pid from medida where tipo = 'luz' and valor not like '%\"src\":\"thumb\"%'")}
+                rot = {r[0] for r in db.execute("select pid from rotulo")}
+            finally:
+                db.close()
+    with luz_lock:
+        feitas |= set(luz_novas)
+    with lock:
+        vivas = {p for p in pids if p in lib}
+    if rostos.get("ligado"):
+        lidas, ps = set(), [p for p in vivas if p not in feitas]
+        db = rostos_db()
+        try:
+            for i in range(0, len(ps), 500):
+                bl = ps[i:i + 500]
+                lidas |= {r[0] for r in db.execute("select pid from foto where pid in (%s)" % ",".join("?" * len(bl)), bl)}
+        finally:
+            db.close()
+        vivas = lidas
+    vistos, pr, resto = set(), [], []
+    for p in pids:
+        if p in vistos or p in feitas or p not in vivas:
+            continue
+        vistos.add(p)
+        (pr if p in rot else resto).append(p)
+    return pr, resto
+
+
+class _LuzThreads:
+    """Revisão 23/11: o YuNet roda no pool de threads do OpenCV, que não herda a prioridade baixa da thread da varredura.
+    Enquanto a varredura trabalha, o OpenCV fica com 1 thread (o detector roda na própria thread de prioridade 19); antes de
+    esperar pelo leitor, pela selfie, pelo recorte ou pela montagem, e no fim, volta ao número de antes. O ajuste do OpenCV é do
+    processo inteiro: só muda com o leitor parado (fila vazia, ninguém lendo, selfie sem buscar)."""
+
+    def __init__(self):
+        self.cv2, self.antes = _cv.get("cv2"), None
+
+    def uma(self):
+        if self.cv2 is not None and self.antes is None:
+            try:
+                self.antes = self.cv2.getNumThreads()
+                self.cv2.setNumThreads(1)
+            except Exception:
+                self.antes = None
+
+    def volta(self):
+        if self.cv2 is not None and self.antes is not None:
+            try:
+                self.cv2.setNumThreads(self.antes)
+            except Exception:
+                pass
+            self.antes = None
+
+
+def luz_varre(parar=None, noite=None):
+    """Mede o que ficou sem medida (luz_pendentes) pelo original, como o leitor (luz_medir_arquivo). De madrugada (noite)
+    mede tudo, primeiro as marcadas, e para quando a janela fecha; fora dela, só as marcadas no Treino e no máximo LUZ_HORA_MAX
+    por hora. Para quando a exposição desliga; espera enquanto o leitor de rostos, a selfie, o recorte, a montagem ou a
+    classificação de poses trabalham (_luz_ocupado)."""
+    parar = parar or luz_parar
+    relogio = noite is None                       # pela hora do servidor (o luz_loop); os testes passam noite
+    noite = _luz_noite() if relogio else noite
+    _luz_prio_baixa()
+    pr, resto = luz_pendentes()
+    lista = pr + resto if noite else pr
+    luz_st.update(pendentes=len(pr) + len(resto), rodando=True)
+    feitas = 0
+    th = _LuzThreads()
+    try:
+        cv2 = _cv.get("cv2")
+        det = _luz_detector() if cv2 is not None else None
+        for p in lista:
+            if parar.is_set() or not luz_ligada() or (noite and relogio and not _luz_noite()):
+                break
+            if not noite:
+                hora = time.strftime("%Y-%m-%d %H")
+                if luz_st["hora"] != hora:
+                    luz_st.update(hora=hora, hora_n=0)
+                if luz_st["hora_n"] >= LUZ_HORA_MAX:
+                    break
+            if _luz_ocupado():
+                th.volta()
+                while _luz_ocupado():
+                    if parar.wait(2):
+                        return feitas
+            luz_st["pendentes"] = max(0, (luz_st["pendentes"] or 0) - 1)   # tentada (medida, sem original ou ilegível)
+            with lock:
+                e = lib.get(p)
+            arq = (e or {}).get("file")
+            if not arq or not os.path.exists(arq):
+                continue
+            th.uma()
+            # confere de novo depois do uma(): o leitor ou a selfie podem ter começado entre a espera acima e o ajuste, e o
+            # OpenCV com 1 thread vale para o processo inteiro (deixaria a selfie lenta); volta e espera antes de medir
+            while _luz_ocupado():
+                th.volta()
+                if parar.wait(2):
+                    return feitas
+                if not _luz_ocupado():
+                    th.uma()
+            try:
+                v = luz_medir_arquivo(arq, det)
+            except Exception:
+                v = None
+            if v is None:
+                continue
+            luz_acrescenta(p, v)
+            feitas += 1
+            if not noite:
+                luz_st["hora_n"] += 1
+            time.sleep(0.002)                     # cede o processador às outras threads
+    finally:
+        th.volta()
+        luz_st.update(rodando=False, ultima=_iso())
+        if not luz_ligada():
+            luz_st["pendentes"] = None
+    return feitas
+
+
+def luz_loop():
+    """De hora em hora (e logo que a exposição sai de desligada) mede as marcadas no Treino; de madrugada, roda de novo enquanto
+    houver pendente. Grava pelo luz_grava_loop."""
+    antes, ultima = "desligada", 0.0
+    while not luz_parar.is_set():
+        try:
+            luz_limpa_noite()
+        except Exception as ex:
+            print("  luz: limpeza %s" % str(ex)[:80])
+        try:
+            agora = treino_cfg_mem().get("exposicao")
+            t = time.time()
+            if agora != "desligada" and (antes == "desligada" or t - ultima >= LUZ_VARRE_SEG
+                                         or (_luz_noite(t) and luz_st["pendentes"] and t - ultima >= 60)):
+                ultima = t
+                luz_varre()
+            antes = agora
+        except Exception as ex:
+            print("  luz: varredura %s" % str(ex)[:80])
+        luz_parar.wait(3)
+
+
+def luz_limpa_noite(t=None):
+    """Uma vez por madrugada (LUZ_NOITE: fora do horário de visita), com a exposição ligada ou não: luz_limpa. Cede ao leitor,
+    à selfie, ao recorte, à montagem e às poses (_luz_ocupado): tenta de novo na volta seguinte do luz_loop. Se a luz_limpa
+    falha, a próxima tentativa espera 10 min (não repete a cada volta de 3 s nem enche o console). -> apagadas ou None"""
+    t = time.time() if t is None else t
+    hoje = _ff_hoje(t)
+    if not _luz_noite(t) or luz_st["limpa_dia"] == hoje or _luz_ocupado() or 0 <= t - luz_st["limpa_tent"] < 600:
+        return None
+    luz_st["limpa_tent"] = t
+    try:
+        n = luz_limpa(t)
+    except Exception as ex:
+        print("  luz: limpeza das medidas falhou (%s); nova tentativa em 10 min" % type(ex).__name__)
+        return None
+    luz_st["limpa_dia"] = hoje
+    if n:
+        print("  luz: %d medida(s) fora do prazo de %d dias apagada(s)" % (n, LUZ_RET_DIAS))
+    return n
+
+
+def luz_status():
+    """/status.luz: só contagens (sem pid, caminho ou nome)."""
+    with luz_lock:
+        fila = len(luz_novas)
+        hoje = luz_st["hoje"] if luz_st["dia"] == _ff_hoje() else 0
+        ms = round(luz_st["ms_total"] / luz_st["ms_n"], 1) if luz_st["ms_n"] else None
+    return {"v": 1, "medidas_hoje": hoje, "fila": fila, "ms_med": ms, "varredura": {"pendentes": luz_st["pendentes"], "rodando": luz_st["rodando"]},
+            "opencv": bool(_cv.get("cv2"))}
+
+
+def _luz_prf(itens, classe, lim):
+    """itens = [(verdade, valor)] -> (n positivos, precisão, revocação, vp) para uma classe com os limites lim."""
+    n = sum(1 for t, _ in itens if t == classe)
+    pred = [(t, luz_classe(v, lim)) for t, v in itens]
+    vp = sum(1 for t, c in pred if t == classe and c == classe)
+    pp = sum(1 for _, c in pred if c == classe)
+    return n, (round(vp / pp, 4) if pp else None), (round(vp / n, 4) if n else None), vp
+
+
+def luz_medida(forcar=False, lim=None):
+    """Calibração contra as marcações do Treino (AF-D6). Positiva = qual.nivel fraca ou nao_vai com o motivo escura ou
+    estourada (a foto "ajustar" não entra); negativa = nível boa. Por classe: n, precisão, revocação; a matriz; uma grade de
+    5 valores para cada limite principal; e o LUZ_CRIT para Ligada. Cache de 10 s. lim (revisão 23/11) = limites candidatos
+    (o POST /fotografos/config confere o LUZ_CRIT com eles antes de gravar, com a exposição Ligada); sem cache.
+    Só entram medidas do original (src "original", a fonte do leitor e da varredura): a calibração não mistura fontes."""
+    candidato = lim is not None
+    lim = dict(lim) if candidato else luz_limites()
+    if not forcar and not candidato and _luz_med["r"] is not None and time.time() - _luz_med["t"] < 10 and _luz_med["lim"] == lim:
+        return _luz_med["r"]
+    rots = []
+    if os.path.exists(TREINO_DB):
+        with treino_lock:
+            db = treino_db()
+            try:
+                rots = db.execute("select pid, dados from rotulo").fetchall()
+            finally:
+                db.close()
+    verdade = {}
+    for p, d in rots:
+        try:
+            q = (json.loads(d) or {}).get("qual") or {}
+        except ValueError:
+            continue
+        nv, mot = q.get("nivel"), q.get("motivos") or []
+        if nv in ("fraca", "nao_vai"):
+            cs = [c for c in LUZ_CLASSES if c in mot]
+            if len(cs) == 1:                  # escura e estourada juntas (raro): ambígua, fica fora da conta
+                verdade[p] = cs[0]
+        elif nv == "boa":
+            verdade[p] = "boa"
+    meds = {p: v for p, v in luz_ler(list(verdade)).items() if isinstance(v, dict) and v.get("src") == "original"}
+    itens = [(t, meds[p]) for p, t in verdade.items() if p in meds]
+    sem = sum(1 for p in verdade if p not in meds)
+    classes = {}
+    for c in LUZ_CLASSES:
+        n, pr, rv, _ = _luz_prf(itens, c, lim)
+        classes[c] = {"n": n, "precisao": pr, "revocacao": rv}
+    boas = sum(1 for t, _ in itens if t == "boa")
+    mx = {t: {c: 0 for c in ("escura", "estourada", "ok", "sem_dado")} for t in ("escura", "estourada", "boa")}
+    for t, v in itens:
+        mx[t][luz_classe(v, lim)] += 1
+    grade = {}
+    for k, c in LUZ_GRADE.items():
+        base = lim[k]
+        vals = sorted({max(1, int(round(base * f))) for f in (0.6, 0.8, 1.0, 1.2, 1.4)})
+        grade[k] = []
+        for val in vals:
+            _, pr, rv, _ = _luz_prf(itens, c, dict(lim, **{k: val}))
+            grade[k].append({"valor": val, "classe": c, "precisao": pr, "revocacao": rv, "atual": val == base})
+    falta = []
+    for c, kk in (("escura", "escuras"), ("estourada", "estouradas")):
+        if classes[c]["n"] < LUZ_CRIT[kk]:
+            falta.append({"k": kk, "tem": classes[c]["n"], "precisa": LUZ_CRIT[kk]})
+    if boas < LUZ_CRIT["boas"]:
+        falta.append({"k": "boas", "tem": boas, "precisa": LUZ_CRIT["boas"]})
+    for c in LUZ_CLASSES:
+        if (classes[c]["precisao"] or 0) < LUZ_CRIT["precisao"]:
+            falta.append({"k": "precisao_" + c, "tem": classes[c]["precisao"] or 0, "precisa": LUZ_CRIT["precisao"]})
+        if (classes[c]["revocacao"] or 0) < LUZ_CRIT["revocacao"]:
+            falta.append({"k": "revocacao_" + c, "tem": classes[c]["revocacao"] or 0, "precisa": LUZ_CRIT["revocacao"]})
+    r = {"v": 1, "limites": lim, "classes": classes, "boas_n": boas, "matriz": mx, "grade": grade, "sem_medida": sem,
+         "criterio": {"passa": not falta, "falta": falta}, "crit": dict(LUZ_CRIT)}
+    if not candidato:
+        _luz_med.update(t=time.time(), r=r, lim=lim)
+    return r
+
+
+# ---------- Lixeira da IA (24/11, plano docs/planos/2026-11-24-lixeira-ia.md, Parte A) ----------
+# O servidor separa as fotos sem salvação (muito escura, muito estourada, tremida ou desfocada demais, sem ninguém) numa
+# "Lixeira da IA", como a pasta de spam do e-mail. Nada é apagado: Admin e Supervisora conferem em Curadoria › Lixeira da IA e
+# devolvem com "Não é ruim". A medida é feita no leitor de rostos (lx_medir), na imagem já decodificada e com as caixas dos
+# rostos, depois da selfie e da luz; o veredito é dado UMA vez, na chegada, com os limites daquele momento (D3).
+# Dado: treino.db lixeira (só números por pid; vai para o backup; a LGPD apaga pelo treino_lgpd) e lixeira_log (quem recuperou
+# e cada mudança da chave). Chave: estado.db config/lixeira, só pela rota POST /lixeira/config (só o Admin; o estado_gravar
+# recusa). Parte A: só "medir" (Teste); "ligada" responde 409 em_breve. Falha aberta (D4): sem OpenCV, sem medida ou com erro,
+# a foto fica fora da lixeira. ETERNA_LIXEIRA=0 desliga a medida e qualquer efeito. Nada sai do servidor.
+LX_V = 1
+LX_MOTIVOS = ("escura", "estourada", "desfocada", "sem_ninguem")      # ordem fixa: a tela mostra o primeiro
+LX_LIM_PADRAO = {"esc_rosto_med": 22, "esc_quadro_med": 18, "esc_quadro_baixo": 60,
+                 "est_rosto_p95": 254, "est_rosto_alto": 40, "est_quadro_med": 235, "est_quadro_alto": 50,
+                 "nit_rosto": 25, "nit_quadro_com_rosto": 25, "nit_quadro": 20, "sem_brutos": 0}
+LX_FAIXAS = {"esc_rosto_med": (1, 80), "esc_quadro_med": (1, 80), "esc_quadro_baixo": (1, 100),
+             "est_rosto_p95": (200, 255), "est_rosto_alto": (1, 100), "est_quadro_med": (150, 255), "est_quadro_alto": (1, 100),
+             "nit_rosto": (1, 1000), "nit_quadro_com_rosto": (1, 1000), "nit_quadro": (1, 1000), "sem_brutos": (0, 1)}
+LX_CRIT = {"n": 20, "precisao": 0.95}
+LX_CFG_PADRAO = {"v": 1, "modo": "medir", "valendo": [], "desde": None, "por": None, "lim": LX_LIM_PADRAO}
+LX_MODOS = ("medir", "ligada")
+LX_LIGADO_PRONTO = False     # Parte A: o Ligado chega na próxima versão (POST com modo "ligada" = 409 em_breve)
+LX_FILA_MAX = 20000
+LX_GRAVA_SEG = 5
+LX_ITENS_MAX = 3000
+LX_MENU_DIAS = 7             # Eduardo (24/11): a contagem do menu é dos últimos 7 dias (hoje incluído), sem as recuperadas
+LX_ON = os.environ.get("ETERNA_LIXEIRA") != "0"
+LX_QUADRO_LADO = 1024        # o quadro central (60%) é medido com o lado maior reduzido a este tamanho; o rosto, na MESMA escala
+#                              (revisão 24/11: resize INTER_LINEAR, 7 vezes mais barato que o INTER_AREA e com os mesmos números nos
+#                              fundos do repositório: nítida 444 ou mais, sigma 4 de 20 a 43, sigma 8 de 9 a 13)
+#                              (24/11: reduzido a 160 px, como no plano, o valor do rosto borrado ia de 11 a 88 conforme o tamanho
+#                              dele; na escala do quadro, sigma 8 dá 10 a 23 e o rosto nítido dá 430 ou mais; por isso nit_rosto 25)
+LX_TREINO_MOTIVO = {"escura": "escura", "estourada": "estourada", "desfocada": "desfocada", "sem_ninguem": "semrosto"}
+lx_lock = threading.Lock()
+lx_novas = collections.OrderedDict()        # pid -> (dia, dados, mot, em) esperando o lx_grava_loop
+lx_mem = {}                                 # pid -> {"dia", "mot", "em", "rec"}: só as fotos COM motivo dos últimos LX_MENU_DIAS dias
+#                                             (contagem do menu; Parte B); o lx_status percorre só estas
+lx_vistos = {}                              # pid -> dia: as fotos já medidas nos últimos LX_MENU_DIAS dias (o veredito não muda)
+lx_st = {"rev": 0, "limpa_dia": "", "limpa_tent": 0.0, "ms_total": 0.0, "ms_n": 0}
+lx_parar = threading.Event()                # só os testes ligam: os laços terminam
+_lx_med = {"t": 0.0, "r": None}
+_lx_cfg = {"t": 0.0, "v": None}
+
+
+def _lx_r1(x):
+    return None if x is None else round(float(x), 1)
+
+
+def _lx_nitidez(cinza):
+    """Variância do Laplaciano (ksize 3, float32) de uma imagem cinza."""
+    cv2 = _cv["cv2"]
+    return float(cv2.Laplacian(cinza, cv2.CV_32F, ksize=3).var())
+
+
+def lx_medir(img, caixas, n, nb, luz=None):
+    """img BGR (numpy, a do leitor), caixas dos rostos (x, y, l, a) nas coordenadas dela, n = rostos de tamanho normal, nb =
+    rostos achados em qualquer tamanho (None = não se sabe), luz = medida do luz_medir (sem ela, mede aqui). -> dados (só
+    números): {v, nq, nr, n, nb, luz:{q:{med,alto,baixo,p95}, r:{med,p95,alto}|None}}. nq/nr = variância do Laplaciano do
+    quadro central (60%, lado maior a LX_QUADRO_LADO) e do maior rosto (caixa 10% maior, na mesma escala do quadro); None sem
+    OpenCV (falha aberta: sem veredito de desfoque)."""
+    luz = luz if isinstance(luz, dict) else luz_medir(img, caixas)
+    q, r = luz.get("q") or None, luz.get("r") or None
+    lz = {"q": {k: q.get(k) for k in ("med", "alto", "baixo", "p95")} if isinstance(q, dict) else None,
+          "r": {k: r.get(k) for k in ("med", "p95", "alto")} if isinstance(r, dict) else None}
+    nq = nr = None
+    cv2 = _cv.get("cv2")
+    if cv2 is not None:
+        h, w = img.shape[:2]
+        y0, y1 = int(h * 0.2), max(int(h * 0.2) + 1, int(h * 0.8))
+        x0, x1 = int(w * 0.2), max(int(w * 0.2) + 1, int(w * 0.8))
+        c = img[y0:y1, x0:x1]
+        k = min(1.0, LX_QUADRO_LADO / max(c.shape[:2]))
+        if k < 1:
+            c = cv2.resize(c, (max(1, int(c.shape[1] * k)), max(1, int(c.shape[0] * k))), interpolation=cv2.INTER_LINEAR)
+        nq = _lx_nitidez(cv2.cvtColor(c, cv2.COLOR_BGR2GRAY) if c.ndim == 3 else c)
+        cs = [b for b in (caixas or []) if b and len(b) >= 4 and b[2] > 0 and b[3] > 0]
+        if cs:
+            x, y, l, a = max(cs, key=lambda b: b[2] * b[3])[:4]
+            fx0, fy0 = max(0, int(x - l * 0.05)), max(0, int(y - a * 0.05))
+            fx1, fy1 = min(w, int(x + l * 1.05) + 1), min(h, int(y + a * 1.05) + 1)
+            if (fx1 - fx0) * k >= 8 and (fy1 - fy0) * k >= 8:
+                f = img[fy0:fy1, fx0:fx1]
+                if k < 1:
+                    f = cv2.resize(f, (max(1, int(f.shape[1] * k)), max(1, int(f.shape[0] * k))), interpolation=cv2.INTER_LINEAR)
+                nr = _lx_nitidez(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 else f)
+    return {"v": LX_V, "nq": _lx_r1(nq), "nr": _lx_r1(nr), "n": int(n or 0), "nb": None if nb is None else int(nb), "luz": lz}
+
+
+def lx_classe(dados, lim=None):
+    """dados (lx_medir, ou só {luz} para as fotos medidas antes) -> lista de motivos na ordem de LX_MOTIVOS (vazia = ok).
+    Campo que falta não dá motivo (falha aberta)."""
+    lim = lim or LX_LIM_PADRAO
+    if not isinstance(dados, dict):
+        return []
+    out = set()
+    lz = dados.get("luz") if isinstance(dados.get("luz"), dict) else {}
+    r, q = lz.get("r"), lz.get("q")
+    try:
+        if isinstance(r, dict) and r.get("med") is not None:
+            if r["med"] < lim["esc_rosto_med"]:
+                out.add("escura")
+            if r["p95"] >= lim["est_rosto_p95"] and r["alto"] >= lim["est_rosto_alto"]:
+                out.add("estourada")
+        elif isinstance(q, dict) and q.get("med") is not None:
+            if q["med"] < lim["esc_quadro_med"] and q["baixo"] >= lim["esc_quadro_baixo"]:
+                out.add("escura")
+            if q["med"] >= lim["est_quadro_med"] and q["alto"] >= lim["est_quadro_alto"]:
+                out.add("estourada")
+    except (KeyError, TypeError):
+        pass
+    nq, nr = dados.get("nq"), dados.get("nr")
+    if isinstance(nq, (int, float)):
+        if isinstance(nr, (int, float)):
+            if nr < lim["nit_rosto"] and nq < lim["nit_quadro_com_rosto"]:
+                out.add("desfocada")
+        elif nq < lim["nit_quadro"]:
+            out.add("desfocada")
+    nb = dados.get("nb")
+    if isinstance(nb, int) and not isinstance(nb, bool) and nb <= lim["sem_brutos"]:
+        out.add("sem_ninguem")
+    return [m for m in LX_MOTIVOS if m in out]
+
+
+def lx_cfg_valida(j, base=None):
+    """config/lixeira: formato fechado. -> documento normalizado ou None. lim parcial completa com base (ou o padrão); cada
+    limite só dentro de LX_FAIXAS."""
+    if not isinstance(j, dict) or j.get("modo") not in LX_MODOS:
+        return None
+    lim = dict((base or {}).get("lim") or LX_LIM_PADRAO)
+    lj = j.get("lim")
+    if lj is not None:
+        if not isinstance(lj, dict) or set(lj) - set(LX_LIM_PADRAO):
+            return None
+        for k, v in lj.items():
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or not LX_FAIXAS[k][0] <= v <= LX_FAIXAS[k][1]:
+                return None
+            lim[k] = v
+    val = j.get("valendo") or []
+    if not isinstance(val, list) or any(m not in LX_MOTIVOS for m in val):
+        return None
+    desde = j.get("desde")
+    if desde is not None and not (isinstance(desde, str) and len(desde) <= 40):
+        return None
+    por = j.get("por")
+    return {"v": 1, "modo": j["modo"], "valendo": [m for m in LX_MOTIVOS if m in val] if j["modo"] == "ligada" else [],
+            "desde": desde if j["modo"] == "ligada" else None, "por": por[:100] if isinstance(por, str) else None,
+            "em": j.get("em")[:40] if isinstance(j.get("em"), str) else None, "lim": lim}
+
+
+def lx_cfg():
+    """A chave da lixeira (estado.db config/lixeira), relida a cada 3 s. Sem documento ou ilegível: o padrão (Teste)."""
+    agora = time.time()
+    if agora - _lx_cfg["t"] < 3 and _lx_cfg["v"] is not None:
+        return _lx_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'lixeira' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                v = lx_cfg_valida(json.loads(r[0]))
+    except Exception:
+        v = _lx_cfg["v"]
+    if v and v["modo"] == "ligada" and not LX_LIGADO_PRONTO:
+        v = dict(v, modo="medir", valendo=[], desde=None)      # Parte A: nada esconde, mesmo com um documento de fora
+    v = v or dict(LX_CFG_PADRAO, lim=dict(LX_LIM_PADRAO), em=None)
+    _lx_cfg.update(t=agora, v=v)
+    return v
+
+
+def lx_cfg_mem():
+    """A chave e os limites SÓ da memória (revisão 24/11): o leitor de rostos e o /status nunca abrem o estado.db nem esperam o
+    estado_lock. Quem relê o banco é o lx_grava_loop (lx_cfg, a cada LX_GRAVA_SEG); antes da primeira leitura, o padrão."""
+    return _lx_cfg["v"] or dict(LX_CFG_PADRAO, lim=dict(LX_LIM_PADRAO), em=None)
+
+
+def lx_cfg_gravar(corpo, quem):
+    """POST /lixeira/config {modo?, lim?}: só o Admin (conferido na rota). -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"modo", "lim"}:
+        return 400, {"ok": False, "error": "campo"}
+    de = lx_cfg()
+    modo = corpo.get("modo", de["modo"])
+    if modo not in LX_MODOS:
+        return 400, {"ok": False, "error": "modo"}
+    novo = lx_cfg_valida({"modo": modo, "lim": corpo.get("lim"), "valendo": [], "desde": None}, de)
+    if novo is None:
+        return 400, {"ok": False, "error": "lim"}
+    if modo == "ligada" and not LX_LIGADO_PRONTO:
+        return 409, {"ok": False, "error": "em_breve"}
+    if novo["modo"] == de["modo"] and novo["lim"] == de["lim"]:
+        return 200, {"ok": True, "igual": True, "cfg": de}
+    v = dict(novo, por=str(quem or "")[:100] or None, em=_iso())
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "lixeira", json.dumps(v, ensure_ascii=False), rev, v["em"]))
+            db.commit()
+        finally:
+            db.close()
+    with treino_lock:
+        db = treino_db()
+        try:
+            db.execute("insert into lixeira_log values (?,?,?,?)", ("", "cfg_" + v["modo"], v["por"], v["em"]))
+            db.commit()
+        finally:
+            db.close()
+    _lx_cfg.update(t=time.time(), v=dict(v))
+    _lx_med["t"] = 0.0
+    mud = [k for k in LX_LIM_PADRAO if v["lim"].get(k) != de["lim"].get(k)]
+    print("  lixeira: modo %s -> %s%s · por %s" % (de["modo"], v["modo"], " · limites: %s" % ", ".join(mud) if mud else "", v["por"] or "?"))
+    return 200, {"ok": True, "cfg": v}
+
+
+def lx_acrescenta(pid, dia, dados, ms=None):
+    """Veredito na chegada (D3): os limites de agora decidem (da memória, lx_cfg_mem: roda no leitor de rostos). Vai para a fila
+    de gravação; com motivo, também para a memória da contagem. ms = o tempo da medida (média no /status.lixeira)."""
+    if not LX_ON or not isinstance(dados, dict):
+        return []
+    mot = lx_classe(dados, lx_cfg_mem()["lim"])
+    em = _iso()
+    with lx_lock:
+        if ms is not None:
+            lx_st["ms_total"] += ms
+            lx_st["ms_n"] += 1
+        if pid in lx_vistos:             # já tem veredito (o leitor leu de novo a mesma foto): não muda
+            x = lx_mem.get(pid)
+            return (x or {}).get("mot") or []
+        lx_novas.pop(pid, None)
+        lx_novas[pid] = (dia, dados, ",".join(mot) or None, em)
+        while len(lx_novas) > LX_FILA_MAX:
+            lx_novas.popitem(last=False)
+        lx_vistos[pid] = dia
+        if mot:
+            lx_mem[pid] = {"dia": dia, "mot": mot, "em": em, "rec": None}
+            lx_st["rev"] += 1
+    return mot
+
+
+def lx_grava():
+    """Grava a fila em lote no treino.db. O veredito que já existe não muda (on conflict do nothing). Foto que saiu da
+    biblioteca no meio (LGPD) não fica com a linha."""
+    with lx_lock:
+        if not lx_novas:
+            return 0
+        itens = list(lx_novas.items())
+        lx_novas.clear()
+    with lock:
+        itens = [(p, x) for p, x in itens if p in lib]
+    if not itens:
+        return 0
+    with treino_lock:
+        db = treino_db()
+        try:
+            db.executemany("insert into lixeira (pid, dia, v, mot, dados, em) values (?,?,?,?,?,?) on conflict(pid) do nothing",
+                           [(p, d, LX_V, mot, json.dumps(dd, separators=(",", ":")), em) for p, (d, dd, mot, em) in itens])
+            db.commit()
+        finally:
+            db.close()
+    with lock:
+        sairam = [p for p, _ in itens if p not in lib]
+    if sairam:
+        with treino_lock:
+            db = treino_db()
+            try:
+                db.executemany("delete from lixeira where pid = ?", [(p,) for p in sairam])
+                db.commit()
+            finally:
+                db.close()
+    return len(itens) - len(sairam)
+
+
+def lx_grava_loop():
+    """Grava a fila e relê a chave do estado.db (lx_cfg), para o leitor de rostos só ler a memória (lx_cfg_mem)."""
+    while not lx_parar.is_set():
+        lx_parar.wait(LX_GRAVA_SEG)
+        try:
+            lx_cfg()
+        except Exception as ex:
+            print("  lixeira: chave %s" % type(ex).__name__)
+        try:
+            lx_grava()
+        except Exception as ex:
+            print("  lixeira: gravação %s" % type(ex).__name__)
+
+
+def _lx_dias_mem(t=None):
+    """Os dias que ficam na memória: hoje e os LX_MENU_DIAS - 1 anteriores (a contagem do menu; hoje e ontem bastam à Parte B)."""
+    t = time.time() if t is None else t
+    return tuple(_ff_hoje(t - i * 86400) for i in range(LX_MENU_DIAS))
+
+
+def lx_mem_carregar():
+    """Na partida: as linhas dos últimos LX_MENU_DIAS dias com a foto ainda na biblioteca."""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    with treino_lock:
+        db = treino_db()
+        try:
+            ds = _lx_dias_mem()
+            rs = db.execute("select pid, dia, mot, em, rec_em from lixeira where dia in (%s)" % ",".join("?" * len(ds)), ds).fetchall()
+        finally:
+            db.close()
+    with lock:
+        rs = [r for r in rs if r[0] in lib]
+    with lx_lock:
+        for p, d, mot, em, rec in rs:
+            lx_vistos[p] = d
+            ms = [m for m in (mot or "").split(",") if m in LX_MOTIVOS]
+            if ms:
+                lx_mem[p] = {"dia": d, "mot": ms, "em": em, "rec": rec}
+    return len(rs)
+
+
+def lx_lgpd_mem(pids):
+    """LGPD: a foto sai da memória e da fila (as linhas saem pelo treino_lgpd)."""
+    with lx_lock:
+        for p in pids:
+            lx_novas.pop(p, None)
+            lx_vistos.pop(p, None)
+            if lx_mem.pop(p, None) is not None:
+                lx_st["rev"] += 1
+
+
+def _lx_dia_fotos(dia):
+    """{pid: {fotografo, card, ordem}} das sessões do dia: as fechadas pelo índice do Treino, as abertas pelo arquivo do dia."""
+    idx = dict(treino_fotos_dia(dia).get("idx") or {})
+    try:
+        ss = json.load(open(os.path.join(SESS_DIR, dia + ".json"), encoding="utf8")).get("sessoes") or []
+    except Exception:
+        ss = []
+    for x in ss:
+        if not isinstance(x, dict) or x.get("removida") or not isinstance(x.get("card"), str):
+            continue
+        fs = [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+        quem = x.get("fotografo") if isinstance(x.get("fotografo"), str) else None
+        for i, p in enumerate(fs):
+            if p not in idx:
+                idx[p] = {"fotografo": quem, "card": x["card"], "ordem": i + 1}
+    return idx
+
+
+def _lx_nomes(emails):
+    """{email: nome} do cadastro da equipe (para "Recuperada por")."""
+    out = {}
+    if not emails or not os.path.exists(ESTADO_DB):
+        return out
+    try:
+        with estado_lock:
+            db = estado_db()
+            try:
+                for e in emails:
+                    cad = auth_cadastro(db, e)
+                    if isinstance(cad, dict) and isinstance(cad.get("name"), str):
+                        out[e] = cad["name"][:80]
+            finally:
+                db.close()
+    except Exception:
+        pass
+    return out
+
+
+def _lx_treino_niveis(pids):
+    """{pid: nível do Treino} (boa, ajustar, fraca, nao_vai ou duvida)."""
+    out = {}
+    ps = list(pids)
+    if not ps or not os.path.exists(TREINO_DB):
+        return out
+    with treino_lock:
+        db = treino_db()
+        try:
+            rs = []
+            for i in range(0, len(ps), 500):
+                bl = ps[i:i + 500]
+                rs += db.execute("select pid, dados from rotulo where pid in (%s)" % ",".join("?" * len(bl)), bl).fetchall()
+        finally:
+            db.close()
+    for p, d in rs:
+        try:
+            d = json.loads(d) or {}
+        except ValueError:
+            continue
+        nv = (d.get("qual") or {}).get("nivel")
+        if d.get("duvida"):
+            out[p] = "duvida"
+        elif nv in TREINO_NIVEIS:
+            out[p] = nv
+    return out
+
+
+def lx_lista(dia):
+    """GET /lixeira?dia=: as fotos do dia na lixeira (com motivo e ainda na biblioteca), das não recuperadas para as
+    recuperadas, da mais nova para a mais antiga, até LX_ITENS_MAX; e os últimos RETENCAO_DIAS dias com a contagem."""
+    lx_grava()
+    hoje = _ff_hoje()
+    d0 = _ff_hoje(time.time() - (RETENCAO_DIAS - 1) * 86400)
+    with treino_lock:
+        db = treino_db()
+        try:
+            rs = db.execute("select pid, mot, dados, em, rec_por, rec_em from lixeira where dia = ? and mot is not null", (dia,)).fetchall()
+            cont = db.execute("select dia, pid from lixeira where dia >= ? and dia <= ? and mot is not null and rec_em is null", (d0, hoje)).fetchall()
+        finally:
+            db.close()
+    with lock:
+        rs = [r for r in rs if r[0] in lib]
+        cont = [r for r in cont if r[1] in lib]
+    por_dia = collections.Counter(d for d, _ in cont)
+    dias = [{"dia": d, "n": por_dia[d]} for d in sorted(por_dia, reverse=True)]
+    abertas = sorted([r for r in rs if r[5] is None], key=lambda r: r[3] or "", reverse=True)
+    recs = sorted([r for r in rs if r[5] is not None], key=lambda r: r[5] or "", reverse=True)
+    rs = abertas + recs
+    mais = len(rs) > LX_ITENS_MAX
+    rs = rs[:LX_ITENS_MAX]
+    idx = _lx_dia_fotos(dia) if rs else {}
+    niv = _lx_treino_niveis([r[0] for r in rs])
+    nomes = _lx_nomes({r[4] for r in rs if r[4]})
+    itens = []
+    for p, mot, dados, em, rp, re_ in rs:
+        try:
+            dd = json.loads(dados) or {}
+        except ValueError:
+            dd = {}
+        f = idx.get(p) or {}
+        itens.append({"pid": p, "mot": [m for m in (mot or "").split(",") if m in LX_MOTIVOS], "em": em,
+                      "fotografo": f.get("fotografo"), "card": f.get("card"), "ordem": f.get("ordem"), "treino": niv.get(p),
+                      "rec": {"por": rp, "nome": nomes.get(rp), "em": re_} if re_ else None,
+                      "m": {k: dd.get(k) for k in ("nq", "nr", "n", "nb")}})
+    c = lx_cfg()
+    return {"v": 1, "dia": dia, "on": LX_ON, "modo": c["modo"], "valendo": c["valendo"], "n": len(abertas),
+            "recuperadas": len(recs), "itens": itens, "dias": dias, "mais": mais}
+
+
+def lx_recuperar(pid, quem):
+    """POST /lixeira/recuperar: "Não é ruim". -> (status, resposta). Não grava marcação no Treino (D8)."""
+    lx_grava()
+    with lock:
+        viva = pid in lib
+    with treino_lock:
+        db = treino_db()
+        try:
+            r = db.execute("select mot, rec_por, rec_em from lixeira where pid = ?", (pid,)).fetchone()
+            if not viva or not r or not r[0]:
+                return 404, {"ok": False, "error": "pid"}
+            if r[2]:
+                return 200, {"ok": True, "igual": True, "rec": {"por": r[1], "em": r[2]}}
+            em = _iso()
+            por = str(quem or "")[:100] or None
+            db.execute("update lixeira set rec_por = ?, rec_em = ? where pid = ? and rec_em is null", (por, em, pid))
+            db.execute("insert into lixeira_log values (?,?,?,?)", (pid, "recuperar", por, em))
+            db.commit()
+        finally:
+            db.close()
+    with lx_lock:
+        x = lx_mem.get(pid)
+        if x is not None:
+            x["rec"] = em
+        lx_st["rev"] += 1
+    _lx_med["t"] = 0.0
+    return 200, {"ok": True, "rec": {"por": por, "nome": _lx_nomes({por} if por else set()).get(por), "em": em}}
+
+
+def lx_medida(lim=None):
+    """A régua contra o Treino. Verdade = nível da marcação: certa = fraca ou nao_vai; errada = boa ou ajustar, ou foto
+    recuperada com "Não é ruim"; duvida e sem nível ficam fora. Medida: a linha da lixeira; sem ela, para escura e estourada, a
+    medida de luz do original (treino.db medida tipo luz). Por motivo: n (marcadas que a regra mandaria), certas, erradas,
+    precisão, passa (LX_CRIT), falta, mesmo_motivo. Cache de 10 min; com lim (candidato), sem cache."""
+    candidato = lim is not None
+    lim = dict(lim) if candidato else dict(lx_cfg()["lim"])
+    if not candidato and _lx_med["r"] is not None and time.time() - _lx_med["t"] < 600 and _lx_med["r"]["lim"] == lim:
+        return _lx_med["r"]
+    rot, lx = [], []
+    if os.path.exists(TREINO_DB):
+        with treino_lock:
+            db = treino_db()
+            try:
+                rot = db.execute("select pid, dados from rotulo").fetchall()
+                lx = db.execute("select pid, dados, rec_em from lixeira").fetchall()
+            finally:
+                db.close()
+    verdade, mot_treino = {}, {}
+    for p, d in rot:
+        try:
+            d = json.loads(d) or {}
+        except ValueError:
+            continue
+        q = d.get("qual") or {}
+        nv = q.get("nivel")
+        if d.get("duvida") or nv not in TREINO_NIVEIS:
+            continue
+        verdade[p] = nv in ("fraca", "nao_vai")
+        mot_treino[p] = set(q.get("motivos") or [])
+    meds, recs = {}, set()
+    for p, d, rec in lx:
+        if rec:
+            recs.add(p)
+            verdade[p] = False                # "Não é ruim" conta como erro da lixeira
+        elif p not in verdade:
+            continue                          # revisão 24/11: só decodifica a linha que entra na conta (marcada ou recuperada)
+        try:
+            meds[p] = json.loads(d) or {}
+        except ValueError:
+            pass
+    falta_luz = [p for p in verdade if p not in meds]
+    for p, v in luz_ler(falta_luz).items():
+        if isinstance(v, dict) and v.get("src") == "original":
+            meds[p] = {"luz": {"q": v.get("q"), "r": v.get("r")}}   # só escura e estourada (sem nq e nb)
+    motivos = {}
+    for m in LX_MOTIVOS:
+        motivos[m] = {"n": 0, "certas": 0, "erradas": 0, "mesmo_motivo": 0}
+    sem = 0
+    for p, certa in verdade.items():
+        dd = meds.get(p)
+        if dd is None:
+            sem += 1
+            continue
+        for m in lx_classe(dd, lim):
+            x = motivos[m]
+            x["n"] += 1
+            if certa:
+                x["certas"] += 1
+                if LX_TREINO_MOTIVO[m] in mot_treino.get(p, ()):
+                    x["mesmo_motivo"] += 1
+            else:
+                x["erradas"] += 1
+    for m, x in motivos.items():
+        x["precisao"] = round(x["certas"] / x["n"], 4) if x["n"] else None
+        falta = []
+        if x["n"] < LX_CRIT["n"]:
+            falta.append({"k": "n", "tem": x["n"], "precisa": LX_CRIT["n"]})
+        if (x["precisao"] or 0) < LX_CRIT["precisao"]:
+            falta.append({"k": "precisao", "tem": x["precisao"] or 0, "precisa": LX_CRIT["precisao"]})
+        x["falta"] = falta
+        x["passa"] = not falta
+    r = {"v": 1, "lim": lim, "crit": dict(LX_CRIT), "motivos": motivos, "sem_medida": sem, "recuperadas": len(recs)}
+    if not candidato:
+        _lx_med.update(t=time.time(), r=r)
+    return r
+
+
+def lx_status():
+    """/status.lixeira: só números e códigos. hoje = fotos de hoje na lixeira, sem recuperar, ainda na biblioteca; n7 = o mesmo
+    dos últimos LX_MENU_DIAS dias (a contagem do menu, decisão do Eduardo de 24/11); dias = LX_MENU_DIAS."""
+    hoje = _ff_hoje()
+    dias = set(_lx_dias_mem())
+    with lx_lock:                        # lx_mem só tem as fotos com motivo (revisão 24/11): a trava fica pouco tempo
+        ps = [(p, x["dia"] == hoje) for p, x in lx_mem.items() if x["dia"] in dias and not x["rec"]]
+        rev = lx_st["rev"]
+        ms = round(lx_st["ms_total"] / lx_st["ms_n"], 1) if lx_st["ms_n"] else None
+    with lock:
+        vivas = [h for p, h in ps if p in lib]
+    c = lx_cfg_mem()
+    return {"v": 1, "on": LX_ON, "modo": c["modo"], "rev": rev, "hoje": sum(vivas) if LX_ON else 0, "n7": len(vivas) if LX_ON else 0,
+            "dias": LX_MENU_DIAS, "valendo": c["valendo"], "hoje_fora": 0, "ms_med": ms}
+
+
+def lx_limpa(agora=None):
+    """Apaga a linha da foto que já não está na biblioteca e foi medida há mais de 24 h (pela hora da medida, em), menos as
+    recuperadas e as marcadas no Treino (são a régua). O lixeira_log fica. -> linhas apagadas"""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    agora = agora or time.time()
+    recente = _iso(agora - 86400)
+    with lock:
+        vivas = set(lib)
+    with treino_lock:
+        db = treino_db()
+        try:
+            rot = {r[0] for r in db.execute("select pid from rotulo")}
+            fora = [p for p, em, rec in db.execute("select pid, em, rec_em from lixeira")
+                    if p not in vivas and p not in rot and not rec and (em or "") < recente]
+            for i in range(0, len(fora), 500):
+                bl = fora[i:i + 500]
+                db.execute("delete from lixeira where pid in (%s)" % ",".join("?" * len(bl)), bl)
+            db.commit()
+        finally:
+            db.close()
+    with lx_lock:
+        for p in fora:
+            lx_mem.pop(p, None)
+            lx_vistos.pop(p, None)
+    return len(fora)
+
+
+def lx_limpa_noite(t=None):
+    """Uma vez por madrugada (LUZ_NOITE), cedendo ao leitor, à selfie, ao recorte, à montagem e às poses."""
+    t = time.time() if t is None else t
+    hoje = _ff_hoje(t)
+    if not _luz_noite(t) or lx_st["limpa_dia"] == hoje or _luz_ocupado() or 0 <= t - lx_st["limpa_tent"] < 600:
+        return None
+    lx_st["limpa_tent"] = t
+    try:
+        n = lx_limpa(t)
+    except Exception as ex:
+        print("  lixeira: limpeza falhou (%s); nova tentativa em 10 min" % type(ex).__name__)
+        return None
+    lx_st["limpa_dia"] = hoje
+    if n:
+        print("  lixeira: %d linha(s) de fotos que saíram da biblioteca apagada(s)" % n)
+    return n
+
+
+def lx_loop():
+    """A limpeza da madrugada e a memória dos últimos LX_MENU_DIAS dias (sai o que ficou para trás na virada do dia)."""
+    while not lx_parar.is_set():
+        try:
+            lx_limpa_noite()
+            dias = set(_lx_dias_mem())
+            with lx_lock:
+                for p in [p for p, x in lx_mem.items() if x["dia"] not in dias]:
+                    lx_mem.pop(p, None)
+                for p in [p for p, d in lx_vistos.items() if d not in dias]:
+                    lx_vistos.pop(p, None)
+        except Exception as ex:
+            print("  lixeira: %s" % type(ex).__name__)
+        lx_parar.wait(60)
+
+
+# ---------- Alertas do fotógrafo (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md) ----------
+# Por fotógrafo e por dia, no servidor, só somas (sem pid nem cliente): famílias (leva = sessão fechada, AF-D1), cliques por
+# família (com o reconhecimento do ponto Ligado: gramado, troféu e arquibancada com confiança >= CENA_LIMIAR; chute à parte;
+# "outro" e sem leitura = não contadas; senão todas as fotos da leva, AF-D2), conversão por foto (AF-D3: a leva comprou
+# quando alguma foto dela está no selected de uma venda paga e não cancelada, ou é base de um aiSel dela; fotos vendidas = os
+# pids do fotógrafo no selected) e luz (escuras, estouradas). Grava em operacao.db fotografo_dia; o mês fecha em
+# fotografo_mes (congelado). Limites em estado.db config/fotografos, só pela rota POST /fotografos/config (configuracao.u).
+# Nenhum campo de hora, presença, falta ou turno: a conta é por família, nunca por hora (decisão "sem controle de ponto").
+FOTOGRAFOS_CFG_PADRAO = {"v": 1, "cliques_min": 20, "cliques_max": 40, "fam_min": 5,
+                         "conv_fam_pp": 10, "conv_fotos_pp": 5, "conv_fam_min": 15, "conv_equipe_min": 3,
+                         "luz_pct": 15, "luz_grave_pct": 25, "luz_fotos_min": 50, "luz": dict(LUZ_LIM_PADRAO)}
+FOTOGRAFOS_FAIXAS = {"cliques_min": (1, 200), "cliques_max": (2, 400), "fam_min": (1, 1000), "conv_fam_pp": (1, 100),
+                     "conv_fotos_pp": (1, 100), "conv_fam_min": (1, 10000), "conv_equipe_min": (2, 100), "luz_pct": (1, 100),
+                     "luz_grave_pct": (1, 100), "luz_fotos_min": (1, 100000)}
+LUZ_FAIXAS = {"rosto_p95_alto": (200, 255), "rosto_alto_pct": (1, 100), "rosto_med_baixo": (1, 200), "quadro_alto_pct": (1, 100),
+              "quadro_med_alto": (50, 255), "quadro_med_baixo": (1, 200), "quadro_baixo_pct": (1, 100)}
+FOT_SETS_CONTA = ("gramado", "trofeu", "arquibancada")
+FOT_SEM_FOTOGRAFO = ("", "sem fotógrafo")
+FOT_DIAS_NOITE = 35          # a madrugada refaz os últimos 35 dias (LGPD e venda atrasada)
+FOT_VENDA_DIAS = 2           # uma leva do dia D pode ser comprada até D + 2 (a selfie do dia seguinte)
+FOT_PONTO_COBERTURA = 0.9    # dia com o ponto Ligado conta pelo ponto só se 90% das fotos têm leitura (senão, todas as fotos)
+FOT_MES_DESDE_DIA = 1 + FOT_VENDA_DIAS + 1   # revisão 23/11: o mês só congela a partir do dia 4 (a última leva do mês ainda
+                                              # vende até o dia 2) e só depois da rodada da madrugada desse dia
+FOT_MES_ATE_DIA = 5          # faltando dia calculado, espera até o dia 5 (depois, calcula o que falta e congela)
+FOT_REFAZ_JA = 7             # revisão 23/11: limite de luz novo refaz na hora os 7 dias do período padrão da tela; o resto, de madrugada
+fot_lock = threading.Lock()
+fot_cfg_lock = threading.Lock()
+fot_st = {"ultimo_dia": None, "em": None, "noite": None, "sujo": False, "erro": None, "luz_rev": 0, "refeitos": None}
+_fot_cfg = {"t": 0.0, "v": None}
+
+
+def fotografos_cfg_valida(j, base=None):
+    """config/fotografos, formato fechado (inteiros dentro das faixas; cliques_min < cliques_max; luz_pct <= luz_grave_pct).
+    base = a config atual (o POST manda só o que muda). -> (config, None) ou (None, nome do campo recusado)."""
+    if not isinstance(j, dict):
+        return None, "corpo"
+    base = base or FOTOGRAFOS_CFG_PADRAO
+    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in base.items()}
+    for k, v in j.items():
+        if k == "v":
+            if v != 1 or isinstance(v, bool):
+                return None, "v"
+            continue
+        if k == "luz":
+            if not isinstance(v, dict):
+                return None, "luz"
+            for kk, vv in v.items():
+                if kk == "v":
+                    if vv != 1 or isinstance(vv, bool):
+                        return None, "luz.v"
+                    continue
+                fx = LUZ_FAIXAS.get(kk)
+                if fx is None or not isinstance(vv, int) or isinstance(vv, bool) or not fx[0] <= vv <= fx[1]:
+                    return None, "luz." + str(kk)[:40]
+                out["luz"][kk] = vv
+            continue
+        fx = FOTOGRAFOS_FAIXAS.get(k)
+        if fx is None or not isinstance(v, int) or isinstance(v, bool) or not fx[0] <= v <= fx[1]:
+            return None, str(k)[:40]
+        out[k] = v
+    if out["cliques_min"] >= out["cliques_max"]:
+        return None, "cliques_min"
+    if out["luz_pct"] > out["luz_grave_pct"]:
+        return None, "luz_pct"
+    out["v"] = 1
+    out["luz"]["v"] = 1
+    return out, None
+
+
+def fotografos_cfg():
+    """Os limites (estado.db config/fotografos), relidos a cada 3 s; sem documento ou ilegível: os padrões. Nunca cria banco."""
+    agora = time.time()
+    if agora - _fot_cfg["t"] < 3 and _fot_cfg["v"] is not None:
+        return _fot_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'fotografos' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                j = json.loads(r[0])
+                v, _ = fotografos_cfg_valida({k: x for k, x in j.items() if k not in ("por", "em")})
+                if v is not None:
+                    v.update(por=j.get("por"), em=j.get("em"))
+    except Exception:
+        v = _fot_cfg["v"]
+    v = v or dict(FOTOGRAFOS_CFG_PADRAO, luz=dict(LUZ_LIM_PADRAO), por=None, em=None)
+    _fot_cfg.update(t=agora, v=v)
+    return v
+
+
+def fotografos_cfg_gravar(corpo, quem):
+    """POST /fotografos/config: só os campos que mudam (formato fechado). 400 campo com o nome do campo recusado. Sem mudança:
+    não regrava nem sobe o rev. Revisão 23/11: com a exposição Ligada, limite de luz novo só passando no LUZ_CRIT com os
+    limites novos (409 criterio com falta, nada gravado); limite de luz novo refaz na hora os FOT_REFAZ_JA dias mais recentes e
+    marca o resto para a rodada da madrugada (fot_st.sujo). -> (status, resposta com antes e depois, para o auditLog da tela)"""
+    if not isinstance(corpo, dict) or not corpo:
+        return 400, {"ok": False, "error": "campo", "campo": "corpo"}
+    with fot_cfg_lock:
+        de = fotografos_cfg()
+        antes = {k: (dict(x) if isinstance(x, dict) else x) for k, x in de.items() if k not in ("por", "em")}
+        novo, campo = fotografos_cfg_valida(corpo, antes)
+        if novo is None:
+            return 400, {"ok": False, "error": "campo", "campo": campo}
+        mud = [k for k in novo if k != "luz" and novo[k] != antes.get(k)] + ["luz." + k for k in novo["luz"] if novo["luz"][k] != (antes.get("luz") or {}).get(k)]
+        if not mud:
+            return 200, {"ok": True, "limites": novo, "antes": antes, "mudou": [], "igual": True, "por": de.get("por"), "em": de.get("em")}
+        luz_mudou = any(k.startswith("luz.") for k in mud)
+        if luz_mudou and treino_cfg().get("exposicao") == "ligada":
+            crit = luz_medida(forcar=True, lim=novo["luz"])["criterio"]
+            if not crit["passa"]:
+                return 409, {"ok": False, "error": "criterio", "falta": crit["falta"]}
+        v = dict(novo, por=str(quem or "")[:100] or None, em=_iso())
+        with estado_lock:
+            db = estado_db()
+            try:
+                rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+                db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                           ("config", "fotografos", json.dumps(v, ensure_ascii=False), rev, v["em"]))
+                db.commit()
+            finally:
+                db.close()
+        _fot_cfg.update(t=time.time(), v=v)
+        if luz_mudou:
+            # dentro do fot_cfg_lock: a rodada da madrugada (fot_rodada) confere luz_rev e zera o sujo sob o mesmo lock
+            fot_st["luz_rev"] += 1
+            fot_st["sujo"] = True                 # os dias mais antigos só na rodada da madrugada (fot_rodada)
+    print("  fotógrafos: limites %s · por %s" % (", ".join("%s %s -> %s" % (k, _fot_cfg_val(antes, k), _fot_cfg_val(novo, k)) for k in mud), v["por"] or "?"))
+    r = {"ok": True, "limites": novo, "antes": antes, "mudou": mud, "por": v["por"], "em": v["em"]}
+    if luz_mudou:
+        r.update(refeitos=fot_refaz_recentes(), noite=True)
+    return 200, r
+
+
+def fot_refaz_recentes(hoje=None):
+    """Limite de luz novo: refaz na hora hoje e os FOT_REFAZ_JA - 1 dias antes (o período padrão da tela). -> dias refeitos
+    (FOT_REFAZ_JA; 0 se falhou no meio: a tela não diz que foram refeitos e a madrugada refaz todos)"""
+    hoje = hoje or _ff_hoje()
+    n = 0
+    try:
+        with fot_lock:
+            for i in range(FOT_REFAZ_JA):
+                fot_gravar(_dia_mais(hoje, -i))
+            fot_st.update(hoje_em=time.time(), hoje_dia=hoje)
+        n = FOT_REFAZ_JA
+    except Exception as ex:
+        print("  fotógrafos: refazer os dias recentes %s (a madrugada refaz)" % str(ex)[:120])
+    fot_st["refeitos"] = n
+    return n
+
+
+def _fot_cfg_val(c, k):
+    if k.startswith("luz."):
+        return (c.get("luz") or {}).get(k[4:])
+    return c.get(k)
+
+
+def _fot_sessoes(dia):
+    """Levas fechadas do dia com fotógrafo: [(fotografo, [pids])] (fotos + bases dos fundos de IA, sem repetir)."""
+    a = os.path.join(SESS_DIR, dia + ".json")
+    try:
+        ss = json.load(open(a, encoding="utf8")).get("sessoes") or []
+    except Exception:
+        return []
+    out = []
+    for x in ss:
+        if not isinstance(x, dict) or x.get("removida") or x.get("status") != "fechada":
+            continue
+        f = x.get("fotografo")
+        if not isinstance(f, str) or f.strip() in FOT_SEM_FOTOGRAFO or f in CHAVES_PROIBIDAS:
+            continue
+        ps = []
+        for p in list(x.get("fotos") or []) + list(x.get("ia") or []):
+            if isinstance(p, str) and pid_ok(p) and p not in ps:
+                ps.append(p)
+        if ps:
+            out.append((f[:60], ps))
+    return out
+
+
+def _fot_cena(pids):
+    """{pid: (rotulo, conf)} do cena.db (só leitura; sem o banco, {})."""
+    if not pids or not os.path.exists(CENA_DB):
+        return {}
+    out = {}
+    ps = list(pids)
+    db = sqlite3.connect("file:%s?mode=ro" % quote(CENA_DB), uri=True, timeout=5, check_same_thread=False)
+    try:
+        for i in range(0, len(ps), 500):
+            bl = ps[i:i + 500]
+            for p, r, c in db.execute("select pid, rotulo, conf from cena where pid in (%s)" % ",".join("?" * len(bl)), bl):
+                out[p] = (r, float(c or 0))
+    finally:
+        db.close()
+    return out
+
+
+def _fot_vendas(dia):
+    """Vendas pagas e não canceladas criadas de dia até dia + FOT_VENDA_DIAS: [(selected, bases dos aiSel)] em pids da biblioteca.
+    Conexão só de leitura, sem o ev_lock (como o _mtg_pagas_ler)."""
+    if not os.path.exists(VENDAS_DB):
+        return []
+    ate = _dia_mais(dia, FOT_VENDA_DIAS)
+    db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=5, check_same_thread=False)
+    try:
+        db.execute("pragma query_only=1")
+        rs = db.execute("select venda, tipo, dados from evento where venda in (select venda from evento where tipo = 'criar' and dia >= ? and dia <= ?)",
+                        (dia, ate)).fetchall()
+    finally:
+        db.close()
+    vs = {}
+    for venda, tipo, dados in rs:
+        v = vs.setdefault(venda, {"c": None, "paga": False, "canc": False})
+        if tipo == "criar":
+            try:
+                v["c"] = json.loads(dados or "{}")
+            except ValueError:
+                v["c"] = None
+        elif tipo == "pagar":
+            v["paga"] = True
+        elif tipo == "cancelar":
+            v["canc"] = True
+    out = []
+    for v in vs.values():
+        c = v["c"]
+        if not v["paga"] or v["canc"] or not isinstance(c, dict):
+            continue
+        sel = {pid_lib(p) for p in (c.get("selected") or []) if pid_ok(p)}
+        ai = set()
+        for k in c.get("aiSel") or []:
+            a = re.sub(r"^ai:", "", str(k)).partition("|")[0]
+            if pid_ok(a):
+                ai.add(pid_lib(a))
+        if sel or ai:
+            out.append((sel, ai))
+    return out
+
+
+def _fot_ponto_no_dia(dia, hoje=None):
+    """O reconhecimento do ponto estava Ligado naquele dia (revisão 23/11, decisão 3: pelo estado do dia, não pelo de agora)?
+    Hoje: o interruptor de agora. Dia passado: o que ficou gravado quando ele era hoje (fotografo_dia_calc.ponto, o último
+    cálculo do dia). Sem esse registro (dia de antes desta versão): Ligado só se já havia um Ligar no liga_log até o fim daquele
+    dia E o interruptor está Ligado agora (o liga_log só registra o Ligar; o desligar não fica registrado em lugar nenhum)."""
+    hoje = hoje or _ff_hoje()
+    agora = treino_cfg().get("ponto") == "ligada"
+    if dia >= hoje:
+        return agora
+    r = op_ler("select ponto from fotografo_dia_calc where dia = ?", (dia,))
+    if r and r[0][0] is not None:
+        return bool(r[0][0])
+    if not agora or not os.path.exists(TREINO_DB):
+        return False
+    with treino_lock:
+        db = treino_db()
+        try:
+            ems = [x[0] for x in db.execute("select em from liga_log")]
+        finally:
+            db.close()
+    return any(_ff_hoje(_epoch(e)) <= dia for e in ems if isinstance(e, str) and _epoch(e))
+
+
+def fot_dia(dia):
+    """Sobre as sessões, o cena.db, a medida de luz, o vendas.db e o estado do reconhecimento naquele dia (_fot_ponto_no_dia):
+    {fotografo: dados} do dia (só somas). Sem o histograma nem os limites da época: o por_n (famílias por número de cliques)
+    serve a qualquer limite."""
+    cfg = fotografos_cfg()
+    lim = cfg["luz"]
+    levas = _fot_sessoes(dia)
+    todos = [p for _, ps in levas for p in ps]
+    ponto = _fot_ponto_no_dia(dia)
+    cena_ = _fot_cena(todos) if ponto else {}
+    if ponto and todos and sum(1 for p in todos if (cena_.get(p) or (None,))[0]) < FOT_PONTO_COBERTURA * len(todos):
+        ponto = False                                  # dia sem leitura do ponto (antes de ligar): conta todas as fotos
+    fonte = "ponto" if ponto else "todas"
+    # 24/11: a medida de luz vence em LUZ_RET_DIAS (luz_limpa). Dia mais antigo que isso (a madrugada refaz até FOT_DIAS_NOITE)
+    # fica com o bloco de luz já gravado de cada fotógrafo, em vez de virar sem_dado
+    luz_fixa = {}
+    if todos and dia < _ff_hoje(time.time() - (LUZ_RET_DIAS - 1) * 86400):
+        luz_fixa = {f: d["luz"] for f, d in _fot_json(op_ler("select fotografo, dados from fotografo_dia where dia = ?", (dia,))).items()
+                    if isinstance(d, dict) and isinstance(d.get("luz"), dict)}
+    luz = luz_ler(todos) if todos and not luz_fixa else {}
+    vendas = _fot_vendas(dia) if todos else []
+    sel_tudo = set().union(*[s for s, _ in vendas]) if vendas else set()
+    ai_tudo = set().union(*[a for _, a in vendas]) if vendas else set()
+    out = {}
+    for f, ps in levas:
+        d = out.setdefault(f, {"v": 1, "familias": 0, "cliques_soma": 0, "chute_soma": 0, "nao_contadas": 0,
+                               "por_n": {}, "fonte": fonte, "fam_compraram": 0,
+                               "fotos": 0, "fotos_vendidas": 0, "luz": {"n": 0, "escuras": 0, "estouradas": 0, "sem_dado": 0}})
+        if ponto:
+            cl = ch = nc = 0
+            for p in ps:
+                r, c = cena_.get(p) or (None, 0.0)
+                if r in FOT_SETS_CONTA and c >= CENA_LIMIAR:
+                    cl += 1
+                elif r == "chute" and c >= CENA_LIMIAR:
+                    ch += 1
+                else:
+                    nc += 1
+        else:
+            cl, ch, nc = len(ps), 0, 0
+        d["familias"] += 1
+        d["cliques_soma"] += cl
+        d["chute_soma"] += ch
+        d["nao_contadas"] += nc
+        kn = str(min(cl, 999))
+        d["por_n"][kn] = d["por_n"].get(kn, 0) + 1
+        d["fotos"] += len(ps)
+        sp = set(ps)
+        if sp & sel_tudo or sp & ai_tudo:
+            d["fam_compraram"] += 1
+        d["fotos_vendidas"] += len(sp & sel_tudo)
+        for p in ps:
+            k = luz_classe(luz.get(p), lim)
+            if k == "sem_dado":
+                d["luz"]["sem_dado"] += 1
+            else:
+                d["luz"]["n"] += 1
+                if k == "escura":
+                    d["luz"]["escuras"] += 1
+                elif k == "estourada":
+                    d["luz"]["estouradas"] += 1
+    for f, lz in luz_fixa.items():
+        if f in out:
+            out[f]["luz"] = dict(lz)
+    return out
+
+
+def _fot_json(linhas):
+    """[(fotografo, dados JSON)] -> {fotografo: dados}, para comparar sem depender da ordem das chaves."""
+    out = {}
+    for f, d in linhas:
+        try:
+            out[f] = json.loads(d)
+        except (TypeError, ValueError):
+            out[f] = d
+    return out
+
+
+def fot_gravar(dia):
+    """Refaz o dia em operacao.db fotografo_dia (apaga o dia e grava de novo: quem saiu do dia, pela LGPD, sai da tabela). O dia
+    de hoje grava também o estado do reconhecimento do ponto (fotografo_dia_calc.ponto), que vale depois para refazer o dia."""
+    hoje = _ff_hoje()
+    ponto = (1 if treino_cfg().get("ponto") == "ligada" else 0) if dia == hoje else None
+    dados = fot_dia(dia)
+    em = _iso()
+    novo = {f: json.dumps(d, ensure_ascii=False, separators=(",", ":")) for f, d in dados.items()}
+    with op_lock:
+        db = operacao_db()
+        try:
+            # 24/11: dia igual ao gravado (comparado sem o em) não é regravado: o operacao.db só muda, e só sobe no backup, com dado novo
+            calc = db.execute("select ponto from fotografo_dia_calc where dia = ?", (dia,)).fetchone()
+            igual = calc is not None and (ponto is None or calc[0] == ponto) and \
+                _fot_json(db.execute("select fotografo, dados from fotografo_dia where dia = ?", (dia,)).fetchall()) == _fot_json(novo.items())
+            if not igual:
+                with db:
+                    db.execute("delete from fotografo_dia where dia = ?", (dia,))
+                    db.executemany("insert into fotografo_dia values (?,?,?,?)", [(dia, f, d, em) for f, d in novo.items()])
+                    db.execute("insert into fotografo_dia_calc (dia, em, ponto) values (?, ?, ?) on conflict(dia) do update set em = excluded.em,"
+                               " ponto = coalesce(excluded.ponto, fotografo_dia_calc.ponto)", (dia, em, ponto))
+        finally:
+            db.close()
+    if not fot_st["ultimo_dia"] or dia >= fot_st["ultimo_dia"]:
+        fot_st.update(ultimo_dia=dia, em=em)
+    return dados
+
+
+def _fot_soma(a, b):
+    """Soma dois dados de fotografo_dia (o mesmo formato)."""
+    for k, v in b.items():
+        if k in ("familias", "cliques_soma", "chute_soma", "nao_contadas", "fam_compraram", "fotos", "fotos_vendidas"):
+            a[k] = a.get(k, 0) + int(v or 0)
+        elif k == "por_n":
+            pn = a.setdefault("por_n", {})
+            for n, c in v.items():
+                pn[n] = pn.get(n, 0) + int(c or 0)
+        elif k == "luz":
+            lz = a.setdefault("luz", {"n": 0, "escuras": 0, "estouradas": 0, "sem_dado": 0})
+            for kk in ("n", "escuras", "estouradas", "sem_dado"):
+                lz[kk] = lz.get(kk, 0) + int(v.get(kk) or 0)
+        elif k == "fonte":
+            a["fonte"] = v if a.get("fonte") in (None, v) else "misto"
+        elif k == "v":
+            a["v"] = 1
+    return a
+
+
+def fot_ler(de, ate):
+    """{fotografo: dados somados} e os dias calculados no período (fotografo_dia)."""
+    rs = op_ler("select dia, fotografo, dados from fotografo_dia where dia >= ? and dia <= ?", (de, ate))
+    out, dias = {}, set()
+    for dia, f, d in rs:
+        try:
+            j = json.loads(d)
+        except ValueError:
+            continue
+        dias.add(dia)
+        _fot_soma(out.setdefault(f, {}), j)
+    return out, dias
+
+
+def fot_mes(mes):
+    """Soma dos dias do mês (fotografo_dia) por fotógrafo."""
+    ate = _dia_mais(_dia_mais(mes + "-01", 31)[:7] + "-01", -1)
+    return fot_ler(mes + "-01", ate)[0]
+
+
+def fot_mes_fechar(hoje=None, noite=None):
+    """Congela em fotografo_mes o mês anterior (e um mês mais antigo que ficou para trás, com o agente parado na época) como a
+    soma dos fotografo_dia. Revisão 23/11: o mês anterior só a partir do dia FOT_MES_DESDE_DIA (a última leva do mês ainda vende
+    até o dia 2) e todos só depois da rodada da madrugada de hoje (noite). Faltando dia calculado, espera até o dia
+    FOT_MES_ATE_DIA; depois, calcula o que falta e congela. Congelado não muda mais (insert or ignore).
+    -> "fechado" | "ja" | "cedo" | "noite" | "espera" """
+    hoje = hoje or _ff_hoje()
+    noite = (fot_st["noite"] == hoje) if noite is None else noite
+    dd = int(hoje[8:10])
+    ini = hoje[:8] + "01"
+    ant = _dia_mais(ini, -1)[:7]
+    fechados = {r[0] for r in op_ler("select mes from fotografo_mes")}
+    meses = {r[0] for r in op_ler("select distinct substr(dia, 1, 7) from fotografo_dia_calc where dia < ?", (ini,))}
+    meses |= {r[0] for r in op_ler("select distinct substr(dia, 1, 7) from fotografo_dia where dia < ?", (ini,))}
+    cands = sorted(({ant} | meses) - fechados)
+    if not cands:
+        return "ja"
+    if not noite:
+        return "noite"
+    res = "ja"
+    for mes in cands:
+        if mes == ant and dd < FOT_MES_DESDE_DIA:
+            res = "cedo"
+            continue
+        dias = [_dia_mais(mes + "-01", i) for i in range(31)]
+        dias = [d for d in dias if d[:7] == mes]
+        feitos = {r[0] for r in op_ler("select dia from fotografo_dia_calc where dia >= ? and dia <= ?", (dias[0], dias[-1]))}
+        falta = [d for d in dias if d not in feitos and os.path.exists(os.path.join(SESS_DIR, d + ".json"))]
+        if falta and mes == ant and dd < FOT_MES_ATE_DIA:
+            res = "espera" if res != "fechado" else res
+            continue
+        for d in falta:                           # dia que nunca foi calculado (agente parado): calcula antes de congelar
+            with fot_lock:
+                fot_gravar(d)
+        dados = fot_mes(mes)
+        with op_lock:
+            db = operacao_db()
+            try:
+                with db:
+                    db.execute("insert or ignore into fotografo_mes values (?, ?, ?)", (mes, json.dumps(dados, ensure_ascii=False, separators=(",", ":")), _iso()))
+            finally:
+                db.close()
+        print("  fotógrafos: mês %s fechado (%d fotógrafos%s)" % (mes, len(dados), ", %d dia(s) calculado(s) agora" % len(falta) if falta else ""))
+        res = "fechado"
+    return res
+
+
+def fot_rodada(hoje, virou, hora=None):
+    """Dentro do dia_loop: hoje sempre (a cada 10 min); ontem na virada; os 35 dias de madrugada (revisão 23/11: limite de luz
+    novo refaz na hora só os dias recentes, fot_refaz_recentes, e o resto espera esta rodada); o fechamento do mês.
+    Cada dia grava com o fot_lock (o mesmo do fot_refaz_recentes e do GET): um POST de limite de luz no meio da rodada refaz os
+    dias recentes entre um dia e outro da rodada, nunca no meio de um. Limite de luz mudou durante a rodada: os dias já feitos
+    ficaram com o limite antigo, então o sujo fica e a noite não conta como feita (a próxima volta do dia_loop, ainda na
+    janela, refaz os 35 dias)."""
+    try:
+        with fot_lock:
+            fot_gravar(hoje)
+        if virou:
+            with fot_lock:
+                fot_gravar(_dia_mais(hoje, -1))
+        hora = int(time.strftime("%H")) if hora is None else hora
+        if 2 <= hora < 6 and fot_st["noite"] != hoje:
+            with fot_cfg_lock:
+                rev0, luz0 = fot_st["luz_rev"], dict(fotografos_cfg().get("luz") or {})
+            for i in range(1, FOT_DIAS_NOITE + 1):
+                with fot_lock:
+                    fot_gravar(_dia_mais(hoje, -i))
+            with fot_cfg_lock:                    # o POST sobe o luz_rev e marca o sujo sob este lock: conferir e zerar sem corrida
+                if fot_st["luz_rev"] == rev0 and dict(fotografos_cfg().get("luz") or {}) == luz0:
+                    fot_st.update(noite=hoje, sujo=False)
+                else:
+                    print("  fotógrafos: limite de luz mudou durante a rodada da madrugada (refaz na próxima volta)")
+        fot_mes_fechar(hoje)
+        fot_st["erro"] = None
+    except Exception as ex:
+        fot_st["erro"] = str(ex)[:160]
+        print("  fotógrafos: agregado %s" % str(ex)[:160])
+
+
+def _fot_pct(a, b):
+    return a / b if b else None
+
+
+def fot_alertas(de, ate, agora_hoje=True):
+    """GET /fotografos/alertas: soma do período, a equipe toda e os alertas (AF-D3, D6, D8; regras do plano)."""
+    cfg = fotografos_cfg()
+    hoje = _ff_hoje()
+    if agora_hoje and de <= hoje <= ate:
+        with fot_lock:
+            if fot_st.get("hoje_em", 0) < time.time() - 120 or fot_st.get("hoje_dia") != hoje:
+                fot_gravar(hoje)
+                fot_st.update(hoje_em=time.time(), hoje_dia=hoje)
+    dados, dias = fot_ler(de, ate)
+    expo = treino_cfg().get("exposicao")
+    fontes = {d.get("fonte") for d in dados.values() if d.get("familias")}
+    fonte = "ponto" if fontes == {"ponto"} else "todas" if fontes <= {"todas"} else "misto"
+    eq = {"familias": 0, "fam_compraram": 0, "fotos": 0, "fotos_vendidas": 0, "cliques_soma": 0, "chute_soma": 0}   # a linha da equipe na tela
+    fs = []
+    for k in sorted(dados):
+        d = dados[k]
+        fam = int(d.get("familias") or 0)
+        if not fam:
+            continue
+        for x in eq:
+            eq[x] += int(d.get(x) or 0)
+        pn = {int(n): c for n, c in (d.get("por_n") or {}).items() if str(n).isdigit()}
+        fs.append({"k": k, "familias": fam,
+                   "cliques": {"media": round(d["cliques_soma"] / fam, 1), "abaixo": sum(c for n, c in pn.items() if n < cfg["cliques_min"]),
+                               "acima": sum(c for n, c in pn.items() if n > cfg["cliques_max"]), "chute_media": round(d.get("chute_soma", 0) / fam, 1),
+                               "nao_contadas": int(d.get("nao_contadas") or 0)},
+                   "conv": {"fam": [int(d.get("fam_compraram") or 0), fam], "fotos": [int(d.get("fotos_vendidas") or 0), int(d.get("fotos") or 0)]},
+                   "luz": dict(d.get("luz") or {"n": 0, "escuras": 0, "estouradas": 0, "sem_dado": 0}) if expo != "desligada" else None})
+    al = []
+    n_eq = len(fs)
+    t_fam, t_fot = _fot_pct(eq["fam_compraram"], eq["familias"]), _fot_pct(eq["fotos_vendidas"], eq["fotos"])
+    for x in fs:
+        c, fam = x["cliques"], x["familias"]
+        if fam >= cfg["fam_min"] and c["media"] < cfg["cliques_min"]:
+            al.append({"tipo": "fot_poucos", "k": x["k"], "sev": "warn", "args": [c["media"], c["abaixo"], fam, cfg["cliques_min"]]})
+        if fam >= cfg["fam_min"] and c["media"] > cfg["cliques_max"]:
+            al.append({"tipo": "fot_muitos", "k": x["k"], "sev": "warn", "args": [c["media"], c["acima"], fam, cfg["cliques_max"]]})
+        if n_eq >= cfg["conv_equipe_min"] and fam >= cfg["conv_fam_min"]:
+            cf, tf = x["conv"]["fam"], x["conv"]["fotos"]
+            if t_fam is not None and 100 * cf[0] / cf[1] <= 100 * t_fam - cfg["conv_fam_pp"] + 1e-9:
+                al.append({"tipo": "fot_conv_fam", "k": x["k"], "sev": "warn", "args": [round(100 * cf[0] / cf[1]), round(100 * t_fam), cf[0], cf[1]]})
+            if t_fot is not None and tf[1] and 100 * tf[0] / tf[1] <= 100 * t_fot - cfg["conv_fotos_pp"] + 1e-9:
+                al.append({"tipo": "fot_conv_fotos", "k": x["k"], "sev": "warn", "args": [round(100 * tf[0] / tf[1]), round(100 * t_fot), tf[0], tf[1]]})
+        lz = x["luz"]
+        if expo == "ligada" and lz and lz["n"] >= cfg["luz_fotos_min"]:
+            fora = lz["escuras"] + lz["estouradas"]
+            if 100 * fora / lz["n"] >= cfg["luz_pct"]:
+                al.append({"tipo": "fot_luz", "k": x["k"], "sev": "bad" if 100 * fora / lz["n"] >= cfg["luz_grave_pct"] else "warn",
+                           "args": [fora, lz["n"], lz["estouradas"], lz["escuras"]]})
+    lim = {k: (dict(v) if isinstance(v, dict) else v) for k, v in cfg.items() if k not in ("por", "em")}
+    # sujo (revisão 23/11): limite de luz mudou e os dias mais antigos que os FOT_REFAZ_JA recentes só são refeitos de madrugada
+    return {"ok": True, "v": 1, "de": de, "ate": ate, "limites": lim, "exposicao": expo, "fonte_cliques": fonte, "dias": len(dias),
+            "equipe": eq, "fotografos": fs, "alertas": al, "em": _iso(), "sujo": bool(fot_st["sujo"]), "refeitos": fot_st["refeitos"]}
+
+
+def fot_status():
+    return {"ultimo_dia": fot_st["ultimo_dia"], "em": fot_st["em"]}
 
 
 # ---------- Cena: reconhecer o ponto pela imagem (regra 19, 18/11; plano "bases dos fundos de IA só com foto do gramado") ----------
@@ -14297,7 +17103,7 @@ def treino_cfg_mem():
     """O último interruptor lido (sem abrir o banco): para quem está com o sess_lock na mão. Atualizado a cada 3 s pelo
     treino_cfg_loop."""
     v = _treino_cfg["v"]
-    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None)
+    return v if v is not None else dict(TREINO_CFG_PADRAO, ponto_versao=None, por=None, em=None, abaixo=None, exposicao_ok=False)
 
 
 def treino_cfg_loop():
@@ -14937,11 +17743,11 @@ def cena_limpa(agora=None):
                 vivas = {p for p, _, _ in rows if p in lib}
             n = 0
             for p, dia, tem in rows:
+                if p in guardar:                 # 24/11: antes de olhar a biblioteca (a foto rotulada pode ter ido para o arquivo)
+                    continue
                 if p not in vivas:
                     db.execute("delete from cena where pid = ?", (p,))
                     n += 1
-                elif p in guardar:
-                    continue
                 elif (dia or "") < lim_lin:
                     db.execute("delete from cena where pid = ?", (p,))
                     n += 1
@@ -15492,15 +18298,15 @@ def cena_loop():
 #   desligada (padrão)  nada roda, o filho nem abre e o poses.db nem é criado
 #   sombra              classifica (e na P3 agrega); a tela mostra "Em teste", sem alertas nem fechamento
 #   ligada              alertas e fechamento mensal (P4 e P5); só com a Medição em POSE_MEDIDA_MIN ou mais (409 criterio)
-# ETERNA_POSES=0 força desligada. ~/Eterna/ponto/poses.db vai para o backup (só texto: nenhum pixel, nenhuma chave).
+# ETERNA_POSES=0 força desligada. ~/Eterna/ponto/poses.db fica FORA do backup na nuvem (24/11: tem pid e card; dado de visitante não sai do servidor).
 POSES_DB = os.path.join(HOME, "ponto", "poses.db")
 POSE_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-poses.py")
 POSE_BIN = "/opt/eterna/visao/bin/llama-server"     # root:root 755 (servidor/linux/visao-instalar.sh); os testes trocam
 POSE_NVSMI = "nvidia-smi"                           # memória livre da placa; os testes trocam
 POSE_ARQ = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"        # em ~/Eterna/modelos (agente/instalar-poses-modelos.py)
 POSE_MMPROJ_ARQ = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
-# SHA-256 dos dois arquivos: o Ronaldo confere o download no servidor (instalar-poses-modelos.py --conferir) e o
-# programador fixa aqui e no instalar-poses-modelos.py, como foi com o CENA_SHA. Vazio = sem SHA fixo: o filho não abre
+# SHA-256 dos dois arquivos: o Ronaldo instala com o SHA esperado de cada um (instalar-poses-modelos.py --esperado-modelo e
+# --esperado-mmproj, copiados da página do arquivo no Hugging Face; diferente = apagado) e o programador fixa aqui e no instalar-poses-modelos.py, como foi com o CENA_SHA. Vazio = sem SHA fixo: o filho não abre
 # (motivo sem_modelo) e nada é classificado (falha fechada).
 POSE_SHA = ""
 POSE_MMPROJ_SHA = ""
@@ -15517,11 +18323,13 @@ POSE_DORME = 30                # s entre uma conferência e outra quando não po
 POSE_FILA_SEG = 300            # a lista de pendentes é refeita a cada 5 min (ou quando acaba)
 POSE_ERRO_SEG = 60             # s antes de tentar abrir o filho de novo depois de um erro
 POSE_ESPERA_SEG = 600          # prazo de um lote no filho
-POSE_CARGA_SEG = 360           # prazo para o filho conferir o SHA e o llama-server abrir o modelo
+POSE_CARGA_SEG = 360           # prazo para o filho abrir o modelo (o do filho, 300 s contados do início, é menor)
+POSE_TERM_SEG = 15             # SIGTERM no filho: ele fecha o llama-server (SIGTERM 8 s, SIGKILL 5 s); depois disto, SIGKILL
 POSE_LINHA_DIAS = 60           # a linha de cada foto vence nisto (os agregados da P3 ficam)
 POSE_MEDIDA_MIN = 150          # conferidas no Marcar para aceitar Ligada (D10; a medida é da P2)
 POSE_MODOS = ("desligada", "sombra", "ligada")
 POSE_PIDS = os.path.join(HOME, "ponto", "poses-filho.json")    # filho e llama-server abertos (a partida encerra órfãos)
+POSE_SHA_ARQ = os.path.join(HOME, "ponto", "poses-sha.json")   # SHA-256 lido de cada arquivo do modelo, com tamanho, data e inode (0600)
 POSE_TAXO = {
     "set": TREINO_PONTOS,
     "quem": ("individual", "dupla", "grupo_adultos", "familia_crianca", "so_criancas", "ninguem"),
@@ -15543,14 +18351,15 @@ _re_pose_hm = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 poses_lock = threading.Lock()                # estado e contadores (nunca junto do rec_lock, do mtg_lock ou do lock)
 poses_db_lock = threading.Lock()
 poses_filho_lock = threading.Lock()
-poses_st = {"erro": None, "erro_em": 0.0, "mortes": 0, "parado": None, "carregado": False, "carga_ms": None, "pendentes": 0,
+poses_st = {"erro": None, "erro_em": 0.0, "mortes": 0, "parado": None, "parado_por": None, "carregado": False, "carga_ms": None, "pendentes": 0,
             "pend_t": 0.0, "noite_k": None, "rodando": False, "falhou": set(), "abriu": False,
             "noite": {"ini": None, "fim": None, "feitas": 0, "duvidas": 0, "erros": 0, "ms_total": 0, "ms_n": 0, "parou_por": None}}
-poses_filho = {"p": None, "fila": None, "seq": 0, "criado": None, "llama": None}
+poses_filho = {"p": None, "fila": None, "seq": 0, "criado": None, "llama": None, "pronto": False}
 poses_parar = threading.Event()              # só os testes ligam: o poses_loop termina
 POSE_PRIO_EM = {"rec": 0.0, "mtg": 0.0}      # último trabalho de prioridade 0 ou 1 no recorte e na montagem (posto ou tirado)
 _poses_cfg = {"t": 0.0, "v": None}
-_poses_ok = {}                               # ((caminho, tamanho, mtime), ...) -> os dois SHA conferem
+_poses_sha_mem = {"v": None}                 # cópia em memória do POSE_SHA_ARQ
+_poses_sha_falha = {}                        # nome do arquivo -> {"assin", "noite"}: a leitura falhou (E/S); não relê nesta noite
 
 
 def poses_marca_prio(tipo):
@@ -15737,35 +18546,95 @@ def pose_orient(pid):
     return wh[0], wh[1], "h" if r > 1.05 else "v" if r < 0.95 else "q"
 
 
+def _poses_arqs():
+    return ((os.path.join(MODELOS, POSE_ARQ), POSE_SHA), (os.path.join(MODELOS, POSE_MMPROJ_ARQ), POSE_MMPROJ_SHA))
+
+
+def _poses_assinatura(caminho):
+    """[tamanho, mtime_ns, inode]: mudou qualquer um, o SHA é lido de novo."""
+    st = os.stat(caminho)
+    return [st.st_size, st.st_mtime_ns, st.st_ino]
+
+
+def _poses_sha_guardado():
+    """{nome do arquivo: {"assin": [...], "sha": hex}} do POSE_SHA_ARQ (lido uma vez; leitura barata, nunca os 6 GB)."""
+    if _poses_sha_mem["v"] is None:
+        v = {}
+        try:
+            with open(POSE_SHA_ARQ, encoding="utf8") as f:
+                j = json.load(f)
+            if isinstance(j, dict):
+                v = {k: x for k, x in j.items() if isinstance(x, dict) and isinstance(x.get("assin"), list)
+                     and re.fullmatch(r"[0-9a-f]{64}", str(x.get("sha") or ""))}
+        except (OSError, ValueError):
+            pass
+        _poses_sha_mem["v"] = v
+    return _poses_sha_mem["v"]
+
+
 def poses_modelo_ok(conferir=True):
-    """(ok, erro) do binário e dos dois arquivos do modelo, com o SHA-256 fixado (cache por tamanho e data). conferir=False
-    (o /status) nunca lê os 6 GB: sem conferência ainda, "conferindo"."""
+    """(ok, erro) do binário e dos dois arquivos do modelo contra o SHA-256 fixado no código. O SHA lido de cada arquivo fica
+    em POSE_SHA_ARQ (0600) com tamanho, data e inode: nada mudou, nada é relido (nem em outra partida do agente).
+    conferir=False (o /status) nunca lê os 6 GB: sem conferência guardada, "conferindo". Quem confere é o laço, pelo
+    poses_pode_rodar, que só chega aqui com Sombra ou Ligada, dentro da janela e sem recorte ou montagem esperando.
+    Leitura que falha no meio (erro de E/S) fica guardada em _poses_sha_falha: "sem_modelo" sem reler até a noite seguinte
+    ou até o arquivo mudar (tamanho, data ou inode), em vez de reler gigabytes a cada POSE_DORME."""
     if not all(re.fullmatch(r"[0-9a-f]{64}", s or "") for s in (POSE_SHA, POSE_MMPROJ_SHA)):
         return False, "sem_modelo"
     if not os.path.isfile(POSE_BIN) or not os.access(POSE_BIN, os.X_OK):
         return False, "sem_modelo"
-    ps = (os.path.join(MODELOS, POSE_ARQ), os.path.join(MODELOS, POSE_MMPROJ_ARQ))
-    try:
-        k = tuple((p, os.stat(p).st_size, os.stat(p).st_mtime) for p in ps) + (POSE_SHA, POSE_MMPROJ_SHA)
-    except OSError:
-        return False, "sem_modelo"
-    v = _poses_ok.get(k)
-    if v is None:
-        if not conferir:
-            return False, "conferindo"
+    g = _poses_sha_guardado()
+    ok, novo = True, None
+    for p, sha in _poses_arqs():
         try:
-            v = True
-            for p, sha in zip(ps, (POSE_SHA, POSE_MMPROJ_SHA)):
+            assin = _poses_assinatura(p)
+        except OSError:
+            return False, "sem_modelo"
+        k = os.path.basename(p)
+        x, fa = g.get(k), _poses_sha_falha.get(k)          # fa lido uma vez: o /status (outra thread) também passa aqui
+        if x and x["assin"] == assin:
+            lido = x["sha"]
+        elif fa and fa["assin"] == assin and fa["noite"] == _poses_noite_chave():
+            return False, "sem_modelo"                 # falhou nesta noite e o arquivo não mudou: não relê
+        elif not conferir:
+            return False, "conferindo"
+        else:
+            try:
                 h = hashlib.sha256()
                 with open(p, "rb") as f:
                     for b in iter(lambda: f.read(1 << 20), b""):
                         h.update(b)
-                v = v and h.hexdigest() == sha
+                lido = h.hexdigest()
+            except OSError:
+                _poses_sha_falha[k] = {"assin": assin, "noite": _poses_noite_chave()}
+                print("  poses: falha ao ler %s para conferir o SHA; nova tentativa na próxima noite ou se o arquivo mudar" % k)
+                return False, "sem_modelo"
+            _poses_sha_falha.pop(k, None)
+            if _poses_assinatura(p) != assin:          # mudou durante a leitura: confere na próxima volta
+                return False, "conferindo"
+            novo = dict(novo or g)
+            novo[k] = {"assin": assin, "sha": lido}
+        ok = ok and lido == sha
+    if novo is not None:
+        _poses_sha_mem["v"] = novo
+        try:
+            os.makedirs(os.path.dirname(POSE_SHA_ARQ), exist_ok=True)
+            _grava_privado(POSE_SHA_ARQ, json.dumps(novo))
         except OSError:
-            v = False
-        _poses_ok.clear()
-        _poses_ok[k] = v
-    return (True, None) if v else (False, "sem_modelo")
+            pass
+    return (True, None) if ok else (False, "sem_modelo")
+
+
+def poses_conferido():
+    """--conferido para o filho: tamanho, data e inode dos dois arquivos que o agente conferiu (o filho não relê os 6 GB).
+    Só quando o SHA guardado de cada um é o fixado (POSE_SHA, POSE_MMPROJ_SHA); senão None (sem --conferido)."""
+    g = _poses_sha_guardado()
+    try:
+        if any(g[os.path.basename(p)]["sha"] != sha for p, sha in _poses_arqs()):
+            return None
+        return ",".join(":".join(str(int(n)) for n in g[os.path.basename(p)]["assin"]) for p, _ in _poses_arqs())
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def poses_vram_livre_mb():
@@ -15801,20 +18670,30 @@ def _poses_vivo():
 
 
 def poses_pode_rodar(aberto=None):
-    """(bool, motivo). Motivos: fora_janela, parado, sem_modelo, recorte_ocupado, montagem_ocupada, vram. A memória da placa
-    só é conferida com o filho fechado (aberto, o próprio modelo ocupa a placa)."""
+    """(bool, motivo). Motivos, nesta ordem: desligada, fora_janela, parado (ou versao), recorte_ocupado, montagem_ocupada,
+    sem_modelo (ou conferindo), vram. O SHA dos 6 GB só é conferido depois de tudo o que vem antes (nunca de dia, nunca
+    com a chave desligada, nunca com o recorte ou a montagem esperando) e uma vez só por arquivo (POSE_SHA_ARQ). A memória
+    da placa só é conferida com o filho fechado (aberto, o próprio modelo ocupa a placa). Não espera a varredura da luz: é a
+    luz que cede às poses (_luz_ocupado)."""
     cfg = poses_cfg()
+    if cfg["modo"] not in ("sombra", "ligada"):
+        return False, "desligada"
     if not poses_na_janela(cfg):
         return False, "fora_janela"
     k = _poses_noite_chave(cfg)
     with poses_lock:
         if poses_st["parado"]:
             if poses_st["parado"] == k:
-                return False, "parado"
-            poses_st.update(parado=None, mortes=0)       # noite nova: tenta de novo
-    if not poses_modelo_ok()[0]:
-        return False, "sem_modelo"
+                return False, "versao" if poses_st["parado_por"] == "versao" else "parado"
+            poses_st.update(parado=None, parado_por=None, mortes=0)       # noite nova: tenta de novo
     if _poses_ocupado("rec"):
+        return False, "recorte_ocupado"
+    if _poses_ocupado("mtg"):
+        return False, "montagem_ocupada"
+    ok, erro = poses_modelo_ok()
+    if not ok:
+        return False, erro if erro == "conferindo" else "sem_modelo"
+    if _poses_ocupado("rec"):                            # chegou trabalho enquanto o SHA era conferido
         return False, "recorte_ocupado"
     if _poses_ocupado("mtg"):
         return False, "montagem_ocupada"
@@ -15854,9 +18733,10 @@ def poses_pendentes():
     return out
 
 
-def _poses_e_nosso(pid, llama=False):
-    """True se o processo é o nosso filho (eterna-poses.py) ou o llama-server que ele abriu (a linha tem o arquivo da chave
-    dentro da pasta ponto). Nunca mata processo de outro tipo."""
+def _poses_e_nosso(pid, llama=False, ponto=None):
+    """True se o processo é o nosso filho (eterna-poses.py) ou um llama-server aberto por ele (a linha tem --api-key-file
+    com a chave numa pasta ponto/poses-*; ponto: outra pasta, só o medir-poses.py passa a dele, ponto/medir). Nunca mata
+    processo de outro tipo."""
     try:
         import psutil
         cmd = psutil.Process(pid).cmdline()
@@ -15870,8 +18750,23 @@ def _poses_e_nosso(pid, llama=False):
         return False
     if llama:
         i = cmd.index("--api-key-file") if "--api-key-file" in cmd else -1
-        return 0 <= i < len(cmd) - 1 and os.path.realpath(cmd[i + 1]).startswith(os.path.realpath(os.path.dirname(POSES_DB)) + os.sep)
+        if not 0 <= i < len(cmd) - 1:
+            return False
+        d = os.path.dirname(os.path.realpath(cmd[i + 1]))
+        return os.path.dirname(d) == os.path.realpath(ponto or os.path.dirname(POSES_DB)) and os.path.basename(d).startswith("poses-")
     return any(os.path.basename(c) == os.path.basename(POSE_FILHO) for c in cmd)
+
+
+def _poses_pid_vivo(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    try:                                             # zumbi (já morto, ainda não colhido) conta como morto
+        with open("/proc/%d/stat" % pid) as f:
+            return f.read().rsplit(")", 1)[-1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return True
 
 
 def _poses_pids_gravar():
@@ -15887,38 +18782,73 @@ def _poses_pids_gravar():
         pass
 
 
-def _poses_mata_llama(pid):
+def _poses_sinal(pid, grupo, termo_seg, mata_seg):
+    """SIGTERM (no grupo, se grupo), espera até termo_seg; ainda vivo: SIGKILL e espera até mata_seg. -> True se acabou."""
     import signal
-    if not isinstance(pid, int) or pid <= 1 or not _poses_e_nosso(pid, llama=True):
+    for sig, espera in ((getattr(signal, "SIGTERM", 15), termo_seg), (getattr(signal, "SIGKILL", 9), mata_seg)):
+        try:
+            if grupo and hasattr(os, "killpg"):
+                os.killpg(pid, sig)
+            else:
+                os.kill(pid, sig)
+        except OSError:
+            try:
+                os.kill(pid, sig)
+            except OSError:
+                pass
+        fim = time.time() + espera
+        while time.time() < fim:
+            if not _poses_pid_vivo(pid):
+                return True
+            time.sleep(0.1)
+    return not _poses_pid_vivo(pid)
+
+
+def _poses_mata_llama(pid, ponto=None):
+    """O llama-server abre no próprio grupo (start_new_session): SIGTERM no grupo, depois SIGKILL."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1 or not _poses_e_nosso(pid, llama=True, ponto=ponto):
         return False
+    return _poses_sinal(pid, True, 5, 3)
+
+
+def _poses_llamas_soltos():
+    """llama-server com a chave numa pasta ponto/poses-* (o filho que o abriu caiu sem fechar): procura em /proc."""
     try:
-        if hasattr(os, "killpg"):
-            os.killpg(pid, signal.SIGKILL)       # o llama-server abre no próprio grupo (start_new_session)
-        else:
-            os.kill(pid, 9)
-        return True
+        nomes = os.listdir("/proc")
     except OSError:
-        return False
+        return []
+    return [int(n) for n in nomes if n.isdigit() and int(n) not in (os.getpid(), 1) and _poses_e_nosso(int(n), llama=True)]
 
 
 def poses_orfaos_encerrar():
-    """Na partida: o filho e o llama-server deixados por um agente que caiu (POSE_PIDS) são encerrados (libera a placa)."""
-    import signal
+    """Na partida: o filho e o llama-server deixados por um agente que caiu são encerrados (libera a placa), pelo
+    POSE_PIDS e procurando o --api-key-file dentro de ponto/poses-*; as pastas de chave que sobraram são apagadas."""
+    n = 0
     try:
         with open(POSE_PIDS, encoding="utf8") as f:
             j = json.load(f)
     except (OSError, ValueError):
-        return 0
-    n = 0
-    fp = j.get("filho") if isinstance(j, dict) else None
-    if isinstance(fp, int) and fp != os.getpid() and _poses_e_nosso(fp):
-        try:
-            os.kill(fp, signal.SIGTERM if hasattr(signal, "SIGTERM") else 9)
+        j = None
+    j = j if isinstance(j, dict) else {}
+    fp = j.get("filho")
+    if isinstance(fp, int) and fp > 1 and fp != os.getpid() and _poses_e_nosso(fp):
+        _poses_sinal(fp, False, POSE_TERM_SEG, 5)    # o filho fecha o llama-server dele no SIGTERM
+        n += 1
+    for lp in [j.get("llama")] + _poses_llamas_soltos():
+        if isinstance(lp, int) and _poses_pid_vivo(lp) and _poses_mata_llama(lp):
             n += 1
+    ponto = os.path.dirname(POSES_DB)
+    try:
+        pastas = [os.path.join(ponto, d) for d in os.listdir(ponto) if d.startswith("poses-") and os.path.isdir(os.path.join(ponto, d))]
+    except OSError:
+        pastas = []
+    for d in pastas:
+        try:
+            if os.path.exists(os.path.join(d, "chave")):
+                os.remove(os.path.join(d, "chave"))
+            os.rmdir(d)
         except OSError:
             pass
-    if isinstance(j, dict) and _poses_mata_llama(j.get("llama")):
-        n += 1
     if n:
         print("  poses: %d processo(s) de uma partida anterior encerrado(s)" % n)
     try:
@@ -15928,20 +18858,25 @@ def poses_orfaos_encerrar():
     return n
 
 
-def _poses_erro(motivo, morte=False):
+def _poses_erro(motivo, morte=False, parar=False):
+    """parar: fica parado até a próxima noite já (versão do filho diferente: só um novo deploy resolve)."""
     k = _poses_noite_chave()
     with poses_lock:
         poses_st.update(erro=motivo, erro_em=time.time(), carregado=False)
+        if parar and not poses_st["parado"]:
+            poses_st.update(parado=k, parado_por=motivo)
+            print("  poses: %s; fica parado até a próxima noite" % motivo)
         if morte:
             poses_st["mortes"] += 1
             if poses_st["mortes"] >= POSE_MORTES_MAX and not poses_st["parado"]:
-                poses_st["parado"] = k
+                poses_st.update(parado=k, parado_por="mortes")
                 print("  poses: o processo do classificador parou %d vezes seguidas; fica parado até a próxima noite" % poses_st["mortes"])
 
 
 def _poses_matar():
-    """Com o poses_filho_lock: fecha o stdin (o filho fecha o llama-server e apaga a chave), espera e, se preciso, mata o
-    filho e o grupo do llama-server."""
+    """Com o poses_filho_lock: fecha o stdin (o filho fecha o llama-server e apaga a chave) e espera; ainda vivo (ou ainda
+    abrindo o modelo, quando o stdin não é lido): SIGTERM (o tratador do filho fecha o llama-server, também no meio da
+    abertura), espera POSE_TERM_SEG e só então SIGKILL. Por fim, o grupo do llama-server: SIGTERM, depois SIGKILL."""
     f = poses_filho
     p, f["p"] = f.get("p"), None
     if p is None:
@@ -15951,15 +18886,19 @@ def _poses_matar():
     except Exception:
         pass
     try:
-        p.wait(timeout=15)
+        p.wait(timeout=15 if f.get("pronto") else 1)
     except Exception:
         try:
-            p.kill()
-            p.wait(timeout=5)
+            p.terminate()
+            p.wait(timeout=POSE_TERM_SEG)
         except Exception:
-            pass
+            try:
+                p.kill()
+                p.wait(timeout=5)
+            except Exception:
+                pass
     _poses_mata_llama(f.get("llama"))
-    f["llama"] = None
+    f.update(llama=None, pronto=False)
     _poses_pids_gravar()
 
 
@@ -15972,9 +18911,13 @@ def _poses_abrir():
         _poses_matar()
         _poses_erro("filho", morte=True)
         raise RuntimeError("filho")
+    conf = poses_conferido()
+    if not conf:                                     # o poses_pode_rodar confere antes; sem conferência, nada abre
+        _poses_erro("sem_modelo")
+        raise RuntimeError("sem_modelo")
     cmd = [sys.executable, "-I", POSE_FILHO, "--inbox", INBOX, "--thumbs", THUMBS, "--modelos", MODELOS, "--bin", POSE_BIN,
            "--modelo-arq", POSE_ARQ, "--mmproj-arq", POSE_MMPROJ_ARQ, "--sha", POSE_SHA or "-", "--mmproj-sha", POSE_MMPROJ_SHA or "-",
-           "--ponto", os.path.dirname(POSES_DB)]
+           "--conferido", conf, "--ponto", os.path.dirname(POSES_DB)]
     os.makedirs(os.path.dirname(POSES_DB), exist_ok=True)
     try:
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None, text=True, bufsize=1, encoding="utf-8",
@@ -15984,12 +18927,22 @@ def _poses_abrir():
         raise RuntimeError("filho: %s" % type(ex).__name__)
     fila = queue.Queue()
     threading.Thread(target=_rec_filho_leitor, args=(p, fila), daemon=True).start()
-    f.update(p=p, fila=fila, criado=time.time(), llama=None)
+    f.update(p=p, fila=fila, criado=time.time(), llama=None, pronto=False)
     _poses_pids_gravar()
-    try:
-        j = fila.get(timeout=POSE_CARGA_SEG)
-    except queue.Empty:
-        j = {"pronto": False, "erro": "tempo"}
+    fim = time.time() + POSE_CARGA_SEG
+    while True:                                      # {"llama_pid"} chega logo depois do Popen; depois, {"pronto"}
+        try:
+            j = fila.get(timeout=max(0.1, fim - time.time()))
+        except queue.Empty:
+            j = {"pronto": False, "erro": "tempo"}
+            print("  poses: o modelo de visão não abriu em %d s; o classificador é encerrado" % POSE_CARGA_SEG)
+            break
+        if j is None or "pronto" in j:
+            break
+        lp = j.get("llama_pid")
+        if isinstance(lp, int) and not isinstance(lp, bool) and lp > 1 and f["llama"] is None:
+            f["llama"] = lp
+            _poses_pids_gravar()
     if not j or not j.get("pronto"):
         erro = (j or {}).get("erro")
         _poses_matar()
@@ -15998,12 +18951,15 @@ def _poses_abrir():
         else:
             _poses_erro("filho", morte=True)
         raise RuntimeError(poses_st["erro"] or "filho")
-    if j.get("prompt_v") != POSE_PROMPT_V:           # o deploy leva os dois arquivos juntos; versão trocada não classifica
-        _poses_matar()
-        _poses_erro("versao")
-        raise RuntimeError("versao")
-    f["llama"] = j.get("llama_pid") if isinstance(j.get("llama_pid"), int) else None
+    lp = j.get("llama_pid")
+    if isinstance(lp, int) and not isinstance(lp, bool) and lp > 1:
+        f["llama"] = lp
+    f["pronto"] = True
     _poses_pids_gravar()
+    if j.get("prompt_v") != POSE_PROMPT_V:           # o deploy leva os dois arquivos juntos; versão trocada: parado até a noite seguinte
+        _poses_matar()
+        _poses_erro("versao", parar=True)
+        raise RuntimeError("versao")
     with poses_lock:
         poses_st.update(carregado=True, erro=None, carga_ms=j.get("carga_ms"), abriu=True)
     print("  poses: modelo de visão aberto em %.1f s" % ((j.get("carga_ms") or 0) / 1000.0))
@@ -16051,9 +19007,7 @@ def poses_mandar(itens):
                 _poses_matar()
                 _poses_erro("filho", morte=True)
             raise RuntimeError(str(j.get("erro") or "erro")[:80])
-    with poses_lock:
-        poses_st["mortes"] = 0
-    return [r for r in (j.get("res") or []) if isinstance(r, dict)]
+    return [r for r in (j.get("res") or []) if isinstance(r, dict)]   # as mortes só zeram com foto respondida (poses_loop)
 
 
 def poses_gravar(res, info):
@@ -16120,6 +19074,18 @@ def poses_gravar(res, info):
                 db.commit()
             finally:
                 db.close()
+        # 24/11: foto que saiu da biblioteca (LGPD) entre a conferência acima e a gravação: a linha sai já (o poses_lgpd, que vem
+        # depois de tirar a foto da biblioteca, apaga o que foi gravado antes desta conferência)
+        with lock:
+            sairam = [ln[0] for ln in linhas if ln[0] not in lib]
+        if sairam:
+            with poses_db_lock:
+                db = poses_db()
+                try:
+                    db.executemany("delete from pose where pid = ?", [(p,) for p in sairam])
+                    db.commit()
+                finally:
+                    db.close()
     with poses_lock:
         n = poses_st["noite"]
         n["feitas"] += feitas
@@ -16189,7 +19155,8 @@ def _poses_comeca(cfg):
 
 def _poses_para(motivo):
     """Não pode rodar (ou acabou a fila): fecha o filho. Se a noite estava rodando, ela termina com o motivo e os agregados
-    são refeitos; senão o motivo fica em parou_por (fora_janela não apaga o motivo da noite que já terminou)."""
+    são refeitos; senão o motivo fica em parou_por (fora_janela não apaga o motivo da noite que já terminou, e nenhuma
+    pausa depois do fim da fila troca o fim_fila: a noite acabou com tudo feito)."""
     if poses_filho.get("p") is not None:
         poses_fechar()
     fim = None
@@ -16199,7 +19166,7 @@ def _poses_para(motivo):
             poses_st["rodando"] = False
             n.update(fim=_iso(), parou_por=motivo)
             fim = dict(n)
-        elif motivo != "fora_janela" or n["parou_por"] is None:
+        elif n["parou_por"] is None or (n["parou_por"] != "fim_fila" and motivo != "fora_janela"):
             n["parou_por"] = motivo
     if fim:
         print("  poses: noite parou (%s) · %d feitas · %d dúvidas · %d erros · média %s ms por foto" % (
@@ -16215,11 +19182,11 @@ def poses_status():
     cfg = poses_cfg()
     ok, erro = poses_modelo_ok(conferir=False)
     with poses_lock:
-        st = {k: poses_st[k] for k in ("erro", "parado", "carregado", "carga_ms", "pendentes", "noite_k", "rodando")}
+        st = {k: poses_st[k] for k in ("erro", "parado", "parado_por", "carregado", "carga_ms", "pendentes", "noite_k", "rodando")}
         n = dict(poses_st["noite"])
     parado = bool(st["parado"] and st["parado"] == _poses_noite_chave(cfg))
     if parado:
-        erro = "parado"
+        erro = "versao" if st["parado_por"] == "versao" else "parado"
     elif ok and st["erro"]:
         erro = st["erro"]
     return {"v": 1, "modo": cfg["modo"], "forcada": cfg["forcada"], "versao": pose_versao(),
@@ -16233,14 +19200,13 @@ def poses_status():
 
 def poses_loop():
     """A thread da classificação de poses (padrão do cena_loop). Fora de sombra ou ligada, ou quando não pode rodar: fecha o
-    filho e dorme POSE_DORME. Dentro: lotes de POSE_LOTE, conferindo poses_pode_rodar() entre um e outro. Limpeza de hora
-    em hora."""
-    t_limpa, t_mod, fila, fila_t = time.time(), 0.0, [], 0.0
+    filho e dorme POSE_DORME. Dentro: lotes de POSE_LOTE, conferindo poses_pode_rodar() entre um e outro (é ele que confere
+    o SHA do modelo, só quando tudo o mais deixa rodar). Lista de pendentes: refeita no fim dela e a cada POSE_FILA_SEG
+    (vazia também só a cada POSE_FILA_SEG). Lote inteiro com erro do servidor de modelo conta como morte do filho (motivo
+    servidor; na 3ª seguida, parado), nunca como fim da fila. Limpeza de hora em hora."""
+    t_limpa, fila, fila_t = time.time(), None, 0.0
     while not poses_parar.is_set():
         try:
-            if time.time() - t_mod >= 600:
-                t_mod = time.time()
-                poses_modelo_ok()                    # o /status nunca lê os 6 GB: a conferência do SHA é daqui (cache)
             if time.time() - t_limpa >= 3600:
                 t_limpa = time.time()
                 n = poses_limpa()
@@ -16264,10 +19230,12 @@ def poses_loop():
             if espera:
                 poses_parar.wait(min(POSE_DORME, 5))
                 continue
-            if not fila or time.time() - fila_t >= POSE_FILA_SEG:   # a lista é refeita no fim dela ou a cada POSE_FILA_SEG
+            if fila is None or time.time() - fila_t >= POSE_FILA_SEG:   # refeita no fim dela ou a cada POSE_FILA_SEG
                 fila, fila_t = poses_pendentes(), time.time()
                 with poses_lock:
                     poses_st.update(pendentes=len(fila), pend_t=fila_t)
+            with lock:                               # 24/11: foto apagada (LGPD) depois de montar a lista sai dela antes do lote
+                fila[:] = [x for x in fila if x["pid"] in lib]
             if not fila:
                 _poses_para("fim_fila")
                 poses_parar.wait(POSE_DORME)
@@ -16279,10 +19247,26 @@ def poses_loop():
             except Exception:
                 poses_parar.wait(1)
                 continue
-            poses_gravar(res, {x["pid"]: x for x in lote})
-            del fila[:len(lote)]
+            info = {x["pid"]: x for x in lote}
+            de_foto = [r for r in res if r.get("erro") in POSE_ERROS_FOTO]
+            if not any("erro" not in r for r in res) and len(de_foto) < len(res):
+                # nenhuma foto respondida e erro do servidor de modelo: as fotos ficam na fila e o filho conta uma morte
+                if de_foto:
+                    poses_gravar(de_foto, info)
+                feitos = {r.get("pid") for r in de_foto}
+                fila[:len(lote)] = [x for x in lote if x["pid"] not in feitos]
+                print("  poses: o servidor do modelo falhou no lote inteiro; o classificador é reaberto")
+                poses_fechar()
+                _poses_erro("servidor", morte=True)
+                continue
             with poses_lock:
-                poses_st["pendentes"] = len(fila)
+                poses_st["mortes"] = 0
+            poses_gravar(res, info)
+            del fila[:len(lote)]
+            if not fila:
+                fila = None                          # acabou: confere de novo já (o que chegou no meio da noite)
+            with poses_lock:
+                poses_st["pendentes"] = len(fila or [])
         except Exception as ex:
             print("  poses: %s" % type(ex).__name__)
             poses_parar.wait(2)
@@ -16385,8 +19369,21 @@ ROTAS = (
     ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
-    ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa)
+    ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa); 24/11: só o Admin (poses_post)
+    # 23/11 (AF): números por fotógrafo só com desempenho.r (Admin e Supervisora), conferido aqui pela sessão; a calibração da luz
+    # é da Medição (qualidade.r); os limites, de configuracao.u E desempenho.r (o segundo conferido no fotografos_post)
+    ("GET", "/fotografos/alertas", "sessao", ("desempenho.r",)), ("GET", "/fotografos/dias", "sessao", ("desempenho.r",)),
+    ("GET", "/fotografos/luz/medida", "sessao", ("qualidade.r",)), ("POST", "/fotografos/config", "sessao", ("configuracao.u",)),
+    # 24/11: zerar a fase de teste (Sistema › Repositório). A rota confere também: Admin do cadastro pela sessão, sem "ver como",
+    # posto + origem local; o POST, X-Eterna, 2 por minuto, corpo até 1 KB e confirma == "ZERAR"
+    ("GET", "/zerar/previa", "sessao", ("configuracao.u",)), ("POST", "/zerar/fase-teste", "sessao", ("configuracao.u",)),
+    ("POST", "/compra-online/config", "sessao", ("configuracao.u",)),   # 24/11: liga e desliga a compra online (vai para a Nuvem)
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
+    # 24/11: Lixeira da IA (Curadoria). Ver e "Não é ruim" pelo módulo qualidade; a chave só o Admin (conferido no lixeira_post)
+    ("GET", "/lixeira", "sessao", ("qualidade.r",)),
+    ("GET", "/lixeira/medida", "sessao", ("qualidade.r",)),
+    ("POST", "/lixeira/recuperar", "sessao", ("qualidade.u",)),
+    ("POST", "/lixeira/config", "sessao", ("configuracao.u",)),
 )
 
 
@@ -17046,6 +20043,7 @@ def dia_loop():
     feito = None
     while True:
         hoje = _ff_hoje()
+        virou = feito != hoje                     # também na partida: ontem refeito com as vendas atrasadas
         try:
             if feito != hoje:
                 dia_completo()
@@ -17058,6 +20056,7 @@ def dia_loop():
         except Exception as ex:
             dia_estado.update(erro=str(ex)[:160])
             print("  série diária: %s" % str(ex)[:160])
+        fot_rodada(hoje, virou)                    # 23/11 (AF): por fotógrafo e por dia (tem o próprio try)
         if dia_wake.wait(600):
             time.sleep(3)                         # junta várias mudanças seguidas numa rodada
         dia_wake.clear()
@@ -17169,7 +20168,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
 
 
 # 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
@@ -17731,7 +20730,16 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"erro": "fraca", "motivo": motivo}, 400, True)
             auth_trocar(usuario, nova, ip)
             situacao = "ok"
-        elif situacao == "provisoria":
+        # sessão anterior encerrada ao entrar: a deste navegador (e a do Admin guardada no "ver como") não fica valendo ao lado da nova.
+        # Revisão 24/11: também com senha provisória, antes de pedir a troca (senão o /auth/trocar seguinte ia com a sessão do "ver como")
+        auth_sessao_apaga(self.auth_token())
+        adm_tok = self.cookie_val(ASSUMIR_COOKIE)
+        if adm_tok:
+            auth_sessao_apaga(adm_tok)
+            self.auth_cookie("", 0, ASSUMIR_COOKIE)
+        if situacao == "provisoria":
+            if self.auth_token():
+                self.auth_cookie("", 0)
             return self.js({"ok": False, "troca": True}, 200, True)
         self.auth_cookie(auth_sessao_nova(usuario), AUTH_SESSAO)
         return self.js(dict(dados, ok=True), 200, True)
@@ -18002,10 +21010,14 @@ class H(BaseHTTPRequestHandler):
 
     def treino_post(self, path):
         """16/11: POST /treino/rotulo (qualidade.u) e /treino/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
-        (conferido no autoriza), 120 por minuto por pessoa nas marcações e 6 no interruptor, corpo até 4 KB. O console nunca imprime o corpo."""
+        (conferido no autoriza), 120 por minuto por pessoa nas marcações e 6 no interruptor, corpo até 4 KB. O console nunca imprime o corpo.
+        24/11 (Eduardo): só o Admin muda o /treino/config (Configurações › IA automática); o perfil vem do cadastro da sessão, nunca do
+        pedido (a Supervisora pode ter configuracao.u e recebe 403 so_admin), como no /poses/config."""
         if not self.origem_local():
-            return self.js({"ok": False, "error": "origem"}, 403)
+            return self.js({"ok": False, "erro": "origem"}, 403)
         eu = self.sessao() or {}
+        if path == "/treino/config" and ((eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por")):
+            return self.js({"ok": False, "error": "so_admin"}, 403)
         quem = eu.get("usuario") or ""
         # 18/11 (revisão de segurança): o interruptor tem limite próprio (6 por minuto por pessoa), separado das marcações
         if not (limite_ok("u:" + quem, "treino", 120) if path == "/treino/rotulo" else limite_ok("u:" + quem, "treino_cfg", 6)):
@@ -18022,10 +21034,15 @@ class H(BaseHTTPRequestHandler):
 
     def poses_post(self):
         """23/11 (P1 de poses): POST /poses/config {modo?, janela?} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
-        (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo."""
+        (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo.
+        24/11 (Eduardo): só o Admin muda a classificação de poses; o perfil vem do cadastro da sessão, nunca do pedido (a
+        Supervisora pode ter configuracao.u e recebe 403). O "ver como" já parou antes, no do_POST (403 so_ver)."""
         if not self.origem_local():
-            return self.js({"ok": False, "error": "origem"}, 403)
-        quem = (self.sessao() or {}).get("usuario") or ""
+            return self.js({"ok": False, "erro": "origem"}, 403)
+        eu = self.sessao() or {}
+        if (eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por"):
+            return self.js({"ok": False, "error": "so_admin"}, 403)
+        quem = eu.get("usuario") or ""
         if not limite_ok("u:" + quem, "poses_cfg", 6):
             return self.js({"ok": False, "error": "limite"}, 429)
         body, err = self.corpo(1024)
@@ -18038,11 +21055,211 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": False, "error": "erro no servidor"}, 500)
         return self.js(r, st, nostore=True)
 
+    def pode_desempenho(self):
+        """23/11 (AF-D9): a pessoa da sessão tem desempenho.r (Admin e Supervisora). Conferido pela sessão, nunca por parâmetro."""
+        eu = self.sessao()
+        return bool(eu) and auth_pode(eu["cadastro"], "desempenho", "r")
+
+    def fotografos_get(self, u):
+        """23/11 (AF): GET /fotografos/alertas?de=&ate= (desempenho.r, 30 por minuto por pessoa, até 92 dias), /fotografos/dias
+        (desempenho.r, até 366 dias) e /fotografos/luz/medida (qualidade.r, 10 por minuto). Só números e chaves de fotógrafo."""
+        if not self.origem_local():
+            return self.js({"error": "origem não autorizada"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        q = parse_qs(u.query)
+        try:
+            if u.path == "/fotografos/luz/medida":
+                if not limite_ok("u:" + quem, "luz_medida", 10):
+                    return self.js({"error": "limite"}, 429)
+                return self.js(dict(luz_medida(), refaz_ja=FOT_REFAZ_JA), nostore=True)   # refaz_ja: a nota "Usar" da tela diz quantos dias refaz na hora
+            hoje = _ff_hoje()
+            de, ate = (q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0]
+            try:
+                n = (_dt.date.fromisoformat(ate) - _dt.date.fromisoformat(de)).days + 1
+            except ValueError:
+                n = 0
+            teto = 92 if u.path == "/fotografos/alertas" else 366
+            if not (_re_dia_iso.match(de) and _re_dia_iso.match(ate)) or not 1 <= n <= teto:
+                return self.js({"error": "datas inválidas"}, 400)
+            if not limite_ok("u:" + quem, "fotografos", 30):
+                return self.js({"error": "limite"}, 429)
+            if u.path == "/fotografos/alertas":
+                return self.js(fot_alertas(de, ate), nostore=True)
+            r = metricas_periodo(de, ate) or []
+            campos = ("fotos", "sessoes", "sessoes_com_venda", "vendas", "faturamento", "fotos_vendidas", "clique_checkout_s")
+            dias = [{"dia": d.get("dia"), "por_fotografo": {k: {c: v[c] for c in campos if c in v} for k, v in (d.get("por_fotografo") or {}).items()
+                                                            if isinstance(v, dict) and k not in CHAVES_PROIBIDAS}} for d in r if isinstance(d, dict)]
+            return self.js({"ok": True, "dias": dias}, nostore=True)
+        except Exception as ex:
+            print("  fotógrafos: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500)
+
+    def fotografos_post(self):
+        """23/11 (AF): POST /fotografos/config (configuracao.u, pela tabela ROTAS, e desempenho.r, conferido aqui: os limites
+        mexem nos números por fotógrafo). Origem local, X-Eterna (conferido no autoriza), 6 por minuto por pessoa, corpo até 4 KB.
+        O console nunca imprime o corpo, só os campos que mudaram."""
+        if not self.origem_local():
+            return self.js({"ok": False, "erro": "origem"}, 403)
+        if not self.pode_desempenho():
+            return self.js({"ok": False, "error": "sem_permissao"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "fotografos_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        try:
+            st, r = fotografos_cfg_gravar(body, quem)
+        except Exception as ex:
+            print("  fotógrafos: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        return self.js(r, st, nostore=True)
+
+    def zerar_guarda(self):
+        """24/11: zerar a fase de teste. Só deste servidor (posto + origem local) e só o Admin do cadastro, pela sessão (nunca pelo
+        corpo), fora do "ver como". True = segue; False = a resposta já foi dada."""
+        if not self.posto() or not self.origem_local():
+            self.js({"error": "origem"}, 403, True)
+            return False
+        eu = self.sessao()
+        if not eu or eu.get("assumido_por") or (eu.get("cadastro") or {}).get("preset") != "admin":
+            self.js({"error": "so_admin"}, 403, True)
+            return False
+        return True
+
+    def zerar_get(self):
+        if not self.zerar_guarda():
+            return None
+        if not limite_ok(self.client_address[0], "zerar_previa", 6):
+            return self.js({"error": "limite"}, 429, True)
+        try:
+            return self.js(zerar_previa(), nostore=True)
+        except Exception as ex:
+            print("  zerar (prévia): %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500, True)
+
+    def zerar_post(self):
+        """POST /zerar/fase-teste {confirma: "ZERAR"}: grava o pedido, responde 202 e sai em 1,5 s; o systemd religa e a partida
+        (zerar_partida) faz a zeragem antes de abrir o HTTP."""
+        if self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "origem"}, 403, True)
+        if not self.zerar_guarda():
+            return None
+        ip = self.client_address[0]
+        if not limite_ok(ip, "zerar", 2):
+            return self.js({"error": "limite"}, 429, True)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"error": "corpo"}, err, True)
+        if body.get("confirma") != "ZERAR":
+            return self.js({"error": "confirma"}, 400, True)
+        try:
+            bq = zerar_bloqueios()
+            if bq:
+                return self.js({"error": "bloqueado", "bloqueios": bq}, 409, True)
+            eu = self.sessao()
+            falha = _zerar_ler(ZERAR_FALHOU)
+            # parou no meio numa vez anterior: o mesmo id, para retomar do passo em que parou (os bancos já foram copiados antes)
+            zid = falha["id"] if falha and falha.get("passo") != "preparo" and isinstance(falha.get("id"), str) and _re_zerada.match(falha["id"]) else zerar_id()
+            vai = zerar_inventario()["vai"]
+            _grava_privado(ZERAR_PEDIDO, json.dumps({"id": zid, "por": eu["usuario"], "por_nome": (eu.get("cadastro") or {}).get("name") or eu["usuario"],
+                                                     "em": _iso(), "t": time.time(), "ip": ip}))
+            if falha:
+                os.remove(ZERAR_FALHOU)
+            _zerar_log("zerar_pedido", eu["usuario"], ip)
+        except Exception as ex:
+            print("  zerar: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500, True)
+        print("  zerar: pedido recebido (%s); o agente reinicia em 1,5 s" % zid)
+        self.close_connection = True
+        self.js({"ok": True, "id": zid, "vai": vai, "reinicia": True}, 202, True)
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
+        threading.Thread(target=_zerar_sair, daemon=True).start()
+        return None
+
+    def lixeira_get(self, u):
+        """24/11: GET /lixeira?dia= (qualidade.r, 30 por minuto por pessoa) e /lixeira/medida (qualidade.r, 10 por minuto).
+        Origem local; dia só aaaa-mm-dd (padrão hoje). Só pids, números e quem recuperou; o console nunca imprime pid."""
+        if not self.origem_local():
+            return self.js({"error": "origem"}, 403, nostore=True)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        try:
+            if u.path == "/lixeira/medida":
+                if not limite_ok("u:" + quem, "lixeira_medida", 10):
+                    return self.js({"error": "limite"}, 429, nostore=True)
+                return self.js(lx_medida(), nostore=True)
+            dia = (parse_qs(u.query).get("dia") or [_ff_hoje()])[0]
+            if not _re_dia_iso.match(dia):
+                return self.js({"error": "dia"}, 400, nostore=True)
+            if not limite_ok("u:" + quem, "lixeira", 30):
+                return self.js({"error": "limite"}, 429, nostore=True)
+            return self.js(lx_lista(dia), nostore=True)
+        except Exception as ex:
+            print("  lixeira: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500, nostore=True)
+
+    def lixeira_post(self, path):
+        """24/11: POST /lixeira/recuperar {pid} (qualidade.u, 120 por minuto por pessoa) e /lixeira/config {modo?, lim?}
+        (configuracao.u e só o perfil Admin da sessão, sem "ver como": 403 so_admin; 6 por minuto). Origem local, X-Eterna
+        (conferido no autoriza), corpo até 1 KB. O "ver como" já parou no do_POST (403 so_ver). O console nunca imprime o corpo."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403, nostore=True)
+        eu = self.sessao() or {}
+        quem = eu.get("usuario") or ""
+        if path == "/lixeira/config":
+            if (eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por"):
+                return self.js({"ok": False, "error": "so_admin"}, 403, nostore=True)
+            if not limite_ok("u:" + quem, "lixeira_cfg", 6):
+                return self.js({"ok": False, "error": "limite"}, 429, nostore=True)
+        elif not limite_ok("u:" + quem, "lixeira_rec", 120):
+            return self.js({"ok": False, "error": "limite"}, 429, nostore=True)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, 413 if err == 413 else 400, nostore=True)
+        try:
+            if path == "/lixeira/config":
+                st, r = lx_cfg_gravar(body, quem)
+            else:
+                pid = body.get("pid")
+                if set(body) - {"pid"} or not isinstance(pid, str) or not pid_ok(pid):
+                    return self.js({"ok": False, "error": "pid"}, 400, nostore=True)
+                st, r = lx_recuperar(pid[3:] if pid.startswith("ag_") else pid, quem)
+        except Exception as ex:
+            print("  lixeira: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500, nostore=True)
+        return self.js(r, st, nostore=True)
+
+    def compra_online_post(self):
+        """24/11: POST /compra-online/config {ligada} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna, 6 por minuto
+        por pessoa, corpo até 1 KB. Repassa à Nuvem com o segredo do ponto e responde a chave como a Nuvem gravou."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "compra_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        if not isinstance(body.get("ligada"), bool):
+            return self.js({"ok": False, "error": "ligada"}, 400)
+        if not NUVEM_API:
+            return self.js({"ok": False, "error": "sem_nuvem"}, 409)
+        try:
+            r = nuvem_compra(nuvem_segredo(), body["ligada"], quem)
+        except Exception as ex:
+            print("  compra online: a Nuvem não respondeu (%s)" % type(ex).__name__)
+            return self.js({"ok": False, "error": "nuvem"}, 502)
+        print("  compra online %s por %s" % ("ligada" if r["ligada"] else "desligada", quem or "?"))
+        return self.js(dict(r, ok=True), nostore=True)
+
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
         Mesma guarda do /ponto/entradas (posto + origem + X-Eterna + 30 por minuto), corpo até 1 KB. O console nunca imprime o corpo."""
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
-            return self.js({"ok": False, "error": "origem"}, 403)
+            return self.js({"ok": False, "erro": "origem"}, 403)
         if not limite_ok(self.client_address[0], "montagens", 30):
             return self.js({"ok": False, "error": "limite"}, 429)
         body, err = self.corpo(1024)
@@ -18831,17 +22048,8 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "expirada"}, 410)
             return self.js({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
                             "estado": gal_estado(token, m), "venue": m.get("venue"), "compra": compra_online()})
-        if acao == "livres" and len(partes) == 4:       # v96.1: compradas e cortesias da venda só pelo QR (sem selfie)
-            if not limite_ok(ip, "livres", 30):
-                return self.js({"motivo": "bloqueado"}, 429)
-            if token in lapides:
-                return self.js({"error": "expirada"}, 410)
-            m = REPO.ler_manifesto(token)
-            if not m:
-                return self.js({"error": "not found"}, 404)
-            if gal_expirou(m):
-                return self.js({"error": "expirada"}, 410)
-            return self.js({"galeria": galeria_obj(token, m)})
+        if acao == "livres" and len(partes) == 4:       # 24/11 (Ronaldo): o QR sozinho não abre mais nada (quem tinha o
+            return self.js({"error": "selfie"}, 403)    # código de um amigo baixava as compradas dele); só pela selfie
         if acao == "foto" and len(partes) == 5:
             pid = partes[4]
             v = q.get("v", [""])[0]
@@ -19095,7 +22303,11 @@ class H(BaseHTTPRequestHandler):
             kid = m["tipo"] == "evento" or bool(m.get("menor"))
             idioma = body.get("idioma") if body.get("idioma") in ("pt", "en", "es", "fr", "de") else "pt"
             versao = str(body.get("versao") or "")[:20]
-            anexar(CONSENT, {"token": token, "tipo": "responsavel" if kid else "titular", "versao": versao, "idioma": idioma, "em": _iso()})
+            con = {"token": token, "tipo": "responsavel" if kid else "titular", "versao": versao, "idioma": idioma, "em": _iso()}
+            email = str(body.get("email") or "").strip().lower()[:190]
+            if re.match(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", email, re.I):   # 24/11 (Ronaldo): o e-mail do cliente
+                con["email"] = email
+            anexar(CONSENT, con)
             try:
                 r = buscar_em([img], [f["id"] for f in m["fotos"]])
             except Exception:
@@ -19215,8 +22427,10 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "origem não autorizada"}, 403)
         if u.path == "/leitores":
             return self.leitores_get()
+        if u.path == "/zerar/previa":
+            return self.zerar_get()
         if u.path == "/status":
-            minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT}
+            minimo = {"ok": True, "agent": "eterna-agente", "version": 3, "boot": BOOT, "zerada": ZERADA_ID}   # 24/11: id da zeragem (o navegador limpa a cópia local)
             o = (self.headers.get("Origin") or "").rstrip("/").lower()
             confiavel = host_ok((self.headers.get("Host") or "").lower()) and (not o or o in self.origens_aceitas())
             eu = self.sessao() if confiavel else None
@@ -19233,6 +22447,14 @@ class H(BaseHTTPRequestHandler):
                 ps_ = poses_status()                   # 23/11: classificação de poses (só números e códigos), fora do lock
             except Exception:
                 ps_ = None
+            try:
+                lz_ = luz_status()                     # 23/11 (AF): medida de luz, só contagens
+            except Exception:
+                lz_ = None
+            try:
+                lx_ = lx_status()                      # 24/11: Lixeira da IA (só números e códigos), fora do lock
+            except Exception:
+                lx_ = None
             with lock:
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
@@ -19240,11 +22462,12 @@ class H(BaseHTTPRequestHandler):
                            rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
-                           estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"]}, fuso=fuso_info(),
+                           estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"], "fot": fot_status()}, fuso=fuso_info(),
                            app_offline_pronto=app_offline_pronto(), agenda=ag_,
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
-                           pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_,
+                           pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_, luz=lz_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
+            st_["lixeira"] = lx_
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
             return self.js(st_, nostore=True)
@@ -19275,8 +22498,10 @@ class H(BaseHTTPRequestHandler):
             return self.js({"pid": pid, "v": v, **nuvem_link(pid, v)})
         if u.path == "/metricas":
             desde = float(q.get("desde", ["0"])[0] or 0)
+            fora = ("por", "por_assumido") if self.pode_desempenho() else ("por", "por_assumido", "quem")   # 23/11 (AF-D9): o fotógrafo da foto só com desempenho.r
             with lock:
-                linhas = [{k: v for k, v in m.items() if k not in ("por", "por_assumido")} for m in metricas if m["chegada"] >= desde]   # 18/11: quem enviou não sai
+                # 18/11: quem enviou não sai. 23/11: a linha da exclusão LGPD (sem chegada) derrubava a rota com KeyError
+                linhas = [{k: v for k, v in m.items() if k not in fora} for m in metricas if "chegada" in m and m["chegada"] >= desde]
             return self.js({"agora": time.time(), "fila_rostos": fila_rostos.qsize(), "maquina": uso_maquina(), "fotos": linhas})
         if u.path == "/roverpix/status":
             c = rover_cfg()
@@ -19430,6 +22655,10 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": True, "vendas": r, "envio": nuvem_envio_medido(de, ate)}, nostore=True) if r is not None else self.js({"error": "datas inválidas"}, 400)
         if u.path in ("/treino/dias", "/treino/amostra", "/treino/rotulos", "/treino/medida"):
             return self.treino_get(u)
+        if u.path in ("/fotografos/alertas", "/fotografos/dias", "/fotografos/luz/medida"):
+            return self.fotografos_get(u)
+        if u.path in ("/lixeira", "/lixeira/medida"):
+            return self.lixeira_get(u)
         if u.path == "/pessoas/rostos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -19449,6 +22678,8 @@ class H(BaseHTTPRequestHandler):
             q = parse_qs(u.query)
             hoje = _ff_hoje()
             r = metricas_periodo((q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0])
+            if r is not None and not self.pode_desempenho():      # 23/11 (AF-D9): por fotógrafo só com desempenho.r
+                r = [{k: v for k, v in d.items() if k != "por_fotografo"} if isinstance(d, dict) else d for d in r]
             return self.js({"ok": True, "dias": r} if r is not None else {"error": "datas inválidas"}, 200 if r is not None else 400)
         if u.path == "/ponto/entradas/importacoes":
             if not self.posto() or not self.origem_local():
@@ -19599,6 +22830,14 @@ class H(BaseHTTPRequestHandler):
             return self.treino_post(u.path)
         if u.path == "/poses/config":
             return self.poses_post()
+        if u.path == "/fotografos/config":
+            return self.fotografos_post()
+        if u.path == "/zerar/fase-teste":
+            return self.zerar_post()
+        if u.path in ("/lixeira/recuperar", "/lixeira/config"):
+            return self.lixeira_post(u.path)
+        if u.path == "/compra-online/config":
+            return self.compra_online_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
@@ -19823,7 +23062,19 @@ def main():
     threading.Thread(target=rec_ia_loop, daemon=True).start()      # v93: bases de IA recortadas na chegada
     threading.Thread(target=treino_cfg_loop, daemon=True).start()  # 18/11: interruptor do treino em memória (treino_cfg_mem)
     threading.Thread(target=cena_loop, daemon=True).start()        # 18/11 (regra 19): reconhecer o ponto pela imagem
-    poses_orfaos_encerrar()             # 23/11: classificador de poses de uma partida anterior não segura a placa
+    threading.Thread(target=luz_grava_loop, daemon=True).start()   # 23/11 (AF): medidas de luz em lote no treino.db
+    threading.Thread(target=luz_loop, daemon=True).start()         # 23/11 (AF): varredura de 30 dias, prioridade baixa
+    try:
+        lx_cfg()                                                  # 24/11: Lixeira da IA: a chave na memória antes do leitor
+        lx_mem_carregar()                                         # e as fotos dos últimos 7 dias (LX_MENU_DIAS), para a contagem do menu
+    except Exception as ex:
+        print("  lixeira: memória não carregada (%s)" % type(ex).__name__)
+    threading.Thread(target=lx_grava_loop, daemon=True).start()    # 24/11: vereditos da Lixeira da IA em lote no treino.db
+    threading.Thread(target=lx_loop, daemon=True).start()          # 24/11: limpeza da madrugada da Lixeira da IA
+    # 23/11: classificador de poses de uma partida anterior não segura a placa. Roda aqui, na thread do main e ANTES do
+    # poses_loop: ele apaga as pastas ponto/poses-* e o poses-filho.json e mata o llama-server com a chave ali; com o laço
+    # já no ar, o filho que o laço acabou de abrir seria tomado por órfão (chave apagada, llama-server morto, pids perdidos).
+    poses_orfaos_encerrar()
     threading.Thread(target=poses_loop, daemon=True).start()       # 23/11: poses à noite (chave config/poses, padrão desligada)
     mtg_orfaos_encerrar()               # processo de montagem de uma partida anterior
     print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta
@@ -19873,4 +23124,13 @@ if __name__ == "__main__":
         sys.exit(auth_cli_excluir(sys.argv[2:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--parear-posto":
         sys.exit(posto_parear_cli(" ".join(sys.argv[2:])))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--desfazer-zeragem":
+        sys.exit(zerar_desfazer(sys.argv[2], "--sobrescrever" in sys.argv[3:]))
+    # 24/11: zeragem da fase de teste pedida pelo botão (zerar_partida): aqui, antes do main(), sem thread, filho nem HTTP
+    _zr = zerar_partida_segura()
+    if _zr == "sair":
+        sys.exit(1)                                  # parou no meio: o systemd religa e a próxima partida continua de onde parou
+    if _zr == "execv":
+        sys.stdout.flush()
+        os.execv(sys.executable, sys.orig_argv)      # o módulo já tinha lido meta, biblioteca e índice da pasta antiga
     main()

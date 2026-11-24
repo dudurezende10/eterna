@@ -31,6 +31,8 @@ async function agente(ctx){const js=(r,o,st)=>r.fulfill({status:st||200,contentT
   await ctx.route(ORIG+'/ponto/docs*',r=>r.request().method()==='POST'?js(r,{ok:true,gravados:1}):js(r,{ok:true,rev:0,docs:[]}));
   await ctx.route(ORIG+'/ponto/eventos',r=>{const bd=JSON.parse(r.request().postData()||'{}');AG.eventos.push(...(bd.eventos||[]));js(r,{ok:true,resultados:(bd.eventos||[]).map(e=>({idem:e.idem,s:'ok'}))});});
   await ctx.route(ORIG+'/metricas/dia*',r=>{const q=new URL(r.request().url()).searchParams;const de=q.get('de'),ate=q.get('ate');js(r,{ok:true,dias:AG.dias.filter(d=>d.dia>=de&&d.dia<=ate)});});
+  // 23/11: a antiga seção b é a aba Estatísticas de Fotógrafos, com GET /fotografos/dias (só dia e por_fotografo)
+  await ctx.route(ORIG+'/fotografos/dias*',r=>{const q=new URL(r.request().url()).searchParams;const de=q.get('de'),ate=q.get('ate');js(r,{ok:true,dias:AG.dias.filter(d=>d.dia>=de&&d.dia<=ate).map(d=>({dia:d.dia,por_fotografo:d.por_fotografo}))});});
   await ctx.route(ORIG+'/ponto/presenca',r=>{AG.pres.push(1);js(r,{error:'not found'},404);}); // não existe mais: o app não pode chamar
   await ctx.route(ORIG+'/ponto/entradas/importacoes',r=>js(r,{ok:true,importacoes:AG.imps}));
   await ctx.route(ORIG+'/ponto/entradas',r=>{const raw=r.request().postData()||'';AG.ent.push({h:r.request().headers(),raw});const bd=JSON.parse(raw);AG.imps.unshift({id:'imp_x',em:'2026-11-05T12:00:00Z',por:bd.por,arquivo:bd.arquivo,origem:bd.origem,dias:[bd.dia],aceitas:bd.seg.length,recusadas:0});js(r,{ok:true,aceitas:bd.seg.length,recusadas:0,dia:bd.dia,origem:bd.origem});});}
@@ -38,7 +40,7 @@ try{
   // ---------- 28: sem servidor do ponto ----------
   {const {ctx,pg}=await nova();await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.go('estatisticas');});await pg.waitForTimeout(300);
     const t=await pg.textContent('#main');ok(/Sem conexão com o servidor do ponto/.test(t)&&!/Algo falhou/.test(t),'28: aviso sem servidor: '+t.slice(0,200));
-    for(const s of ['b','c','d','e','f']){await pg.click(`[data-act="es-sec"][data-s="${s}"]`);await pg.waitForTimeout(80);ok(!/Algo falhou/.test(await pg.textContent('#main')),'28: seção '+s+' sem servidor');}
+    for(const s of ['c','d','e','f']){await pg.click(`[data-act="es-sec"][data-s="${s}"]`);await pg.waitForTimeout(80);ok(!/Algo falhou/.test(await pg.textContent('#main')),'28: seção '+s+' sem servidor');}
     await ctx.close();}
   // ---------- 1: menu Estatísticas só para o Admin ----------
   {const {ctx,pg}=await nova();await agente(ctx);await entrar(pg,'eduardo@eduardorezende.com');const v=await nav(pg);
@@ -118,19 +120,21 @@ try{
     await pg.evaluate(([de,ate])=>{const E=ETERNA;E.state.range={from:de,to:ate};E.state.es.sec='a';E.state.es.rover=false;E.go('estatisticas');},[addD(HOJE,-365),HOJE]);
     const tq=Date.now();for(let i=0;i<80&&!(await pg.evaluate(()=>(ETERNA.state.es.dias||[]).length===366));i++)await pg.waitForTimeout(100);medidas.carga_ms=Date.now()-tq; // espera o agente falso conectar e o /metricas/dia de 366 dias
 
-    const m=await pg.evaluate(()=>{const E=ETERNA;const t={};for(const s of ['a','b','c','d','e','f','u']){E.state.es.sec=s;const t0=performance.now();E.render();t[s]=Math.round(performance.now()-t0);}E.state.es.sec='a';E.render();
+    const m=await pg.evaluate(()=>{const E=ETERNA;const t={};for(const s of ['a','c','d','e','f','u']){E.state.es.sec=s;const t0=performance.now();E.render();t[s]=Math.round(performance.now()-t0);}E.state.es.sec='a';E.render();
       return {t,n:(E.state.es.dias||[]).length,kpi:document.querySelector('.pn-kpi[data-k="fat"] .pn-big').textContent,semdet:(document.querySelector('.es-semdet')||{}).textContent||''};});
     medidas.render_ms=m.t;ok(m.n===366,'27: 366 dias carregados: '+m.n);ok(Math.max(...Object.values(m.t))<300,'27: cada seção desenha em menos de 300 ms: '+J(m.t));
     ok(/366 vendas sem detalhe de produto \(antes da v92\)/.test(m.semdet),'14: nota sem detalhe: '+m.semdet);
     const esperado=366*(1000+39);ok(m.kpi.replace(/\D/g,'')===String(esperado),'12: KPI de faturamento = servidor: '+m.kpi);
     // e) visitantes
     await pg.click('[data-act="es-sec"][data-s="e"]');const te=await pg.textContent('#main');ok(/Português/.test(te)&&/Outras línguas \(provável estrangeiro\)/.test(te),'21: rótulos de idioma');
-    // b) fotógrafos: tabela ordenável e dia a dia
-    await pg.click('[data-act="es-sec"][data-s="b"]');await pg.click('[data-act="es-ord"][data-c="nome"]');await pg.click('.es-link[data-k="carlos"]');await pg.waitForTimeout(80);
+    // b) fotógrafos (23/11: aba Estatísticas da view Fotógrafos): tabela ordenável e dia a dia
+    await pg.evaluate(()=>{ETERNA.state.fg.aba='estatisticas';ETERNA.go('fotografos');});for(let i=0;i<80&&!(await pg.evaluate(()=>(ETERNA.state.fg.est.dias||[]).length===366));i++)await pg.waitForTimeout(100);
+    await pg.click('[data-act="es-ord"][data-c="nome"]');await pg.click('.es-link[data-k="carlos"]');await pg.waitForTimeout(80);
     const tb=await pg.textContent('#main');const cab=await pg.$$eval('.es-fotos th',x=>x.map(e=>e.textContent.trim().replace(/ [▲▼]$/,'')));
     ok(/Carlos · dia a dia/.test(tb)&&!/presen|falta|atraso|escalad|login às|ponto oficial/i.test(tb),'b: dia a dia sem presença, faltas ou atrasos');
     ok(J(cab)===J(['Fotógrafo','Dias com produção','Sessões','Fotos','Fotos/sessão','Vendas','Conversão','R$/sessão','Faturamento','Clique → Checkout']),'b: só métricas de produção: '+J(cab));
     const dp=await pg.evaluate(()=>{const tr=[...document.querySelectorAll('.es-fotos tbody tr')].find(t=>/Carlos/.test(t.textContent));return tr?tr.children[1].textContent:'';});ok(dp.replace(/\D/g,'')==='366','b: dias com produção = 366: '+dp);
+    await pg.evaluate(()=>ETERNA.go('estatisticas'));await pg.waitForTimeout(150);
     // f) movimento ao vivo pela API do Maraca Acessos (16/11: sai a importação de CSV) e u) funil
     await ctx.route(ORIG+'/visitantes*',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,total:756,anterior:1180,por_hora:[0,0,0,0,0,0,0,0,0,127,132,130,104,67,95,91,10,0,0,0,0,0,0,0],por_canal:[{canal:'Bilheteria',n:436},{canal:'Online',n:204},{canal:'Grupos',n:116}]})}));
     await pg.evaluate(()=>{ETERNA.state.es.vis=null;});await pg.click('[data-act="es-sec"][data-s="f"]');await pg.waitForTimeout(400);let tf=await pg.textContent('#main');

@@ -38,10 +38,10 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | Grupo | O que tem |
 | --- | --- |
 | Venda | Posto de venda |
-| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Fotógrafos, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
-| Curadoria | Qualidade, Treino da IA, Alertas |
+| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
+| Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA |
 | Fotógrafo | Diário do set, Minhas fotos, Fila do fotógrafo |
-| Configurações | Preços e Checkout, Ajuste automático |
+| Configurações | Preços e Checkout, Ajuste automático, IA automática |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
 1. No alto do menu ficam dois botões amarelos: **Abrir Checkout** e **Caixa**. Só aparecem para quem pode usar.
@@ -183,7 +183,7 @@ No alto de **Minhas fotos** aparece o seu nome. Ele vem do seu login. Não dá p
 
 - Outro fotógrafo vai usar o computador: toque em **Trocar fotógrafo**.
 
-A supervisora e o Admin continuam com o seletor **Fotógrafo** no alto da tela. O seletor **Ponto** saiu em 18/11: o ponto não importa mais em Minhas fotos.
+Desde 24/11 não existe mais o seletor **Fotógrafo** no alto da tela. A supervisora e o Admin veem as sessões de todos os fotógrafos de uma vez. O seletor **Ponto** já tinha saído em 18/11.
 
 ### A Escala saiu do Eterna (16/11)
 
@@ -236,15 +236,17 @@ Logo abaixo do título, uma faixa diz como estão as suas fotos:
 
 O ajuste automático da IA clareia a foto escura, segura a estourada e acerta a cor de toda foto que chega.
 
-1. Em **Minhas fotos** fica o painel **Ajuste automático da IA**.
-2. Toque no botão para trocar entre **Ligado** e **Desligado**.
-3. Embaixo aparece quem mexeu e a hora. Exemplo: "Desligado por Carlos às 14:02".
+Desde 24/11 essa chave não fica mais em Minhas fotos. Só o Admin liga e desliga, em **Configurações › IA automática**, linha **Ajuste automático das fotos**.
+
+1. O Admin abre **Configurações › IA automática**.
+2. Toca em **Ligado** ou **Desligado** na linha **Ajuste automático das fotos**.
+3. Embaixo aparece quem mexeu e a hora. Exemplo: "Desligado por (nome) às 14:02".
 
 Bom saber:
-- Vale para o computador do ponto inteiro, não só para você. O próximo fotógrafo encontra do jeito que você deixou.
+- Vale para o computador do ponto inteiro.
 - Ao religar, as fotos que chegaram com ele desligado também são ajustadas, em alguns segundos.
-- Toda troca fica registrada com o seu nome.
-- O supervisor vê o painel, mas não consegue mudar.
+- Toda troca fica registrada com o nome de quem mexeu.
+- O fotógrafo e a supervisora não mudam essa chave. A tela **Ajuste automático** mostra só se está ligado ou desligado.
 
 ### Minhas fotos de hoje (v97)
 
@@ -282,7 +284,7 @@ A supervisora e o Admin continuam vendo todas as fotos, com os filtros de dia, h
 
 **Supervisora ou Admin**
 
-Os mesmos passos. O seletor **Fotógrafo** do alto só filtra as sessões da tela; ele não decide de quem são as fotos enviadas.
+Os mesmos passos. Quem decide de quem são as fotos enviadas é o nome gravado na câmera, não quem está logado.
 
 **Se algo não entrar**
 
@@ -342,7 +344,7 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 
 ### Sessões de hoje (v91)
 
-Com o computador do ponto ligado, **Minhas fotos** mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. O fotógrafo vê as sessões dele. A supervisora e o Admin filtram pelo seletor **Fotógrafo** do alto da tela (o filtro por ponto saiu em 18/11; sessão sem ponto aparece).
+Com o computador do ponto ligado, **Minhas fotos** mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. O fotógrafo vê as sessões dele. A supervisora e o Admin veem as sessões de todos os fotógrafos (o seletor Fotógrafo saiu em 24/11 e o filtro por ponto em 18/11; sessão sem ponto aparece).
 
 Cada sessão tem uma linha com: o código (LP...), o fotógrafo, o ponto, a hora do primeiro e do último clique, o número de fotos e o motivo de ter começado. Quando aparece "chegada" depois da hora, a câmera não mandou a hora do clique e vale a hora em que a foto chegou.
 
@@ -1021,7 +1023,7 @@ O Eterna **não faz controle de ponto**. Não marca presença, falta nem atraso.
 
 1. No menu, abra **Dashboard › Estatísticas** (logo abaixo do Painel).
 2. Escolha o período: **Hoje**, **Ontem**, **7 dias**, **30 dias** ou **Personalizado**. Os dias seguem o horário do Rio. Dá para ver até um ano.
-3. Toque na seção que quer ver: **Vendas e produtos**, **Fotógrafos**, **Rapidez**, **Dias e eventos**, **Visitantes** ou **Movimento**.
+3. Toque na seção que quer ver: **Vendas e produtos**, **Rapidez**, **Dias e eventos**, **Visitantes** ou **Movimento**. Desde 24/11, os números de **Fotógrafos** ficam em **Curadoria › Fotógrafos › Estatísticas**.
 4. **Com histórico Roverpix**: ligado, os números por dia incluem os dias que vieram da Roverpix. Desligado, só o que passou pelo Eterna.
 
 Os números vêm do servidor do ponto e somam todos os caixas. Sem o servidor, aparece "Sem conexão com o servidor do ponto". Se aparecer "O relógio do servidor do ponto está em outro fuso", avise a TI: as horas ficam erradas até ajustar o computador servidor.
@@ -1036,7 +1038,7 @@ Os números vêm do servidor do ponto e somam todos os caixas. Sem o servidor, a
 - **Por dia da semana**: a média de vendas por dia em cada dia da semana.
 - **Hora × dia da semana**: a tabela que mostra os horários mais fortes de cada dia.
 
-**Fotógrafos** (só produção)
+**Fotógrafos** (só produção; desde 24/11 em Curadoria › Fotógrafos › Estatísticas)
 - **Dias com produção**: dias em que o fotógrafo teve fotos ou sessões no servidor. Não é presença.
 - **Sessões e Fotos**: quantas sessões ele abriu e quantas fotos tirou.
 - **Fotos por sessão**: a média de fotos em cada sessão.
@@ -1297,24 +1299,26 @@ Duas mudanças nas fotos especiais (os fundos de IA):
 ### Ordem para ligar (Admin ou técnico, uma vez)
 
 1. **Modelo instalado.** O TI confirma que o reconhecimento do gramado está instalado no servidor.
-2. **Só medir.** Em **Curadoria › Treino da IA › Medição**, deixe o reconhecimento em **Só medir** até não sobrar foto marcada esperando leitura ("Na fila" em 0 e nada faltando em "já lidas pelo reconhecimento").
-3. **Ligar mesmo assim.** Na mesma tela, toque em **Ligar mesmo assim** e confirme. A Medição passa a mostrar "Ligado abaixo da meta por (seu nome) em (data)".
+2. **Desligado.** Em **Configurações › IA automática**, deixe **Fundos de IA automáticos** em **Desligado** até não sobrar foto marcada esperando leitura em **Curadoria › Treino da IA › Resultado** ("Na fila" em 0 e nada faltando em "já lidas pelo reconhecimento"). Desligado, o servidor analisa em silêncio e o Checkout fica sem fundos de IA.
+3. **Ligar mesmo assim.** Em **Configurações › IA automática**, toque em **Ligado** na linha **Fundos de IA automáticos** e confirme. O quadro passa a mostrar "Ligado abaixo da meta por (seu nome) em (data)". Desde 24/11 só o Admin faz isso.
 4. **Montagem em Sombra.** Em **Sistema › Fundos de IA (técnico)**, quadro Recorte local, parte **Montagem no servidor**, escolha **Sombra**. Faça 2 ou 3 sessões de teste no gramado. O TI confere no registro do servidor: modo sombra, pasta no HD e nenhum erro.
 5. **Montagem Ligada.** Na mesma tela, escolha **Ligada**. Faça uma venda de teste: as fotos especiais aparecem e a impressão sai.
 
 Para voltar atrás: **Sombra** ou **Desligada** na mesma tela. O Checkout volta a funcionar como antes.
 
-### Selos da Medição
+### Selos dos Fundos de IA automáticos
+
+Aparecem em **Configurações › IA automática** e no **Resultado** do Treino.
 
 | Selo | O que fazer |
 | --- | --- |
 | Ligado abaixo da meta por (nome) em (data) | Nada. Mostra quem ligou. A lista do que falta continua aparecendo. |
-| Modelo não instalado: nada é reconhecido | Avise o TI. Depois de instalado, toque em Ligar mesmo assim de novo. |
-| Ligado com 0 fotos: ligue de novo | Toque em Ligar mesmo assim de novo. |
+| Modelo não instalado: nada é reconhecido | Avise o TI. Depois de instalado, o Admin toca em **Ligar de novo com as marcações de agora**. |
+| Ligado com 0 fotos: ligue de novo | O Admin toca em **Ligar de novo com as marcações de agora**. |
 
-- **Marcou fotos novas no Treino?** Elas só passam a valer quando alguém tocar em **Ligar de novo com as marcações de agora**.
-- **O botão não aparece?** Só quem pode alterar a Configuração vê o botão.
-- **Não ligou?** A Medição mostra o que falta. O servidor precisa de fotos marcadas do gramado e de pelo menos outro ponto.
+- **Marcou fotos novas no Treino?** Elas só passam a valer quando o Admin tocar em **Ligar de novo com as marcações de agora**, em Configurações › IA automática.
+- **O botão não aparece?** Só o Admin vê os botões. Os outros veem se está Ligado ou Desligado.
+- **Não ligou?** O quadro mostra o que falta. O servidor precisa de fotos marcadas do gramado e de pelo menos outro ponto.
 
 ### Para o vendedor e o anfitrião
 
@@ -1324,7 +1328,153 @@ Para voltar atrás: **Sombra** ou **Desligada** na mesma tela. O Checkout volta 
 
 ### Detalhe conhecido
 
-No celular (tela estreita), com o reconhecimento ligado, o texto "Versão ligada" na Medição sai do cartão e a página rola para o lado. Use a Medição no computador ou no tablet.
+No celular (tela estreita), com o reconhecimento ligado, o texto "Versão ligada" no Resultado sai do cartão e a página rola para o lado. Use o Resultado no computador ou no tablet.
+
+## Novidades da v99.45 (24/11/2026): Treino da IA, IA automática, Lixeira da IA, alertas do fotógrafo e troca de pessoa
+
+### Treino da IA: três perguntas por foto
+
+Vale para quem marca fotos em **Curadoria › Treino da IA › Marcar**. Cada foto agora vem com perguntas diretas.
+
+| Pergunta | Para que serve | Teclas |
+| --- | --- | --- |
+| **1. Onde a foto foi tirada?** | Ensina o servidor a reconhecer o gramado. Só as fotos do Gramado viram fundo de IA. As outras ensinam o que não é gramado. | G A T C O |
+| **2. Esta foto pode ir para o cliente?** | Vale para a foto como ela é: foco, luz, olhos, enquadramento. Não muda nada nos fundos de IA. | P (pode), N (não pode), 1 a 9 (motivo), D (dúvida) |
+| **3. Serve para recorte de IA?** | Só aparece quando a resposta da 1 é Gramado. Uma foto pode ser boa para o cliente e não servir para recorte. Com **Não**, marque o motivo: pessoa cortada na borda, corpo inteiro com chão, luz ruim para recorte, gente atrás ou outro. | S (sim), X (não) |
+
+A pergunta 3 não é obrigatória. Por enquanto ela só fica guardada para ensinar o servidor.
+
+**Como marcar**
+
+1. Toque em **Carregar**.
+2. Responda as perguntas da foto. Se quiser, escreva uma observação.
+3. Siga para outra foto do jeito que preferir: **Próxima**, **Anterior**, as setas do teclado ou o número da foto na grade. A escolha é salva ao sair da foto.
+4. Também é salva se você trocar de aba, abrir outra tela, tocar em Sair, recarregar a página ou fechar a aba.
+5. Se você só olhou a foto e não escolheu nada, nada é salvo. Ela continua sem marcação.
+6. **Enter** numa foto com escolha salva e pula para a próxima foto ainda sem marcação. **Enter** numa foto sem nenhuma escolha só passa para a próxima, sem salvar nada.
+7. Errou? **Desfazer** (ou Z) volta a última marcação.
+
+**A aba Medição agora se chama Resultado.** Ela só mostra números: quanto o servidor acerta. Ligar e desligar não fica mais no Treino. Fica em **Configurações › IA automática** (veja abaixo). Quando os Fundos de IA automáticos estão desligados, aparece um aviso vermelho no alto do Treino: "o Checkout está sem fundos de IA".
+
+**As cores na grade de números**
+
+| Como aparece | O que quer dizer |
+| --- | --- |
+| Borda verde | A marcação já está no servidor. |
+| Borda amarela | A marcação está sendo enviada. Sem internet, ela espera e sobe sozinha depois. |
+| Borda vermelha tracejada | É a foto aberta agora. Você já escolheu algo, mas ainda não saiu dela. Ao sair, é salva. |
+
+**Depois do "Ver como"**
+
+- O Admin que usa **Ver como** só olha. Nada é salvo nesse modo: nem ao sair da foto, nem com Enter, nem com Z. Aparece o aviso "Só visualização".
+- Ao entrar no "Ver como" e ao tocar em **Voltar**, a tela do Treino fica vazia. Toque em **Carregar** de novo para continuar marcando com o seu nome.
+- O mesmo acontece quando uma pessoa sai e outra entra no mesmo computador: cada um carrega a própria lista.
+
+### Fotógrafos agora fica na Curadoria (Admin e Supervisora)
+
+A tela **Fotógrafos** saiu do Dashboard e está em **Curadoria › Fotógrafos**, com três abas:
+
+1. **Índice:** o mesmo de antes.
+2. **Estatísticas:** a parte de fotógrafos que ficava na tela Estatísticas. Saiu de lá e agora fica só aqui.
+3. **Cliques, conversão e exposição:** para cada fotógrafo, no período escolhido:
+   - quantas famílias atendeu;
+   - quantos cliques fez por família, e quantas famílias ficaram abaixo ou acima do limite;
+   - o chute, à parte;
+   - quantas famílias compraram e quantas fotos foram vendidas;
+   - quantas fotos saíram escuras ou estouradas da câmera.
+
+   A última linha é a média da equipe. Quem pode alterar a Configuração muda os limites no quadro **Limites dos alertas**. Toda mudança fica registrada com o valor de antes e o novo.
+
+Só quem vê o Índice do fotógrafo vê estes números. O fotógrafo não vê os próprios números.
+
+### Alertas do fotógrafo (Admin e Supervisora)
+
+Em **Curadoria › Alertas**, escolha o período: **Hoje**, **7 dias** (padrão) ou **30 dias**. Os avisos por fotógrafo aparecem quando:
+
+- a média de cliques por família fica abaixo de 20 ou acima de 40;
+- a porcentagem de famílias que compraram fica 10 pontos ou mais abaixo da equipe, ou a de fotos vendidas fica 5 pontos ou mais abaixo;
+- muitas fotos saem escuras ou estouradas. Exemplo: "20 de 100 fora da exposição: 12 estouradas, 8 escuras". A partir de 25% o aviso fica vermelho.
+
+Os números são calculados no servidor do estádio. Os avisos só aparecem quando há famílias suficientes no período, para não comparar com pouca coisa. A foto escura ou estourada é medida como saiu da câmera, então o Ajuste automático não esconde o problema.
+
+**Para os avisos de exposição aparecerem:**
+
+1. Em **Configurações › IA automática**, o Admin põe **Alerta de foto escura ou estourada** em **Desligado**. Desligado, o servidor mede em silêncio: os números aparecem com o selo "Em teste", sem aviso.
+2. Marque fotos no Treino, inclusive as escuras e as estouradas que não servem.
+3. Em **Treino da IA › Resultado**, bloco **Exposição**, confira quanto o servidor acerta. Se quiser, escolha outros limites e toque em **Usar estes limites**.
+4. Quando o Resultado disser que passa no critério, o Admin põe **Alerta de foto escura ou estourada** em **Ligado**. Antes disso o servidor não deixa.
+
+### Os interruptores da IA agora ficam num lugar só (Admin)
+
+A tela nova **Configurações › IA automática** junta as chaves que a IA usa sozinha. Cada uma tem **Ligado** e **Desligado**.
+
+| Chave | Ligado | Desligado |
+| --- | --- | --- |
+| **Fundos de IA automáticos** | O servidor reconhece as fotos do gramado e o Checkout mostra os fundos de IA feitos com elas. | O Checkout fica sem fundos de IA. O servidor continua analisando em silêncio para o Resultado do Treino ter números. |
+| **Alerta de foto escura ou estourada** | Os Alertas avisam quando um fotógrafo tem muitas fotos escuras ou estouradas. | O servidor mede, mas não avisa. |
+| **Ajuste automático das fotos** | As fotos que chegam são clareadas e acertadas sozinhas. | Nenhuma foto é ajustada. |
+| **Lixeira da IA** | Ainda não dá para ligar. Chega na próxima versão. | Fica em **Teste** (veja abaixo). |
+
+- **Só o Admin muda.** Quem mais tiver a tela vê como cada chave está, sem os botões. O fotógrafo não vê a tela.
+- Desligar os **Fundos de IA automáticos** pede confirmação, porque os próximos visitantes ficam sem fundos de IA no Checkout. A regra é deixar sempre ligado.
+- Se aparecer **Parado no servidor**, o servidor não está analisando. O Admin escolhe Ligado ou Desligado.
+- Do Treino, o botão **Abrir em Configurações** leva direto para esta tela.
+
+### Lixeira da IA (Admin e Supervisora)
+
+A Lixeira da IA funciona como a pasta de spam do e-mail. O servidor olha cada foto que chega e separa as que parecem sem salvação:
+
+- **Muito escura**
+- **Muito estourada**
+- **Tremida ou desfocada**
+- **Sem ninguém na foto**
+
+**Por enquanto ela está em Teste.** Nada sai do Checkout: o cliente continua vendo todas as fotos, inclusive as que estão na lixeira. A lixeira só mostra o que a IA separaria, para a gente conferir se ela acerta.
+
+**Como conferir**
+
+1. Abra **Curadoria › Lixeira da IA**. O número ao lado do nome, no menu, é quantas fotos foram para a lixeira nos últimos 7 dias e ainda não foram conferidas.
+2. Escolha o **Dia** e, se quiser, um motivo.
+3. Toque na foto para ampliar e passar para a próxima.
+4. A foto não é ruim? Toque em **Não é ruim**. Ela sai da lixeira e fica marcada como recuperada, com o seu nome e a hora.
+5. No quadro **Quanto a IA acerta**, veja quantas vezes a lixeira concorda com as marcações do Treino. Cada **Não é ruim** conta como erro da IA.
+
+Bom saber:
+- Nada é apagado. A foto fica 30 dias na biblioteca, como as outras.
+- **Não é ruim** não marca nada no Treino da IA.
+- Em Teste, **Não é ruim** só anota: a foto já estava à venda.
+
+### Minhas fotos sem o seletor Fotógrafo
+
+- A supervisora e o Admin veem as sessões de hoje de todos os fotógrafos, sem escolher ninguém no alto da tela.
+- O fotógrafo continua vendo só as fotos dele.
+- Os filtros por fotógrafo da Biblioteca continuam.
+
+### Zerar fase de teste (Admin, só até 25/11)
+
+Para começar a operação do zero, o Admin tem um botão no fim de **Sistema › Repositório**.
+
+1. Antes, o TI fecha os Postos, Checkouts e tablets.
+2. Toque em **Ver o que vai ser guardado** e confira os números.
+3. Digite **ZERAR** e toque em **Zerar fase de teste**.
+4. O servidor reinicia. A tela volta sozinha em até 2 minutos e mostra "Zerado em (data) por (nome)".
+
+Vendas, sessões, fotos, rostos, galerias e números do teste saem das telas e ficam guardados no próprio servidor por 30 dias. Ficam como estão: histórico da Roverpix, bilheteria, Treino da IA, usuários e configurações. O botão funciona uma vez só e só até 25/11. Se precisar voltar atrás, chame o Ronaldo.
+
+### Trocar de pessoa no mesmo computador (todos)
+
+- Ao entrar com o seu usuário e senha, a sessão de quem estava antes naquele navegador é encerrada no servidor. Vale também para o "Ver como" que tenha ficado aberto.
+- Trocar a senha também encerra a sessão anterior.
+- Tocou em **Sair** sem internet? O computador lembra e tenta encerrar a sessão no servidor de novo quando o Eterna for aberto e antes do próximo login.
+- Se aparecer "Sua sessão terminou. Entre de novo.", é só entrar de novo.
+
+### Para o vendedor e o anfitrião
+
+Nada muda na venda, no Checkout nem na impressão. A Lixeira da IA está em Teste: o cliente continua vendo todas as fotos. Depois da atualização, recarregue a página uma vez. Depois da zeragem, cada tela limpa a própria cópia e recarrega sozinha uma vez.
+
+### Classificação de poses (TI)
+
+O servidor já tem o programa que, à noite, vai separar as fotos por pose. Ele ainda não roda: falta o Ronaldo instalar o modelo. Os passos estão em `docs/SERVIDOR-ESTADIO.md`. Nada muda para a equipe por enquanto.
 
 ---
 

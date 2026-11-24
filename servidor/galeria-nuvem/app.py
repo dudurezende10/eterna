@@ -4,7 +4,7 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
 (galeria-qr-fase1.md), para o app não mudar de tela:
   GET  /g/codigo/<XXXX-XXXX[-XXXX]> código curto -> token (12 no cartão)
   GET  /g/<token>/info            tipo, validade, estado
-  GET  /g/<token>/livres          na venda (sessao): compradas e cortesias só pelo QR, sem selfie (v96.1)
+  GET  /g/<token>/livres          fechada (24/11): responde 403; nenhuma foto sai sem a selfie
   POST /g/<token>/rosto           selfie com consentimento -> acesso de 1 h + galeria
   POST /g/<token>/galeria         renova os links com o acesso
   POST /g/<token>/pedido          compra online pela Imply: cria o pedido e devolve o endereço do checkout (v99)
@@ -12,6 +12,7 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   POST /g/<token>/pagamento       rota antiga (compra direta): responde compra_indisponivel
   POST /ponto/galerias            o agente do estádio publica o manifesto (segredo do ponto)
   GET  /ponto/vendas-online       o agente busca as vendas online pagas (segredo do ponto) (v99)
+  GET|POST /ponto/compra          chave da compra online pelo painel do ponto (segredo do ponto) (24/11)
   Vídeo das ativações (Drone, Chute a Gol, Snap Pop; v99.20): galeria tipo "video", o cartão com QR é a chave, sem selfie
   POST /g/<token>/video           aceite de uso de imagem + e-mail -> acesso e o link do vídeo (ou "chegando")
   POST /g/<token>/evento          o cliente deu play (registro com data e hora)
@@ -550,8 +551,36 @@ def senha_email(ev, corpo):
 _ALFA_REF = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
+# 24/11 (Ronaldo): a compra online liga e desliga pelo painel do ponto (Configurações › Checkout). Registro CFG/compra
+# {ligada, por, em}; sem registro, ligada. CompraOnline=1 no CloudFormation e a chave da Imply continuam valendo por cima.
+_cfg_compra = {"v": None, "em": 0.0}
+
+
+def compra_cfg(fresco=False):
+    if fresco or time.time() - _cfg_compra["em"] > 30:
+        _cfg_compra.update(v=item("CFG", "compra") or {}, em=time.time())
+    return _cfg_compra["v"] or {}
+
+
+def compra_painel():
+    return compra_cfg().get("ligada", True) is not False
+
+
 def compra_ligada(m=None):
-    return COMPRA_ONLINE and imply.ligada() and (m is None or bool(m.get("catalogo")))
+    return COMPRA_ONLINE and imply.ligada() and compra_painel() and (m is None or bool(m.get("catalogo")))
+
+
+def compra_ponto(ev, corpo, metodo):
+    """GET|POST /ponto/compra {ligada, por}: a chave do painel. Responde a chave e se a nuvem pode vender (pode)."""
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    if metodo == "POST":
+        if not isinstance(corpo.get("ligada"), bool):
+            return resp({"error": "ligada"}, 400)
+        TABELA.put_item(Item={"pk": "CFG", "sk": "compra", "ligada": corpo["ligada"], "por": str(corpo.get("por") or "")[:120], "em": iso()})
+        print("compra online %s pelo painel (%s)" % ("ligada" if corpo["ligada"] else "desligada", str(corpo.get("por") or "?")[:120]))
+    c = compra_cfg(fresco=True)
+    return resp({"ligada": compra_painel(), "pode": bool(COMPRA_ONLINE and imply.ligada()), "por": c.get("por") or None, "em": c.get("em") or None})
 
 
 def catalogo_ok(cat):
@@ -603,7 +632,7 @@ def _ref():
 
 def pedido(token, m, corpo, ip, pids_acesso):
     if not compra_ligada(m):
-        print("pedido recusado %s: compra desligada (COMPRA_ONLINE=%s, chave=%s, catálogo=%d)" % (token[-6:], COMPRA_ONLINE, imply.ligada(), len(m.get("catalogo") or [])))
+        print("pedido recusado %s: compra desligada (COMPRA_ONLINE=%s, chave=%s, painel=%s, catálogo=%d)" % (token[-6:], COMPRA_ONLINE, imply.ligada(), compra_painel(), len(m.get("catalogo") or [])))
         evento(token, "compra_tentada", ip)
         return resp({"ok": False, "motivo": "compra_indisponivel"}, 503)
     if not contar("PED#" + ip_hash(ip), 3600, 20):
@@ -677,8 +706,8 @@ def lead(email, idioma, token, marketing, versao, ref=None):
 def liberar(ref, it, det):
     """Pago na Imply: as fotos do pedido viram compradas (canal online) e a venda vai para VONL. Uma vez só por pedido."""
     try:
-        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :p, pago = :t",
-                           ConditionExpression="estado <> :p", ExpressionAttributeValues={":p": "pago", ":t": iso()})
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :p, pago = :t, idpedido = :l",
+                           ConditionExpression="estado <> :p", ExpressionAttributeValues={":p": "pago", ":t": iso(), ":l": str(det.get("idpedido") or "")[:40]})
     except ClientError as ex:
         if ex.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return
@@ -725,7 +754,8 @@ def conferir(ref):
     elif st == "pago":
         liberar(ref, it, det)
     elif st == "cancelado":
-        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "cancelado"})
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e, idpedido = :l",
+                           ExpressionAttributeValues={":e": "cancelado", ":l": str(det.get("idpedido") or "")[:40]})
         TABELA.delete_item(Key={"pk": "PEDPEND", "sk": ref})
     return item("PED#" + ref)
 
@@ -1062,6 +1092,9 @@ def publicar(ev, corpo):
     return resp({"ok": True, "token": novo["token"], "estado": estado(novo)})
 
 
+EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", re.I)
+
+
 def rosto(token, m, corpo, ip, ctx):
     if not contar("ROS#" + ip_hash(ip), 60, 10):
         return resp({"motivo": "bloqueado", "ate": iso(time.time() + 60)}, 429)
@@ -1079,9 +1112,13 @@ def rosto(token, m, corpo, ip, ctx):
     except Exception:
         return resp({"error": "imagem inválida"}, 400)
     kid = m["tipo"] == "evento" or bool(m.get("menor"))
-    TABELA.put_item(Item={"pk": "CON#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "tipo": "responsavel" if kid else "titular",
-                          "versao": str(corpo.get("versao") or "")[:20], "idioma": str(corpo.get("idioma") or "pt")[:2],
-                          "ttl": int(time.time() + 400 * 86400)})
+    con = {"pk": "CON#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "tipo": "responsavel" if kid else "titular",
+           "versao": str(corpo.get("versao") or "")[:20], "idioma": str(corpo.get("idioma") or "pt")[:2],
+           "ttl": int(time.time() + 400 * 86400)}
+    em = str(corpo.get("email") or "").strip().lower()[:190]
+    if EMAIL_RE.match(em):                               # 24/11 (Ronaldo): o e-mail do cliente, junto do consentimento
+        con["email"] = em
+    TABELA.put_item(Item=con)
     TABELA.update_item(Key={"pk": "IDX#" + token, "sk": "M"}, UpdateExpression="SET cons = :um, #t = :ttl",
                        ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":um": 1, ":ttl": ttl_de(m)})
     if m.get("voucher"):                                # escola: até 10 mil fotos, lidas em lotes paralelos em segundo plano
@@ -1203,6 +1240,8 @@ def handler(ev, ctx):
         return senha_email(ev, corpo)
     if caminho == "/ponto/vendas-online" and metodo == "GET":
         return vendas_online(ev)
+    if caminho == "/ponto/compra" and metodo in ("GET", "POST"):
+        return compra_ponto(ev, corpo, metodo)
     if caminho == "/ponto/eventos" and metodo == "GET":
         return eventos_ponto(ev)
     if caminho == "/ponto/escolas" and metodo == "GET":
@@ -1256,13 +1295,8 @@ def handler(ev, ctx):
             evento(token, "video_play", ip, v=v)
             return resp({"ok": True})
         return resp({"error": "not found"}, 404)
-    if acao == "livres" and metodo == "GET":              # v96.1: compradas e cortesias da venda só pelo QR
-        if not contar("LIV#" + ip_hash(ip), 60, 30):
-            return resp({"motivo": "bloqueado"}, 429)
-        g = galeria_obj(token, m)
-        if g["fotos"]:
-            evento(token, "livres_vistas", ip, livres=len(g["fotos"]))
-        return resp({"galeria": g})
+    if acao == "livres" and metodo == "GET":              # 24/11 (Ronaldo): o QR sozinho não abre mais nada (quem tinha o
+        return resp({"error": "selfie"}, 403)             # código de um amigo baixava as compradas dele); só pela selfie
     if acao == "rosto" and metodo == "POST":
         return rosto(token, m, corpo, ip, ctx)
     if acao in ("galeria", "pagamento", "pedido", "cortesia", "evento") and metodo == "POST":

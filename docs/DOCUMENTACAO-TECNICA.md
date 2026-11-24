@@ -951,8 +951,8 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 | Grupo | Itens (view) |
 | --- | --- |
 | (sem grupo) | Início (`perfis`, abre pelo logo) · Checkout (`quiosque`, botão "Abrir Checkout") |
-| Dashboard | Painel (`painel`, v80) · Bandeiras (`bandeiras`) · Estoque (`estoque`) · Fotógrafos (`fotografos`) · Vendas e caixa (`vendas`) · Lista de vendas (`vendas-lista`) · Galerias online (`galerias`) |
-| Curadoria | Qualidade (`revisao`) · Treino da IA (`treino`) · Alertas (`alertas`) |
+| Dashboard | Painel (`painel`, v80) · Bandeiras (`bandeiras`) · Estoque (`estoque`) · Vendas e caixa (`vendas`) · Lista de vendas (`vendas-lista`) · Galerias online (`galerias`) |
+| Curadoria | Qualidade (`revisao`) · Treino da IA (`treino`) · Fotógrafos (`fotografos`, desde 23/11; antes no Dashboard) · Alertas (`alertas`) |
 | Fotógrafo | Diário do set (`diario`) · Upload automático (`importar`) · Escala 5×2 (`escala`) |
 | Configurações | Repositório (`repo`) · Identidade (`identidade`) · Painel de controle (`catalogo`, antes Catálogo e preços) · Fundos de IA (`chroma`) · Ajuste automático (`ajustes`) · Usuários (`usuarios`) · Permissões (`permissoes`) |
 | Laboratório | Vestiário (`vestiario`) |
@@ -1249,7 +1249,7 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 ### Ajuste automático: interruptor do fotógrafo
 
 - `ajAutoPanel()` no topo do Upload automático (`vImportarCore`) e em Configurações › Ajuste automático (`vAjustes`). Título "Ajuste automático da IA", botão Ligado/Desligado e a linha "Desligado por Carlos às 14:02".
-- `ajAutoSet(on)` grava `SIM.autoAj` e `SIM.autoAjPor={on,por,nome,em}`, registra no log e confere `can('set','u')` por dentro.
+- `ajAutoSet(on)` grava `SIM.autoAj` e `SIM.autoAjPor={on,por,nome,em}` e registra no log. Só o Admin (`isAdminUser`, fora do "ver como"); o servidor confere de novo pela sessão: `doc_recusa` recusa `sim/autoAj` e `sim/autoAjPor` (`SIM_SO_ADMIN`) de quem não é preset admin, com o motivo `so_admin` (24/11).
 - Vale para o computador do ponto inteiro (D9). Ao religar, o `ajQueue` ajusta as fotos que chegaram com ele desligado.
 - `WRITE_OPS['aj-autotoggle']='u'`, `ACT_MOD` `set`. Fecha a brecha da v78 em que o Supervisor (só leitura em `set`) mexia no ajuste.
 - O menu do Fotógrafo não muda: a tela Ajuste automático continua só em Configurações.
@@ -2103,8 +2103,8 @@ Grupos de `VIEWS` (4º campo; o 5º campo é a pasta dentro do grupo):
 | Grupo | Telas (view) |
 | --- | --- |
 | Venda | Posto de venda (`posto`) |
-| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Fotógrafos, Vendedores (`vendas`), Lista de vendas, Galerias online, Calendário de eventos (`calendario`, veio do grupo Fotógrafo; módulo `escala`, permissões iguais) |
-| Curadoria | Qualidade, Treino da IA, Alertas |
+| Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores (`vendas`), Lista de vendas, Galerias online, Calendário de eventos (`calendario`, veio do grupo Fotógrafo; módulo `escala`, permissões iguais) |
+| Curadoria | Qualidade, Treino da IA, Fotógrafos (`fotografos`, veio do Dashboard em 23/11, entre Treino da IA e Alertas; módulo, permissões, rota e conteúdo iguais), Alertas |
 | Fotógrafo | Diário do set, Minhas fotos (`importar`), Fila do fotógrafo, Escala |
 | Configurações | Preços e Checkout (`catalogo`, abas `precos`, `checkout`, `fundos`, `avancado` em `state.catTab`), Ajuste automático |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico) (`chroma`), Usuários, Permissões e a pasta Laboratório: Vestiário, Chute a gol (`chute-a-gol`), Fundos em teste |
@@ -2509,6 +2509,320 @@ sequenceDiagram
 - A 390 px, com o reconhecimento Ligado, o texto de "Versão ligada" na Medição (`.tr-med-ver`) sai do cartão e a página rola para o lado. Não bloqueia.
 - Fora desta entrega: comparador lado a lado para o Admin, montagem na galeria (E4) e a E3.
 
+## Classificação de poses no servidor, P1 (23/11/2026)
+
+Plano: `docs/planos/2026-11-23-poses-estatistica.md` (fatia P1). À noite, o servidor classifica cada foto das sessões fechadas dos últimos 7 dias com o Qwen3-VL-8B-Instruct (Apache 2.0) num `llama-server` local. Nenhuma foto sai do servidor, e nada desta fatia aparece para o cliente. A tela "Poses que vendem" e as contas ficam para a P3 e a P4. Instalação e conferência: `docs/SERVIDOR-ESTADIO.md`, "Classificação de poses".
+
+| Peça | O que faz |
+| --- | --- |
+| `agente/eterna-poses.py` | Filho do agente, um JSON por linha, como o `eterna-recorte.py`. Sobe o `llama-server` só em `127.0.0.1`, numa porta livre, com uma chave nova num arquivo 0600 em `~/Eterna/ponto/poses-*/` (`--api-key-file`), sem `-hf` e com `LLAMA_OFFLINE=1`. Avisa `{"llama_pid"}` logo depois de abrir e `{"pronto"}` com o `/health`. Lotes de até 8 fotos a 768 px, `temperature 0`, `json_schema` fechado. No SIGTERM, também durante a abertura, fecha o grupo do `llama-server` e apaga a chave. |
+| Bloco "Poses" do agente | Chave `config/poses` (`desligada` (padrão), `sombra` ou `ligada`), gravada só por `POST /poses/config` (`configuracao.u` e, desde 24/11, só o perfil Admin da sessão: os outros recebem 403 `so_admin` e a tela mostra o estado sem os botões; 6 por minuto; Ligada responde 409 `criterio` até a P2). `ETERNA_POSES=0` força Desligada. Banco `~/Eterna/ponto/poses.db`, tabela `pose` (fora do backup na nuvem, apagada na exclusão LGPD, linhas vencem em 60 dias). `/status.poses` só com números e códigos. |
+| `poses_pode_rodar` | Nesta ordem: `desligada`, `fora_janela` (padrão 20:00 às 07:00), `parado`/`versao`, `recorte_ocupado`, `montagem_ocupada` (trabalho de prioridade 0 ou 1 nos últimos 120 s), `sem_modelo`/`conferindo`, `vram` (9.000 MB livres, só antes de abrir). Conferido entre um lote e outro; se não pode, o lote termina e o filho fecha. |
+| SHA do modelo | Lido uma vez por arquivo, pelo laço e só depois de todas as condições anteriores. O resultado fica em `~/Eterna/ponto/poses-sha.json` (0600, com tamanho, mtime, inode e SHA). Só é relido se um deles mudar. O `/status` nunca lê os 6,2 GB: mostra `conferindo` ou o estado guardado. O filho recebe `--conferido` e só confere tamanho, mtime e inode. `POSE_SHA` e `POSE_MMPROJ_SHA` vazios: `sem_modelo`. |
+| Processos | Agente: fecha o stdin, depois SIGTERM e espera `POSE_TERM_SEG`, e só então SIGKILL. No grupo do `llama-server`: SIGTERM, depois SIGKILL. A abertura do filho tem 300 s contados do início, e o agente espera 360 s. Na partida, `poses_orfaos_encerrar` encerra o que sobrou pelo `poses-filho.json` e procurando `--api-key-file` em `ponto/poses-*`, e apaga as pastas de chave. |
+| Falhas | 3 mortes seguidas do filho deixam a classificação `parado` até a noite seguinte. Lote inteiro com erro do servidor do modelo conta como morte (motivo `servidor`, as fotos ficam na fila), nunca `fim_fila`. Filho de outra versão do prompt: `versao`, parado até a noite seguinte. Foto ilegível (inclusive `ValueError` do PIL) ou fora das pastas: linha `nao_classificavel`, sem voltar à fila. |
+| Tela | Sistema › Fundos de IA (técnico), cartão `posesPanel` ao lado do `mtgPanel`: modo em 3 botões (`ps-modo`, `configuracao.u`, `confirm`, auditoria `poses_modo`), janela, modelo, fila e a última noite com o motivo da parada em palavras (`ps_parou_*`). |
+
+Testes: `testes/poses_agente.py`, com o `llama-server` trocado por `testes/_poses_filho_falso.py` e o `eterna-poses.py` real, e as rotas em `testes/seguranca_rotas_agente.py`. A medição no servidor (`agente/medir-poses.py`) é manual. Ela se recusa a rodar com o classificador do agente aberto.
+
+## v99.45.0 (24/11/2026): alertas do fotógrafo, Treino mais claro, IA automática, Zerar fase de teste e Lixeira da IA
+
+Publicação única sobre a v99.44.0 do Ronaldo. Entram a entrega de 23/11 (os alertas do fotógrafo, a classificação de poses P1 da seção acima e as correções do Treino, da sessão e do backup) e três entregas do dia 24/11: o Treino mais claro com a tela IA automática, o botão Zerar fase de teste e a Lixeira da IA (parte A). Planos: `docs/planos/2026-11-23-alertas-fotografo.md`, `docs/planos/2026-11-23-poses-estatistica.md`, `docs/planos/2026-11-24-treino-mais-claro.md`, `docs/planos/2026-11-24-zerar-fase-teste.md` e `docs/planos/2026-11-24-lixeira-ia.md`. Nomes de código em `docs/CONTEXTO-ETERNA.md`, seções 3 e 4.
+
+**Nomes na tela desde esta versão:** a aba Medição do Treino se chama **Resultado**. Na tela, as chaves da análise do servidor têm duas posições: **Ligado** (`ligada` no servidor) e **Desligado** (`medir` no servidor, que antes aparecia como "Só medir"). O `desligada` do servidor aparece como "Parado no servidor".
+
+### 1. Alertas do fotógrafo e Fotógrafos na Curadoria (AF)
+
+O servidor mede a luz de cada foto como ela saiu da câmera e soma, por fotógrafo e por dia, famílias, cliques, conversão e exposição. A tela Alertas mostra os cartões e Curadoria › Fotógrafos mostra os números.
+
+```mermaid
+sequenceDiagram
+  participant LR as Leitor de rostos (agente)
+  participant TD as treino.db (medida)
+  participant OP as operacao.db
+  participant APP as App (Alertas, Fotógrafos)
+  LR->>LR: decodifica o original (já faz para os rostos)
+  LR->>TD: luz_medir -> medida(tipo='luz'), em lote a cada 5 s
+  Note over LR,TD: luz_varre mede o que faltou (30 dias), de madrugada
+  OP->>OP: fot_dia (hoje a cada 10 min, ontem na virada, 35 dias de madrugada)
+  OP->>OP: fotografo_mes congela o mês anterior a partir do dia 4
+  APP->>OP: GET /fotografos/alertas?de=&ate=
+  OP-->>APP: somas, equipe e alertas (fot_*)
+```
+
+**Decisões (Eduardo, 23/11):**
+- Unidade = família (leva). Cada leva é de um fotógrafo só. Leva sem fotógrafo fica fora.
+- Cliques: com o reconhecimento do ponto Ligado, contam gramado, troféu e arquibancada (confiança 0,70 ou mais) e o chute aparece à parte. Sem ele, contam todas as fotos da leva, e a tela diz isso.
+- Conversão por foto: a família comprou quando alguma foto da leva foi vendida (venda paga, não cancelada). Cada fotógrafo recebe só as fotos dele. Comparada com a equipe toda. Vendas online ficam fora, e a tela avisa.
+- Exposição: medida no original, então o Ajuste automático não esconde a foto ruim. "Fora da exposição" é só a foto que não serve (escura ou estourada).
+- Chave da exposição = `config/treino.exposicao`: `desligada` não mede; `medir` (Desligado na tela) mostra com o selo "Em teste" e sem alerta; Ligada gera alertas e só liga passando no critério da calibração (`LUZ_CRIT`: 30 escuras, 30 estouradas, 150 boas, precisão 0,85 e revocação 0,70 nas duas classes).
+- Números por fotógrafo só com `desempenho.r`, conferido no servidor pela sessão. Sem a letra, `/metricas/dia` e `/metricas` saem sem `por_fotografo`, e o Painel não mostra "Por fotógrafo".
+- Nenhum texto, campo ou coluna fala em hora, presença, falta ou turno.
+
+**Rotas**
+
+| Rota | Quem | Formato |
+| --- | --- | --- |
+| `GET /fotografos/alertas?de=&ate=` | sessão com `desempenho.r`; 30 por minuto por pessoa; até 92 dias | resposta abaixo |
+| `GET /fotografos/dias?de=&ate=` | sessão com `desempenho.r`; até 366 dias | `{"ok":true,"dias":[{"dia","por_fotografo":{"<chave>":{fotos,sessoes,sessoes_com_venda,vendas,faturamento,fotos_vendidas,clique_checkout_s}}}]}` |
+| `GET /fotografos/luz/medida` | sessão com `qualidade.r`; 10 por minuto | `{v:1, limites, classes:{escura:{n,precisao,revocacao}, estourada:{...}}, boas_n, matriz, grade, sem_medida, criterio:{passa, falta}, crit, refaz_ja}` |
+| `POST /fotografos/config` | `configuracao.u` e `desempenho.r`; origem local; 6 por minuto; corpo até 4 KB | só os campos que mudam. 200 `{ok, limites, antes, mudou, por, em}` (com limite de luz novo, também `refeitos` e `noite`); 200 `igual:true` sem mudança; 400 `campo` com o nome do campo; 409 `criterio` com `falta` (exposição Ligada e calibração que não passa com os limites novos); 429 |
+| `POST /treino/config {exposicao:"ligada"}` | `configuracao.u` | 409 `criterio` com `falta` até a calibração passar |
+| `/status` | app | ganha `luz: {v, medidas_hoje, fila, ms_med, varredura:{pendentes, rodando}, opencv}` e `estatisticas.fot: {ultimo_dia, em}`. Sem pid nem nome |
+
+Exemplo de `GET /fotografos/alertas` (números inventados; a chave é a do cadastro):
+
+```json
+{"ok":true,"v":1,"de":"2026-11-17","ate":"2026-11-23","exposicao":"ligada","fonte_cliques":"ponto","dias":7,
+ "limites":{"cliques_min":20,"cliques_max":40,"fam_min":5,"luz_pct":15,"luz_grave_pct":25,"luz_fotos_min":50,"luz":{"...":0}},
+ "equipe":{"familias":310,"fam_compraram":160,"fotos":7400,"fotos_vendidas":1600,"cliques_soma":7000,"chute_soma":900},
+ "fotografos":[{"k":"fotografo_a","familias":14,
+   "cliques":{"media":16.2,"abaixo":9,"acima":0,"chute_media":3.1,"nao_contadas":12},
+   "conv":{"fam":[6,14],"fotos":[40,260]},
+   "luz":{"n":100,"escuras":8,"estouradas":12,"sem_dado":0}}],
+ "alertas":[{"tipo":"fot_luz","k":"fotografo_a","sev":"warn","args":[20,100,12,8]}],
+ "em":"2026-11-23T21:10:00-03:00","sujo":false,"refeitos":0}
+```
+
+- `fonte_cliques`: `ponto`, `todas` ou `misto` (parte dos dias por um jeito, parte por outro).
+- `luz` vem `null` com a exposição Desligada.
+- Tipos de alerta: `fot_poucos` e `fot_muitos` (média de cliques fora dos limites, com `fam_min` famílias), `fot_conv_fam` e `fot_conv_fotos` (conversão `conv_fam_pp` ou `conv_fotos_pp` pontos abaixo da equipe, com `conv_fam_min` famílias e `conv_equipe_min` fotógrafos), `fot_luz` (só com a exposição Ligada, `luz_fotos_min` fotos, `luz_pct` ou mais fora; `sev:"bad"` a partir de `luz_grave_pct`).
+- `sujo`: o limite de luz mudou e os dias mais antigos que os 7 recentes só serão refeitos de madrugada.
+
+**Dados gravados**
+- `treino.db` `medida(pid, tipo='luz', valor, em)`: `{v:1, src:"original", q:{med,p5,p95,alto,baixo}, r:{med,p95,alto,n}|null}`. `q` = 60% centrais do quadro; `r` = maior rosto. Apagada na exclusão LGPD e pela limpeza da madrugada.
+- `operacao.db` `fotografo_dia(dia, fotografo, dados, em)`: só somas (`familias`, `cliques_soma`, `chute_soma`, `nao_contadas`, `por_n`, `fonte`, `fam_compraram`, `fotos`, `fotos_vendidas`, `luz`). Sem pid e sem cliente. Dia com os mesmos dados não é regravado.
+- `operacao.db` `fotografo_dia_calc(dia, em, ponto)` e `fotografo_mes(mes, dados, fechado_em)` (o mês não muda depois de congelado; a P5 das poses lê daqui).
+- `estado.db` `config/fotografos`: os limites (padrões do plano). Só pela rota; a sincronização do `/ponto/docs` recusa.
+
+**Prazo da medida de luz:** `LUZ_RET_DIAS` é o maior entre `RETENCAO_DIAS` e `LUZ_DIAS`. A `luz_limpa` roda uma vez por madrugada (`luz_limpa_noite` no `luz_loop`), cede ao leitor, à selfie, ao recorte, à montagem e às poses, e se falhar tenta de novo só depois de 10 min. Ficam a medida das fotos marcadas no Treino, das que ainda estão na biblioteca e das últimas 24 h.
+
+**Tela:** Curadoria › Fotógrafos com as abas Índice, Estatísticas (a antiga seção Fotógrafos da Estatísticas, que saiu de lá) e Cliques, conversão e exposição (tabela, linha Equipe e o cartão Limites dos alertas). Alertas com o período Hoje, 7 dias ou 30 dias (padrão 7). Treino da IA › Resultado com o bloco Exposição e o botão "Usar estes limites". O Exportar de Fotógrafos segue a aba aberta.
+
+### 2. Treino da IA: a escolha é gravada ao sair da foto
+
+Pedido do Eduardo em 23/11, no Maracanã: muitas fotos passadas com Próxima ficavam sem marcação.
+
+- Sair da foto por qualquer caminho grava a escolha nova pelo mesmo `POST /treino/rotulo` e a mesma fila: Próxima, Anterior, setas, número da grade, Carregar, outra aba, outra tela, Sair, recarregar ou fechar a aba (pela fila local, sem pergunta do navegador).
+- Foto só vista, sem escolha ou com a escolha igual à gravada, não grava. Sem Qualidade e IA em Alterar, nada muda.
+- Pular as marcadas continua só no Confirmar e próxima (Enter).
+- Grade: verde = gravada; amarelo = enviando; vermelho tracejado = foto atual com escolha ainda não gravada.
+- Recusa do servidor (4xx) devolve a miniatura ao que o servidor tem. O rascunho feito sobre outra versão do rótulo sai no Carregar.
+- "Ver como": nada é gravado nem enviado. Enter, Z e sair da foto avisam "Só visualização". A fila pendente fica intacta.
+- Troca de pessoa (Sair, entrar, entrar ou voltar do "ver como"): a tela do Treino é zerada e é preciso Carregar de novo.
+
+### 3. Sessão e troca de pessoa no mesmo navegador
+
+- `/auth/entrar` (também com senha provisória) e `/auth/trocar` encerram, antes de criar a nova, a sessão do cookie atual e a sessão do Admin guardada no "ver como" (cookie `eterna_sessao_adm`).
+- Na tela, `state.sessN` numera a sessão. Uma resposta 401 só encerra a sessão que fez o pedido.
+- O Sair espera o envio da escolha nova do Treino por até 2 s e chama `/auth/sair` com limite de 4 s. Sem resposta 200 ou 401, a marca `eterna.auth.sair` (só a hora) fica no aparelho, e o Sair é repetido ao abrir e antes do próximo Entrar.
+
+### 4. Backup na nuvem só do que mudou
+
+- `backup_bancos` sobe só o banco de `BACKUP_BANCOS` (vendas, estado, operacao, nuvem e treino) que mudou desde a última subida, e a cópia do dia uma vez por dia. Marca nova com o mesmo conteúdo não sobe.
+- `poses.db` e `cena.db` ficam fora do backup.
+- JSON de métricas e sessões que não subiu fica pendente e é repetido na rodada seguinte (`backup_rodada`). O `ok_em` não anda enquanto isso, então o alerta da AWS dispara se a falha continuar.
+- **Decisão do Eduardo (24/11):** a lista `BACKUP_BANCOS` fica como está. Só o comentário foi corrigido: além dos bancos, a `backup_rodada` e a `backup_arquivos_lista` sobem os JSON de sessões e métricas, `index.json`, `metricas.jsonl`, os registros da LGPD, visitas, a fila de impressão, `agenda-fonte.json` e o `sessao.json` de cada galeria. São códigos, contagens e registros, sem imagem nem rosto.
+
+### 5. Modelo das poses: instalação
+
+- `instalar-poses-modelos.py` só baixa com o SHA-256 esperado de cada arquivo, vindo do código (`POSE_SHA`, `POSE_MMPROJ_SHA`) ou de `--esperado-modelo` e `--esperado-mmproj`. Com os dois, têm que ser iguais.
+- Download com SHA diferente: o temporário é apagado (também em erro e no Ctrl-C) e o instalador para com `FALHA`.
+- Arquivo já instalado com SHA diferente: para com `PARADO`, sem apagar nem baixar de novo.
+- `visao-instalar.sh`: sem SHA fixado no código, exige `POSE_SHA_MODELO` e `POSE_SHA_MMPROJ` antes do passo 1.
+- Passos do Ronaldo e a ordem de fixar os valores: `docs/SERVIDOR-ESTADIO.md`, "Classificação de poses".
+
+### 6. Treino mais claro e Configurações › IA automática
+
+Pedido do Eduardo em 24/11 ("tela muito confusa"). Plano: `docs/planos/2026-11-24-treino-mais-claro.md`, com as mudanças das 10:44 e das 11:04 no fim.
+
+**Aba Marcar (`vTreinoMarcar`)**
+- Três perguntas, cada uma com uma nota de uma linha: "1. Onde a foto foi tirada?" (`tr_ponto_h`), "2. Esta foto pode ir para o cliente?" (`tr_qual_h`) e "3. Serve para recorte de IA?" (`tr_ia_h`).
+- A 3 só aparece com o ponto Gramado no rascunho. Sim ou Não (`tr-ia`, teclas **S** e **X**). Com Não aparecem os motivos (`tr-iam`, `TR_IA_MOTIVOS`): `cortada`, `chao`, `luz`, `gente_atras`, `outro`. Tocar num motivo marca Não. Sim apaga os motivos. Responder a 3 não é obrigatório.
+- Saindo de Gramado, o rascunho guarda a resposta 3 na memória, mas o corpo enviado leva `ia` nulo.
+- `trRascNovo` compara também a resposta 3: mudar só ela e sair da foto grava.
+- **Enter numa foto sem nenhuma escolha** (sem ponto, sem qualidade e sem resposta 3) só passa para a próxima, como Próxima. Nada é gravado nem vai para a fila, também no "ver como". Com escolha, o Enter grava e vai para a próxima sem marcação, como antes.
+- A resposta 3 só fica guardada para ensinar. Ela ainda não entra na escolha automática das bases dos fundos de IA.
+
+Corpo do `POST /treino/rotulo` com a resposta 3 (o resto do contrato não mudou):
+
+```json
+{"pid":"a1b2c3d4","v":3,"ponto":"gramado",
+ "ia":{"serve":false,"motivos":["cortada","gente_atras"],"frente":null},
+ "qual":{"nivel":"boa","motivos":[],"ajuste":[]},"duvida":false,"obs":"","base_em":null}
+```
+
+Fora de Gramado: `"ia":{"serve":null,"motivos":[],"frente":null}`.
+
+**Aba Resultado (antes Medição)**
+- Só mostra números. O id interno continua `medida` (`state.train.aba`), para não mexer em quem abre a aba por código.
+- Pílula da situação (`trCfgPilula`): Ligado, Desligado ou Parado no servidor. Nota `tr_res_onde` ("Aqui você só confere...") e o botão "Abrir em Configurações" (`tr-cfg-abrir`, só para quem tem a tela IA automática).
+- No topo do Treino (as 3 abas), com os Fundos de IA automáticos fora de Ligado, aparece o aviso `trAvisoDesl` ("o Checkout está sem fundos de IA").
+
+**Tela Configurações › IA automática (view `ia-auto`, módulo `configuracao`)**
+
+`vIaAuto` junta três chaves num quadro (`trCfgPanel`, `#tr-cfg`) e, embaixo, a chave da Lixeira da IA (`lxCfgPanel`, seção 9).
+
+| Chave na tela | Onde mora | Ligado | Desligado |
+| --- | --- | --- | --- |
+| Fundos de IA automáticos | `config/treino.ponto` no servidor | `ligada`: o servidor reconhece o gramado e o Checkout mostra os fundos de IA | `medir`: o servidor analisa em silêncio para o Resultado ter números; o Checkout fica sem fundos de IA |
+| Alerta de foto escura ou estourada | `config/treino.exposicao` no servidor | `ligada`: os Alertas avisam | `medir`: mede e mostra com o selo "Em teste", sem alerta |
+| Ajuste automático das fotos | `sim/autoAj` e `sim/autoAjPor` (SIM, sincronizado pelo servidor) | o navegador com a Biblioteca aberta ajusta as fotos que chegam | nenhuma foto é ajustada |
+
+- **Quem muda:** só o Admin (`isAdminUser`, fora do "ver como"). Quem tem a tela no menu vê só as pílulas. O Fotógrafo não vê a tela. A tela Ajuste automático ficou só com a situação, e o cartão saiu de Minhas fotos.
+- Desligar os Fundos de IA automáticos pede confirmação (`tr_cfg_desl_conf`). O alerta de exposição desliga sem confirmação.
+- Ligar os Fundos de IA abaixo da meta: a mesma confirmação de antes e `{ponto:"ligada", forcar:true}`. Ligado, aparece "Ligar de novo com as marcações de agora" (`tr-forcar`). O 409 não troca mais de tela: o que falta aparece no próprio quadro, em texto puro.
+- Ponto Ligado com a caixa "Separar os primeiros cliques" desmarcada: aviso `tr_cfg_ia_caixa`.
+- A tela nunca manda `desligada`. O `desligada` do servidor (padrão de instalação nova) aparece como "Parado no servidor", sem botão marcado.
+
+**No servidor (o perfil vem da sessão, nunca do pedido; "ver como" também é recusado)**
+
+| O quê | Regra desde 24/11 | Recusa |
+| --- | --- | --- |
+| `POST /treino/config` | `configuracao.u` e perfil Admin | 403 `{"ok":false,"error":"so_admin"}` |
+| `POST /poses/config` | `configuracao.u` e perfil Admin | 403 `so_admin` |
+| `sim/autoAj`, `sim/autoAjPor` pelo `/ponto/docs` | `SIM_SO_ADMIN` no `doc_recusa`: só o perfil Admin | o documento volta recusado com o motivo `so_admin`; o resto da coleção `sim` segue a tabela `DOC_SIM` |
+
+Testes: `testes/treino-claro.js`, `testes/treino.js`, `testes/treino-medida.js`, `testes/fot-alertas.js`, `testes/ajuste_auto_admin_agente.py`, `testes/v9944-treino-real.js`.
+
+### 7. Minhas fotos sem o seletor Fotógrafo
+
+- Sai o seletor Fotógrafo do alto de Minhas fotos. Admin e Supervisora veem as Sessões de hoje de todos os fotógrafos. O Fotógrafo continua só com as dele.
+- Os chips de fotógrafo da Biblioteca ficam.
+- O dono da foto continua vindo do nome gravado na câmera (18/11). Nada muda no envio manual.
+
+### 8. Zerar fase de teste
+
+Botão do Admin para começar a operação de 25/11 do zero. Plano: `docs/planos/2026-11-24-zerar-fase-teste.md`. Passo a passo do TI: `docs/SERVIDOR-ESTADIO.md`, "Zerar a fase de teste".
+
+**Como funciona**
+1. Sistema › Repositório, no fim: cartão "Zerar fase de teste" (`zerarPainel`), só para o Admin, fora do "ver como" e com o app aberto pelo endereço do servidor.
+2. "Ver o que vai ser guardado" chama `GET /zerar/previa`: contagens do que vai para o arquivo e do que fica, e os bloqueios.
+3. A pessoa digita `ZERAR` e confirma. `POST /zerar/fase-teste` grava `ponto/zerar-pedido.json` e responde 202. O agente sai em 1,5 s e o systemd religa.
+4. Na partida, antes de qualquer thread, filho ou HTTP (`zerar_partida_segura` no `__main__`), os passos rodam nesta ordem: `preparo`, `copias`, `vendas`, `operacao`, `nuvem`, `estado`, `mover_nvme`, `mover_midia`, `originais`, `fim`. Cada passo é idempotente e grava uma linha em `arquivo/<id>/passos.jsonl`.
+5. Terminou: grava `ponto/zerada.json` e reexecuta o agente (`os.execv`). Parou no meio: tenta de novo na próxima partida; na 3ª vez grava `zerar-falhou.json` e o agente sobe normal.
+6. Cada navegador vê o `zerada` novo no `/status` (`zeradaConfere`), apaga só as chaves de `ZERADA_LIMPA` (SIM, rostos, filas antigas do ponto, montagens vistas, cursor) e recarrega uma vez (`zeradaAplica`). Sessão, posto, idioma e a fila do Treino ficam.
+
+**Nada é apagado de vez.** Mover é sempre `os.rename` no mesmo disco:
+- `~/Eterna/arquivo/<id>/` (disco do sistema): `bancos/` (cópias de vendas, operacao, nuvem, estado, treino, cena e backup-originais antes de qualquer mudança), `home/` (miniaturas, galerias, sessões, métricas, visitas, `meta.json`, `rostos.db`, `poses.db`), `passos.jsonl` e `resumo.json`.
+- `inbox/.arquivo/<id>/` (HD das fotos): `inbox/<dia>/` (originais), `recortes/`, `montagens/` e, com as ativações, `ativ-videos/` e `ativ-clientes/`.
+- As duas pastas são 0700 e os arquivos 0600. O id tem o formato `fase-teste-AAAAMMDD-HHMM`.
+
+**O que fica:** histórico da Roverpix, entradas da bilheteria, Treino da IA (`treino.db` e `cena.db` inteiros), usuários, senhas, postos, leitores, permissões, configurações, `index.json` (as fotos de teste reenviadas caem como repetidas), registros da LGPD, cartões e vendas importadas do sistema antigo. Os cartões já entregues no teste vão para o lote `fase-teste`, cancelado. Nada na nuvem muda.
+
+**Regras de uso**
+- Uma vez só: com `ponto/zerada.json` presente, responde `ja_zerado`.
+- Só até 25/11 (`ZERAR_ATE = "2026-11-25"`, data local do servidor). Depois, a prévia e o POST mostram `prazo`. `ETERNA_ZERAR_LIBERA=1` no serviço libera de novo. Pedido ou andamento já gravado retoma normal na partida.
+- A pasta de arquivo fica 30 dias (`ZERAR_PRAZO_DIAS`). A data sai no cartão, no `resumo.json` (`apagar_a_partir_de`) e no registro do serviço. Ninguém apaga sozinho.
+- Outros bloqueios: `em_andamento`, `sem_supervisor` (fora do systemd), `sistema`, `pasta_midia`, `outro_disco`, `link_inesperado`, `espaco`, `sem_escrita`.
+
+**Rotas**
+
+| Rota | Quem | Respostas |
+| --- | --- | --- |
+| `GET /zerar/previa` | `configuracao.u`, perfil Admin, sem "ver como", posto e origem local; 6 por minuto | 200 (abaixo); 403 `so_admin` |
+| `POST /zerar/fase-teste` | o mesmo, mais `X-Eterna: 1`, corpo até 1 KB `{"confirma":"ZERAR"}`; 2 por minuto | 202 `{"ok":true,"id":"fase-teste-20261124-2300","vai":{...},"reinicia":true}`; 400 `confirma`; 403 `so_admin`, `so_ver` ou origem; 409 `{"error":"bloqueado","bloqueios":[...]}`; 429 |
+| `GET /status` (público, mínimo) | todos | ganha `"zerada": "fase-teste-..."` ou `null` |
+
+Exemplo de `GET /zerar/previa` (números inventados):
+
+```json
+{"ok":true,"pode":true,"bloqueios":[],
+ "vai":{"fotos":5200,"dias_fotos":9,"miniaturas":5200,"sessoes":410,"dias_sessoes":9,"vendas":38,"eventos":160,
+        "pedidos":12,"galerias":30,"rostos_fotos":4800,"rostos":9100,"poses":0,"dias_metricas":9,"visitas":300,
+        "recortes":700,"montagens":250,"selfies":90,"fotografo_dias":40,"fila_nuvem":0,
+        "ativ_vendas":15,"ativ_entregas":11,"ativ_videos":11,"cartoes_bloqueados":11},
+ "fica":{"usuarios":20,"postos":6,"leitores":2,"treino_marcacoes":9800,"dias_roverpix":50,"dias_entradas":40,
+         "cartoes":2000,"ativ_vendas_antigas":120},
+ "ultima":null,"falha":null,"prazo_dias":30,"ativacoes":true}
+```
+
+Depois da zeragem, `ultima` = `{"id","em","por","pasta","apagar_a_partir_de","resumo":{"vai":{...}}}`. `falha` traz só o passo e o código do motivo, nunca caminho nem texto de erro.
+
+**Registro:** `login_log` com `zerar_pedido`, `zerar_feito`, `zerar_falhou` e `zerar_expirado`. No registro do serviço, linhas `zerar:` só com números (nenhum id de foto, sessão ou cliente).
+
+**Desfazer:** só pela linha de comando, com o agente parado: `eterna-agente.py --desfazer-zeragem <id> [--sobrescrever]`. Devolve arquivos e bancos; se já houve venda depois da zeragem, só com `--sobrescrever`, e o que estava no lugar vai para `arquivo/<id>/pos-zeragem/`. Funciona sem o `rostos.db` do arquivo.
+
+**Correções que entraram junto:** `load_lib` e o `backup-originais.py` ignoram pastas que começam com ponto (o arquivo não volta para a biblioteca nem sobe para a nuvem); `cena_limpa` confere as fotos marcadas no Treino antes de apagar (o reconhecimento do gramado continua depois da zeragem); os originais já copiados para a nuvem passam da tabela `feito` para `arquivado` no `backup-originais.db`.
+
+Testes: `testes/zerar_fase_teste_agente.py`, `testes/zerar-fase-teste.js`, `testes/v9944-zerar-servidor.js`, `testes/v9944_zerar_falhas_root.py`, `testes/backup_originais_envio.py`, `testes/cena_agente.py`.
+
+### 9. Lixeira da IA, parte A (modo Teste)
+
+O servidor separa sozinho as fotos sem salvação, como a pasta de spam do e-mail. Admin e Supervisora conferem e devolvem com "Não é ruim". Nada é apagado. Plano: `docs/planos/2026-11-24-lixeira-ia.md`.
+
+**Medida na chegada.** No leitor de rostos, depois da luz e depois de a foto entrar na selfie, na fila do fotógrafo e na sessão (a selfie não espera). Usa a imagem que o leitor já abriu e as caixas dos rostos. Custa poucos milissegundos de processador por foto e não usa a placa de vídeo.
+
+| Motivo | Medida | Limite inicial |
+| --- | --- | --- |
+| `escura` (Muito escura) | luz do maior rosto; sem rosto, o centro do quadro | rosto com mediana abaixo de 22; sem rosto, mediana abaixo de 18 com 60% ou mais escuro |
+| `estourada` (Muito estourada) | p95 e parte estourada do rosto; sem rosto, o centro | rosto com p95 de 254 e 40% ou mais estourado; sem rosto, mediana de 235 e 50% |
+| `desfocada` (Tremida ou desfocada) | variância do Laplaciano no centro (a 1024 px) e no maior rosto | com rosto, os dois abaixo de 25; sem rosto, o centro abaixo de 20 |
+| `sem_ninguem` (Sem ninguém na foto) | rostos achados em qualquer tamanho (`ler_rostos(..., brutos=)`) | nenhum |
+
+- O veredito é dado uma vez e não muda depois, nem quando os limites mudam.
+- Falha aberta: sem OpenCV, sem medida ou com erro, a foto fica fora da lixeira.
+- `ETERNA_LIXEIRA=0` desliga a medida e qualquer efeito (`/status.lixeira.on` = false).
+- **Em Teste nada sai do Checkout**, das sessões, das bases de IA nem das galerias. A tela só mostra o que a IA separaria.
+
+**Dados (`treino.db`, que já vai no backup e a zeragem não mexe)**
+- `lixeira (pid, dia, v, mot, dados, em, rec_por, rec_em)`: uma linha por foto medida; `mot` = motivos separados por vírgula ou nulo; `dados` só com números.
+- `lixeira_log (pid, acao, por, em)`: cada "Não é ruim" (`recuperar`) e cada mudança da chave (`cfg_medir`, `cfg_ligada`).
+- Chave em `estado.db` `config/lixeira` (`modo` `medir` ou `ligada`, `valendo`, `desde`, `por`, `lim`), só pela rota; a sincronização do `/ponto/docs` recusa.
+- Exclusão LGPD (`treino_lgpd`) apaga as linhas da foto nas duas tabelas. A limpeza da madrugada apaga a linha da foto que saiu da biblioteca, menos as recuperadas e as marcadas no Treino (são a régua).
+
+**Rotas (todas com origem local e `no-store`; nenhuma resposta de erro leva pid ou caminho)**
+
+| Rota | Quem | Formato |
+| --- | --- | --- |
+| `GET /lixeira?dia=aaaa-mm-dd` | `qualidade.r`; 30 por minuto por pessoa | itens do dia com motivo e foto ainda na biblioteca, da mais nova para a mais antiga, até 3.000; `dias` com a contagem dos últimos 30 |
+| `GET /lixeira/medida` | `qualidade.r`; 10 por minuto | régua contra o Treino, por motivo: `n`, `certas`, `erradas`, `precisao`, `passa`, `falta` |
+| `POST /lixeira/recuperar {pid}` | `qualidade.u`; `X-Eterna`; 120 por minuto; corpo até 1 KB | 200 `{ok, rec}`; 200 `igual`; 400 `pid`; 404 `pid`; 403 `so_ver`; 429 |
+| `POST /lixeira/config {modo, lim?}` | `configuracao.u` e perfil Admin; 6 por minuto | 200 `{ok, cfg}`; 200 `igual`; 400 `modo` ou `lim`; 403 `so_admin`; **409 `em_breve` para `ligada` nesta versão** |
+
+Exemplo de `GET /lixeira?dia=2026-11-25` (números e códigos inventados):
+
+```json
+{"v":1,"dia":"2026-11-25","modo":"medir","valendo":[],"n":3,"recuperadas":1,
+ "itens":[{"pid":"9f8e7d6c","mot":["desfocada"],"em":"2026-11-25T10:31:02","fotografo":"fotografo_a",
+           "card":"LP0000","ordem":4,"treino":"fraca","rec":null,"m":{"nq":12.1,"nr":6.3,"n":1,"nb":1}}],
+ "dias":[{"dia":"2026-11-25","n":3},{"dia":"2026-11-24","n":0}],"mais":false}
+```
+
+`/status.lixeira` (só números e códigos):
+
+```json
+{"v":1,"on":true,"modo":"medir","rev":12,"hoje":4,"n7":9,"dias":7,"valendo":[],"hoje_fora":0,"ms_med":4.1}
+```
+
+**Tela**
+- Curadoria › Lixeira da IA (view `lixeira`, módulo `qualidade`: Ver abre a lista, Alterar usa "Não é ruim"), logo depois de Alertas. No menu do Admin e da Supervisora (perfil pronto e `migraLixeira24`, marca `mlx24`). O Validador tem a letra, mas não ganha a tela no menu.
+- `vLixeira`: pílula do modo ("Em teste: estas fotos continuam à venda"), filtro de dia, chips de motivo, grade com miniatura, motivo, fotógrafo, hora e o selo do Treino quando houver, botão "Não é ruim", lupa sobre a lista filtrada e o quadro "Quanto a IA acerta" (pede `/lixeira/medida` só ao abrir).
+- Contagem no item do menu (`lxPill`): fotos dos últimos 7 dias na lixeira sem recuperar (`n7`, `LX_MENU_DIAS`). Some quando é zero e cai na hora quando alguém recupera.
+- "Não é ruim" não grava marcação no Treino. Conta como erro na régua.
+- Chave em IA automática (`lxCfgPanel`): Teste valendo, Ligado visível e travado ("O Ligado chega na próxima versão"). Só o Admin muda.
+
+Testes: `testes/lixeira_agente.py`, `testes/lixeira.js`, `testes/v9944-lixeira-real.js`, `testes/seguranca_rotas_agente.py`.
+
+### Avisar o Ronaldo
+
+Três pontos que mexem em coisas dele:
+
+1. **Quatro testes dele estão desatualizados:** `testes/galeria-qr.js`, `testes/ondas-ux-h.js`, `testes/checkout-barra-escolhidas.js` e `testes/posto-checkout.js`. A última mudança neles é de 11 a 18/11, antes das versões dele que mexeram no Posto, no Checkout e na galeria (v99.38.x a v99.42.x). Eles precisam acompanhar as telas de hoje, e quem conhece a regra nova de cada tela é ele.
+2. **`ler_rostos` ganhou o parâmetro opcional `brutos`** (Lixeira da IA). É uma lista que recebe quantos rostos o detector achou em qualquer tamanho, antes do filtro `ROSTO_MIN`. Quem não passa o parâmetro tem o mesmo resultado de antes.
+3. **`coTroca` (compra online) usa a chave `co_sem_perm` no 403.** Antes mostrava `ps_modo_sem_perm`, o texto das poses. O texto novo, nas 5 línguas: "Só quem pode mudar a Configuração liga ou desliga a compra online."
+
+### Pendências
+
+- **IMPORTANTE:** o modelo das poses não está instalado. `POSE_SHA` e `POSE_MMPROJ_SHA` estão vazios, `LLAMA_TAG` e `LLAMA_COMMIT` não têm padrão no `visao-instalar.sh` e o `BASE` do instalador aponta para `main`. Enquanto isso a classificação não abre (falha fechada). Fixar só com os valores conferidos pelo Ronaldo.
+- **IMPORTANTE:** números por fotógrafo são dado de funcionário. A permissão `desempenho.r` é conferida no servidor em todas as rotas novas, no `/metricas/dia` e no `/metricas`. Rota nova com dado por fotógrafo tem que fazer o mesmo.
+- **IMPORTANTE (LGPD):** a pasta de arquivo da zeragem guarda fotos, rostos e consentimentos de visitantes da fase de teste. Ela não tem rota que a sirva e não vai para a nuvem, mas ninguém apaga sozinho: o Ronaldo apaga o `rostos.db` do arquivo em até 7 dias (depois de conferir a zeragem) e o resto das imagens em 30 dias. A exclusão LGPD de uma foto que está no arquivo é feita à mão. Passo a passo em `docs/SERVIDOR-ESTADIO.md`.
+- **IMPORTANTE:** um Posto, Checkout ou tablet aberto durante a zeragem, com fila antiga ainda não enviada, pode mandar dados do teste ao servidor antes de limpar a própria cópia. Por isso todos ficam fechados antes das 23h. Melhoria futura: o servidor recusar evento com data anterior à zeragem.
+- **IMPORTANTE:** a Lixeira da IA está em Teste. A parte B (Ligado de verdade: a foto sai do Checkout, da Venda manual e das bases de IA, aviso em Alertas) fica para a próxima versão, prevista até 27/11. Os limites de desfoque são estimativas e precisam ser revistos com 2 ou 3 dias de fotos reais antes de ligar.
+- O alerta de exposição começa `desligada` (na tela, "Parado no servidor"). Para medir, o Admin toca em Desligado em Configurações › IA automática. Para gerar alertas de luz, a calibração precisa de marcações suficientes no Treino (critério acima).
+- Servidor novo começa com os Fundos de IA automáticos em `desligada` ("Parado no servidor") e o Resultado sem números até alguém escolher Ligado ou Desligado. Mudar o padrão para `medir` fica para depois.
+- A resposta "Serve para recorte de IA?" ainda não veta a base dos fundos de IA. Primeiro é preciso medir no Resultado quantas bases a pessoa diria que não servem.
+- Comparação por set na conversão e a aba "Poses e roteiro" ficam para as próximas fatias.
 ## v99.38.0 (23/11/2026): foto do cliente na entrega
 
 Pedido do Ronaldo: tirar a foto do cliente da venda (tablet) e passar para quem entrega o vídeo (notebook com câmera no campo).

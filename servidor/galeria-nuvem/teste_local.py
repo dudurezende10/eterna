@@ -143,12 +143,15 @@ ok(st == 200 and (next((f for f in r["galeria"]["fotos"] if f["pid"] == "b00027"
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True})
 ok(st == 200 and r["motivo"] == "nao_encontrado" and r["restam"] == 4, "cliente errado com leitura completa: conta erro, mesmo com comprada na venda")
 
-# v96.1 (decisão do Eduardo, 10/11): o QR sozinho abre as compradas e cortesias da venda, sem selfie; nunca as à venda
+# 24/11 (Ronaldo): o QR sozinho não abre mais nada; as compradas e cortesias só depois da selfie
 st, r = chama("GET", "/g/%s/livres" % tok)
-ps = sorted(f["pid"] for f in r["galeria"]["fotos"])
-ok(st == 200 and ps == ["a00000", "a00001", "b00026", "b00027"] and all(f["original"] for f in r["galeria"]["fotos"]), "livres: só pelo QR, compradas e cortesia com original (%s)" % ps)
-ev_l = [v for k, v in T.d.items() if k[0] == "EVT#" + tok and v["tipo"] == "livres_vistas"]
-ok(ev_l and ev_l[-1]["livres"] == "4", "livres: evento livres_vistas com a contagem")
+ok(st == 403 and "galeria" not in r, "livres: fechada, o QR sozinho não abre as compradas")
+cons = [v for k, v in T.d.items() if k[0] == "CON#" + tok]
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True, "email": " Cliente@Exemplo.com "})
+cons2 = [v for k, v in T.d.items() if k[0] == "CON#" + tok]
+ok(len(cons2) == len(cons) + 1 and any(v.get("email") == "cliente@exemplo.com" for v in cons2), "e-mail do cliente gravado com o consentimento")
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True, "email": "nao-e-email"})
+ok(not any(v.get("email") == "nao-e-email" for k, v in T.d.items() if k[0] == "CON#" + tok), "e-mail inválido não é gravado")
 ev_ok = sorted((k[1], v) for k, v in T.d.items() if k[0] == "EVT#" + tok and v["tipo"] == "selfie_ok")
 ok(ev_ok and "livres" in ev_ok[-1][1], "selfie_ok registra quantas compradas e cortesias abriram junto")
 S3.heads = 0
@@ -157,8 +160,6 @@ ok(S3.heads == 8, "galeria_obj: um head_object por chave na chamada (%d para 4 f
 # grupo de escola: nada sem rosto
 tokE = "E" * 22
 chama("POST", "/ponto/galerias", {"manifesto": dict(manv, token=tokE, codigo=None, tipo="evento")}, {"x-eterna-ponto": seg})
-st, r = chama("GET", "/g/%s/livres" % tokE)
-ok(st == 200 and r["galeria"]["fotos"] == [], "livres: grupo de escola não abre nada sem rosto")
 
 # v96.1: sessão de menor usa o limiar de criança (95): semelhança 90 abre a de adulto e não a de menor
 tokA, tokM = "F" * 22, "G" * 22
@@ -179,7 +180,7 @@ ok(st == 429 and r["motivo"] == "bloqueado" and r.get("teto") is True and app.ep
 st, r = chama("POST", "/g/%s/rosto" % tokT, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.1.2")
 ok(st == 429, "teto: parada também para quem bate")
 ok(len([v for k, v in T.d.items() if k[0] == "EVT#" + tokT and v["tipo"] == "galeria_teto_selfie"]) == 1, "teto: um evento de alerta")
-ok(chama("GET", "/g/%s/livres" % tokT)[0] == 200, "teto: as compradas continuam pelo QR")
+ok(chama("GET", "/g/%s/livres" % tokT)[0] == 403, "teto: sem selfie nada abre")
 st, r = chama("POST", "/g/%s/rosto" % tokA, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.1.3")
 ok(st == 200 and r.get("ok"), "teto: outra galeria não é afetada")
 for t_ in (tokA, tokM, tokT):                          # tira do ar as galerias deste bloco (coleções apagadas)
@@ -264,6 +265,24 @@ ok(m_ == "POST" and u_ == "https://maracanatouradmin.eleventickets.com/api/Super
 ok(st_ == "pago" and d_["valor"] == 145.0 and d_["idpedido"] == "LOC1", "GetCart: pagamento PA e itens PA = pago, valor somado: %r" % ((st_, d_),))
 ok(gc({"id": None, "error": None, "result": [{"idreferencia": "ON-ABC", "pag": [{"status": "PA"}], "itens": [it_("PA")]}]})[0] == "pago", "GetCart: aceita a resposta dentro de result")
 ok(gc([])[0] == "pendente", "GetCart: [] = cliente ainda não fechou: pendente")
+# 24/11 (log real): o result veio como objeto, não lista
+P_ = {"idmovimentacao": "9", "idreferencia": "ON-ABC", "localizador": "LOC2", "pag": [{"status": "PA"}], "itens": [it_("PA", 35.0)]}
+ok(gc({"id": None, "error": None, "result": P_}) == ("pago", gc([P_])[1]) and gc({"result": P_})[1]["idpedido"] == "LOC2", "GetCart: result com um pedido sozinho (objeto)")
+ok(gc({"result": {"9": P_}})[0] == "pago", "GetCart: result com pedidos por id")
+ok(gc({"result": {"total": 1, "status": True, "pedidos": [P_]}})[0] == "pago", "GetCart: result com a lista dentro de uma chave")
+ok(gc({"result": dict(P_, pag={"status": "PA"}, itens={"a": it_("PA", 35.0)})})[0] == "pago", "GetCart: pag e itens como objeto")
+ok(gc({"result": {}})[0] == "pendente" and gc({"result": dict(P_, idreferencia="OUTRO", localizador="X")})[0] == "pendente", "GetCart: objeto vazio ou de outra referência não libera")
+# 24/11 (log real): result = página com tickets; cada ticket é um item com status próprio
+PG_ = lambda ts: {"id": None, "error": None, "result": {"total_pages": 1, "total_results": len(ts), "current_page": 1,
+      "page_summary": {"cupom": None, "quantity": len(ts), "subtotal": 35, "total": 35}, "tickets": ts}}
+T_ = lambda st, ref="ON-ABC", v="35": {"idreferencia": ref, "localizador": "11248XX", "status": st, "valor": v}
+st_, d_ = gc(PG_([T_("PA"), T_("PA", v="10")]))
+ok(st_ == "pago" and d_["idpedido"] == "11248XX" and d_["valor"] == 45.0, "GetCart tickets: todos PA = pago, localizador e valor somado: %r" % ((st_, d_),))
+ok(gc(PG_([]))[0] == "pendente", "GetCart tickets: lista vazia = pendente (o resumo da página não vira pedido)")
+ok(gc(PG_([T_("PA"), T_("RE")]))[0] == "pendente", "GetCart tickets: um ainda reservado não libera")
+ok(gc(PG_([T_("PA", ref="OUTRO")]))[0] == "pendente", "GetCart tickets: ticket de outra referência não libera")
+ok(gc(PG_([T_("CA"), T_("EX")]))[0] == "cancelado", "GetCart tickets: todos CA/EX = cancelado")
+ok(gc(PG_([{"idreferencia": "ON-ABC", "localizador": "L", "status": "PA"}]))[1]["valor"] is None, "GetCart tickets: sem campo de valor, valor None")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "RE"}], "itens": [it_("RE")]}])[0] == "pendente", "GetCart: reservado = pendente")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "PA"}], "itens": [it_("PA"), it_("CA")]}])[0] == "pendente", "GetCart: item cancelado no meio não libera")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "CA"}], "itens": [it_("CA"), it_("EX")]}])[0] == "cancelado", "GetCart: todos CA/EX = cancelado")
@@ -320,6 +339,16 @@ ok(st == 200 and len(r["vendas"]) == 1 and r["vendas"][0]["id"] == ref and r["ve
 ev_v = {"rawPath": "/ponto/vendas-online", "headers": {"x-eterna-ponto": seg}, "queryStringParameters": {"desde": r["next"]}, "requestContext": {"http": {"method": "GET", "sourceIp": "1.1.1.1"}}}
 ok(json.loads(app.handler(ev_v, ctx)["body"])["vendas"] == [], "com o 'desde', nada repetido")
 ok(chama("GET", "/ponto/vendas-online")[0] == 401, "vendas online sem o segredo do ponto: 401")
+# 24/11: chave da compra online pelo painel do ponto (GET|POST /ponto/compra)
+ok(chama("GET", "/ponto/compra")[0] == 401, "chave da compra sem o segredo do ponto: 401")
+st, r = chama("GET", "/ponto/compra", cab={"x-eterna-ponto": seg})
+ok(st == 200 and r["ligada"] is True and r["pode"] is True, "sem registro, a compra fica ligada: %r" % (r,))
+ok(chama("POST", "/ponto/compra", {"ligada": "nao"}, {"x-eterna-ponto": seg})[0] == 400, "ligada que não é sim/não: 400")
+st, r = chama("POST", "/ponto/compra", {"ligada": False, "por": "admin"}, {"x-eterna-ponto": seg})
+ok(st == 200 and r["ligada"] is False and r["por"] == "admin" and r["em"], "painel desliga a compra")
+ok(chama("GET", "/g/%s/info" % tokP)[1]["compra"] is False and not app.compra_ligada(app.manifesto(tokP)), "desligada no painel: a galeria não vende")
+st, r = chama("POST", "/ponto/compra", {"ligada": True, "por": "admin"}, {"x-eterna-ponto": seg})
+ok(r["ligada"] is True and chama("GET", "/g/%s/info" % tokP)[1]["compra"] is True, "painel liga de novo e a galeria volta a vender")
 # 23/11: pagou menos que o pedido (carrinho mexido no checkout da Imply): não libera, fica em erro para a TI
 st, r = ped({"pids": venda[4:5], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli}, ip="5.0.0.7")
 ref3 = r["ref"]

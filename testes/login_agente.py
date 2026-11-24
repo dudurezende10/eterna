@@ -200,6 +200,46 @@ ok(st == 200 and "Max-Age=0" in ck, "sair limpa o cookie")
 st, _, _ = pede("/auth/eu", cookie=adm)
 ok(st == 401, "sair encerra a sessão no servidor")
 
+# 6b. (24/11) sessão anterior encerrada ao entrar: o mesmo navegador entrando de novo (o Sair não chegou ao servidor) não deixa
+# a sessão de antes valendo; vale para o Entrar e para o Crie sua senha
+def sessoes(u):
+    db = m.auth_db()
+    try:
+        return db.execute("select count(*) from sessao_login where usuario = ?", (u,)).fetchone()[0]
+    finally:
+        db.close()
+st, _, ck = pede("/auth/entrar", {"usuario": "ronaldo", "senha": SENHA})
+c1 = cookie_de(ck)
+n1 = sessoes("ronaldo")
+st, _, ck = pede("/auth/entrar", {"usuario": "ronaldo", "senha": SENHA}, c1)
+c2 = cookie_de(ck)
+ok(st == 200 and c2 != c1, "6b: entrar de novo devolve sessão nova: %s" % st)
+ok(pede("/auth/eu", cookie=c1)[0] == 401, "6b: entrar de novo no mesmo navegador encerra a sessão anterior no servidor")
+ok(pede("/auth/eu", cookie=c2)[0] == 200 and sessoes("ronaldo") == n1, "6b: a sessão nova vale e não sobra sessão a mais: %d %d" % (n1, sessoes("ronaldo")))
+st, _, _ = pede("/auth/entrar", {"usuario": "ronaldo", "senha": "senha errada de teste"}, c2)
+ok(st == 401 and pede("/auth/eu", cookie=c2)[0] == 200, "6b: senha errada não encerra a sessão que está valendo")
+doc("troca.sessao", {"painel": {"r": True}})
+prov = m.auth_criar("troca.sessao", "teste")
+st, j, ck = pede("/auth/trocar", {"usuario": "troca.sessao", "senha": prov, "nova": "janela azul abre cedo"}, c2)
+c3 = cookie_de(ck)
+ok(st == 200 and j.get("usuario") == "troca.sessao" and pede("/auth/eu", cookie=c2)[0] == 401, "6b: Crie sua senha também encerra a sessão anterior: %s %s" % (st, j))
+ok(pede("/auth/eu", cookie=c3)[0] == 200, "6b: a sessão do Crie sua senha vale")
+pede("/auth/sair", {}, c3)
+# 6c. (24/11) senha provisória no navegador que estava no "ver como": as duas sessões acabam já no Entrar, e o Crie sua senha
+# seguinte não é recusado como "ver como" (403 so_ver)
+doc("prov.vercomo", {"painel": {"r": True}})
+tk_v = m.auth_sessao_nova("troca.sessao", "ronaldo", m.ASSUMIR_S)
+tk_a = m.auth_sessao_nova("ronaldo")
+ck_v = "%s=%s; %s=%s" % (m.AUTH_COOKIE, tk_v, m.ASSUMIR_COOKIE, tk_a)
+prov = m.auth_criar("prov.vercomo", "teste")
+st, j, ck = pede("/auth/entrar", {"usuario": "prov.vercomo", "senha": prov}, ck_v)
+ok(st == 200 and j.get("troca") and m.AUTH_COOKIE + "=;" in ck and m.ASSUMIR_COOKIE + "=;" in ck, "6c: provisória no ver como apaga os dois cookies: %s %s %r" % (st, j, ck))
+ok(pede("/auth/eu", cookie="%s=%s" % (m.AUTH_COOKIE, tk_v))[0] == 401 and pede("/auth/eu", cookie="%s=%s" % (m.AUTH_COOKIE, tk_a))[0] == 401,
+   "6c: provisória no ver como encerra a sessão vista e a do Admin")
+st, j, ck = pede("/auth/trocar", {"usuario": "prov.vercomo", "senha": prov, "nova": "janela verde fecha tarde"}, ck_v)
+ok(st == 200 and j.get("usuario") == "prov.vercomo", "6c: o Crie sua senha seguinte não leva 403 so_ver: %s %s" % (st, j))
+pede("/auth/sair", {}, cookie_de(ck))
+
 # 7. origem: outro site não chama as rotas; sem X-Eterna também não
 st, _, _ = pede("/auth/entrar", {"usuario": "ronaldo", "senha": SENHA}, extra={"Origin": "https://exemplo.com"})
 ok(st == 403, "outra origem é recusada")

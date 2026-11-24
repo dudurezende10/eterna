@@ -1,6 +1,12 @@
 # Plano: Estatística de poses (ramo `feat/poses-estatistica`, a partir de `idiomas-base` 77e0901)
 
-Este texto pode ir para `docs/planos/2026-11-23-poses-estatistica.md` como está, porque não traz nenhum número de venda do relatório. Tem só a metodologia, as regras combinadas com os fotógrafos e os nomes das poses.
+## Status (24/11/2026)
+- **Pronto:** a P1 (classificador no servidor, chave Desligada/Sombra/Ligada, `poses.db` fora do backup, instalador e medição), com as revisões de 23/11 e 24/11. Revisor, testador e segurança aprovaram. Sai na **v99.43.0**, junto com os alertas do fotógrafo. Com a chave no padrão (Desligada), nada roda.
+- **Depende do Ronaldo (TI), nesta ordem** (passos em `docs/SERVIDOR-ESTADIO.md`, "Classificação de poses"):
+  1. Rodar o `visao-instalar.sh` com `LLAMA_TAG`, `LLAMA_COMMIT`, `POSE_SHA_MODELO` e `POSE_SHA_MMPROJ`, e mandar esses valores e o commit do repositório do modelo no Hugging Face.
+  2. Fixar no código `POSE_SHA` e `POSE_MMPROJ_SHA` (agente e instalador), o padrão de `LLAMA_TAG` e `LLAMA_COMMIT` no `visao-instalar.sh` e o commit no `BASE` do instalador. Publicar.
+  3. À noite, com a classificação Desligada, rodar `medir-poses.py --n 50` e mandar o resultado (meta: mediana até 2,5 s e 95% de respostas válidas).
+- **Depois:** o Eduardo decide quando pôr em Sombra. P2 a P5 ainda não começaram.
 
 ## Objetivo
 Toda foto que chega ao servidor é classificada à noite por um modelo de visão local, com set, quem aparece, adereço, pose, enquadramento, orientação e vibração. O Eterna então calcula sozinho a taxa de escolha, a cobertura e a produção por fotógrafo, usando a metodologia do relatório de 22/11.
@@ -92,7 +98,7 @@ O roteiro fica em `servidor/linux/visao-instalar.sh` (repositório, sem segredo)
 
 **`agente/eterna-agente.py`, bloco "Poses" depois do bloco "Cena"**
 - Constantes:
-  - `POSES_DB = ~/Eterna/ponto/poses.db`, que entra na lista de `bancos` do backup ao lado do `TREINO_DB`.
+  - `POSES_DB = ~/Eterna/ponto/poses.db`, fora do backup na nuvem (revisão 24/11: tem pid e card, e dado de visitante não sai do servidor).
   - `POSE_TAXO` (abaixo) e `POSE_SAIDA` (esquema da resposta com chaves curtas).
   - `POSE_VERSAO`: hash de SHA do modelo, SHA do mmproj, prompt e versão da taxonomia.
   - `POSE_JANELA_PADRAO = ("20:00","07:00")`, `POSE_LOTE = 8`, `POSE_VRAM_LIVRE_MB = 9000`, `POSE_DIAS = 7` (quantos dias para trás a noite cobre), `POSE_MORTES_MAX = 3`, `POSE_BIN` (caminho fixo; os testes trocam pelo módulo).
@@ -347,13 +353,17 @@ O `POSE_GUIA_PADRAO` da P4 sai do roteiro dos fotógrafos por set de 22/11, item
 ## Notas da implementação da P1 (23/11)
 - `POSE_TAXO.set` é o `TREINO_PONTOS` (sem `chroma`, D4). Ganhou `chute_comemora` (pose) e a regra de coerência `chute_*` cobre ela.
 - `POSE_VERSAO` virou a função `pose_versao()` (8 hex de SHA do modelo, SHA do mmproj, `POSE_PROMPT_V` e `POSE_TAXO_V`), porque os SHA são trocados nos testes e serão fixados depois.
-- `POSE_SHA` e `POSE_MMPROJ_SHA` ficam vazios até o Ronaldo conferir o download (`instalar-poses-modelos.py --conferir`); vazio = o filho não abre (`sem_modelo`).
+- `POSE_SHA` e `POSE_MMPROJ_SHA` ficam vazios até a primeira instalação (`instalar-poses-modelos.py --esperado-modelo <sha> --esperado-mmproj <sha>`, revisão 24/11: sem o SHA esperado nada é baixado); vazio = o filho não abre (`sem_modelo`).
 - O esquema `POSE_SAIDA` mora só no agente e vai em cada pedido ao filho; o prompt mora só no filho, e o teste confere que ele define todos os valores da taxonomia. O filho responde `prompt_v`; diferente do `POSE_PROMPT_V` do agente, ele é fechado (motivo `versao`).
 - Motivos além dos três da P1: `set_diverge` (o set do modelo diverge do reconhecimento do ponto Ligado com confiança de 0,70 ou mais: dúvida, dados ficam) e `nao_classificavel` (a foto em si não serve: caminho recusado ou imagem ilegível; não volta à fila). Erro do servidor de modelo numa foto não grava linha: a foto tenta de novo na noite seguinte.
 - A memória da placa só é conferida antes de abrir o filho (aberto, o próprio modelo ocupa a placa). Recorte e montagem marcam o último trabalho de prioridade 0 ou 1 (`poses_marca_prio`), na fila ou terminando.
 - `/status.poses` segue o contrato e traz também `modelo.pronto`, `modelo.carga_ms` e `rodando`. `modelo.erro` pode ser `conferindo` (o `/status` nunca lê os 6 GB para conferir o SHA; quem confere é o laço).
 - `poses_medida()` existe na P1 só com `n: 0` (a medida é da P2), então Ligada responde sempre 409 `criterio` nesta fatia.
-- O teste troca o binário do `llama-server` por `testes/_poses_filho_falso.py` (um servidor HTTP local que confere a linha de comando e a chave); o `agente/eterna-poses.py` testado é o de verdade.
+- O teste troca o binário do `llama-server` por `testes/_poses_filho_falso.py` (um servidor HTTP local que confere a linha de comando e a chave); o `agente/eterna-poses.py` testado é o de verdade. O falso recebe a pasta de controle pela linha do lançador do teste (`--falso-dir`): o `env_llama` de produção não repassa variável de teste.
+- Revisão de 23/11:
+  - O SHA dos 6,2 GB só é conferido pelo laço, com Sombra ou Ligada, dentro da janela e depois de `recorte_ocupado` e `montagem_ocupada` (ordem do `poses_pode_rodar`: desligada, fora_janela, parado/versao, recorte, montagem, sem_modelo/conferindo, vram). O resultado fica em `~/Eterna/ponto/poses-sha.json` (0600: tamanho, mtime, inode e SHA lido de cada arquivo) e não é relido sem mudança, nem em outra partida. Fora disso o `/status` diz `conferindo` ou o estado guardado. O filho recebe `--conferido` (tamanho, mtime e inode) e só confere isso.
+  - Nenhum `llama-server` órfão: o filho avisa `{"llama_pid"}` logo depois do Popen (o agente grava no `poses-filho.json`); o SIGTERM do filho fecha o `llama-server` também no meio da abertura (o SIGTERM entre o Popen e o `self.p` fica anotado; `pthread_sigmask` não serve, porque o `llama-server` herdaria a máscara); o agente manda SIGTERM, espera `POSE_TERM_SEG` e só então SIGKILL, e no grupo do `llama-server` SIGTERM antes do SIGKILL; o prazo do filho (300 s) conta do início e é menor que o do agente (360 s); na partida o agente encerra o que sobrou pelo `poses-filho.json` e procurando `--api-key-file` dentro de `ponto/poses-*`, e apaga as pastas de chave que sobraram.
+  - Versão do filho diferente: parado até a noite seguinte (motivo `versao`). Lote inteiro com erro do servidor de modelo (nenhuma foto respondida): as fotos ficam na fila e conta como morte do filho (motivo `servidor`; na 3ª seguida, `parado`), nunca `fim_fila`. `ValueError` do PIL vira `imagem`. A lista vazia só é refeita a cada `POSE_FILA_SEG`, e pausa depois do fim da fila não troca o `fim_fila`.
 
 ## Contratos
 
@@ -408,7 +418,7 @@ O `POSE_GUIA_PADRAO` da P4 sai do roteiro dos fotógrafos por set de 22/11, item
 - **Texto dentro da foto tentando mandar no modelo** (placa, camiseta): a gramática fechada mais o `pose_valida` limitam o estrago a um rótulo errado. Nada da resposta vira HTML sem `esc()`, e nada vira comando.
 - **Ranking dos fotógrafos:** a permissão é conferida no servidor, em todas as rotas e no Exportar, nunca só na tela.
   - Números por fotógrafo são dado pessoal de funcionário: acesso restrito, sem nada sobre presença, e o PDF geral sem nomes.
-- **LGPD:** as linhas de `pose` saem na exclusão e vencem em 60 dias. Os agregados são só contagens, sem pid. Nenhuma foto sai do servidor. `poses.db` vai para o backup só com texto.
+- **LGPD:** as linhas de `pose` saem na exclusão e vencem em 60 dias. Os agregados são só contagens, sem pid. Nenhuma foto sai do servidor. `poses.db` fica fora do backup na nuvem.
 - **Disputa pela placa no dia de operação:** janela, pausa quando o recorte tem trabalho, conferência de memória livre e o filho fechado fora da janela.
   - Risco que sobra: falta de memória na placa durante um lote noturno se chegar um cartão com muitas fotos. A defesa é terminar o lote (no máximo 8 fotos) antes de liberar.
 - **Escala:** cada venue classifica no próprio servidor. Com 100 venues, a taxonomia e o guia ficam por venue em `poses.db`. Venue sem placa não tem esta função (com o processador seriam mais de 20 s por foto).
@@ -426,11 +436,11 @@ O `POSE_GUIA_PADRAO` da P4 sai do roteiro dos fotógrafos por set de 22/11, item
 7. **Calendário:** Sombra a partir de 25/11, conferência das 300 até 30/11, Ligada em 01/12. Primeiro mês fechado: dezembro (em 01/01), comparado com a referência que você carregar. Recomendo esse calendário.
 
 ## Arquivos que a entrega toca
-- `/home/claude/eterna-ligar/agente/eterna-agente.py` (blocos Treino, Cena, `ROTAS`, `lgpd_excluir`, backup, `AUTH_MODULOS`)
-- `/home/claude/eterna-ligar/agente/eterna-poses.py`, `/home/claude/eterna-ligar/agente/instalar-poses-modelos.py`, `/home/claude/eterna-ligar/agente/medir-poses.py` (novos)
-- `/home/claude/eterna-ligar/servidor/linux/visao-instalar.sh` (novo)
-- `/home/claude/eterna-ligar/index.html` (Treino, Fundos de IA técnico, `VIEWS`/`MODULES`/`PRESETS`, view `poses`, `REL`, `pdfBlob`, I18N)
-- `/home/claude/eterna-ligar/testes/` (os arquivos citados em cada fatia)
+- `agente/eterna-agente.py` (blocos Treino, Cena, `ROTAS`, `lgpd_excluir`, backup, `AUTH_MODULOS`)
+- `agente/eterna-poses.py`, `agente/instalar-poses-modelos.py`, `agente/medir-poses.py` (novos)
+- `servidor/linux/visao-instalar.sh` (novo)
+- `index.html` (Treino, Fundos de IA técnico, `VIEWS`/`MODULES`/`PRESETS`, view `poses`, `REL`, `pdfBlob`, I18N)
+- `testes/` (os arquivos citados em cada fatia)
 - Documentação: `docs/CONTEXTO-ETERNA.md`, `docs/DOCUMENTACAO-TECNICA.md`, `docs/GUIA-DA-EQUIPE.md`, `docs/SERVIDOR-ESTADIO.md` (o que o Ronaldo instala)
 
 Modelo: Qwen3-VL-8B-Instruct, Apache 2.0

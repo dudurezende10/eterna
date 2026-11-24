@@ -81,11 +81,12 @@ try{
   await pg.keyboard.press('Escape');await pg.waitForTimeout(200);
   // 23: filtro Fotógrafo. 18/11 (Eduardo): o ponto não importa mais; sem o seletor Ponto, sem o ponto no cabeçalho, e o ponto
   // que ficou guardado no estado (o antigo padrão era campo4) não esconde sessão nenhuma
-  await pg.selectOption('select[data-act="imp-key"]','samuel');await pg.waitForTimeout(300);
-  ok((await pg.$$eval('.up-sess',bs=>bs.map(b=>b.dataset.card))).join()==='LPN4T6Y8B','23: filtro Fotógrafo');
+  // 24/11 (Eduardo, 11:04): o seletor Fotógrafo saiu de Minhas fotos; o filtro (state.imp.key) segue para o Fotógrafo preso e é posto aqui pelo estado
+  ok(!(await pg.$('select[data-act="imp-key"]')),'24/11: sem o seletor Fotógrafo em Minhas fotos');
+  ok(await pg.evaluate(()=>{ETERNA.state.imp.key='samuel';return ETERNA.upSessLista().map(x=>x.card).join();})==='LPN4T6Y8B','23: filtro Fotógrafo (upSessLista)');
   ok(!(await pg.$('select[data-act="imp-point"]')),'18/11: sem o seletor Ponto em Minhas fotos');
-  const eb=await pg.evaluate(()=>(document.querySelector('#main .head .eyebrow')||{}).textContent||'');ok(/^Fotógrafo · Samuel$/i.test(eb.trim()),'18/11: cabeçalho só com o fotógrafo: '+eb);
-  await pg.selectOption('select[data-act="imp-key"]','todos');await pg.waitForTimeout(200);
+  await pg.evaluate(()=>{ETERNA.state.imp.key='todos';ETERNA.render();});await pg.waitForTimeout(200);
+  const eb=await pg.evaluate(()=>(document.querySelector('#main .head .eyebrow')||{}).textContent||'');ok(/^Fotógrafo · /i.test(eb.trim())&&!/Ponto/.test(eb),'18/11: cabeçalho só com o fotógrafo: '+eb);
   // Abrir sessão (só leitura) leva à sessão na Qualidade
   await pg.click('[data-act="up-sess-abrir"][data-card="LPN4T6Y8B"]');await pg.waitForTimeout(400);
   ok(await pg.evaluate(()=>ETERNA.state.view==='revisao'&&ETERNA.state.session==='LPN4T6Y8B'),'Abrir sessão leva à sessão: '+await pg.evaluate(()=>ETERNA.state.view+' '+ETERNA.state.session));

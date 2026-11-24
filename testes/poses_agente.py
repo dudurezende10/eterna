@@ -4,10 +4,17 @@
 # prioridade 0 ou 1 param a classificação em até um lote e fecham o filho; memória da placa e nvidia-smi; POST
 # /poses/config (403, 409 criterio, 400, 429) e config/poses recusada pelo /ponto/docs; ETERNA_POSES=0; LGPD; /status.poses
 # sem pid, caminho nem chave; linha do llama-server (127.0.0.1, --api-key-file, sem -hf). Também: terceira morte seguida
-# = parado. O agente/eterna-poses.py é o de verdade; só o llama-server é trocado pelo testes/_poses_filho_falso.py.
+# = parado. Revisão de 23/11: o SHA dos 6 GB só é conferido com Sombra ou Ligada, na janela e sem recorte ou montagem
+# esperando, e fica guardado (0600) sem releitura; nenhum llama-server órfão (pid avisado logo depois de abrir, prazo de
+# abertura estourado, órfão achado na partida); lote inteiro com erro do servidor conta como morte (nunca fim_fila);
+# versão diferente = parado até a noite seguinte; erro de imagem do PIL = imagem; lista vazia refeita só a cada
+# POSE_FILA_SEG e pausa depois do fim da fila não troca o fim_fila. Ajustes: SHA guardado diferente do fixado não vira
+# --conferido; leitura do modelo que falha não é refeita na rodada seguinte; o agente que cai no meio da abertura não deixa
+# o llama-server órfão (o filho vigia o pai desde antes de abrir).
+# O agente/eterna-poses.py é o de verdade; só o llama-server é trocado pelo testes/_poses_filho_falso.py.
 # Miniaturas desenhadas na hora; nenhuma foto de visitante.
 #   HOME=$(mktemp -d) python3 -I testes/poses_agente.py agente/eterna-agente.py
-import hashlib, http.client, importlib.util, inspect, json, os, sqlite3, sys, threading, time
+import hashlib, http.client, importlib.util, inspect, json, os, socket, sqlite3, subprocess, sys, threading, time
 from http.server import ThreadingHTTPServer
 sys.dont_write_bytecode = True
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -15,7 +22,7 @@ sys.path.insert(0, AQUI)
 import _agente_sessao as S
 
 os.environ["ETERNA_SEM_OPENCV"] = "1"
-for k in ("ETERNA_TESTE_CARGA", "ETERNA_FUNCAO_DIA", "ETERNA_POSES", "POSES_FALSO_DORMIR", "POSES_FALSO_MORRE", "POSES_FALSO_NAO_ABRE"):
+for k in ("ETERNA_TESTE_CARGA", "ETERNA_FUNCAO_DIA", "ETERNA_POSES"):
     os.environ.pop(k, None)
 HOME = os.environ["HOME"]
 os.makedirs(os.path.join(HOME, "Eterna", "ponto", "sessoes"), exist_ok=True)
@@ -23,8 +30,9 @@ sp = importlib.util.spec_from_file_location("ag", sys.argv[1])
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
 m.APP_ORIGIN = "http://127.0.0.1:9"
-m.REC_ENV_PREFIXOS = ("POSES_FALSO",)
+CARGA0 = m.POSE_CARGA_SEG
 m.POSE_DORME = 0.2
+m.POSE_FILA_SEG = 1
 m.POSE_ERRO_SEG = 0
 m.POSE_OCUPADO_SEG = 2
 m.REC_PISO_GB = 0.0
@@ -56,8 +64,19 @@ m.POSE_SHA = hashlib.sha256(b"gguf de teste").hexdigest()
 m.POSE_MMPROJ_SHA = hashlib.sha256(b"mmproj de teste").hexdigest()
 FERR = os.path.join(HOME, "ferramentas")
 os.makedirs(FERR)
+FDIR = os.path.join(HOME, "falso")
+os.makedirs(FDIR)
+
+
+def controle(**kw):
+    """O que o llama-server falso faz (lido a cada pedido): dormir, morre, erro500, sem_health, nao_abre."""
+    json.dump(kw, open(os.path.join(FDIR, "controle.json.tmp"), "w"))
+    os.replace(os.path.join(FDIR, "controle.json.tmp"), os.path.join(FDIR, "controle.json"))
+
+
+controle()
 m.POSE_BIN = os.path.join(FERR, "llama-server")
-open(m.POSE_BIN, "w").write("#!/bin/sh\nexec '%s' -I '%s' \"$@\"\n" % (sys.executable, os.path.join(AQUI, "_poses_filho_falso.py")))
+open(m.POSE_BIN, "w").write("#!/bin/sh\nexec '%s' -I '%s' --falso-dir '%s' \"$@\"\n" % (sys.executable, os.path.join(AQUI, "_poses_filho_falso.py"), FDIR))
 os.chmod(m.POSE_BIN, 0o755)
 VRAM = os.path.join(FERR, "vram.txt")
 open(VRAM, "w").write("20000\n")
@@ -65,9 +84,6 @@ NVSMI = os.path.join(FERR, "nvidia-smi")
 open(NVSMI, "w").write("#!/bin/sh\ncat '%s'\n" % VRAM)
 os.chmod(NVSMI, 0o755)
 m.POSE_NVSMI = NVSMI
-FDIR = os.path.join(HOME, "falso")
-os.makedirs(FDIR)
-os.environ["POSES_FALSO_DIR"] = FDIR
 
 from PIL import Image, ImageDraw
 os.makedirs(m.THUMBS, exist_ok=True)
@@ -162,6 +178,18 @@ try:
     ok(m.poses_filho["p"] is None and not os.path.exists(m.POSES_DB) and not os.path.exists(m.POSE_PIDS) and not llamas(),
        "1: desligada: nenhum filho, nenhum poses.db")
     ok(st1["modo"] == "desligada" and st1["pendentes"] == 0 and not os.path.exists(m.POSES_DB), "1: /status.poses não cria o banco: %r" % st1)
+    ok(not os.path.exists(m.POSE_SHA_ARQ) and st1["modelo"]["erro"] == "conferindo" and m.poses_pode_rodar() == (False, "desligada"),
+       "1: desligada: o SHA do modelo não é conferido (o /status diz conferindo): %r" % st1["modelo"])
+
+    # ---------- revisão: Sombra fora da janela ou com o recorte esperando também não confere o SHA ----------
+    st, r = m.poses_cfg_gravar({"modo": "sombra", "janela": janela(False)}, "adm")
+    ok(st == 200 and espera(lambda: m.poses_status()["noite"]["parou_por"] == "fora_janela", 5), "1b: sombra fora da janela: %r" % m.poses_status()["noite"])
+    time.sleep(0.5)
+    ok(not os.path.exists(m.POSE_SHA_ARQ) and m.poses_status()["modelo"]["erro"] == "conferindo", "1b: fora da janela: SHA não conferido")
+    m.POSE_PRIO_EM["rec"] = time.time()
+    m.poses_cfg_gravar({"janela": janela(True)}, "adm")
+    ok(espera(lambda: m.poses_status()["noite"]["parou_por"] == "recorte_ocupado", 5) and not os.path.exists(m.POSE_SHA_ARQ),
+       "1b: recorte esperando: o SHA não é conferido antes dele: %r" % m.poses_status()["noite"])
 
     # ---------- 6: memória da placa e nvidia-smi: o filho não abre, parou_por diz o motivo ----------
     open(VRAM, "w").write("4000\n")
@@ -176,6 +204,8 @@ try:
     open(VRAM, "w").write("20000\n")
     m.POSE_NVSMI = NVSMI
     ok(m.poses_vram_livre_mb() == 20000, "6: nvidia-smi falso lido")
+    ok(os.path.exists(m.POSE_SHA_ARQ) and oct(os.stat(m.POSE_SHA_ARQ).st_mode & 0o777) == "0o600" and m.poses_status()["modelo"]["ok"] is True,
+       "6: SHA conferido na janela e guardado em arquivo 0600")
 
     # ---------- 2: Sombra, dentro da janela: as sessões fechadas dos últimos 7 dias ganham linha com a versão atual ----------
     t2 = time.time()
@@ -194,6 +224,20 @@ try:
     ok(lls and all(not os.path.exists(x["chave_arq"]) and x["modo"] == "0o600" and not proc_vivo(x["pid"]) for x in lls),
        "2: chave 0600 apagada e llama-server fechado: %r" % lls)
     ok(not os.path.exists(m.POSE_PIDS), "2: poses-filho.json some com o filho fechado")
+    # revisão: pausa depois do fim da fila não troca o fim_fila; a lista vazia só é refeita a cada POSE_FILA_SEG
+    conta_p, pend0 = [0], m.poses_pendentes
+
+    def _pend():
+        conta_p[0] += 1
+        return pend0()
+    m.POSE_FILA_SEG = 60
+    m.poses_pendentes = _pend
+    m.POSE_PRIO_EM["rec"] = time.time()
+    time.sleep(3.0)
+    ok(m.poses_status()["noite"]["parou_por"] == "fim_fila", "2: pausa do recorte depois do fim da fila não troca o fim_fila: %r" % m.poses_status()["noite"])
+    ok(conta_p[0] == 0, "2: lista vazia não é refeita antes de POSE_FILA_SEG: %d vezes" % conta_p[0])
+    m.poses_pendentes = pend0
+    m.POSE_FILA_SEG = 1
 
     # ---------- 3: inválidas viram dúvida com o motivo certo; nada inválido em dados ----------
     ok(all(r[9] is None and r[10] == 1 for r in L.values() if r[11] in ("formato", "incoerente")), "3: formato e incoerente: dúvida sem dados")
@@ -233,7 +277,7 @@ try:
     ok(L3[pa][11] == "nao_classificavel" and L3[pa][9] is None and L3[pb][11] == "formato" and L3[pb][9] is None, "3: caminho recusado e JSON quebrado")
 
     # ---------- 4: fora da janela nada é classificado; ao sair, o filho fecha em até um lote ----------
-    os.environ["POSES_FALSO_DORMIR"] = "0.25"
+    controle(dormir=0.25)
     P4 = sessao(HOJE, 120)
     n0 = len(linhas())
     ok(espera(lambda: len(linhas()) >= n0 + 8, 15), "4: voltou a classificar as novas")
@@ -325,6 +369,21 @@ try:
 
     ok(pede("POST", "/poses/config", {"modo": "desligada"})[0] == 401, "7: sem sessão 401")
     ok(pede("POST", "/poses/config", {"modo": "desligada"}, cookie=cfgr)[0] == 403, "7: sem configuracao.u 403")
+    # 24/11 (Eduardo): só o Admin muda a classificação de poses. A Supervisora, mesmo com configuracao.u, recebe 403 e nada muda;
+    # o perfil vem do cadastro da sessão (um "preset" no pedido não vale). "Ver como": 403 so_ver
+    m.estado_gravar({"docs": [{"col": "usuarios", "id": "sup-poses", "valor": {"v": 2, "email": "sup-poses", "name": "sup-poses", "active": True, "preset": "supervisor",
+                                                                              "perms": {"configuracao": {"r": True, "u": True}, "qualidade": {"r": True, "u": True}}}}]})
+    sup = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("sup-poses"))
+    m._poses_cfg["t"] = 0.0
+    modo0 = m.poses_cfg()["modo"]
+    st, r = pede("POST", "/poses/config", {"modo": "desligada" if modo0 != "desligada" else "sombra"}, cookie=sup)
+    m._poses_cfg["t"] = 0.0
+    ok(st == 403 and r.get("error") == "so_admin" and m.poses_cfg()["modo"] == modo0, "7: Supervisora com configuracao.u recusada: %s %r" % (st, r))
+    st, r = pede("POST", "/poses/config", {"modo": "sombra", "preset": "admin"}, cookie=sup)
+    ok(st == 403, "7: preset no pedido não vale: %s %r" % (st, r))
+    vc = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("sup-poses", por="admin-poses"))
+    st, r = pede("POST", "/poses/config", {"modo": "sombra"}, cookie=vc)
+    ok(st == 403 and r.get("erro") == "so_ver", "7: ver como: 403 so_ver: %s %r" % (st, r))
     st, r = pede("POST", "/poses/config", {"modo": "ligada"}, cookie=adm)
     ok(st == 409 and r.get("error") == "criterio" and r.get("falta") == m.POSE_MEDIDA_MIN, "7: ligada sem medida: 409 criterio: %s %r" % (st, r))
     for c_ in ({"modo": "x"}, {"x": 1}, {}, {"janela": {"ini": "25:00", "fim": "07:00"}}, {"janela": {"ini": "07:00", "fim": "07:00"}},
@@ -357,6 +416,25 @@ try:
     ok(alvo in linhas(), "9: a foto tem linha")
     m.lgpd_excluir([alvo], [], quem="teste")
     ok(alvo not in linhas(), "9: LGPD apagou a linha de pose")
+    # N3 (24/11): a foto que sai da biblioteca entre a conferência do poses_gravar e a gravação não fica com linha
+    alvo2 = P_OK[6]
+    orig_pdb = m.poses_db
+    tirou = []
+
+    def pdb_e_lgpd():
+        if not tirou:
+            with m.lock:
+                tirou.append(m.lib.pop(alvo2, None))
+        return orig_pdb()
+    m.poses_db = pdb_e_lgpd
+    try:
+        m.poses_gravar([{"pid": alvo2, "bruto": base, "ms": 900}], {alvo2: {"dia": HOJE, "card": "LPX", "fotografo": "carlos"}})
+    finally:
+        m.poses_db = orig_pdb
+        with m.lock:
+            if tirou and tirou[0]:
+                m.lib[alvo2] = tirou[0]
+    ok(tirou and tirou[0] and alvo2 not in linhas(), "N3: foto que sai da biblioteca no meio da gravação não fica com linha de pose")
 
     # ---------- limpeza de 60 dias ----------
     db = sqlite3.connect(m.POSES_DB)
@@ -367,15 +445,185 @@ try:
 
     # ---------- terceira morte seguida: parado até a próxima noite ----------
     m.poses_fechar()
-    os.environ["POSES_FALSO_MORRE"] = "1"
-    os.environ.pop("POSES_FALSO_DORMIR", None)
+    controle(morre=True)
     m.poses_st["mortes"] = 0
     sessao(HOJE, 10)
     ok(espera(lambda: m.poses_status()["parado"] is True and m.poses_status()["noite"]["parou_por"] == "parado", 25), "morte: parado na 3ª morte: %r" % m.poses_st["mortes"])
     stp = m.poses_status()
     ok(stp["modelo"]["erro"] == "parado" and stp["noite"]["parou_por"] == "parado" and not vivo(), "morte: /status.poses: %r" % stp)
     ok(all(not proc_vivo(x["pid"]) and not os.path.exists(x["chave_arq"]) for x in llamas()), "morte: nenhum llama-server nem chave sobrando")
-    del os.environ["POSES_FALSO_MORRE"]
+    controle()
+
+    # ---------- revisão: SHA guardado não é relido sem mudança (o laço está parado: só este teste confere) ----------
+    g = json.load(open(m.POSE_SHA_ARQ))
+    ok(set(g) == {m.POSE_ARQ, m.POSE_MMPROJ_ARQ} and all(len(x["assin"]) == 3 for x in g.values())
+       and {x["sha"] for x in g.values()} == {m.POSE_SHA, m.POSE_MMPROJ_SHA}, "sha: arquivo com tamanho, data, inode e SHA: %r" % g)
+    real, conta = m.hashlib, [0]
+
+    class _H:
+        def __getattr__(self, k):
+            return getattr(real, k)
+
+        def sha256(self, *a):
+            conta[0] += 1
+            return real.sha256(*a)
+    m.hashlib = _H()
+    try:
+        m._poses_sha_mem["v"] = None                     # outra partida do agente
+        r1, n1 = m.poses_modelo_ok(), conta[0]
+        ok(r1 == (True, None) and n1 == 0, "sha: outra partida, nada mudou: nada relido (%r, %d)" % (r1, n1))
+        arq = os.path.join(m.MODELOS, m.POSE_ARQ)
+        st_ = os.stat(arq)
+        os.utime(arq, ns=(st_.st_atime_ns, st_.st_mtime_ns + 10 ** 9))
+        r2 = m.poses_modelo_ok(conferir=False)
+        r3 = m.poses_modelo_ok()
+        ok(r2 == (False, "conferindo") and r3 == (True, None) and conta[0] == 1, "sha: data mudou: o /status diz conferindo e o laço relê só o que mudou (%r %r %d)" % (r2, r3, conta[0]))
+    finally:
+        m.hashlib = real
+
+    # ---------- ajuste: SHA guardado diferente do fixado não vira --conferido ----------
+    g0 = m._poses_sha_guardado()
+    c0 = m.poses_conferido()
+    m._poses_sha_mem["v"] = dict(g0, **{m.POSE_MMPROJ_ARQ: dict(g0[m.POSE_MMPROJ_ARQ], sha="cd" * 32)})
+    c1 = m.poses_conferido()
+    m._poses_sha_mem["v"] = g0
+    ok(c0 and [len(x.split(":")) for x in c0.split(",")] == [3, 3], "conferido: SHA guardado igual ao fixado: --conferido %r" % c0)
+    ok(c1 is None, "conferido: SHA guardado diferente do fixado: sem --conferido (%r)" % c1)
+
+    # ---------- ajuste: falha de leitura (E/S no meio do arquivo) não é relida na rodada seguinte ----------
+    class _Falha:
+        def __getattr__(self, k):
+            return getattr(real, k)
+
+        def sha256(self, *a):
+            conta[0] += 1
+
+            class _X:
+                def update(self, b):
+                    raise OSError(5, "erro de E/S de teste")
+            return _X()
+    conta[0] = 0
+    m.hashlib = _Falha()
+    try:
+        st_ = os.stat(arq)
+        os.utime(arq, ns=(st_.st_atime_ns, st_.st_mtime_ns + 10 ** 9))
+        f1, f2, f3 = m.poses_modelo_ok(), m.poses_modelo_ok(), m.poses_modelo_ok(conferir=False)
+        ok(f1 == f2 == f3 == (False, "sem_modelo") and conta[0] == 1, "falha: leitura que falhou não é refeita na rodada seguinte (%r %r %r, %d leituras)" % (f1, f2, f3, conta[0]))
+        st_ = os.stat(arq)
+        os.utime(arq, ns=(st_.st_atime_ns, st_.st_mtime_ns + 10 ** 9))
+        f4 = m.poses_modelo_ok()
+        ok(f4 == (False, "sem_modelo") and conta[0] == 2, "falha: arquivo mudou: lido de novo (%r, %d)" % (f4, conta[0]))
+        m._poses_sha_falha[m.POSE_ARQ]["noite"] = "2000-01-01"      # a noite seguinte
+        m.hashlib = _H()
+        f5 = m.poses_modelo_ok()
+        ok(f5 == (True, None) and conta[0] == 3 and m.POSE_ARQ not in m._poses_sha_falha, "falha: na noite seguinte relê e confere (%r, %d)" % (f5, conta[0]))
+    finally:
+        m.hashlib = real
+        m._poses_sha_falha.clear()
+
+    # ---------- revisão: lote inteiro com erro do servidor de modelo conta como morte (nunca fim_fila) ----------
+    controle(erro500=True)
+    with m.poses_lock:
+        m.poses_st.update(parado=None, parado_por=None, mortes=0, falhou=set())
+    P_500 = sessao(HOJE, 6)
+    ok(espera(lambda: m.poses_status()["parado"] is True, 25), "500: parado na 3ª morte: %r" % m.poses_st["mortes"])
+    st5 = m.poses_status()
+    ok(st5["noite"]["parou_por"] == "parado" and m.poses_st["erro"] == "servidor" and not set(P_500) & m.poses_st["falhou"]
+       and not set(P_500) & set(linhas()) and not vivo(), "500: motivo servidor, as fotos ficam na fila: %r" % st5["noite"])
+    ok(all(not proc_vivo(x["pid"]) for x in llamas()), "500: nenhum llama-server sobrando")
+    controle()
+
+    # ---------- revisão: versão do filho diferente = parado até a noite seguinte (sem contar morte) ----------
+    with m.poses_lock:
+        m.poses_st.update(parado=None, parado_por=None, mortes=0, erro=None)
+    pv0 = m.POSE_PROMPT_V
+    m.POSE_PROMPT_V = "outra"
+    ok(espera(lambda: m.poses_status()["parado"] is True and m.poses_status()["noite"]["parou_por"] == "versao", 10), "versao: parado")
+    stv = m.poses_status()
+    ok(stv["modelo"]["erro"] == "versao" and stv["noite"]["parou_por"] == "versao" and m.poses_st["mortes"] == 0 and not vivo()
+       and m.poses_pode_rodar() == (False, "versao"), "versao: %r %r" % (stv["modelo"], stv["noite"]))
+    m.POSE_PROMPT_V = pv0
+
+    # ---------- revisão: abertura passa do prazo: nenhum llama-server falso sobra ----------
+    with m.poses_lock:
+        m.poses_st.update(parado=None, parado_por=None, mortes=0, erro=None)
+    antes = {x["pid"] for x in llamas()}
+    controle(sem_health=True)
+    m.POSE_CARGA_SEG = 2
+
+    def _llama_no_json():
+        try:
+            return isinstance(json.load(open(m.POSE_PIDS)).get("llama"), int) and not m.poses_filho.get("pronto")
+        except (OSError, ValueError):
+            return False
+    ok(espera(_llama_no_json, 8), "carga: o pid do llama-server vai para o poses-filho.json antes do pronto")
+    ok(espera(lambda: m.poses_st["mortes"] >= 1 and m.poses_st["erro"] == "filho", 20), "carga: prazo estourado conta como morte: %r" % m.poses_st["mortes"])
+    m.poses_cfg_gravar({"modo": "desligada"}, "adm")
+    ok(espera(lambda: not vivo() and m.poses_filho["p"] is None, 25), "carga: filho fechado")
+    novos = [x for x in llamas() if x["pid"] not in antes]
+    ok(novos and espera(lambda: all(not proc_vivo(x["pid"]) and not os.path.exists(x["chave_arq"]) for x in novos), 10),
+       "carga: nenhum processo do servidor falso nem chave sobrando: %r" % [(x["pid"], proc_vivo(x["pid"])) for x in novos])
+    ok(not os.path.exists(m.POSE_PIDS), "carga: poses-filho.json some")
+    controle()
+    m.POSE_CARGA_SEG = CARGA0
+
+    # ---------- ajuste: o agente cai no meio da abertura: o filho fecha o llama-server falso (nenhum processo sobra) ----------
+    controle(sem_health=True)                          # o /health nunca responde: o filho fica na abertura
+    antes = {x["pid"] for x in llamas()}
+    PT1 = os.path.join(HOME, "abre-e-cai")             # fora de ponto/: a limpeza de órfãos do agente não entra aqui
+    os.makedirs(PT1)
+    cmd1 = [sys.executable, "-I", os.path.join(AQUI, "..", "agente", "eterna-poses.py"), "--inbox", m.INBOX, "--thumbs", m.THUMBS,
+            "--modelos", m.MODELOS, "--bin", m.POSE_BIN, "--modelo-arq", m.POSE_ARQ, "--mmproj-arq", m.POSE_MMPROJ_ARQ,
+            "--sha", m.POSE_SHA, "--mmproj-sha", m.POSE_MMPROJ_SHA, "--ponto", PT1]
+    # um "agente" de mentira abre o filho com os canos do protocolo e é morto com SIGKILL enquanto o modelo abre
+    ag1 = subprocess.Popen([sys.executable, "-I", "-c", "import subprocess, sys, time\n"
+                            "p = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE, stdout=subprocess.PIPE)\n"
+                            "print(p.pid, flush=True)\ntime.sleep(120)\n"] + cmd1, stdout=subprocess.PIPE, text=True)
+    filho1, novos1 = None, []
+    try:
+        filho1 = int(ag1.stdout.readline().strip() or 0) or None
+        ok(filho1 and espera(lambda: [x for x in llamas() if x["pid"] not in antes], 15), "queda: o llama-server falso abriu")
+        novos1 = [x for x in llamas() if x["pid"] not in antes]
+        ok(novos1 and all(proc_vivo(x["pid"]) for x in novos1) and proc_vivo(filho1), "queda: filho e llama-server vivos antes da queda")
+        ag1.kill()
+        ag1.wait()
+        ok(espera(lambda: not proc_vivo(filho1) and all(not proc_vivo(x["pid"]) and not os.path.exists(x["chave_arq"]) for x in novos1), 20),
+           "queda: o filho fecha o llama-server e sai: %r" % [(x["pid"], proc_vivo(x["pid"])) for x in novos1])
+        sobra1 = [d for d in os.listdir(PT1) if d.startswith("poses-") and os.path.isdir(os.path.join(PT1, d))]
+        ok(not sobra1, "queda: pasta da chave apagada: %r" % sobra1)
+    finally:
+        for pid_ in [filho1] + [x["pid"] for x in novos1]:   # se falhou, nada do teste fica rodando
+            if pid_ and proc_vivo(pid_):
+                try:
+                    os.kill(pid_, 9)
+                except OSError:
+                    pass
+        if ag1.poll() is None:
+            ag1.kill()
+            ag1.wait()
+    controle()
+
+    # ---------- revisão: na partida, llama-server solto (filho morto com SIGKILL) é achado pelo --api-key-file em ponto/poses-* ----------
+    pasta = os.path.join(os.path.dirname(m.POSES_DB), "poses-orfao1")
+    os.makedirs(pasta)
+    ch = os.path.join(pasta, "chave")
+    open(ch, "w").write("x\n")
+    so = socket.socket()
+    so.bind(("127.0.0.1", 0))
+    porta = so.getsockname()[1]
+    so.close()
+    q = subprocess.Popen([m.POSE_BIN, "--host", "127.0.0.1", "--port", str(porta), "--api-key-file", ch], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    outro = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "--api-key-file", os.path.join(HOME, "outra", "chave")])
+    ok(espera(lambda: m._poses_e_nosso(q.pid, llama=True), 5) and not m._poses_e_nosso(outro.pid, llama=True), "órfão: só o da pasta ponto/poses-* é nosso")
+    n_orf = m.poses_orfaos_encerrar()
+    try:
+        q.wait(10)
+    except subprocess.TimeoutExpired:
+        pass
+    ok(n_orf >= 1 and q.poll() is not None and outro.poll() is None and not os.path.exists(pasta), "órfão: encerrado na partida e pasta apagada (%d)" % n_orf)
+    outro.kill()
+    outro.wait()
     srv.shutdown()
 
     # ---------- 11: linha do llama-server ----------
@@ -391,6 +639,27 @@ try:
        and "-hf" not in lin and all("chave" not in x or x == "/x/chave" for x in lin), "11: --host 127.0.0.1 e --api-key-file: %r" % lin)
     ok(fonte.count("Popen(") == 1 and "Popen(linha_llama(" in fonte, "11: o llama-server só abre pela linha_llama")
     ok("ProxyHandler({})" in fonte, "11: pedido ao llama-server nunca passa por proxy")
+    ok(P.POSE_CARGA_SEG < CARGA0, "11: o prazo de abertura do filho (%d s, contado do início) é menor que o do agente (%d s)" % (P.POSE_CARGA_SEG, CARGA0))
+    os.environ["POSES_FALSO_X"] = "1"
+    ok(not any(k.startswith("POSES_FALSO") for k in P.env_llama()) and P.env_llama().get("LLAMA_OFFLINE") == "1", "11: env_llama de produção sem variáveis de teste")
+    os.environ.pop("POSES_FALSO_X", None)
+    try:
+        P.Llama(m.POSE_BIN, m.MODELOS, m.POSE_ARQ, m.POSE_MMPROJ_ARQ, m.POSE_SHA, m.POSE_MMPROJ_SHA, None, conferido=[[1, 2, 3], [4, 5, 6]])
+        r11 = "abriu"
+    except P.SemModelo:
+        r11 = "sem_modelo"
+    ok(r11 == "sem_modelo" and P._conferido("1:2:3,4:5:6") == [[1, 2, 3], [4, 5, 6]] and P._conferido("1:2,x") is None,
+       "11: o filho confia no SHA do agente só com o mesmo tamanho, data e inode: %s" % r11)
+    prep0, th = P.preparar, os.path.join(m.THUMBS, P_OK[0] + ".jpg")
+    try:
+        P.preparar = lambda o: (_ for _ in ()).throw(ValueError("cannot identify image"))
+        r_v = P.lote(None, [{"pid": P_OK[0], "origem": th}], (m.THUMBS,), {})
+        P.preparar = lambda o: (_ for _ in ()).throw(P.FotoGrande("imagem_grande"))
+        r_g = P.lote(None, [{"pid": P_OK[0], "origem": th}], (m.THUMBS,), {})
+    finally:
+        P.preparar = prep0
+    ok(r_v == [{"pid": P_OK[0], "erro": "imagem"}] and r_g == [{"pid": P_OK[0], "erro": "imagem_grande"}]
+       and "imagem" in m.POSE_ERROS_FOTO, "11: ValueError do PIL vira imagem: %r %r" % (r_v, r_g))
     # o prompt define cada valor da taxonomia, e o esquema é o da taxonomia
     falta = [v for k, vs in m.POSE_TAXO.items() if k not in ("orient", "set") for v in vs if v + " =" not in P.POSE_PROMPT]
     falta += [v for v in m.POSE_TAXO["set"] if v + " =" not in P.POSE_PROMPT]
@@ -403,7 +672,7 @@ try:
     # SHA vazio: sem_modelo (o padrão do repositório)
     s_, sm_ = m.POSE_SHA, m.POSE_MMPROJ_SHA
     m.POSE_SHA = ""
-    ok(m.poses_modelo_ok() == (False, "sem_modelo") and m.poses_pode_rodar()[1] in ("sem_modelo", "parado", "fora_janela"), "sem SHA fixo: sem_modelo")
+    ok(m.poses_modelo_ok() == (False, "sem_modelo") and m.poses_pode_rodar()[1] in ("sem_modelo", "parado", "fora_janela", "desligada"), "sem SHA fixo: sem_modelo")
     m.POSE_SHA = "ab" * 32
     ok(m.poses_modelo_ok() == (False, "sem_modelo"), "SHA diferente: sem_modelo")
     m.POSE_SHA = s_

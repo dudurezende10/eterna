@@ -109,7 +109,7 @@ try{
   const todo=(await req(porta,'GET',`/metricas/dia?de=${addD(HOJE,-3)}&ate=${HOJE}`)).t;ok(!/@|ING-|\d{3}\.\d{3}\.\d{3}-\d{2}|emb|vetor|selfie/i.test(todo),'29: resumo sem e-mail, CPF, ingresso ou rosto');
   // ---------- sem presença nas telas do Admin ----------
   const telas=['estatisticas','calendario','catalogo','painel','fotografos','permissoes'];/* 16/11: a Escala saiu do app */const comPres=[];
-  for(const v of telas){await pa.evaluate(v=>ETERNA.go(v),v);await pa.waitForTimeout(150);if(v==='estatisticas'){for(const s of ['a','b','c','d','e','f']){await pa.click(`[data-act="es-sec"][data-s="${s}"]`);await pa.waitForTimeout(80);const t=await pa.textContent('#main');const m=t.match(PRES);if(m)comPres.push(v+'/'+s+': '+m[0]);}continue;}
+  for(const v of telas){await pa.evaluate(v=>ETERNA.go(v),v);await pa.waitForTimeout(150);if(v==='estatisticas'){for(const s of ['a','c','d','e','f']){await pa.click(`[data-act="es-sec"][data-s="${s}"]`);await pa.waitForTimeout(80);const t=await pa.textContent('#main');const m=t.match(PRES);if(m)comPres.push(v+'/'+s+': '+m[0]);}continue;}
     const t=await pa.textContent('#main');const m=t.match(PRES);if(m&&!(v==='escala'&&/^escalad/i.test(m[0])))comPres.push(v+': '+m[0]+' … '+t.slice(Math.max(0,t.search(PRES)-40),t.search(PRES)+40));}
   ok(!comPres.length,'sem presença: nenhum texto de presença, falta, atraso, abono, folga fixa ou turno nas telas: '+J(comPres));
   await ctx.close();
@@ -142,7 +142,7 @@ try{
       await c5.close();}
     // celular e tablet: Estatísticas, todas as seções
     for(const [nm,w,h] of [['cel',390,844],['tab',820,1180]]){await p3.setViewportSize({width:w,height:h});
-      for(const s of ['a','b','c','d','e','f']){await p3.evaluate(s=>{ETERNA.state.es.sec=s;ETERNA.render();},s);await p3.waitForTimeout(120);ok(await semLateral(p3),`${nm}: Estatísticas seção ${s} sem rolagem lateral`);if(s==='a'||s==='b'||s==='f')await p3.screenshot({path:PR+`/v92t-estat-${s}-${nm}.png`,fullPage:true});}}
+      for(const s of ['a','c','d','e','f']){await p3.evaluate(s=>{ETERNA.state.es.sec=s;ETERNA.render();},s);await p3.waitForTimeout(120);ok(await semLateral(p3),`${nm}: Estatísticas seção ${s} sem rolagem lateral`);if(s==='a'||s==='f')await p3.screenshot({path:PR+`/v92t-estat-${s}-${nm}.png`,fullPage:true});}}
     // idioma da equipe em inglês não quebra as telas internas
     await p3.setViewportSize({width:1440,height:950});const li=await p3.evaluate(()=>{const E=ETERNA;E.state.lang='en';const r=[];for(const v of ['estatisticas','calendario']){E.go(v);r.push(!!document.querySelector('#main h1'));}E.state.lang='pt';E.render();return r;});ok(li.every(Boolean),'idioma en não quebra Estatísticas e Calendário');
     await c3.close();}
@@ -152,7 +152,7 @@ try{
     await p4.evaluate(()=>{ETERNA.state.es.rover=false;ETERNA.state.es.sec='a';ETERNA.go('estatisticas');});await p4.waitForTimeout(800);
     const r=await p4.evaluate(()=>({fuso:!!document.getElementById('es-fuso'),txt:document.querySelector('#main').textContent}));
     ok(r.fuso,'fuso: agente de verdade com ETERNA_TZ=UTC mostra o aviso de fuso');ok(!/Algo falhou|NaN|undefined|Infinity/.test(r.txt),'vazio: seção a sem NaN/undefined');
-    for(const s of ['b','c','d','e','f']){await p4.click(`[data-act="es-sec"][data-s="${s}"]`);await p4.waitForTimeout(150);const t=await p4.textContent('#main');ok(!/Algo falhou|NaN|undefined|Infinity/.test(t),'vazio: seção '+s+' sem NaN/undefined/erro: '+(t.match(/NaN|undefined|Infinity|Algo falhou/)||[''])[0]);}
+    for(const s of ['c','d','e','f']){await p4.click(`[data-act="es-sec"][data-s="${s}"]`);await p4.waitForTimeout(150);const t=await p4.textContent('#main');ok(!/Algo falhou|NaN|undefined|Infinity/.test(t),'vazio: seção '+s+' sem NaN/undefined/erro: '+(t.match(/NaN|undefined|Infinity|Algo falhou/)||[''])[0]);}
     await p4.screenshot({path:PR+'/v92t-estat-vazio-c.png',fullPage:true});await c4.close();}
   ok(!presenca.length,'sem presença: o app nunca chamou /ponto/presenca: '+J(presenca.slice(0,3)));
 }catch(e){fails.push('exceção: '+String(e&&e.stack||e).slice(0,500));}
