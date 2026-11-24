@@ -148,6 +148,22 @@ try:
     ok(len(sobra) == 1, "só o rascunho do teste do QR inválido sobrou: %s" % sobra)
     m.ativ_videos_limpa()
     ok(len([f for f in os.listdir(m.ATIV_VIDEOS_DIR) if f.startswith("rascunho-")]) == 1, "rascunho novo fica")
+    # 23/11: a foto do cliente sai da venda e é tirada na entrega; Drone e Snap Pop não entregam sem ela (o Chute a Gol, abaixo, entrega)
+    QR4 = "D" * 21 + "4"
+    st, j = req("POST", "/ativ/venda", ven, {"vendas": [venda("TDRONE002D", "drone", [{"cat": "drone", "produto": "asteroid", "op": "Campo", "qtd": 1, "videos": 1}])]})
+    ok(st == 200 and j.get("recebidas") == ["TDRONE002D"], "venda sem foto aceita: %s %s" % (st, j))
+    st, j = entrega("TDRONE002D", QR4, mp4(20), eq)
+    ok(st == 409 and j.get("error") == "sem_foto", "drone sem a foto do cliente não entrega: %s %s" % (st, j))
+    ok(req("POST", "/ativ/cliente-foto", ven, {"id": "TDRONE002D", "foto": FOTO})[0] == 403, "vendedor não manda a foto da entrega")
+    ok(req("POST", "/ativ/cliente-foto", eq, {"id": "TDRONE002D", "foto": "data:image/png;base64,AAAA"})[0] == 400, "foto que não é JPEG recusada na entrega")
+    ok(req("POST", "/ativ/cliente-foto", eq, {"id": "TNAOEXIS1D", "foto": FOTO})[0] == 404, "foto de venda que não existe")
+    st, j = req("POST", "/ativ/cliente-foto", eq, {"id": "TDRONE002D", "foto": FOTO})
+    cn = m.vendas_db(); fb = cn.execute("select foto_busca from ativ_venda where id='TDRONE002D'").fetchone(); cn.close()
+    ok(st == 200 and open(m.ativ_cliente_foto("TDRONE002D"), "rb").read() == JPG and fb and fb[0] == 1, "foto da entrega gravada e marcada para o Tour: %s %s %s" % (st, j, fb))
+    st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
+    ok({v["id"]: v for v in j.get("vendas", [])}.get("TDRONE002D", {}).get("foto") is True, "fila mostra a foto tirada na entrega")
+    st, j = entrega("TDRONE002D", QR4, mp4(20), eq)
+    ok(st == 200 and j.get("n") == 1, "com a foto, o drone entrega: %s %s" % (st, j))
     m.ativ_videos_limpa(time.time() + 2 * 86400)
     ok(not [f for f in os.listdir(m.ATIV_VIDEOS_DIR) if f.startswith("rascunho-")], "rascunho de mais de um dia sai")
     st, j = entrega("TDRONE001D", QR2, mp4(30), eq)
@@ -159,7 +175,7 @@ try:
     ok(man and man["tipo"] == "video" and man["videos"][0]["chave"] == "video/%s.mp4" % QR1 and man["videos"][0]["duracao"] == 30.0 and man["idioma"] == "Espanhol",
        "galeria do vídeo: %s" % man)
     nd = sqlite3.connect(m.NUVEM_DB)
-    ok(nd.execute("select qr from videos where feito is null").fetchall() == [(QR1,)], "vídeo na fila da nuvem")
+    ok(nd.execute("select qr from videos where feito is null").fetchall() == [(QR1,), ("D" * 21 + "4",)], "vídeo na fila da nuvem")
     nd.close()
     # venda entregue não cancela
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
@@ -239,7 +255,7 @@ try:
         m.NUVEM_API = velho_api
     # limpeza: depois de 30 dias o arquivo sai do servidor do ponto, a entrega continua registrada
     ok(m.ativ_videos_limpa() == 0 and os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo novo fica")
-    ok(m.ativ_videos_limpa(time.time() + 31 * 86400) == 2 and not os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo de 31 dias sai")
+    ok(m.ativ_videos_limpa(time.time() + 31 * 86400) == 3 and not os.path.exists(os.path.join(m.ATIV_VIDEOS_DIR, QR1 + ".mp4")), "vídeo de 31 dias sai")
     st, j = req("GET", "/ativ/fila?dia=" + HOJE, eq)
     ok({v["id"]: v for v in j.get("vendas", [])}.get("TDRONE001D", {}).get("entregue_em"), "entrega continua registrada")
     # data inválida

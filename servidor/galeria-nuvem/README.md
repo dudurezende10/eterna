@@ -86,9 +86,10 @@ aws wafv2 update-web-acl --region us-east-1 --scope CLOUDFRONT --name eterna-gal
    ```bash
    read -s -p "Chave da Imply: " K && aws ssm put-parameter --region us-east-2 --name /eterna/imply-chave --type SecureString --value "$K" --overwrite; unset K
    ```
-2. No `sam deploy`, acrescentar em `--parameter-overrides`:
-   `CompraOnline=1 ImplyChaveParametro=/eterna/imply-chave ImplyTipoPessoa=<código da Imply> ImplyConsulta=<endereço com {ref}>`
-   (e `ImplyCarrinho=json` se a Imply pedir o carrinho sem Base64).
+2. Atualizar a stack mantendo os outros parâmetros (`aws cloudformation deploy`, como em 18/11; nunca o `sam deploy` com o
+   `describe-stacks`, que troca os segredos por `****`), acrescentando em `--parameter-overrides`:
+   `CompraOnline=1 ImplyChaveParametro=/eterna/imply-chave`. Tipo de pessoa (100001), consulta (GetCart, seção 7) e
+   campo do produto já têm o padrão certo no template.
 3. Testar primeiro na homologação da Imply, se ela der uma: trocar `IMPLY_ADMIN` e `IMPLY_LOJA` na função.
 
 Rotas novas: `POST /g/<token>/pedido`, `GET /g/pedido/<ref>`, `GET /ponto/vendas-online` (segredo do ponto) e a conferência
