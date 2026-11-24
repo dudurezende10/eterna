@@ -401,7 +401,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .eco-flag svg{width:24px;height:16px;border-radius:2px;vertical-align:middle}
 .eco-pend{padding:10px;border-radius:6px;background:var(--surface2);font-weight:700}
 .imp-grid{display:flex;gap:8px;flex-wrap:wrap}
-.imp-th{position:relative;width:104px;aspect-ratio:3/2;border-radius:6px;overflow:hidden;border:4px solid transparent;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);opacity:.4;filter:grayscale(.85);cursor:pointer;padding:0;transition:opacity .12s,filter .12s}
+.imp-th{position:relative;width:160px;aspect-ratio:3/2;border-radius:6px;overflow:hidden;border:4px solid transparent;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);opacity:.85;cursor:pointer;padding:0;transition:opacity .12s,transform .15s}.imp-th:hover{opacity:1}@media (hover:hover){.imp-th:hover{transform:scale(2.2);z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.45)}}
 .imp-th.on{border-color:#1F8A4C;opacity:1;filter:none;box-shadow:0 0 0 2px #fff,0 0 0 4px #1F8A4C}
 /* 18/11 (Ronaldo): escolhida tem que saltar aos olhos: bolinha verde cheia com ✓; não escolhida, apagada e com o círculo vazio */
 .imp-th::after{content:'';position:absolute;top:5px;right:5px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);box-sizing:border-box}.imp-th.on::after{display:none}
@@ -721,7 +721,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 /* coluna (esc-col e esc-fina) */
 .lj-fs.esc-col .lj-esc,.lj-fs.esc-fina .lj-esc{grid-area:1/2;flex-direction:column;border-top:0;box-shadow:inset 1px 0 rgba(255,255,255,.14);padding:max(12px,env(safe-area-inset-top,0px)) max(0px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) 0}
 .lj-fs.esc-col .lj-esc-h,.lj-fs.esc-fina .lj-esc-h{width:auto;align-self:stretch;padding:4px 12px 8px}
-.lj-fs.esc-col .lj-esc-dz,.lj-fs.esc-fina .lj-esc-dz{flex-wrap:wrap;gap:4px 10px}
+.lj-fs.esc-col .lj-esc-dz,.lj-fs.esc-fina .lj-esc-dz{flex-wrap:wrap;gap:4px 10px;min-height:0}
 .lj-fs.esc-col .lj-esc-desf,.lj-fs.esc-fina .lj-esc-desf{flex:1 1 auto;padding:0 12px}
 .lj-fs.esc-col .lj-esc-vz,.lj-fs.esc-fina .lj-esc-vz{flex:none;align-items:flex-start;padding:8px 12px}
 .lj-fs.esc-col .lj-esc-l,.lj-fs.esc-fina .lj-esc-l{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(80px,100%),1fr));grid-auto-rows:max-content;align-content:start;align-items:start;padding:8px 8px 16px;overflow-x:hidden;overflow-y:auto;touch-action:pan-y;
@@ -749,7 +749,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj.lj-fs.esc-col .lj-lbnav{top:auto;transform:none;bottom:104px;background:rgba(255,255,255,.1)}
 .lj.lj-fs.esc-col .lj-lbnav.prev{left:auto;right:calc(var(--escw) / 2 + 6px)}.lj.lj-fs.esc-col .lj-lbnav.next{right:calc(var(--escw) / 2 - 78px)}
 .lj.lj-fs.esc-col .lj-lbcnt{left:auto;right:max(12px,env(safe-area-inset-right,0px));bottom:186px;white-space:nowrap}
-.lj.lj-fs.esc-col .lj-ovtl{top:auto;left:calc(100% - var(--escw) + 12px);right:auto;bottom:186px;height:28px}
+.lj.lj-fs.esc-col .lj-ovtl{display:none}
 /* 23/11 (Ronaldo): barra do lado esquerdo (esc-esq), escolhida por posto no Painel de controle › Postos; dois Checkouts lado a lado ficam espelhados */
 .lj.lj-fs.esc-esq.esc-col,.lj.lj-fs.esc-esq.esc-fina{grid-template-columns:var(--escw) minmax(0,1fr)}
 .lj.lj-fs.esc-esq.esc-col>.lj-lb,.lj.lj-fs.esc-esq.esc-fina>.lj-lb{grid-area:1/2}
@@ -1555,7 +1555,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.44.0 · 24/11 15:09"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.44.0 · 24/11 19:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2693,7 +2693,7 @@ function ecoBody(){const e=state.eco;
   const duas=state.ecoOutra&&Date.now()-state.ecoOutra<20000?`<div class="pill warn" role="status" style="display:block;white-space:normal;margin-bottom:8px">${esc(TE('po_duas_ck'))}</div>`:'';
   if(!m.card)return `${duas}<div class="eco-wait"><b>${TE('po_ck_camera')}</b><span class="note">${TE('po_esperando_cli')}</span><div class="row">${fl}${idade}</div></div>`;
   const so=sessionObj(m.card);const big=m.foto&&m.step==='review'?(m.foto.t==='ph'?`<div class="eco-big" style="${bigStyle(m.foto.id)}">${m.foto.st?`<span class="pill ${m.foto.st==='no'?'neutral':'good'} eco-st">${m.foto.st==='no'?TE('po_nao_quer'):m.foto.st==='fav'?TE('po_favorita'):TE('po_escolhida')}</span>`:''}</div>`:ecoThumb(m.foto,'eco-big')):'';
-  const etapa={review:TE('po_foto_de',m.i+1,m.n),cart:TE('po_pkg_pag'),done:m.wait?TE('po_esp_pag'):TE('po_pago_t')}[m.step]||m.step;
+  const etapa={review:m.n?TE('po_foto_de',m.i+1,m.n):TE('po_sem_fotos'),cart:TE('po_pkg_pag'),done:m.wait?TE('po_esp_pag'):TE('po_pago_t')}[m.step]||m.step;
   const meio=m.meio||(m.pay?PAY_MEIO[m.pay]:null);
   const meta=`${duas}<div class="eco-meta"><div><div class="eyebrow">${TE('sessao_x',esc(m.card))}${so&&P[so.key]?' · '+esc(P[so.key].name):''}</div><b>${esc(etapa)}</b></div><div class="row">${fl}${idade}</div></div>`;
   if(m.step==='done'&&!ecoPendR())return meta;
@@ -2904,7 +2904,7 @@ function allSalesSim(){
     return {no:r.id,date:dia===todayISO()?'hoje':dia,time:hhmm(d),card:r.card,key:so.key,pdv:so.pdv||'',seller:LOJA_VENDEDOR,items:(r.cart||[]).map(c=>c.id),photos:r.n!=null?r.n:(r.nPh||0)+(r.nAI||0),prints:r.prints||0,pay:pendSemMeio(r)?pendMeioTxt(r):MEIO_NOME[meioDe(r)]+(meioDe(r)==='dinheiro'?'':' · maquininha'),total:pendSemMeio(r)?null:r.total,status:so.demo?'teste':ag?'aguardando':'nao_paga',teste:!!so.demo,est:false,canal:'loja',din:true,dinE:dinEspera(r),posto:r.posto||'',ref:'',impressao:'',
       title:ag?(pendSemMeio(r)?`Aguardando a escolha do pacote no Posto desde ${hhmm(d)} · código ${r.codigo}`:`Aguardando ${meioDe(r)==='dinheiro'?'o caixa':'a maquininha'} desde ${hhmm(d)} · código ${r.codigo}`):`${r.motivo==='fim_do_dia'?'Não paga até o fim do dia':'Cancelada no caixa'}${r.porNome?' por '+r.porNome:''}${r.fechada?' às '+hhmm(new Date(r.fechada)):''}`,caixa:ag?'':(r.porNome||''),caixa_em:ag?'':(r.fechada||'')};});
   const on=(SIM.vendasOnline||[]).map(v=>{const d=v.at?new Date(v.at):now();const dia=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');const so=sessionObj(v.card)||{};
-    return {no:v.id,date:dia===todayISO()?'hoje':dia,time:hhmm(d),card:v.card,key:so.key||(SIM.sessions[v.card]||{}).key,pdv:'Galeria online',seller:'Online',items:v.todas?['mais']:Array(v.n).fill('dig'),photos:v.n,prints:0,pay:v.pay+(v.teste?' (teste)':''),total:v.total,status:v.teste?'teste':(v.status||'paga'),est:false,canal:'online',at:v.at||'',teste:!!v.teste};});
+    return {no:v.id,date:dia===todayISO()?'hoje':dia,time:hhmm(d),card:v.card,key:so.key||(SIM.sessions[v.card]||{}).key,pdv:'Galeria online',seller:'Online',items:v.todas?['mais']:Array(v.n).fill('dig'),photos:v.n,prints:0,pay:v.pay+(v.teste?' (teste)':''),total:v.total,status:v.teste?'teste':(v.status||'paga'),est:false,canal:'online',at:v.at||'',teste:!!v.teste,ref:v.imply||''};});
   return [...din,...sim.reverse(),...on.reverse()];
 }
 const DIN_LINHA=['aguardando','escolha','cancelada','nao_paga'];
@@ -2917,7 +2917,7 @@ function salesFiltradas(){
   if(f.seller!=='all')rows=rows.filter(r=>r.seller===f.seller);
   if(f.pay!=='all')rows=rows.filter(r=>r.pay.startsWith(f.pay));
   if(f.canal&&f.canal!=='all')rows=rows.filter(r=>(r.canal||'loja')===f.canal);
-  if(f.q)rows=rows.filter(r=>(r.card+r.no).toUpperCase().includes(f.q.toUpperCase()));
+  if(f.q)rows=rows.filter(r=>(r.card+r.no+(r.ref||'')).toUpperCase().includes(f.q.toUpperCase()));
   if(f.status&&f.status!=='all')rows=rows.filter(r=>r.status===f.status);
   return rows;}
 function vVendasLista(){
@@ -2936,7 +2936,7 @@ function vVendasLista(){
   <div class="panel"><div class="sl-filtros">${sel('sales-day','day',TE('sl_dia'),days.map(d=>[d,d==='all'?TE('sl_todos_dias'):d==='hoje'?TE('sl_hoje'):dlabel(d)]))}${sel('sales-seller','seller',TE('ve_vendedor'),[['all',TE('sl_todos')],...SELLERS.map(n=>[n,n])])}${sel('sales-pay','pay',TE('pagamento'),[['all',TE('sl_todos')],...PAY_W.map(([n])=>[n,pagNome(n)])])}${sel('sales-canal','canal',TE('sl_canal'),[['all',TE('sl_todos')],['loja','Checkout'],['online','Online']])}${sel('sales-status','status',TE('sl_status'),[['all',TE('sl_todos')],['paga',TE('sl_pagas')],['aguardando',TE('sl_aguard')],['nao_paga',TE('sl_nao_pagas')],['cancelada',TE('sl_canceladas')]])}
     <label class="sl-f sl-q"><span class="eyebrow">${TE('sl_buscar')}</span><input type="text" data-act="sales-q" value="${esc(f.q)}" placeholder="${TE('sl_busca_ph')}" aria-label="${TE('sl_buscar')}"></label></div>
     <div class="tablewrap"><table class="sl-tbl"><thead><tr><th>${TE('sl_venda')}</th><th>${TE('sl_data')}</th><th>${TE('fo_sessao')}</th><th>${TE('ve_vendedor')}</th><th>${TE('sl_itens')}</th><th class="num">${TE('pn_fotos')}</th><th class="num">${TE('sl_impr')}</th><th>${TE('pagamento')}</th><th class="num">${TE('total')}</th><th>${TE('sl_status')}</th><th>${TE('sl_canal')}</th><th></th></tr></thead><tbody>
-    ${rows.slice(pg*POR,pg*POR+POR).map(r=>`<tr><td class="name">${esc(r.no)}${r.est?'':` <span class="pill good">${TE('sl_hoje_l')}</span>`}</td><td>${r.date==='hoje'?TE('sl_hoje_l'):dlabel(r.date)} ${esc(r.time)}</td><td>${esc(r.card)}</td><td>${esc(r.seller)}</td><td class="sl-itens">${esc(r.items.map(catName).join(' + '))}</td><td class="num">${r.photos}</td><td class="num">${r.prints}</td><td>${esc(pagTxt(r.pay))}</td><td class="num">${r.total==null?`<span class="note">${TE('sem_valor')}</span>`:fmtR(r.total)}</td><td><span class="pill ${r.status==='paga'?'good':r.status==='teste'||r.status==='nao_paga'?'neutral':r.status==='aguardando'?'warn':'bad'}" ${r.status==='teste'?`title="${TE('sl_teste_tip')}"`:r.title?`title="${esc(r.title)}"`:''}>${esc(statusLabel(r.status))}</span>${r.canc?`<div class="note">${esc(r.canc)}</div>`:''}</td><td>${r.canal==='online'?'<span class="pill warn">Online</span>':'Checkout'}</td><td>${r.canal==='online'?'':r.din?(r.status==='aguardando'&&canView(r.dinE?'caixa':'posto')?`<button class="chip" data-act="view" data-v="${r.dinE?'caixa':'posto'}">${r.dinE?TE('sl_caixa'):TE('sl_posto')}</button>`:''):r.est?`<button class="chip" data-act="sales-open-session" data-card="${r.card}">${TE('fo_sessao')}</button>`:`<button class="chip" data-act="sales-receipt" data-card="${r.card}">${TE('sl_recibo')}</button>${r.status==='paga'?vendaCancBtn(r.card):''}`}</td></tr>`).join('')}
+    ${rows.slice(pg*POR,pg*POR+POR).map(r=>`<tr><td class="name">${esc(r.no)}${r.est?'':` <span class="pill good">${TE('sl_hoje_l')}</span>`}</td><td>${r.date==='hoje'?TE('sl_hoje_l'):dlabel(r.date)} ${esc(r.time)}</td><td>${esc(r.card)}</td><td>${esc(r.seller)}</td><td class="sl-itens">${esc(r.items.map(catName).join(' + '))}</td><td class="num">${r.photos}</td><td class="num">${r.prints}</td><td>${esc(pagTxt(r.pay))}${r.canal==='online'&&r.ref?`<div class="note">${TE('sl_localizador')} ${esc(r.ref)}</div>`:''}</td><td class="num">${r.total==null?`<span class="note">${TE('sem_valor')}</span>`:fmtR(r.total)}</td><td><span class="pill ${r.status==='paga'?'good':r.status==='teste'||r.status==='nao_paga'?'neutral':r.status==='aguardando'?'warn':'bad'}" ${r.status==='teste'?`title="${TE('sl_teste_tip')}"`:r.title?`title="${esc(r.title)}"`:''}>${esc(statusLabel(r.status))}</span>${r.canc?`<div class="note">${esc(r.canc)}</div>`:''}</td><td>${r.canal==='online'?'<span class="pill warn">Online</span>':'Checkout'}</td><td>${r.canal==='online'?'':r.din?(r.status==='aguardando'&&canView(r.dinE?'caixa':'posto')?`<button class="chip" data-act="view" data-v="${r.dinE?'caixa':'posto'}">${r.dinE?TE('sl_caixa'):TE('sl_posto')}</button>`:''):r.est?`<button class="chip" data-act="sales-open-session" data-card="${r.card}">${TE('fo_sessao')}</button>`:`<button class="chip" data-act="sales-receipt" data-card="${r.card}">${TE('sl_recibo')}</button>${r.status==='paga'?vendaCancBtn(r.card):''}`}</td></tr>`).join('')}
     </tbody></table></div>${nPag>1?`<div class="row sl-pag"><button class="chip" data-act="sales-page" data-v="${pg-1}" ${pg===0?'disabled':''}>${TE('sl_anterior')}</button><span class="note">${TE('sl_pagina',pg+1,nPag)}</span><button class="chip" data-act="sales-page" data-v="${pg+1}" ${pg>=nPag-1?'disabled':''}>${TE('sl_proxima')}</button></div>`:''}</div>
   <div class="grid2"><div class="panel"><h2>${TE('sl_por_vend')}</h2>${hbars(Object.entries(bySeller).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:k,v})),fmtR)}</div><div class="panel"><h2>${TE('sl_por_pag')}</h2>${hbars(Object.entries(byPay).sort((a,b)=>b[1]-a[1]).map(([k,v])=>({label:pagNome(k),v})),fmtR)}</div></div>`;
 }
@@ -3467,7 +3467,7 @@ async function galVendasPoll(){const a=state.agent;if(!a.on||state.pub)return;
     for(const v of j.vendas){if(SIM.vendasOnline.some(x=>x.id===v.id))continue;const m=(SIM.galerias||{})[v.token];const pids=v.pids||[];
       if(m){m.fotos.forEach(f=>{if(pids.includes(f.id)){f.direito='comprada';f.canal='online';delete f.cortesia;}});}
       const card=(m&&(m.fotos.find(f=>f.id===pids[0])||{}).sessao)||(v.sessoes||[])[0]||'';
-      SIM.vendasOnline.push({id:v.id,token:v.token,card,pids,n:v.n||pids.length,total:v.total,pay:v.metodo==='imply'?'Imply online':v.metodo==='cartao'?'Cartão online':'Pix online',at:v.em,canal:'online',status:'paga',todas:!!v.todas,teste:v.teste!==false});novo=true;}
+      SIM.vendasOnline.push({id:v.id,token:v.token,card,pids,n:v.n||pids.length,total:v.total,pay:v.metodo==='imply'?'Imply online':v.metodo==='cartao'?'Cartão online':'Pix online',at:v.em,canal:'online',status:'paga',todas:!!v.todas,teste:v.teste!==false,imply:v.idpedido?String(v.idpedido).slice(0,40):null});novo=true;} // 24/11: localizador da Imply, para rastrear e conciliar
     if(j.next!=null)SIM.galVendasN=j.next;if(novo){saveSim();if(!state.lojaRota)render();}}catch(e){}}
 setInterval(galVendasPoll,30000);
 // QR: um só desenhador. Sem a biblioteca, escreve o texto (o código curto, quando houver).
@@ -4505,7 +4505,7 @@ function ljEscUpd(){const bar=document.getElementById('lj-esc');if(!bar)return;c
   const hn=ch.length?T('ljNChosen',ch.length):'';const n=bar.querySelector('.lj-esc-n');if(n.textContent!==hn)n.textContent=hn;
   const dd=ljEscDesfVale(k);const hd=dd?`<span class="lj-esc-tir" role="status">${T('ljEscTirada')}</span><button class="lj-esc-desf" data-act="kiosk-esc-desf">${ICO.back}<span>${T('ljEscDesfazer')}</span></button>`:'';
   const dz=bar.querySelector('.lj-esc-dz');if(dz._h!==hd){dz._h=hd;dz.innerHTML=hd;}
-  const vz=bar.querySelector('.lj-esc-vz');const tv=T('ljEscVazio');if(vz.dataset.t!==tv+lang()){vz.dataset.t=tv+lang();vz.textContent=tv;legLegenda(vz);} // 24/11: a barra é atualizada fora do render; a legenda em português entra aqui tambémif(vz.hidden!==!!ch.length)vz.hidden=!!ch.length;
+  const vz=bar.querySelector('.lj-esc-vz');const tv=T('ljEscVazio');if(vz.dataset.t!==tv+lang()){vz.dataset.t=tv+lang();vz.textContent=tv;legLegenda(vz);} /* 24/11: a barra é atualizada fora do render; a legenda em português entra aqui também */if(vz.hidden!==!!ch.length)vz.hidden=!!ch.length;
   const al=T('ljEscLista');if(bar.getAttribute('aria-label')!==al)bar.setAttribute('aria-label',al);
   if(!l.dataset.on){l.dataset.on='1';l.addEventListener('scroll',()=>ljEscSombra(l),{passive:true});}
   // esc-col: a barra começa abaixo do canto de cima e termina acima do primeiro controle de baixo (logo, "N / total", setas, Continuar), medidos aqui
@@ -10770,6 +10770,7 @@ const EQ={
   sl_hoje:["Hoje","Today","Hoy","Aujourd'hui","Heute"],
   sl_hoje_l:["hoje","today","hoy","aujourd'hui","heute"],
   sl_todos:["Todos","All","Todos","Tous","Alle"],
+  sl_localizador:["Localizador Imply","Imply locator","Localizador Imply","Localisateur Imply","Imply-Lokator"],
   sl_canal:["Canal","Channel","Canal","Canal","Kanal"],
   sl_status:["Status","Status","Estado","Statut","Status"],
   sl_pagas:["Pagas","Paid","Pagadas","Payées","Bezahlt"],
@@ -11634,6 +11635,7 @@ const EQ={
   po_nao_quer:["não quer","not wanted","no la quiere","pas voulue","nicht gewünscht"],
   po_favorita:["favorita","favorite","favorita","favorite","Favorit"],
   po_escolhida:["escolhida","chosen","elegida","choisie","ausgewählt"],
+  po_sem_fotos:["Sessão sem fotos","Session with no photos","Sesión sin fotos","Session sans photos","Sitzung ohne Fotos"],
   po_foto_de:[(i,n)=>`Foto ${i} de ${n}`,(i,n)=>`Photo ${i} of ${n}`,(i,n)=>`Foto ${i} de ${n}`,(i,n)=>`Photo ${i} sur ${n}`,(i,n)=>`Foto ${i} von ${n}`],
   po_pkg_pag:["Pacote e pagamento","Package and payment","Paquete y pago","Forfait et paiement","Paket und Zahlung"],
   po_esp_pag:["Esperando o pagamento","Waiting for payment","Esperando el pago","En attente du paiement","Warten auf Zahlung"],
@@ -13023,8 +13025,8 @@ function relVendasLista(){const f=state.sales;const rows=salesFiltradas();const 
   if(f.day!=='all')F.push([TE('sl_dia'),f.day==='hoje'?TE('sl_hoje'):dBR(f.day)]);if(f.seller!=='all')F.push([TE('ve_vendedor'),f.seller]);if(f.pay!=='all')F.push([TE('pagamento'),pagNome(f.pay)]);
   if(f.canal&&f.canal!=='all')F.push([TE('sl_canal'),f.canal==='online'?'Online':'Checkout']);if(f.status&&f.status!=='all')F.push([TE('sl_status'),statusLabel(f.status)]);if(f.q)F.push([TE('sl_buscar'),f.q]);
   const ok=rows.filter(r=>r.status==='paga');R.notas.push(`${TE('sl_pagas')}: ${fmtN(ok.length)} · ${TE('pn_receita')}: ${fmtR(ok.reduce((a,r)=>a+r.total,0))}`);
-  relAba(R,viewLabel('vendas-lista'),viewLabel('vendas-lista'),[relC(TE('sl_venda')),relC(TE('sl_data'),'data'),relC(TE('fo_hora')),relC(TE('fo_sessao')),relC(TE('ve_vendedor')),relC(TE('sl_itens')),relC(TE('pn_fotos'),'int'),relC(TE('sl_impr'),'int'),relC(TE('pagamento')),relC(TE('total'),'moeda'),relC(TE('sl_status')),relC(TE('sl_canal'))],
-    rows.map(r=>[r.no,r.date==='hoje'?todayISO():r.date,r.time,r.card,r.seller,r.items.map(catName).join(' + '),r.photos,r.prints,pagTxt(r.pay),r.total==null?null:r.total,statusLabel(r.status),r.canal==='online'?'Online':'Checkout']));
+  relAba(R,viewLabel('vendas-lista'),viewLabel('vendas-lista'),[relC(TE('sl_venda')),relC(TE('sl_data'),'data'),relC(TE('fo_hora')),relC(TE('fo_sessao')),relC(TE('ve_vendedor')),relC(TE('sl_itens')),relC(TE('pn_fotos'),'int'),relC(TE('sl_impr'),'int'),relC(TE('pagamento')),relC(TE('sl_localizador')),relC(TE('total'),'moeda'),relC(TE('sl_status')),relC(TE('sl_canal'))],
+    rows.map(r=>[r.no,r.date==='hoje'?todayISO():r.date,r.time,r.card,r.seller,r.items.map(catName).join(' + '),r.photos,r.prints,pagTxt(r.pay),r.canal==='online'?(r.ref||''):'',r.total==null?null:r.total,statusLabel(r.status),r.canal==='online'?'Online':'Checkout']));
   return R;}
 // Fotógrafos: segue a aba aberta (23/11). Índice: a tabela do período; com um fotógrafo aberto, o dia a dia dele (e as sessões do dia
 // aberto). Cliques, conversão e exposição: a tabela da aba com o período dos alertas. O nome do arquivo leva a aba.

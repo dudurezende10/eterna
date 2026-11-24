@@ -706,8 +706,8 @@ def lead(email, idioma, token, marketing, versao, ref=None):
 def liberar(ref, it, det):
     """Pago na Imply: as fotos do pedido viram compradas (canal online) e a venda vai para VONL. Uma vez só por pedido."""
     try:
-        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :p, pago = :t",
-                           ConditionExpression="estado <> :p", ExpressionAttributeValues={":p": "pago", ":t": iso()})
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :p, pago = :t, idpedido = :l",
+                           ConditionExpression="estado <> :p", ExpressionAttributeValues={":p": "pago", ":t": iso(), ":l": str(det.get("idpedido") or "")[:40]})
     except ClientError as ex:
         if ex.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return
@@ -754,7 +754,8 @@ def conferir(ref):
     elif st == "pago":
         liberar(ref, it, det)
     elif st == "cancelado":
-        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "cancelado"})
+        TABELA.update_item(Key={"pk": "PED#" + ref, "sk": "M"}, UpdateExpression="SET estado = :e, idpedido = :l",
+                           ExpressionAttributeValues={":e": "cancelado", ":l": str(det.get("idpedido") or "")[:40]})
         TABELA.delete_item(Key={"pk": "PEDPEND", "sk": ref})
     return item("PED#" + ref)
 
