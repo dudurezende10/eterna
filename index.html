@@ -1513,7 +1513,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.40.0 · 24/11 02:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.40.1 · 24/11 03:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3378,7 +3378,10 @@ function galPublicar(tok){if(!tok||!(SIM.galerias||{})[tok])return;SIM.galFila=S
   saveSim();galFilaTick();}
 let galBusy=false;
 async function galFilaTick(){if(galBusy)return;galBusy=true;let mudou=false;
-  try{const a=state.agent;for(const it of (SIM.galFila||[])){if(it.estado==='enviada'||it.estado==='encerrada')continue;const m=(SIM.galerias||{})[it.token];if(!m){it.estado='erro';it.erro='manifesto não existe';mudou=true;continue;}
+  try{const a=state.agent;const catJ=JSON.stringify(galCatOnline());for(const it of (SIM.galFila||[])){
+      // 24/11: galeria já publicada com o catálogo online antigo (ou sem ele) e ainda válida vai de novo com o catálogo de agora (botão de compra)
+      {const g=(SIM.galerias||{})[it.token];if(it.estado==='enviada'&&g&&g.tipo==='sessao'&&!g.encerrada&&!g.substituida&&new Date(g.expira||0).getTime()>Date.now()&&JSON.stringify(g.catalogo||[])!==catJ){g.catalogo=JSON.parse(catJ);it.estado='pendente';it.prox=0;mudou=true;}}
+      if(it.estado==='enviada'||it.estado==='encerrada')continue;const m=(SIM.galerias||{})[it.token];if(!m){it.estado='erro';it.erro='manifesto não existe';mudou=true;continue;}
       // sessão que a aba ainda não conhece: refaz a galeria a cada volta (10 s e quando as sessões chegam) até as fotos aparecerem
       if(m.pendSess||(!m.fotos.length&&it.estado==='local')){const n0=JSON.stringify(m.fotos);galAtualizar(it.token);if(JSON.stringify(m.fotos)!==n0)mudou=true;}
       if(m.pendSess){if(it.estado!=='aguardando'){it.estado='aguardando';mudou=true;}continue;}
@@ -3697,7 +3700,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
       ${mine.length>1?`<button class="lj-cta gq-dlall" data-act="gq-dlall">${ICO.cloud} ${T('gq_dlAll')}</button>`:''}`:''}</section>
     ${more.length?`<section class="gq-sec">${podeGr?`<div class="gq-grtopo"><h2 class="lj-h2">${T('gq_gratisH')}</h2><p class="lj-sub">${T('gq_gratisD')}</p></div>`:''}<h2 class="lj-h2">${T('gq_more')}</h2>${compra?`<p class="lj-sub">${T('gq_moreD')} ${pubOferta(g)}</p>`:''}
       <div class="gq-grid">${more.map(f=>{const on=compra&&!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>${compra?`<button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button>`:''}${podeGr?`<button class="lj-ghost sm gq-grbtn" data-act="gq-gratis" data-pid="${esc(f.pid)}">${T('gq_gratisBtn')}</button>`:''}</figure>`;}).join('')}</div>
-      ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(pubTotal(more.length,g)))}</button>`:`<p class="lj-sub gq-buyoff">${esc0?`${T('gq_buyOffEsc')} <a href="mailto:${GQ_SUPORTE}">${GQ_SUPORTE}</a>`:T('gq_buyOff')}</p>`}</section>`:''}
+      ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(pubTotal(more.length,g)))}</button>`:`<p class="lj-sub gq-buyoff">${T('gq_buyOffEsc')} <a href="mailto:${GQ_SUPORTE}">${GQ_SUPORTE}</a></p>`}</section>`:''}
     ${pubTourVolta(p)}${g.tipo==='sessao'&&!(p.modo==='agente'?p.acesso:p.match)?`<section class="gq-sec gq-findmore"><p class="lj-sub">${T('gq_findMoreD')}</p><button class="lj-cta" data-act="gq-mais">${ICO.face} ${T('gq_findMore')}</button></section>`:''}
     ${nSel?`<div class="gq-bar"><span><b>${T('nPhotos',nSel)}</b> · ${fmtR(tot)}${livre>0?`<br><small>${T('gq_moreFree',livre)}</small>`:''}</span><button class="lj-cta" data-act="gq-buy">${T('gq_buy',nSel,fmtR(tot))}</button></div>`:''}
     ${compra||!more.length?gqAjuda():''}</div>`;}
@@ -4001,7 +4004,7 @@ gq_conferindoD:['Assim que a Imply confirmar, suas fotos aparecem aqui. Pode lev
 gq_payCancel:['O pagamento não foi concluído. Suas fotos continuam aqui para comprar.','The payment was not completed. Your photos are still here to buy.','El pago no se completó. Tus fotos siguen aquí para comprar.','Le paiement n’a pas abouti. Vos photos sont toujours disponibles à l’achat.','Die Zahlung wurde nicht abgeschlossen. Deine Fotos kannst du hier weiterhin kaufen.'],
  gq_all:[x=>`Todas por ${x}`,x=>`All for ${x}`,x=>`Todas por ${x}`,x=>`Toutes pour ${x}`,x=>`Alle für ${x}`],
  gq_buy:[(n,x)=>`Comprar ${n} ${PL(n,'foto','fotos')} · ${x}`,(n,x)=>`Buy ${n} ${PL(n,'photo','photos')} · ${x}`,(n,x)=>`Comprar ${n} ${PL(n,'foto','fotos')} · ${x}`,(n,x)=>`Acheter ${n} ${PL(n,'photo','photos')} · ${x}`,(n,x)=>`${n} ${PL(n,'Foto','Fotos')} kaufen · ${x}`],
- gq_buyOff:['Para comprar estas fotos, fale com a equipe do Tour no balcão.','To buy these photos, talk to the Tour team at the counter.','Para comprar estas fotos, habla con el equipo del Tour en el mostrador.','Pour acheter ces photos, adressez-vous à l’équipe du Tour au comptoir.','Um diese Fotos zu kaufen, wende dich an das Tour-Team am Schalter.'],
+ gq_buyOff:['A compra online está indisponível agora. Tente de novo mais tarde.','Online purchase is unavailable right now. Please try again later.','La compra en línea no está disponible ahora. Inténtalo más tarde.','L’achat en ligne est indisponible pour le moment. Réessayez plus tard.','Der Online-Kauf ist gerade nicht verfügbar. Bitte versuche es später noch einmal.'],
  gq_buyOffEsc:['Para comprar estas fotos, escreva para','To buy these photos, write to','Para comprar estas fotos, escribe a','Pour acheter ces photos, écrivez à','Um diese Fotos zu kaufen, schreib an'],
  gq_payTest:['Pagamento de teste. Nada é cobrado.','Test payment. Nothing is charged.','Pago de prueba. No se cobra nada.','Paiement de test. Rien n’est débité.','Testzahlung. Es wird nichts berechnet.'],
  gq_payFail:['Não foi possível concluir o pagamento. Tente de novo ou fale com a equipe do Tour.','We couldn’t complete the payment. Please try again or talk to the Tour team.','No pudimos completar el pago. Inténtalo de nuevo o habla con el equipo del Tour.','Le paiement n’a pas pu aboutir. Réessayez ou parlez à l’équipe du Tour.','Die Zahlung konnte nicht abgeschlossen werden. Versuch es noch einmal oder sprich mit dem Tour-Team.'],
@@ -4213,7 +4216,7 @@ const I18N_ZH={
  gq_payCancel:"付款未完成。你的照片仍可在此购买。",
  gq_all:(x)=>`全部 ${x}`,
  gq_buy:(n,x)=>`购买 ${n} 张照片 · ${x}`,
- gq_buyOff:"如需购买这些照片，请到柜台联系 Tour 工作人员。",
+ gq_buyOff:"暂时无法在线购买，请稍后再试。",
  gq_buyOffEsc:"如需购买这些照片，请发邮件至",
  gq_payTest:"测试付款，不会收费。",
  gq_payFail:"无法完成付款。请重试，或联系 Tour 工作人员。",
