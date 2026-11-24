@@ -1384,7 +1384,7 @@ label>.eyebrow{display:block;margin-bottom:4px}
 .tr-abas{margin:4px 0 12px}.tr-sel{flex-wrap:wrap;gap:10px;align-items:flex-end}.tr-sel label{display:flex;flex-direction:column;gap:4px;font-size:13px}
 .tr-foto{display:block;width:100%;height:min(62vh,640px);background:#141311;border:0;border-radius:6px;padding:0;cursor:zoom-in;overflow:hidden}
 .tr-foto img{width:100%;height:100%;object-fit:contain;display:block}
-.tr-pontos{display:flex;flex-wrap:wrap;gap:8px}.tr-mini{aspect-ratio:auto;min-height:40px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#d8d4cc;border:2px solid}.tr-big{min-height:56px;min-width:56px;font-size:16px;padding:10px 16px}
+.tr-pontos{display:flex;flex-wrap:wrap;gap:8px}.tr-mini{aspect-ratio:auto;min-height:40px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#d8d4cc;border:2px solid}.tr-mini.tr-mini-nova{border-style:dashed}.tr-big{min-height:56px;min-width:56px;font-size:16px;padding:10px 16px}
 .tr-pontos .tr-big[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
 .tr-an .tr-an-l{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0}.tr-an-k{min-width:170px;font-weight:600}
 .tr-an .seg{display:inline-flex;gap:6px;flex-wrap:wrap}.tr-an .chip{min-height:40px}.tr-an .chip:disabled{opacity:.45;cursor:not-allowed}
@@ -1510,7 +1510,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.38.0 · 23/11 11:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.39.0 · 23/11 18:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -7743,7 +7743,7 @@ const trMarcada=pid=>{const d=state.train.docs[pid];return !!d&&(d.pend||!trVazi
 async function trDias(){const u=trAg();if(!u)return;const t=state.train;t.diasPedido=true;
   try{const r=await agFetch(u+'/treino/dias');const j=r.ok?await r.json():null;t.dias=j&&Array.isArray(j.dias)?j.dias:[];if(!t.dia&&t.dias.length)t.dia=t.dias[0].dia;}catch(e){t.dias=[];}
   if(state.view==='treino')render();}
-async function trCarregar(o){o=o||{};const u=trAg(),t=state.train;if(!u||!t.dia)return;t.carregando=true;t.erro=null;render();
+async function trCarregar(o){o=o||{};const u=trAg(),t=state.train;if(t.vendo){trSaiDaFoto(t.vendo);t.vendo=null;}if(!u||!t.dia)return;t.carregando=true;t.erro=null;render();
   try{const q=new URLSearchParams({dia:t.dia,modo:t.modo,n:o.pid?'400':'150'});if(t.foto)q.set('fotografo',t.foto);if(o.marcadas)q.set('marcadas','1');
     const r=await agFetch(u+'/treino/amostra?'+q);const j=r.ok?await r.json():null;
     if(!j||!Array.isArray(j.itens)){t.erro='tr_e_carregar';}
@@ -7776,12 +7776,25 @@ async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user)return;
       trFilaGrava(resto);mudou=true;}}
   finally{trEnviar.on=false;if(mudou&&state.view==='treino')render();}}
 function trAtual(){const t=state.train;return t.itens[Math.max(0,Math.min(t.itens.length-1,t.j))]||null;}
-function trIr(j){const t=state.train;t.j=Math.max(0,Math.min(t.itens.length-1,j));render();trPrecarga();}
+// 23/11 (Eduardo no Maracanã: passou 110 fotos com Próxima e só 11 ficaram gravadas): sair de uma foto por qualquer caminho grava a
+// escolha feita nela (Próxima, Anterior, setas, grade, Carregar, outra aba, outra tela, Sair, recarregar). Mesmo trGravar, mesma fila
+// e entra no Desfazer. Só grava se o rascunho tem alguma escolha e é diferente do que já está gravado; sem qualidade.u não faz nada.
+function trRascNovo(pid){const t=state.train;const r=pid&&t.rasc[pid];if(!r)return null;const c=trCorpo(pid,r);if(trVazio(c))return null;
+  const d=t.docs[pid]||{},q=d.qual||{};const mot=(n,m)=>n==='fraca'?(m||[]).slice().sort().join(','):'';
+  const igual=c.ponto===(d.ponto||null)&&c.qual.nivel===(q.nivel||null)&&mot(c.qual.nivel,c.qual.motivos)===mot(q.nivel,q.motivos)&&c.duvida===!!d.duvida&&c.obs===String(d.obs||'').slice(0,200);
+  return igual?null:c;}
+function trDesfazPoe(pid,j,ant){const t=state.train;t.desfaz.push({pid,j,ant});if(t.desfaz.length>50)t.desfaz.shift();}
+function trSaiDaFoto(pid){if(!pid||!state.user||!can('qualidade','u'))return false;const c=trRascNovo(pid);if(!c)return false;const t=state.train;
+  const k=t.itens.findIndex(x=>x.pid===pid);const ant=trGravar(pid,c);if(k>=0)trDesfazPoe(pid,k,ant);return true;}
+// no começo de cada render: a foto que estava na tela (t.vendo) saiu dela (outra foto, outra aba, outra tela)? grava a escolha
+function trConfere(){const t=state.train;const v=t&&t.vendo;if(!v)return;const p=state.view==='treino'&&t.aba==='marcar'?trAtual():null;if(p&&p.pid===v)return;t.vendo=null;trSaiDaFoto(v);}
+function trIr(j){const t=state.train;const p=trAtual();if(p)trSaiDaFoto(p.pid);t.j=Math.max(0,Math.min(t.itens.length-1,j));render();trPrecarga();}
 function trConfirmar(){if(!can('qualidade','u')){toast(TE('tr_sem_perm'));return;}const p=trAtual();if(!p)return;const r=trRasc(p.pid);
-  const ant=trGravar(p.pid,trCorpo(p.pid,r));state.train.desfaz.push({pid:p.pid,j:state.train.j,ant});if(state.train.desfaz.length>50)state.train.desfaz.shift();
+  const ant=trGravar(p.pid,trCorpo(p.pid,r));trDesfazPoe(p.pid,state.train.j,ant);
   const t=state.train;let k=t.j+1;while(k<t.itens.length&&t.docs[t.itens[k].pid]&&!t.docs[t.itens[k].pid].pend&&!trVazio(t.docs[t.itens[k].pid]))k++;trIr(k<t.itens.length?k:t.j+1);}
 // Z: desfaz a última confirmação (grava de novo o que havia, ou a marcação vazia) e volta para a foto
 function trDesfazer(){if(!can('qualidade','u'))return;const t=state.train;const u=t.desfaz.pop();if(!u){toast(TE('tr_nada_desfazer'));return;}
+  {const p=trAtual();if(p&&p.pid!==u.pid)trSaiDaFoto(p.pid);} // a escolha da foto de agora não se perde ao voltar
   const a=u.ant,q=(a&&a.qual)||{};const r={ponto:a&&a.ponto||null,nivel:q.nivel||null,motivos:(q.motivos||[]).slice(),duvida:!!(a&&a.duvida),obs:(a&&a.obs)||'',base:(t.docs[u.pid]||{}).em||null};
   trGravar(u.pid,trCorpo(u.pid,r));if(!a)t.docs[u.pid]=null;t.rasc[u.pid]=Object.assign({},r);t.j=u.j;toast(TE('tr_desfeito'));render();}
 // POST /treino/config (o interruptor e o Ligar mesmo assim) -> {r, j}
@@ -7935,8 +7948,8 @@ function vTreinoMarcar(){const t=state.train;const ag=trAg();
     <button class="btn" data-act="tr-carregar" ${t.carregando||!t.dia?'disabled':''}>${t.carregando?TE('tr_carregando'):TE('tr_carregar')}</button></div>`;
   const fila=trFila().filter(trMinha).length;if(fila&&!trEnviar.on&&!trEnviar.tm)setTimeout(trEnviar,0); // fila de antes de recarregar a página sobe ao abrir a tela
   const nota=`<div class="note">${t.erro?TE(t.erro):t.itens.length?TE('tr_amostra_n',t.itens.length,t.total||0):TE('tr_escolha')}${fila?' · '+TE('tr_fila_n',fila):''}</div>`;
-  const p=trAtual();if(!p)return sel+nota;
-  const r=trRasc(p.pid),d=t.docs[p.pid];const pode=can('qualidade','u');const src=fotoSrc(p.id);
+  const p=trAtual();t.vendo=p?p.pid:null;if(!p)return sel+nota;
+  const r=trRasc(p.pid),d=t.docs[p.pid];const novo=!!trRascNovo(p.pid);const pode=can('qualidade','u');const src=fotoSrc(p.id);
   const marcadas=t.itens.filter(x=>trMarcada(x.pid)).length;
   const foto=`<button class="tr-foto" data-act="zoom" data-id="${esc(p.id)}" aria-label="${esc(TE('tr_lupa'))}">${src?`<img src="${esc(src)}" alt="" draggable="false">`:''}</button>`;
   const pontos=`<div class="tr-pontos" role="group" aria-label="${esc(TE('tr_ponto_h'))}">${TR_PONTOS.map(([k,tc])=>`<button class="btn tr-big" data-act="tr-ponto" data-p="${k}" aria-pressed="${r.ponto===k}" ${pode?'':'disabled'}>${trPontoTxt(k)} <small>(${tc.toUpperCase()})</small></button>`).join('')}</div>`;
@@ -7951,7 +7964,7 @@ function vTreinoMarcar(){const t=state.train;const ag=trAg();
     <div class="row"><input type="text" data-act="tr-obs" maxlength="200" value="${esc(r.obs||'')}" placeholder="${esc(TE('tr_obs_ph'))}" ${pode?'':'disabled'}><button class="btn primary tr-big" data-act="tr-ok" ${pode?'':'disabled'}>${TE('tr_conf_prox')} <small>(Enter)</small></button><button class="btn ghost" data-act="tr-desfaz" ${pode&&t.desfaz.length?'':'disabled'}>${TE('tr_desfazer')} <small>(Z)</small></button></div>
     <div class="note">${TE('tr_teclas')}</div></div>
     <div class="panel"><h2>${TE('tr_miniaturas')}</h2><div class="note">${TE('tr_mini_nota2')}</div>
-      <div class="photos" style="grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:4px">${t.itens.map((x,i)=>{const l=trMarcada(x.pid)&&t.docs[x.pid];return `<button class="ph tr-mini" style="border-color:${l?(l.pend?'var(--warn)':'var(--good)'):(i===t.j?'var(--accent)':'var(--line)')}" data-act="tr-go" data-i="${i}" aria-label="${TE('rv_foto_n',i+1)}" aria-current="${i===t.j}">${i+1}</button>`}).join('')}</div></div></div>`;}
+      <div class="photos" style="grid-template-columns:repeat(auto-fill,minmax(58px,1fr));gap:4px">${t.itens.map((x,i)=>{const l=trMarcada(x.pid)&&t.docs[x.pid];const nv=novo&&i===t.j;return `<button class="ph tr-mini${nv?' tr-mini-nova':''}" style="border-color:${nv?'var(--bad)':l?(l.pend?'var(--warn)':'var(--good)'):(i===t.j?'var(--accent)':'var(--line)')}" data-act="tr-go" data-i="${i}" aria-label="${TE('rv_foto_n',i+1)}" aria-current="${i===t.j}">${i+1}</button>`}).join('')}</div></div></div>`;}
 function vTreinoOutubro(){const L=trainOut();const t=state.train;const n=L.length;t.i=Math.max(0,Math.min(n-1,t.i));const p=L[t.i];const lab=t.labels[p.id];
   const done=L.filter(x=>t.labels[x.id]).length;const cnt=v=>L.filter(x=>t.labels[x.id]&&t.labels[x.id].verdict===v).length;
   const reasonCount={};L.forEach(x=>{const l=t.labels[x.id];if(l&&l.verdict==='nao')(l.reasons||[]).forEach(r=>reasonCount[r]=(reasonCount[r]||0)+1)});
@@ -9950,8 +9963,8 @@ const EQ={
   tr_conflito:[(p)=>`Outra pessoa (${p}) marcou esta foto antes. Ficou a marcação dela; confira e marque de novo se precisar.`,(p)=>`Someone else (${p}) labeled this photo first. Their label stays; check it and label again if needed.`,(p)=>`Otra persona (${p}) marcó esta foto antes. Quedó su marcación; revísela y marque de nuevo si hace falta.`,(p)=>`Une autre personne (${p}) a étiqueté cette photo avant. Son étiquette reste ; vérifiez et étiquetez à nouveau si besoin.`,(p)=>`Jemand anderes (${p}) hat dieses Foto zuerst gelabelt. Das Label bleibt; prüfen und bei Bedarf neu labeln.`],
   tr_recusada:["O servidor recusou esta marcação","The server refused this label","El servidor rechazó esta marcación","Le serveur a refusé cette étiquette","Der Server hat dieses Label abgelehnt"],
   tr_sem_perm:["Sem permissão para marcar no treino","No permission to label in training","Sin permiso para marcar en el entrenamiento","Pas d'autorisation pour étiqueter","Keine Berechtigung zum Labeln"],
-  tr_teclas:["Teclas: G A T C O escolhem o ponto · P pode · N não pode · 1 a 9 motivo · D dúvida · Enter confirma e avança · setas navegam · Z desfaz","Keys: G A T C O pick the spot · P OK · N not OK · 1 to 9 reason · D unsure · Enter confirms and moves on · arrows navigate · Z undoes","Teclas: G A T C O eligen el punto · P sí · N no · 1 a 9 motivo · D duda · Enter confirma y avanza · flechas navegan · Z deshace","Touches : G A T C O choisissent le point · P oui · N non · 1 à 9 motif · D doute · Entrée confirme et avance · flèches pour naviguer · Z annule","Tasten: G A T C O wählen den Spot · P ok · N nicht ok · 1 bis 9 Grund · D unsicher · Enter bestätigt und geht weiter · Pfeile navigieren · Z macht rückgängig"],
-  tr_mini_nota2:["Toque para ir direto. Verde marcada, amarelo enviando.","Tap to jump there. Green labeled, yellow sending.","Toque para ir directo. Verde marcada, amarillo enviando.","Touchez pour y aller. Vert étiquetée, jaune en cours d'envoi.","Tippen, um direkt hinzuspringen. Grün gelabelt, Gelb wird gesendet."],
+  tr_teclas:["Teclas: G A T C O escolhem o ponto · P pode · N não pode · 1 a 9 motivo · D dúvida · Enter grava e vai para a próxima sem marcação · setas gravam e mudam de foto · Z desfaz","Keys: G A T C O pick the spot · P OK · N not OK · 1 to 9 reason · D unsure · Enter saves and goes to the next unlabeled photo · arrows save and change photo · Z undoes","Teclas: G A T C O eligen el punto · P sí · N no · 1 a 9 motivo · D duda · Enter guarda y va a la próxima sin marcar · flechas guardan y cambian de foto · Z deshace","Touches : G A T C O choisissent le point · P oui · N non · 1 à 9 motif · D doute · Entrée enregistre et va à la prochaine photo non étiquetée · flèches enregistrent et changent de photo · Z annule","Tasten: G A T C O wählen den Spot · P ok · N nicht ok · 1 bis 9 Grund · D unsicher · Enter speichert und springt zum nächsten Foto ohne Label · Pfeile speichern und wechseln das Foto · Z macht rückgängig"],
+  tr_mini_nota2:["Toque para ir direto. Ao sair de uma foto, a escolha feita nela é gravada. Verde marcada, amarelo enviando, vermelho tracejado escolhida e ainda não gravada.","Tap to jump there. Leaving a photo saves the choice made on it. Green labeled, yellow sending, dashed red chosen but not saved yet.","Toque para ir directo. Al salir de una foto, la elección hecha en ella se guarda. Verde marcada, amarillo enviando, rojo punteado elegida y aún no guardada.","Touchez pour y aller. En quittant une photo, le choix fait sur elle est enregistré. Vert étiquetée, jaune en cours d'envoi, rouge en pointillés choisie mais pas encore enregistrée.","Tippen, um direkt hinzuspringen. Beim Verlassen eines Fotos wird die Wahl gespeichert. Grün gelabelt, Gelb wird gesendet, Rot gestrichelt gewählt, aber noch nicht gespeichert."],
   pm_a_migracao_treino16:["migrou (Supervisora marca no Treino da IA)","migrated (Supervisor labels in AI training)","migró (Supervisora marca en el Entrenamiento de la IA)","a migré (la Superviseure étiquette dans l'Entraînement de l'IA)","migriert (Supervisorin labelt im KI-Training)"],
   pm_a_treino_analise:["mudou a análise do servidor no Treino da IA","changed the server analysis in AI training","cambió el análisis del servidor en el Entrenamiento de la IA","a modifié l'analyse du serveur dans l'Entraînement de l'IA","hat die Serveranalyse im KI-Training geändert"],
   pm_a_poses_modo:["mudou a classificação de poses no servidor","changed pose labeling on the server","cambió la clasificación de poses en el servidor","a modifié le classement des poses sur le serveur","hat die Posen-Klassifizierung auf dem Server geändert"],
@@ -11598,9 +11611,10 @@ state.user=null;state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',e
 function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;if(sessaoVencida(s,u)){try{localStorage.removeItem('eterna.session')}catch(e){}return false;} /* v92 (D2): sessão de fotógrafo de ontem pede login de novo */state.user=u;state.assumido=s.assumido&&s.assumido.por?s.assumido:null;return true;}catch(e){return false}}
 function login(email){const u=userFor(email);if(!u){state.auth.err='sem_cadastro';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;if(!state.assumido)loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString(),assumido:state.assumido||undefined}))}catch(e){}
   state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
-function logout(){authApi('/auth/sair',{});camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
+function logout(){if(state.train.vendo){trSaiDaFoto(state.train.vendo);state.train.vendo=null;} // 23/11: a escolha do Treino vai para a fila antes de sair
+  authApi('/auth/sair',{});camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   demoDesliga(); // revisão (segurança): o modo demonstração não passa para a próxima pessoa
-  state.user=null;state.assumido=null;Object.assign(state.train,{itens:[],j:0,docs:{},rasc:{},desfaz:[]});
+  state.user=null;state.assumido=null;Object.assign(state.train,{itens:[],j:0,docs:{},rasc:{},desfaz:[],vendo:null});
   // revisão 23/11 (AF): números por fotógrafo, rascunho dos limites e calibração não ficam para a próxima pessoa
   Object.assign(state.fot,{j:null,chave:null,em:0,erro:null,rasc:{},recusa:null});Object.assign(state.fg.est,{chave:null,dias:null,em:0,erro:null});Object.assign(state.train.luz,{j:null,esc:{},recusa:null});state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
@@ -12456,6 +12470,7 @@ const escalaOn=()=>ESCALA_ON; // para os testes saberem com que chave a página 
 const VIEWFN={minhasenha:vMinhaSenha,estatisticas:vEstatisticas,calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:()=>vPosto({filtro:'todos'}),'vendas-lista':vVendasLista,'ativ-resumo':vAtivResumo,'ativ-venda':vAtivVenda,'ativ-entrega':vAtivEntrega,importar:vImportar,repo:vRepo,fila:()=>vPosto({filtro:'todos'}),caixa:()=>vPosto({filtro:'dinheiro'}),posto:()=>vPosto({filtro:'todos'}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'chute-a-gol':vChuteAGol,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
   document.documentElement.lang=localeTela();
+  trConfere(); // 23/11: a escolha da foto do Treino que saiu da tela vai para a fila
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
     try{$('#main').innerHTML=vGaleriaQR();legLegenda($('#main'));}catch(err){console.error(err);$('#main').innerHTML=`<div class="gq"><div class="gq-mid"><h1 class="lj-h2">${esc(T('gq_notFound'))}</h1></div></div>`;}
     if(state.guest.selfie)selfieMount();return;}
@@ -13060,7 +13075,8 @@ document.addEventListener('dragleave',e=>{const z=envioZona(e);if(z&&!z.contains
 document.addEventListener('drop',e=>{const z=envioZona(e);if(!z){if(state.view==='importar')e.preventDefault();return;}e.preventDefault();z.classList.remove('on');
   const l=[...((e.dataTransfer&&e.dataTransfer.files)||[])];if(l.length&&guardAct('envio-files'))fotosEnviar(l);});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.classList&&e.target.classList.contains('envio-drop')){e.preventDefault();e.target.click();}});
-window.addEventListener('beforeunload',e=>{if(state.imp&&state.imp.envio){e.preventDefault();e.returnValue='';return '';}});
+window.addEventListener('beforeunload',e=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);if(state.imp&&state.imp.envio){e.preventDefault();e.returnValue='';return '';}});
+window.addEventListener('pagehide',()=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);}); // 23/11: escolha do Treino ainda não gravada vai para a fila local (síncrona), sem pergunta do navegador
 document.addEventListener('submit',e=>{const f=e.target.dataset.form;if(!f)return;e.preventDefault();if(f==='login-entrar')authEntrar();if(f==='login-trocar')authTrocar();if(f==='login-esqueci')authEsqueci();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.drawer){menuSet(false);e.preventDefault();return;}if(e.key==='Escape'&&state.roloAsk&&!state.lojaRota){state.roloAsk=null;render();e.preventDefault();return;}if(e.key==='Tab'&&state.roloAsk&&!state.lojaRota&&document.querySelector('.rolo-ask')){roloAskTab(e);return;}if(e.key==='Escape'&&state.pend.recAsk&&!state.lojaRota){state.pend.recAsk=null;render();e.preventDefault();return;}if(e.key==='Tab'&&state.pend.recAsk&&!state.lojaRota&&document.querySelector('.pend-recask')){roloAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.sairAsk){state.kiosk.sairAsk=false;render();e.preventDefault();return;}if(e.key==='Tab'&&state.lojaRota&&state.kiosk.sairAsk){lojaAskTab(e);return;}if(e.key==='Escape'&&state.lojaRota&&state.kiosk.ver!=null){state.kiosk.ver=null;render();e.preventDefault();return;}if(e.key==='Escape'&&state.lojaRota&&!$('#modal').hasAttribute('data-open')){lojaEsc();return;}if(e.key==='Enter'&&e.target.id==='gq-code'){pubCodigo();return;}if(state.view==='quiosque'&&state.kiosk.step==='review'&&state.kiosk.ver!=null&&!/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){const k=state.kiosk;const n=lojaItems(k.code).length;
     if(e.key==='ArrowRight'||e.key==='ArrowLeft'){k.ver=Math.max(0,Math.min(n-1,k.ver+(e.key==='ArrowRight'?1:-1)));k.i=k.ver;render();e.preventDefault();return;}

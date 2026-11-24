@@ -121,6 +121,75 @@ try{
     const tam=await pg.$$eval('.tr-big',x=>x.map(b=>{const r=b.getBoundingClientRect();return Math.round(Math.min(r.width,r.height));}));
     ok(tam.every(h=>h>=56),'no celular os botões seguem com 56 px ou mais: '+J(tam));
     await ctx.close();}
+  // ---------- 23/11: sair da foto grava a escolha (Próxima, setas, grade, Carregar, aba, tela, recarregar); Z desfaz ----------
+  {const {ctx,pg,R}=await nova();const dlg=[];pg.on('dialog',d=>{dlg.push(d.message());d.dismiss().catch(()=>{});});await entrar(pg,null,true);
+    await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
+    await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12);
+    const borda=i=>pg.$eval(`[data-act="tr-go"][data-i="${i}"]`,b=>b.style.borderColor+(b.classList.contains('tr-mini-nova')?' nova':''));
+    const blur=()=>pg.evaluate(()=>document.activeElement&&document.activeElement.blur());
+    // Pode e Próxima
+    await pg.click('[data-act="tr-q"][data-v="boa"]');
+    const b0=await borda(0);ok(/bad/.test(b0)&&/nova/.test(b0),'grade: foto atual com escolha ainda não gravada em outra cor (vermelho tracejado): '+b0);
+    ok(R.posts.length===0,'escolher sem sair da foto ainda não grava: '+J(R.posts));
+    await pg.click('[data-act="tr-next"]');await espera(pg,()=>ETERNA.trFila().length===0&&!ETERNA.state.train.docs[ETERNA.state.train.itens[0].pid].pend);
+    ok(R.posts.length===1&&R.posts[0].b.pid===PIDS[0]&&R.posts[0].b.qual.nivel==='boa'&&await pg.evaluate(()=>ETERNA.state.train.j)===1,'Pode e Próxima: grava e vai para a seguinte: '+J(R.posts));
+    const b0b=await borda(0);ok(/good/.test(b0b)&&!/nova/.test(b0b),'grade: a foto gravada fica verde: '+b0b);
+    // seta
+    await blur();await pg.keyboard.press('p');await pg.keyboard.press('ArrowRight');await espera(pg,()=>ETERNA.trFila().length===0&&ETERNA.state.train.j===2);await pg.waitForTimeout(200);
+    ok(R.posts.length===2&&R.posts[1].b.pid===PIDS[1]&&R.posts[1].b.qual.nivel==='boa','P e seta para a direita gravam: '+J(R.posts.map(x=>x.b.pid)));
+    ok(/good/.test(await borda(1)),'grade: verde depois da seta');
+    // número da grade
+    await pg.keyboard.press('n');await pg.keyboard.press('1');await pg.click('[data-act="tr-go"][data-i="5"]');await espera(pg,()=>ETERNA.trFila().length===0&&ETERNA.state.train.j===5);await pg.waitForTimeout(200);
+    ok(R.posts.length===3&&R.posts[2].b.pid===PIDS[2]&&R.posts[2].b.qual.nivel==='fraca'&&J(R.posts[2].b.qual.motivos)===J(['desfocada']),'Não pode, motivo e toque no número gravam: '+J(R.posts[2]&&R.posts[2].b));
+    ok(/good/.test(await borda(2)),'grade: verde depois do toque no número');
+    // passar sem tocar nada não grava; Próxima não pula as marcadas
+    await blur();await pg.keyboard.press('ArrowRight');await pg.keyboard.press('ArrowRight');await pg.keyboard.press('ArrowLeft');await pg.click('[data-act="tr-next"]');await pg.click('[data-act="tr-prev"]');await pg.waitForTimeout(400);
+    ok(R.posts.length===3&&await pg.evaluate(()=>ETERNA.trFila().length)===0,'passar pelas fotos sem tocar nada não faz POST: '+R.posts.length);
+    await pg.click('[data-act="tr-go"][data-i="0"]');await pg.click('[data-act="tr-next"]');
+    ok(await pg.evaluate(()=>ETERNA.state.train.j)===1&&R.posts.length===3,'Próxima vai para a seguinte mesmo marcada, sem gravar de novo o que não mudou');
+    // escolha igual à gravada não grava de novo; mudar a gravada grava
+    await blur();await pg.keyboard.press('p');await pg.keyboard.press('p');await pg.keyboard.press('ArrowRight');await pg.waitForTimeout(300);
+    ok(R.posts.length===3,'tirar e pôr de novo a mesma escolha não grava: '+R.posts.length);
+    // Z desfaz a gravação feita pela Próxima
+    await pg.click('[data-act="tr-go"][data-i="6"]');await blur();await pg.keyboard.press('g');await pg.click('[data-act="tr-next"]');await espera(pg,()=>ETERNA.trFila().length===0&&ETERNA.state.train.j===7);await pg.waitForTimeout(200);
+    ok(R.posts.length===4&&R.posts[3].b.pid===PIDS[6]&&R.posts[3].b.ponto==='gramado','G e Próxima gravam: '+J(R.posts[3]&&R.posts[3].b));
+    await blur();await pg.keyboard.press('z');await espera(pg,()=>ETERNA.trFila().length===0&&ETERNA.state.train.j===6);await pg.waitForTimeout(200);
+    const z=R.posts[4]&&R.posts[4].b;
+    ok(R.posts.length===5&&z.pid===PIDS[6]&&z.ponto===null&&z.qual.nivel===null&&z.base_em&&await pg.evaluate(()=>ETERNA.state.train.j)===6,'Z desfaz a gravação feita pela Próxima e volta para a foto: '+J(z));
+    {const b6=await borda(6);ok(!/good|warn|bad/.test(b6),'grade: a foto desfeita não fica verde: '+b6);}
+    // Carregar, outra aba e outra tela também gravam
+    await pg.click('[data-act="tr-go"][data-i="8"]');await blur();await pg.keyboard.press('a');await pg.click('[data-act="tr-aba"][data-a="medida"]');await espera(pg,()=>ETERNA.trFila().length===0);await pg.waitForTimeout(300);
+    ok(R.posts.length===6&&R.posts[5].b.pid===PIDS[8]&&R.posts[5].b.ponto==='arquibancada','trocar para a aba Medição grava: '+J(R.posts.map(x=>x.b.pid)));
+    await pg.click('[data-act="tr-aba"][data-a="marcar"]');await pg.click('[data-act="tr-go"][data-i="9"]');await blur();await pg.keyboard.press('t');
+    await pg.evaluate(()=>ETERNA.go('painel'));await espera(pg,()=>ETERNA.trFila().length===0);await pg.waitForTimeout(300);
+    ok(R.posts.length===7&&R.posts[6].b.pid===PIDS[9]&&R.posts[6].b.ponto==='trofeu','sair da tela do Treino grava: '+J(R.posts.map(x=>x.b.pid)));
+    await pg.evaluate(()=>ETERNA.go('treino'));await pg.click('[data-act="tr-go"][data-i="10"]');await blur();await pg.keyboard.press('o');await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.trFila().length===0&&ETERNA.state.train.j===0);await pg.waitForTimeout(300);
+    ok(R.posts.length===8&&R.posts[7].b.pid===PIDS[10]&&R.posts[7].b.ponto==='outro','Carregar de novo grava a escolha da foto de antes: '+J(R.posts.map(x=>x.b.pid)));
+    // recarregar a página: vai para a fila local, sem pergunta do navegador
+    R.rotuloStatus=503;await pg.click('[data-act="tr-go"][data-i="11"]');await blur();await pg.keyboard.press('c');
+    await pg.reload();await pg.waitForTimeout(600);
+    const fl=await pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.treino.fila.v1')||'[]'));
+    ok(fl.length===1&&fl[0].pid===PIDS[11]&&fl[0].corpo.ponto==='chute'&&!dlg.length,'recarregar com escolha não gravada: fica na fila local, sem diálogo: '+J(fl)+' '+J(dlg));
+    R.rotuloStatus=200;await espera(pg,()=>ETERNA.state.agent.on,8000);await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.trFila().length===0,5000);
+    ok(R.posts.some(x=>x.b.pid===PIDS[11]&&x.b.ponto==='chute'),'a fila de antes de recarregar sobe ao abrir o Treino');
+    // sair da conta
+    await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12);
+    const nAntes=R.posts.length;await pg.click('[data-act="tr-go"][data-i="4"]');await pg.evaluate(()=>document.activeElement&&document.activeElement.blur());await pg.keyboard.press('d');
+    await pg.evaluate(()=>ETERNA.logout());await pg.waitForTimeout(800);
+    const sai=R.posts.slice(nAntes).find(x=>x.b.pid===PIDS[4]);const fs2=await pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.treino.fila.v1')||'[]'));
+    ok((sai&&sai.b.duvida===true)||fs2.some(x=>x.pid===PIDS[4]&&x.corpo.duvida===true),'sair da conta grava a escolha (POST ou fila): '+J(R.posts.slice(nAntes).map(x=>x.b))+' '+J(fs2));
+    await ctx.close();}
+  // ---------- sem qualidade.u: sair da foto não grava nem avisa ----------
+  {const {ctx,pg,R}=await nova();await entrar(pg,null,true);
+    await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
+    await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12);
+    await pg.evaluate(()=>{ETERNA.state.user.perms.qualidade=Object.assign({},ETERNA.state.user.perms.qualidade,{u:false});const t=ETERNA.state.train;const r=t.rasc[t.itens[0].pid];r.nivel='boa';r.ponto='gramado';ETERNA.render();});
+    await pg.evaluate(()=>document.querySelector('#toast')&&(document.querySelector('#toast').textContent=''));
+    await pg.click('[data-act="tr-next"]');await pg.evaluate(()=>document.activeElement&&document.activeElement.blur());await pg.keyboard.press('ArrowRight');await pg.click('[data-act="tr-go"][data-i="0"]');
+    await pg.evaluate(()=>ETERNA.go('painel'));await pg.waitForTimeout(500);
+    ok(R.posts.length===0&&await pg.evaluate(()=>ETERNA.trFila().length)===0,'sem qualidade.u: Próxima, seta, grade e sair da tela não fazem POST: '+J(R.posts));
+    ok(!/permiss/i.test(await pg.evaluate(()=>(document.querySelector('#toast')||{}).textContent||'')),'sem qualidade.u: nenhum aviso a cada passo');
+    await ctx.close();}
   // ---------- Supervisora: marca, muda o interruptor; migração única ----------
   {const {ctx,pg,R}=await nova();await pg.goto(U);await pg.waitForTimeout(200);
     // cadastro antigo da Supervisora, sem qualidade.u (antes de 16/11)
