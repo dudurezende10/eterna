@@ -12312,7 +12312,7 @@ def _ev_ler(dia):
              "dados": json.loads(r[7] or "{}")} for r in rs]
 
 
-EV_LANGS = ("pt", "en", "es", "fr", "de")
+EV_LANGS = ("pt", "en", "es", "fr", "de", "it", "zh")   # 24/11: italiano e chinês do Checkout também contam
 EV_CANAIS = ("checkout", "balcao")
 EV_CART_MAX = 30
 _re_cart_id = re.compile(r"^[a-z0-9_-]{1,20}$")
@@ -22334,7 +22334,7 @@ class H(BaseHTTPRequestHandler):
             if not isinstance(img, str) or not img:
                 return self.js({"error": "sem imagem"}, 400)
             kid = m["tipo"] == "evento" or bool(m.get("menor"))
-            idioma = body.get("idioma") if body.get("idioma") in ("pt", "en", "es", "fr", "de") else "pt"
+            idioma = body.get("idioma") if body.get("idioma") in ("pt", "en", "es", "fr", "de", "it", "zh") else "pt"
             versao = str(body.get("versao") or "")[:20]
             con = {"token": token, "tipo": "responsavel" if kid else "titular", "versao": versao, "idioma": idioma, "em": _iso()}
             email = str(body.get("email") or "").strip().lower()[:190]

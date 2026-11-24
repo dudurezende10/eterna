@@ -1556,7 +1556,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.45.2 · 24/11 21:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.46.1 · 24/11 21:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1580,7 +1580,7 @@ const DATA={"paxSource": "Painel Viva Maracanã (catracas), maraca-acessos.onren
 const $=(s,el=document)=>el.querySelector(s);
 // Dois idiomas que nunca se misturam: state.lang é o do CLIENTE (Checkout e galeria, troca a cada venda) e langEq() é o da EQUIPE (cadastro da pessoa ou aparelho).
 // A moeda é da unidade e não muda com o idioma; o idioma só muda como o número é escrito.
-const LOCALES={pt:'pt-BR',en:'en-US',es:'es-ES',fr:'fr-FR',de:'de-DE',zh:'zh-CN'};
+const LOCALES={pt:'pt-BR',en:'en-US',es:'es-ES',fr:'fr-FR',de:'de-DE',it:'it-IT',zh:'zh-CN'};
 const IDIOMAS_EQ=[['pt','Português'],['en','English'],['es','Español'],['fr','Français']]; // mesmo conjunto e ordem de parceiros.vivamaracana.com.br
 const idiomaEqOk=l=>IDIOMAS_EQ.some(x=>x[0]===l);
 const MOEDA={codigo:'BRL',simbolo:'R$'};
@@ -3318,6 +3318,7 @@ const LANG_FLAGS={
   en:'<rect width="30" height="20" fill="#fff"/>'+[0,2,4,6,8,10,12].map(i=>`<rect y="${(i*20/13).toFixed(2)}" width="30" height="${(20/13).toFixed(2)}" fill="#b22234"/>`).join('')+'<rect width="13" height="10.77" fill="#3c3b6e"/>'+[[2,2],[5,2],[8,2],[11,2],[3.5,4.4],[6.5,4.4],[9.5,4.4],[2,6.8],[5,6.8],[8,6.8],[11,6.8],[3.5,9.1],[6.5,9.1],[9.5,9.1]].map(([x,y])=>`<circle cx="${x}" cy="${y}" r=".55" fill="#fff"/>`).join(''),
   es:'<rect width="30" height="20" fill="#aa151b"/><rect y="5" width="30" height="10" fill="#f1bf00"/>',
   fr:'<rect width="30" height="20" fill="#fff"/><rect width="10" height="20" fill="#002395"/><rect x="20" width="10" height="20" fill="#ed2939"/>',
+  it:'<rect width="30" height="20" fill="#fff"/><rect width="10" height="20" fill="#009246"/><rect x="20" width="10" height="20" fill="#ce2b37"/>',
   de:'<rect width="30" height="20" fill="#000"/><rect y="6.67" width="30" height="6.67" fill="#dd0000"/><rect y="13.33" width="30" height="6.67" fill="#ffce00"/>',
   zh:'<rect width="30" height="20" fill="#ee1c25"/>'+[[5,5,3,0],[10,2,1,23],[12,4,1,46],[12,7,1,70],[10,9,1,93]].map(([x,y,r,g])=>`<polygon fill="#ffff00" transform="translate(${x} ${y}) rotate(${g})" points="${[...Array(10)].map((_,i)=>{const a=Math.PI*(i/5-.5),q=i%2?r*.382:r;return (q*Math.cos(a)).toFixed(2)+','+(q*Math.sin(a)).toFixed(2);}).join(' ')}"/>`).join('')};
 const flagSvg=c=>`<svg class="lj-flag" viewBox="0 0 30 20" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${LANG_FLAGS[c]||''}</svg>`;
@@ -3891,7 +3892,7 @@ function galEvSalvar(){const e=state.gal.ev;if(!e)return;const nome=(($('#gal-ev
   state.gal.ev=null;galPublicar(m.token);toast(TE('ga_grupo_salvo',nome,m.codigo));render();}
 // ---------- Idiomas da Loja e da galeria do convidado: português, inglês, espanhol, francês e alemão ----------
 const LANGS=[['pt','Português'],['en','English'],['es','Español'],['fr','Français'],['de','Deutsch']];
-const LANGS_CLI=[...LANGS,['zh','中文']]; // idiomas do cliente; os textos da equipe (EQ) seguem só LANGS
+const LANGS_CLI=[...LANGS,['it','Italiano'],['zh','中文']]; // idiomas do cliente; os textos da equipe (EQ) seguem só LANGS. 24/11: italiano (Ronaldo), como o chinês: dicionário próprio (I18N_IT)
 const PL=(n,a,b)=>n===1?a:b;
 const I18N={
  relive:['Viva essa história','Relive the moment','Revive la historia','Revivez l’histoire','Erlebe die Geschichte'],
@@ -4378,19 +4379,256 @@ const I18N_ZH={
  ljEscTirada:'照片已移除',
  ljEscDesfazer:'撤销',
 };
+// 24/11 (Ronaldo): italiano no Checkout e na galeria, com a legenda em português como o alemão (LEG_LANGS). Chave sem tradução cai no inglês.
+const I18N_IT={
+ relive:"Rivivi il momento",
+ yourPhotos:"Le tue foto<br>sono qui",
+ lookCam:"Guarda la fotocamera",
+ typeCode:"Digita il tuo codice",
+ ljReadyH:"Tutto pronto!",
+ ljReadySub:"L’addetto completerà il tuo acquisto",
+ ljYourCode:"Il tuo codice",
+ ljNChosen:n=>`${n} ${PL(n,'foto scelta','foto scelte')}`,
+ ljPayValue:"Importo da pagare",
+ ljPayMachine:"Paga con il POS",
+ ljPayCash:"Paga in contanti all’addetto",
+ ljPayAsk:"L’addetto ti dirà come pagare",
+ ljSair:"Esci",
+ ljSairAsk:"Uscire e cancellare le foto che hai segnato?",
+ ljSairSim:"Sì, esci",
+ ljSairNao:"No, continuo a scegliere",
+ ljVoltarTarde:"L’addetto sta già completando il tuo ordine.",
+ ljPaidValue:v=>`Importo pagato ${v}`,
+ ljBackPhotos:"Torna alle foto",
+ ljSeeMine:"Vedi le mie foto",
+ ljClose:"Chiudi",
+ ljGrupo:"Foto di gruppo",
+ ljGrupoSub:"Tutti insieme, rivolti verso la fotocamera. Troviamo le foto di ognuno e quelle del gruppo",
+ ljGrupoFoto:"Scatta la foto",
+ ljUmaPessoa:"Solo una persona",
+ ljGrupoAchou:n=>n+' persone nella foto',
+ ljStart:"Inizia",
+ ljTypeCode:"Inserisci la tua sessione",
+ receiptCode:"Il tuo codice",
+ seeMine:"Vedi le mie foto",
+ codeSearching:"Stiamo cercando le tue foto…",
+ camera:"Fotocamera",
+ notFound:"Non le abbiamo trovate",
+ back:"Indietro",
+ choose:"Scegli le tue foto",
+ cont:"Continua",
+ ljVerTodas:"Vedi tutte",
+ ljTelaCheia:"Vedi a schermo intero",
+ ljOutraP:"Un’altra persona",
+ ljEscolhidas:"scelte",
+ ljEscLista:"Foto scelte",
+ ljEscVazio:"Qui compaiono le foto che scegli",
+ ljEscVer:n=>'Vedi la foto scelta '+n,
+ ljEscTirar:n=>'Togli la foto '+n+' dalle foto scelte',
+ ljEscTirada:"Foto tolta",
+ ljEscDesfazer:"Annulla",
+ ljPrev:"Foto precedente",
+ ljNext:"Foto successiva",
+ ljLang:"Lingua",
+ tapCheck:"Tocca ✓ sulle foto che vuoi",
+ nPhotos:n=>n+' foto',
+ memories:"I tuoi ricordi",
+ bgTelao:"Maxischermo del Maracanã",
+ bgIA:"Sfondo con IA",
+ edSelo:"Edizione Maracanã",
+ edTitulo:"Le tue foto speciali",
+ edFotos:"Le tue foto di oggi",
+ bgArq1950:"Maracanã 1950",
+ bgMiranteDia:"Belvedere di Rio",
+ bgMirante:"Belvedere al tramonto",
+ bgCampeao:"Notte da campioni",
+ bgTunel:"Uscita dal tunnel",
+ bgPodio:"Podio dei campioni",
+ aiIndisp:"Foto speciale non disponibile",
+ aiAguarde:"Ancora in preparazione, un momento",
+ aiMaking:"Stiamo preparando la tua foto speciale...",
+ gallery:"Galleria online per 30 giorni",
+ payH:"Come preferisci pagare?",
+ card:"Carta",
+ pix:"PIX",
+ cash:"Contanti",
+ total:"Totale",
+ save:x=>'risparmi '+x,
+ thanks:"Grazie",
+ storyGoes:"La tua storia<br>viene con te",
+ printsReady:n=>n===1?'La tua stampa esce proprio qui al banco.':`Le tue ${n} stampe escono proprio qui al banco.`,
+ scanQR:"Inquadra con la fotocamera del telefono per scaricare le tue foto digitali.",
+ qrInst1:"Inquadra il codice QR con la fotocamera del telefono",
+ qrInst2:"oppure vai su <b>eterna.photo/g</b> e digita il codice",
+ download:"Scarica le tue foto",
+ nextGuest:"Prossimo ospite",
+ tvSesH:"Anche questa sessione è tua?",
+ tvSesSub:"Somigli a te in queste foto di un altro momento del tuo tour",
+ tvSim:"Sì, sono io",
+ tvNao:"Non sono io",
+ foundYou:"Ti abbiamo trovato",
+ ljSeparando:"Stiamo preparando le tue foto...",
+ addPerson:"Aggiungi un’altra persona",
+ addPersonSub:"Ora un selfie dell’altra persona: le sue foto si aggiungono alle tue",
+ backMine:"Torna alle mie foto",
+ addedPerson:"Foto aggiunte",
+ codeBad:"Codice non trovato. Controlla il tuo codice.",
+ codeWait:"Troppi tentativi. Chiedi aiuto al personale o riprova tra 1 minuto.",
+ isOne:"È una di queste?",
+ none:"Nessuna è mia",
+ cam_off:"Avvio della fotocamera...",
+ cam_idle:"Guarda la fotocamera",
+ cam_present:"Resta fermo un momento",
+ cam_searching:"Stiamo cercando le tue foto...",
+ cam_found:"Ti abbiamo trovato!",
+ cam_varias:"Una persona alla volta: solo il tuo viso nell’inquadratura",
+ cam_noface:"Nessun viso rilevato. Guarda la fotocamera",
+ cam_pick:"È una di queste?",
+ cam_nomatch:"Nessuna foto trovata. Usa il tuo codice",
+ cam_nocam:"Fotocamera non disponibile. Usa il tuo codice",
+ cam_sim:"Fotocamera non disponibile · demo",
+ g_fit:"Inquadra il viso nel cerchio, senza occhiali da sole né cappello.",
+ g_snap:"Scatta la foto",
+ ljBackStart:"Torna all’inizio",
+ ljBackIn:"Torna all’inizio tra",
+ gq_gratisH:"Scegli la tua foto gratuita",
+ gq_gratisD:"Tocca “Voglio questa gratis” sulla foto che vuoi in regalo.",
+ gq_gratisBtn:"Voglio questa gratis",
+ gq_gratisConf:"Conferma la foto gratuita",
+ gq_gratisFinal:"Questa scelta è definitiva e non si può cambiare.",
+ gq_gratisOk:"Foto gratuita pronta da scaricare",
+ gq_gratisRep:"Questo bambino ha già scelto la foto gratuita.",
+ gq_gratisEsgot:"Tutte le foto gratuite di questa scuola sono già state scelte.",
+ gq_loading:"Apertura delle tue foto",
+ gq_consentH:"La tua storia al Maracanã merita di essere ricordata",
+ gq_consentD:"Rivivi i momenti della tua visita e trova le foto che hanno immortalato questa esperienza.",
+ gq_consentSelf:"Autorizzo l’uso del mio selfie solo per trovare le mie foto di questa visita.\nViene confrontato sul momento e poi eliminato (LGPD).",
+ gq_consentKid:"Sono il genitore o il tutore legale del bambino e autorizzo l’uso della foto del suo viso solo per trovare le foto di questa visita.\nViene confrontata sul momento e poi eliminata (LGPD, art. 14).",
+ gq_consentSelfNuvem:"Autorizzo l’uso del mio selfie solo per trovare le mie foto di questa visita.\nViene confrontato solo con le foto di questa galleria e non viene conservato. I dati del viso delle foto vengono cancellati alla scadenza della galleria (LGPD).",
+ gq_escMkt:" e accetto di ricevere novità e offerte di Viva Maracanã via e-mail.",
+ gq_consentKidNuvem:"Sono il genitore o il tutore legale del bambino e autorizzo l’uso della foto del suo viso esclusivamente per trovare le immagini di questa visita.\nLa foto sarà usata solo per il confronto con le immagini di questa galleria, senza conservazione permanente. I dati facciali saranno cancellati alla scadenza della galleria.",
+ gq_agree:"Accetto e continuo",
+ gq_selfieH:"Scatta un selfie",
+ gq_selfieD:"Così solo tu vedi le tue foto.",
+ gq_kidH:"Foto del viso del bambino",
+ gq_kidD:"Rivolto verso la fotocamera, con buona luce, senza cappello né occhiali da sole.",
+ gq_comparing:"Stiamo guardando le foto della tua visita.",
+ gq_varias:"Una persona alla volta",
+ gq_variasD:"Solo il tuo viso nell’inquadratura. Ognuno apre le proprie foto.",
+ gq_camBloq:"Consenti la fotocamera nel browser e riprova. Se non funziona, chiedi al personale del Tour.",
+ gq_looking:"Inquadra il viso nel cerchio: la foto si scatta da sola",
+ gq_noFace:"Non abbiamo trovato un viso. Prova rivolto verso la fotocamera, con buona luce.",
+ gq_noMatch:"Questo viso non compare nelle foto di questa visita.",
+ gq_tries:n=>`Ancora ${n} ${PL(n,'tentativo','tentativi')}.`,
+ gq_lockedDay:"Troppi tentativi. Riprova domani.",
+ gq_locked:t=>`Troppi tentativi. Riprova alle ${t}.`,
+ gq_tryAgain:"Riprova",
+ gq_help:"Hai bisogno di aiuto? Scrivi a",
+ gq_arriving:"Le tue foto stanno arrivando",
+ gq_arrivingD:"Torna tra qualche minuto.",
+ gq_expired:"Questa galleria è scaduta",
+ gq_expiredD:"Le foto restano disponibili per 30 giorni.",
+ gq_notFound:"Galleria non trovata",
+ gq_codeH:"Digita il tuo codice",
+ gq_codeIs:c=>`Il tuo codice: ${c}`,
+ gq_open:"Apri",
+ gq_qr:"Leggi il QR del voucher o del biglietto",
+ gq_qrAponte:"Inquadra il QR del voucher o del biglietto",
+ gq_qrImg:"Sei al computer? Carica l’immagine del QR",
+ gq_qrNada:"Nessun QR in questa immagine. Provane un’altra o digita il codice.",
+ gq_until:d=>`Disponibile fino al ${d}`,
+ gq_findMore:"Trova altre foto in cui ci sei",
+ gq_findMoreD:"Scatta un selfie per vedere le altre foto in cui compari.",
+ gq_backMine:"Torna alle tue foto",
+ gq_yours:"Le tue foto",
+ gq_yoursD:n=>`${n} foto in alta risoluzione da scaricare`,
+ gq_none:"Nessuna foto ancora sbloccata.",
+ gq_gift:"Omaggio",
+ gq_dl:"Scarica",
+ gq_dlAll:"Scarica tutte",
+ gq_dlPrep:(a,b)=>`Preparazione di ${a} foto su ${b}…`,
+ gq_dlSave:(a,b,c)=>`Salva le foto da ${a} a ${b} di ${c}`,
+ gq_dlZip:"Scarica tutto in .zip",
+ gq_dlFeito:n=>`Fatto: ${n} foto salvate.`,
+ gq_dlZipOk:n=>`${n} foto scaricate in un unico file .zip.`,
+ gq_dlZipDe:"Scarica di nuovo il .zip",
+ gq_dlErro:"Impossibile scaricare ora. Riprova.",
+ gq_dlFalhas:n=>`${n} foto non ${PL(n,'scaricata','scaricate')}: usa Scarica su ognuna.`,
+ gq_more:"Altre foto della tua visita",
+ gq_moreD:"Tocca ✓ su quelle che vuoi.",
+ gq_offer:(n,a,b,c)=>`${n} foto per ${a}${b?` · ogni foto in più ${b}`:''}${c?` · tutte per ${c}`:''}.`,
+ gq_moreFree:n=>`Puoi sceglierne ancora ${n} senza costi aggiuntivi`,
+ gq_dadosH:"I tuoi dati per il pagamento",
+ gq_dadosD:"Usiamo questi dati per emettere il tuo ordine e inviarti le foto.",
+ gq_nome:"Nome e cognome",
+ gq_emailFotos:"La tua e-mail (per contattarti riguardo alle tue foto)",
+ gq_email:"E-mail (ti inviamo il link delle foto)",
+ gq_cpf:"CPF (documento brasiliano)",
+ gq_passaporte:"Numero di passaporto",
+ gq_estrangeiro:"Non ho il CPF (uso il passaporto)",
+ gq_brasileiro:"Ho il CPF",
+ gv_h_drone:"Il tuo video del Drone",
+ gv_h_chute:"Il tuo video del Calcio di rigore",
+ gv_h_snap:"Il tuo video Snap Pop",
+ gv_h_video:"Il tuo video del Tour",
+ gv_d:"Questa card è la chiave del tuo video. Conservala.",
+ gv_consent:d=>`Autorizzo l’uso della mia immagine in questo video del Tour del Maracanã solo per poterlo guardare e scaricare.\nL’e-mail resta collegata a questo video per l’assistenza. Il video è disponibile fino al ${d} e poi viene eliminato (LGPD).`,
+ gv_email:"La tua e-mail",
+ gv_ver:"Vedi il mio video",
+ gv_erro:"Impossibile aprirlo ora. Riprova tra un momento.",
+ gv_ate:d=>`Disponibile fino al ${d}`,
+ gv_chegando:"Il tuo video sta arrivando",
+ gv_chegandoD:"Comparirà qui da solo tra qualche minuto. Puoi lasciare questa pagina aperta.",
+ gv_tour_h:n=>n===1?'Abbiamo trovato 1 tua foto del Tour':'Abbiamo trovato '+n+' tue foto del Tour',
+ gv_tour_d:"Prendi quelle che non hai preso allo stadio. Un selfie veloce conferma che sei tu.",
+ gv_tour_d2:"Tocca una foto per acquistarla. Quelle che hai già sono pronte da scaricare.",
+ gv_tour_tudo:"Sono tutte tue. Basta scaricarle.",
+ gv_tour_comprar:"Acquista le mie foto",
+ gv_tour_volta:"Torna al video",
+ gv_tour_ver:"Vedi le mie foto",
+ gv_baixar:"Scarica il video",
+ gq_mkt:"Voglio ricevere novità e offerte di Viva Maracanã via e-mail (facoltativo).",
+ gq_irPagar:(n,x)=>`Vai al pagamento · ${x}`,
+ gq_implyFine:"Paghi con Pix o carta su una pagina sicura e torni qui. Le foto vengono sbloccate appena il pagamento è confermato.",
+ gq_nomeBad:"Scrivi nome e cognome.",
+ gq_emailBad:"Controlla l’e-mail.",
+ gq_docBad:"Controlla il numero del documento.",
+ gq_impErr:"Non siamo riusciti ad aprire il pagamento ora. Riprova tra poco.",
+ gq_conferindo:"Stiamo verificando il pagamento",
+ gq_conferindoD:"Appena il pagamento è confermato, le tue foto compaiono qui. Il Pix può richiedere qualche minuto.",
+ gq_payCancel:"Il pagamento non è stato completato. Le tue foto sono ancora qui da acquistare.",
+ gq_all:x=>`Tutte per ${x}`,
+ gq_buy:(n,x)=>`Acquista ${n} foto · ${x}`,
+ gq_buyOff:"L’acquisto online non è disponibile in questo momento. Riprova più tardi.",
+ gq_buyOffEsc:"Per acquistare queste foto, scrivi a",
+ gq_payTest:"Pagamento di prova. Non viene addebitato nulla.",
+ gq_payFail:"Non siamo riusciti a completare il pagamento. Riprova o parla con il personale del Tour.",
+ gq_again:"Per la tua sicurezza, conferma con un nuovo selfie per continuare.",
+ gq_paid:"Pagamento approvato. Le tue foto sono sbloccate.",
+ gq_waitPay:"In attesa della conferma del pagamento.",
+ gq_kidFound:n=>`Abbiamo trovato ${n} foto del bambino`,
+ ljPosPixH:"Paga con PIX sul POS",
+ gq_waitCash:"Il tuo pagamento in contanti è in attesa al banco",
+ gq_waitCashD:"Appena il personale lo conferma, le tue foto compariranno qui.",
+ ljMais:"Acquista altre foto",
+ ljMaisNada:"Hai già acquistato tutte le tue foto.",
+ ljAlreadyPaid:"Queste foto sono già state acquistate. Parla con il personale per acquistarne altre.",
+ ljSaveFail:"Non siamo riusciti a registrare il tuo ordine. Parla con il personale al banco.",
+ gq_printHow:"Inquadra il QR con la fotocamera del telefono e invia una foto del viso del bambino.",
+};
 function lang(){const l=state.lang;return LANGS_CLI.some(x=>x[0]===l)?l:'pt';}
-function T(k,...a){const e=I18N[k];if(!e)return k;const l=lang();const i=Math.max(0,LANGS.findIndex(x=>x[0]===l));const v=l==='zh'?(I18N_ZH[k]!=null?I18N_ZH[k]:e[1]):e[i]!=null?e[i]:e[0];const r=typeof v==='function'?v(...a):v;
+function T(k,...a){const e=I18N[k];if(!e)return k;const l=lang();const i=Math.max(0,LANGS.findIndex(x=>x[0]===l));const v=l==='zh'?(I18N_ZH[k]!=null?I18N_ZH[k]:e[1]):l==='it'?(I18N_IT[k]!=null?I18N_IT[k]:e[1]):e[i]!=null?e[i]:e[0];const r=typeof v==='function'?v(...a):v;
   if(legPtOn())legPtGuarda(r,typeof e[0]==='function'?e[0](...a):e[0]);return r;}
-// 18/11: no Checkout em chinês, alemão ou francês, o português vem pequeno embaixo de cada texto para o atendente acompanhar e orientar o cliente.
+// 18/11: no Checkout em chinês, alemão, francês ou italiano (24/11), o português vem pequeno embaixo de cada texto para o atendente acompanhar e orientar o cliente.
 // A galeria e o vídeo abrem no celular do cliente: lá fica só o chinês. O par chinês→português sai do próprio T() e o render acrescenta a legenda.
-const LEG_PT=new Map(),LEG_LANGS=['zh','de','fr'];
+const LEG_PT=new Map(),LEG_LANGS=['zh','de','fr','it'];
 function legPtOn(){return LEG_LANGS.includes(lang())&&(!!state.pub||state.lojaRota||state.view==='quiosque');} // 18/11: também na galeria online
 const zhTxt=h=>String(h==null?'':h).replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ');
 function legPtGuarda(zh,pt){const z=zhTxt(zh).split('\n').map(x=>x.trim()).filter(Boolean).pop();const p=zhTxt(pt).replace(/\s*\n\s*/g,' ').trim();if(!z||!p||z===p)return;if(LEG_PT.size>800)LEG_PT.clear();LEG_PT.set(z,p);}
 function legPt(s){s=String(s).trim();if(LEG_PT.has(s))return LEG_PT.get(s);let m='',v='';for(const [z,p] of LEG_PT)if(z.length>m.length&&z.length*2>=s.length&&s.includes(z)){m=z;v=p;}return v;}
 function legLegenda(raiz){if(!raiz||!legPtOn())return;const w=document.createTreeWalker(raiz,NodeFilter.SHOW_TEXT,{acceptNode:n=>/\p{L}/u.test(n.nodeValue)&&!n.parentElement.closest('.leg-pt,script,style,option,textarea,select')?1:3});
   const ns=[];while(w.nextNode())ns.push(w.currentNode);for(const n of ns){const p=legPt(n.nodeValue);if(!p)continue;const sm=document.createElement('small');sm.className='leg-pt';sm.lang='pt-BR';sm.textContent=p;n.after(sm);}}
-function fmtD(d){try{return new Date(d).toLocaleDateString({pt:'pt-BR',en:'en-GB',es:'es-ES',fr:'fr-FR',de:'de-DE',zh:'zh-CN'}[lang()]);}catch(e){return String(d);}}
+function fmtD(d){try{return new Date(d).toLocaleDateString({pt:'pt-BR',en:'en-GB',es:'es-ES',fr:'fr-FR',de:'de-DE',it:'it-IT',zh:'zh-CN'}[lang()]);}catch(e){return String(d);}}
 // v96: idiomas no overlay da foto; em tela estreita recolhem num botão com a bandeira atual (state.kiosk.lgOpen)
 function ljLangOv(){const o=!!state.kiosk.lgOpen;return `<div class="lj-lgov${o?' open':''}"><button class="lj-ovb lj-lgbtn" data-act="lj-lg" aria-expanded="${o}" aria-label="${T('ljLang')}" title="${T('ljLang')}">${flagSvg(lang())}</button>${langPick(true)}</div>`;}
 function langPick(dark){return `<div class="lj-langs ${dark?'dark':''}" role="group" aria-label="Idioma · Language">${LANGS_CLI.map(([c,n])=>`<button data-act="lang" data-l="${c}" aria-pressed="${lang()===c}" title="${n}" aria-label="${n}" lang="${c}">${flagSvg(c)}</button>`).join('')}</div>`;}
@@ -6076,13 +6314,14 @@ function vVestiario(){
 
 // ---------- Laboratório: Chute a gol (v97, pedido do Eduardo 10/11) ----------
 // Depois do chute a gol no gramado, foto com o goleiro da equipe em frente à trave, segurando a placa na língua do cliente.
-// O nome é sempre "Maracanã", com til, nas 5 línguas (a arte de referência veio com MARACAÑA/MARACANÁ, que está errado).
+// O nome é sempre "Maracanã", com til, em todas as línguas (a arte de referência veio com MARACAÑA/MARACANÁ, que está errado).
 const CHUTE_PLACAS=[
  {l:'pt',n:'Português',k:'cg_pt',a:['FIZ UM GOL','NO'],y:'MARACANÃ!',b:[]},
  {l:'en',n:'Inglês',k:'cg_en',a:['I SCORED','A GOAL AT'],y:'MARACANÃ!',b:[]},
  {l:'es',n:'Espanhol',k:'cg_es',a:['¡MARQUÉ UN GOL','EN EL'],y:'MARACANÃ!',b:[]},
  {l:'fr',n:'Francês',k:'cg_fr',a:['J’AI MARQUÉ','UN BUT AU'],y:'MARACANÃ\u00A0!',b:[]},
  {l:'de',n:'Alemão',k:'cg_de',a:['ICH HABE IM'],y:'MARACANÃ',b:['EIN TOR GESCHOSSEN!']},
+ {l:'it',n:'Italiano',k:'cg_it',a:['HO SEGNATO','UN GOL AL'],y:'MARACANÃ!',b:[]},
 ];
 const BOLA_SVG='<svg class="bola" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="#fff" stroke="#111" stroke-width="1.5"/><path d="M20 12l7 5-2.7 8.3h-8.6L13 17z" fill="#111"/><path d="M20 2v10M27 17l9-3M24.3 25.3l5.5 8M15.7 25.3l-5.5 8M13 17l-9-3" stroke="#111" stroke-width="1.5" fill="none"/></svg>';
 function chutePlaca(p){return `<figure class="placa-gol" lang="${p.l}"><div class="pl"><div class="pl-txt">${p.a.map(t=>`<span class="w">${esc(t)}</span>`).join('')}<span class="y">${esc(p.y)}</span>${p.b.map(t=>`<span class="w">${esc(t)}</span>`).join('')}</div><div class="pl-bola"><i></i>${BOLA_SVG}<i></i></div></div><figcaption>${esc(p.l.toUpperCase())} · ${esc(TEk(p.k,p.n))}</figcaption></figure>`;}
@@ -6195,7 +6434,7 @@ async function fotCfgSalvar(){const A=state.fot;const lim=(A.j&&A.j.limites)||nu
 // concorre com o sistema de ponto do RH). Funções puras para os testes: esDados, esGrupoDia, esFaixas, agClube.
 const ES_FAIXAS=['0–30 s','30–60 s','1–2 min','2–5 min','5–10 min','10–20 min','mais de 20 min'];
 const ES_SEMANA=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-const ES_LANG={pt:'Português',en:'Inglês',es:'Espanhol',fr:'Francês',de:'Alemão'};
+const ES_LANG={pt:'Português',en:'Inglês',es:'Espanhol',fr:'Francês',de:'Alemão',it:'Italiano',zh:'Chinês'};
 const ES_SECOES=[['u','Funil'],['a','Vendas e produtos'],['c','Rapidez'],['d','Dias e eventos'],['e','Visitantes'],['f','Movimento'],['g','Jogos e ano a ano'],['h','Escolas']]; // v97: g só para o Admin (esSecoes); 23/11: a b (Fotógrafos) virou a aba Estatísticas da view Fotógrafos (esSecBVai)
 const esSecoes=()=>ES_SECOES.filter(([s])=>s!=='g'||isAdminUser(state.user));
 // nomes na tela no idioma da equipe (os dados guardados seguem em português)
@@ -9272,6 +9511,7 @@ const EQ={
   cg_es:["Espanhol","Spanish","Español","Espagnol","Spanisch"],
   cg_fr:["Francês","French","Francés","Français","Französisch"],
   cg_de:["Alemão","German","Alemán","Allemand","Deutsch"],
+  cg_it:["Italiano","Italian","Italiano","Italien","Italienisch"],
   lab_como_n:[(p)=>`Não existe mais estação de Chroma. Qualquer foto do campo (ou do volante) pode virar foto com fundo de IA: o servidor do ponto recorta o grupo (sem internet e sem custo) e o Eterna monta no fundo escolhido com as regras aprovadas de cada fundo (meio corpo encostado embaixo, corpo inteiro do joelho para cima, o Maracanã 1950 todo em preto e branco). O convidado escolhe no Checkout; no balcão, o vendedor escolhe pela Venda manual do Posto de venda. A compra depois da visita, pela galeria online, fica para a fase 2. No Checkout, as fotos com fundo de IA entram no pacote como qualquer outra foto; no balcão, ${p} por foto.`,(p)=>`There is no Chroma station anymore. Any field photo (or roaming photo) can become a photo with an AI background: the point server cuts out the group (no internet and no cost) and Eterna composites it onto the chosen background with each background's approved rules (half body resting at the bottom, full body from the knees up, Maracanã 1950 all in black and white). The guest chooses in Checkout; at the counter, the seller chooses through the Sales station's Manual sale. Buying after the visit, through the online gallery, is planned for phase 2. In Checkout, AI background photos go into the package like any other photo; at the counter, ${p} per photo.`,(p)=>`Ya no existe la estación de Chroma. Cualquier foto del campo (o del volante) puede volverse foto con fondo de IA: el servidor del punto recorta el grupo (sin internet y sin costo) y Eterna monta en el fondo elegido con las reglas aprobadas de cada fondo (medio cuerpo apoyado abajo, cuerpo entero de la rodilla para arriba, Maracanã 1950 todo en blanco y negro). El invitado elige en el Checkout; en el mostrador, el vendedor elige por la Venta manual del Puesto de venta. La compra después de la visita, por la galería online, queda para la fase 2. En el Checkout, las fotos con fondo de IA entran en el paquete como cualquier otra foto; en el mostrador, ${p} por foto.`,(p)=>`Il n'y a plus de station Chroma. Toute photo du terrain (ou de l'itinérant) peut devenir une photo avec fond IA : le serveur du point détoure le groupe (sans internet et sans coût) et Eterna le monte sur le fond choisi selon les règles approuvées de chaque fond (mi-corps calé en bas, en pied à partir des genoux, Maracanã 1950 entièrement en noir et blanc). L'invité choisit dans le Checkout ; au comptoir, le vendeur choisit via la Vente manuelle du Poste de vente. L'achat après la visite, via la galerie en ligne, est prévu en phase 2. Dans le Checkout, les photos avec fond IA entrent dans le forfait comme les autres ; au comptoir, ${p} par photo.`,(p)=>`Es gibt keine Chroma-Station mehr. Jedes Spielfeldfoto (oder mobile Foto) kann ein Foto mit KI-Hintergrund werden: Der Standort-Server stellt die Gruppe frei (ohne Internet und ohne Kosten) und Eterna montiert sie nach den freigegebenen Regeln jedes Hintergrunds (halber Körper unten angesetzt, ganzer Körper ab den Knien, Maracanã 1950 ganz in Schwarz-Weiß). Der Gast wählt im Checkout; an der Theke wählt der Verkäufer über den manuellen Verkauf der Verkaufsstelle. Der Kauf nach dem Besuch über die Online-Galerie kommt in Phase 2. Im Checkout zählen Fotos mit KI-Hintergrund wie jedes andere Foto zum Paket; an der Theke ${p} pro Foto.`],
   lab_escolhe_n:[(m)=>`Automático, na hora em que as fotos chegam. A IA dá nota a cada foto da sessão nos quatro critérios abaixo e classifica o enquadramento pelos rostos que encontra na foto: pelo tamanho e pela posição do rosto ela estima onde o corpo termina (corpo inteiro, meio corpo ou fechada). Passa a foto com nota acima de ${m} e ninguém cortado pela lateral. Depois lê o ângulo da câmera (pela linha do gramado na foto) e a luz (dia de sol, luz difusa, fim de tarde ou noite, e de que lado ela vem) e compara com a leitura de cada fundo: ângulo pesa 45%, tipo de luz 35% e direção da luz 20%. Para cada fundo, fica a foto aprovada que mais combina; o checkout mostra primeiro os 5 fundos com maior combinação. A montagem é feita pelo Photoroom: recorte, luz casada com o fundo e sombra no chão.`,(m)=>`Automatic, as soon as the photos arrive. The AI scores each photo in the session on the four criteria below and classifies the framing from the faces it finds: from the size and position of the face it estimates where the body ends (full body, half body or close-up). A photo passes with a score above ${m} and no one cut off at the side. Then it reads the camera angle (from the pitch line in the photo) and the light (sunny day, diffuse light, late afternoon or night, and which side it comes from) and compares them with each background's reading: angle weighs 45%, light type 35% and light direction 20%. For each background, the approved photo that matches best is kept; checkout shows the 5 best-matching backgrounds first. Compositing is done by Photoroom: cutout, light matched to the background and a shadow on the ground.`,(m)=>`Automático, en el momento en que llegan las fotos. La IA pone nota a cada foto de la sesión en los cuatro criterios de abajo y clasifica el encuadre por los rostros que encuentra: por el tamaño y la posición del rostro estima dónde termina el cuerpo (cuerpo entero, medio cuerpo o cerrada). Pasa la foto con nota superior a ${m} y nadie cortado por el lateral. Después lee el ángulo de la cámara (por la línea del césped en la foto) y la luz (día de sol, luz difusa, fin de la tarde o noche, y de qué lado viene) y compara con la lectura de cada fondo: el ángulo pesa 45%, el tipo de luz 35% y la dirección de la luz 20%. Para cada fondo queda la foto aprobada que mejor combina; el checkout muestra primero los 5 fondos con mayor combinación. El montaje lo hace Photoroom: recorte, luz igualada al fondo y sombra en el suelo.`,(m)=>`Automatique, dès l'arrivée des photos. L'IA note chaque photo de la séance selon les quatre critères ci-dessous et classe le cadrage d'après les visages trouvés : à partir de la taille et de la position du visage, elle estime où le corps s'arrête (en pied, mi-corps ou serré). La photo est retenue avec une note supérieure à ${m} et personne de coupé sur le côté. Elle lit ensuite l'angle de l'appareil (par la ligne de la pelouse sur la photo) et la lumière (jour ensoleillé, lumière diffuse, fin d'après-midi ou nuit, et de quel côté elle vient) et compare avec la lecture de chaque fond : l'angle compte pour 45 %, le type de lumière 35 % et sa direction 20 %. Pour chaque fond, la photo approuvée qui correspond le mieux est retenue ; le checkout montre d'abord les 5 fonds les plus compatibles. Le montage est fait par Photoroom : détourage, lumière accordée au fond et ombre au sol.`,(m)=>`Automatisch, sobald die Fotos ankommen. Die KI bewertet jedes Foto der Sitzung nach den vier Kriterien unten und bestimmt den Bildausschnitt anhand der gefundenen Gesichter: Aus Größe und Position des Gesichts schätzt sie, wo der Körper endet (ganzer Körper, halber Körper oder nah). Ein Foto besteht mit einer Bewertung über ${m} und ohne seitlich abgeschnittene Personen. Danach liest sie den Kamerawinkel (an der Rasenlinie im Foto) und das Licht (Sonne, diffuses Licht, später Nachmittag oder Nacht, und aus welcher Richtung) und vergleicht mit der Analyse jedes Hintergrunds: Winkel zählt 45 %, Lichtart 35 % und Lichtrichtung 20 %. Für jeden Hintergrund bleibt das freigegebene Foto mit der besten Übereinstimmung; der Checkout zeigt zuerst die 5 passendsten Hintergründe. Die Montage macht Photoroom: Freistellung, an den Hintergrund angepasstes Licht und Schatten am Boden.`],
   lab_amostra:[(a,b,p,l)=>`Na amostra: ${a} de ${b} sessões (${p}) têm foto apta. Por fotógrafo: ${l}. Fotógrafo com taxa baixa está cortando gente na lateral ou entregando foto sem foco.`,(a,b,p,l)=>`In the sample: ${a} of ${b} sessions (${p}) have a suitable photo. By photographer: ${l}. A photographer with a low rate is cutting people off at the side or delivering out-of-focus photos.`,(a,b,p,l)=>`En la muestra: ${a} de ${b} sesiones (${p}) tienen foto apta. Por fotógrafo: ${l}. El fotógrafo con tasa baja está cortando gente por el lateral o entregando fotos sin foco.`,(a,b,p,l)=>`Dans l'échantillon : ${a} séances sur ${b} (${p}) ont une photo exploitable. Par photographe : ${l}. Un photographe avec un taux faible coupe des personnes sur le côté ou livre des photos floues.`,(a,b,p,l)=>`In der Stichprobe: ${a} von ${b} Sitzungen (${p}) haben ein geeignetes Foto. Pro Fotograf: ${l}. Ein Fotograf mit niedriger Quote schneidet Personen seitlich ab oder liefert unscharfe Fotos.`],
@@ -11071,6 +11311,8 @@ const EQ={
   es_lang_es:["Espanhol","Spanish","Español","Espagnol","Spanisch"],
   es_lang_fr:["Francês","French","Francés","Français","Französisch"],
   es_lang_de:["Alemão","German","Alemán","Allemand","Deutsch"],
+  es_lang_it:["Italiano","Italian","Italiano","Italien","Italienisch"],
+  es_lang_zh:["Chinês","Chinese","Chino","Chinois","Chinesisch"],
   esg_jogo:["Jogo","Game","Partido","Match","Spiel"],
   esg_mandante:["Mandante","Home team","Local","Équipe à domicile","Heimteam"],
   esg_competicao:["Competição","Competition","Competición","Compétition","Wettbewerb"],
