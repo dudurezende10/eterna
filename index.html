@@ -1556,7 +1556,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.45.1 · 24/11 21:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.45.2 · 24/11 21:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -10047,7 +10047,7 @@ const EQ={
   mf_aj_on:["Ajuste automático ligado","Automatic adjustment on","Ajuste automático activado","Réglage automatique activé","Automatische Anpassung an"],
   mf_aj_off:["Ajuste automático desligado","Automatic adjustment off","Ajuste automático desactivado","Réglage automatique désactivé","Automatische Anpassung aus"],
   mf_aj_h:["Ajuste automático da IA","AI automatic adjustment","Ajuste automático de la IA","Réglage automatique par l'IA","Automatische KI-Anpassung"],
-  mf_aj_nota:["Clareia a foto escura, segura a estourada e acerta a cor de toda foto que chega neste computador. Vale para o ponto inteiro.","Brightens dark photos, tames overexposed ones and fixes the color of every photo that arrives on this computer. Applies to the whole spot.","Aclara la foto oscura, controla la sobreexpuesta y corrige el color de toda foto que llega a esta computadora. Vale para todo el punto.","Éclaircit les photos sombres, rattrape les surexposées et corrige la couleur de chaque photo qui arrive sur cet ordinateur. S'applique à tout le point.","Hellt dunkle Fotos auf, dämpft überbelichtete und korrigiert die Farbe jedes Fotos, das auf diesem Computer ankommt. Gilt für den ganzen Standort."],
+  mf_aj_nota:["Clareia a foto escura e segura a estourada em toda foto que chega neste computador. Só mexe na exposição. Vale para o ponto inteiro.","Brightens dark photos and tames overexposed ones on every photo that arrives on this computer. It only changes exposure. Applies to the whole spot.","Aclara la foto oscura y controla la sobreexpuesta en toda foto que llega a esta computadora. Solo cambia la exposición. Vale para todo el punto.","Éclaircit les photos sombres et rattrape les surexposées sur chaque photo qui arrive sur cet ordinateur. Ne modifie que l'exposition. S'applique à tout le point.","Hellt dunkle Fotos auf und dämpft überbelichtete bei jedem Foto, das auf diesem Computer ankommt. Ändert nur die Belichtung. Gilt für den ganzen Standort."],
   mf_aj_religar:["Ao religar, as fotos que chegaram com ele desligado também são ajustadas.","When turned back on, photos that arrived while it was off are adjusted too.","Al reactivarlo, las fotos que llegaron con él desactivado también se ajustan.","À la réactivation, les photos arrivées pendant qu'il était désactivé sont aussi réglées.","Beim Wiedereinschalten werden auch die Fotos angepasst, die in der Zwischenzeit angekommen sind."],
   mf_ligado:["Ligado","On","Activado","Activé","An"],
   mf_desligado:["Desligado","Off","Desactivado","Désactivé","Aus"],
@@ -12749,18 +12749,19 @@ function ajFind(card){for(const k of [ajKey(),...ajKeys()]){const s=ajSessions(k
 function ajPhotos(card){const s=ajFind(card);return s?s.photos.filter(p=>hasImg(p.id)):[];}
 function ajSet(id,k,v){const e=editOf(id);const c=AJ_CTRL.find(x=>x[0]===k);e[k]=Math.max(c[2],Math.min(c[3],Math.round(v)));e.auto=false;if(k==='z'){e.x=0;e.y=0;}saveSim();
   const pv=$('#aj-pv');if(pv)pv.style.cssText=bigStyle(id);const lab=$(`[data-ajv="${k}"]`);if(lab)lab.textContent=ajLab(k,e[k]);const r=$(`[data-act="aj-range"][data-k="${k}"]`);if(r&&+r.value!==e[k])r.value=e[k];const st=$('#aj-st');if(st)st.textContent=TE('aj_st_mao');}
-// leitura da foto: média e pontas do histograma (exposição e contraste) e cor dos pontos neutros (temperatura)
+// leitura da foto: média e pontas do histograma (exposição)
 async function ajAuto(id,force){const e0=SIM.edits&&SIM.edits[id];if(!force&&e0&&e0.auto===false&&isEdited(id))return e0;
   const c=await photoCanvas(id);if(!c)return null;const w=160,h=Math.max(1,Math.round(160*c.height/c.width));const t=mkc(w,h);const x=t.getContext('2d');x.drawImage(c,0,0,w,h);const d=x.getImageData(0,0,w,h).data;
   const hist=new Uint32Array(256);let nR=0,nG=0,nB=0,nn=0,sum=0,N=0;
   for(let k=0;k<d.length;k+=4){const r=d[k],g=d[k+1],b=d[k+2];const l=Math.min(255,Math.round(.299*r+.587*g+.114*b));if(l<6)continue;hist[l]++;sum+=l;N++;const mx=Math.max(r,g,b),mn=Math.min(r,g,b);if(l>90&&l<245&&mx-mn<mx*.2){nR+=r;nG+=g;nB+=b;nn++;}}
   const pct=q=>{let a=0;for(let i=0;i<256;i++){a+=hist[i];if(a>=N*q)return i;}return 255;};
   const lo=pct(.02),hi=pct(.98),mid=pct(.5),mean=sum/N;const r5=v=>Math.round(v/5)*5;
-  if(N<50)return null;const b=r5(Math.max(75,Math.min(140,100*Math.pow(112/Math.max(30,mean),.5))));
-  const cc=r5(Math.max(90,Math.min(140,100*Math.pow(215/Math.max(60,hi-lo),.45))));
-  const wb=nn>30?(nR-nB)/(nR+nG+nB):0;const tt=r5(Math.max(-30,Math.min(30,-wb*500)));
-  const e=editOf(id);Object.assign(e,{b,c:cc,t:tt,auto:true});return e;}
-function ajQueue(){if(state.lojaRota||SIM.autoAj===false||ajQueue.busy||!state.lib||!state.lib.length)return;const todo=state.lib.map(f=>'ag_'+f.id).filter(id=>UP[id]&&!(SIM.edits&&SIM.edits[id])&&!ajQueue.fail.has(id)).slice(0,16);if(!todo.length)return;ajQueue.busy=1;
+  if(N<50)return null;let b=r5(Math.max(75,Math.min(140,100*Math.pow(112/Math.max(30,mean),.5))));
+  // 24/11 (Eduardo): o automático só mexe na exposição. Contraste e temperatura ficam como saíram da câmera; quem quiser mexe à mão.
+  // Ao clarear, o ponto mais claro da foto (98%) não passa de 245: a foto clareia até onde dá sem estourar.
+  if(b>100)b=Math.max(100,Math.min(b,Math.floor(100*245/Math.max(1,hi)/5)*5));
+  const e=editOf(id);Object.assign(e,{b,c:100,t:0,auto:true});return e;}
+function ajQueue(){if(state.lojaRota||SIM.autoAj===false||ajQueue.busy||!state.lib||!state.lib.length)return;const velho=id=>{const e=SIM.edits&&SIM.edits[id];return !!(e&&e.auto===true&&((e.c!=null&&e.c!==100)||(e.t!=null&&e.t!==0)));};const todo=state.lib.map(f=>'ag_'+f.id).filter(id=>UP[id]&&(!(SIM.edits&&SIM.edits[id])||velho(id))&&!ajQueue.fail.has(id)).slice(0,16);if(!todo.length)return;ajQueue.busy=1;
   (async()=>{let n=0;for(const id of todo){try{const r=await ajAuto(id);if(r)n++;else ajQueue.fail.add(id);}catch(e){ajQueue.fail.add(id);}}ajQueue.busy=0;if(n){saveSim();if(state.view==='ajustes'||state.view==='importar')render();}})();}
 ajQueue.fail=new Set();setInterval(ajQueue,3000);
 // temperatura da cor: filtros SVG que sobem o vermelho e baixam o azul (ou o contrário), em passos de 5

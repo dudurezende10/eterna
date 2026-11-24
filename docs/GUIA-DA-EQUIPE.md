@@ -234,7 +234,7 @@ Logo abaixo do título, uma faixa diz como estão as suas fotos:
 
 ### Ligar e desligar o ajuste automático
 
-O ajuste automático da IA clareia a foto escura, segura a estourada e acerta a cor de toda foto que chega.
+O ajuste automático da IA clareia a foto escura e segura a estourada em toda foto que chega. Desde 24/11 ele só mexe na exposição: contraste e temperatura ficam como saíram da câmera, e quem quiser muda à mão em Configurações › Ajuste automático.
 
 Desde 24/11 essa chave não fica mais em Minhas fotos. Só o Admin liga e desliga, em **Configurações › IA automática**, linha **Ajuste automático das fotos**.
 
@@ -1412,7 +1412,7 @@ A tela nova **Configurações › IA automática** junta as chaves que a IA usa 
 | --- | --- | --- |
 | **Fundos de IA automáticos** | O servidor reconhece as fotos do gramado e o Checkout mostra os fundos de IA feitos com elas. | O Checkout fica sem fundos de IA. O servidor continua analisando em silêncio para o Resultado do Treino ter números. |
 | **Alerta de foto escura ou estourada** | Os Alertas avisam quando um fotógrafo tem muitas fotos escuras ou estouradas. | O servidor mede, mas não avisa. |
-| **Ajuste automático das fotos** | As fotos que chegam são clareadas e acertadas sozinhas. | Nenhuma foto é ajustada. |
+| **Ajuste automático das fotos** | As fotos que chegam têm a exposição acertada sozinhas (mais clara ou mais escura). | Nenhuma foto é ajustada. |
 | **Lixeira da IA** | Ainda não dá para ligar. Chega na próxima versão. | Fica em **Teste** (veja abaixo). |
 
 - **Só o Admin muda.** Quem mais tiver a tela vê como cada chave está, sem os botões. O fotógrafo não vê a tela.
