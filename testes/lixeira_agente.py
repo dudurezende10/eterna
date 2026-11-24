@@ -114,7 +114,10 @@ try:
         # ---------- 2: rosto estourado entra; foto clara com o rosto bom não ----------
         d = m.lx_medir(rosto(img0, 255, 0), [ROSTO], 1, 1)
         ok(d["luz"]["r"]["p95"] >= 254 and d["luz"]["r"]["alto"] >= 40 and "estourada" in m.lx_classe(d, L), "2: rosto estourado = estourada: %r" % d["luz"])
-        clara = rosto(np.clip(img0.astype(np.int16) + 90, 0, 255).astype(np.uint8), 150, 20)
+        # 24/11: com a "estourada pelo quadro" valendo também com rosto, a foto clara do teste é +60 (mediana 217, 26% de pixels
+        # estourados: fica fora); a de +90 (mediana 245, 44% estourados) agora é quadro lavado e entra
+        clara = rosto(np.clip(img0.astype(np.int16) + 60, 0, 255).astype(np.uint8), 150, 20)
+        ok("estourada" in cl(rosto(np.clip(img0.astype(np.int16) + 90, 0, 255).astype(np.uint8), 150, 20)), "2: quadro lavado (+90) com o rosto bom entra pelo quadro")
         ok("estourada" not in cl(clara), "2: foto clara com o rosto bom não entra: %r" % cl(clara))
         # ---------- 3: desfoque gaussiano sigma 8 entra; nítida não; rosto nítido e fundo desfocado não ----------
         borr = cv2.GaussianBlur(img0, (0, 0), 8)
@@ -173,6 +176,42 @@ try:
         ok(d["nq"] is None and d["nr"] is None and "desfocada" not in m.lx_classe(d, L), "D4: sem OpenCV, sem desfocada: %r" % d)
         m._cv.update(cv2=cv2, np=np)
 
+        # ---------- 24/11: quadro lavado (estourada pelo quadro, com ou sem rosto) e contraluz (escura pelo centro) ----------
+        rg = np.random.default_rng(11)
+        hh, ww = img0.shape[:2]
+        lav = np.clip(195 + rg.integers(-8, 9, (hh, ww, 1)), 0, 255).astype(np.uint8).repeat(3, axis=2)
+        lav[rg.random((hh, ww)) < 0.4] = 254                       # 40% de pixels claros, média perto de 215
+        d = m.lx_medir(lav, [], 0, None)
+        num["lavado_q"] = d["luz"]["q"]
+        ok(205 <= float(lav.mean()) <= 225 and d["luz"]["q"]["med"] < 235 and m.lx_classe(d, L) == ["estourada"],
+           "lavado sem rosto = estourada (a regra antiga, 235, não pegava): %r %r" % (d["luz"], m.lx_classe(d, L)))
+        d = m.lx_medir(rosto(lav, 150, 20), [ROSTO], 1, 1)
+        ok(d["luz"]["r"]["alto"] < 40 and m.lx_classe(d, L) == ["estourada"], "lavado com rosto bom = estourada pelo quadro: %r %r" % (d["luz"], m.lx_classe(d, L)))
+        ok("estourada" not in m.lx_classe(d, dict(L, est_quadro_med=235, est_quadro_alto=50)), "lavado: os limites são ajustáveis (com os antigos fica fora)")
+        contra = np.clip(14 + rg.integers(-4, 5, (hh, ww, 1)), 0, 255).astype(np.uint8).repeat(3, axis=2)
+        contra[:int(hh * 0.28)] = 240                              # céu claro no alto, pessoa e gramado em silhueta
+        d = m.lx_medir(contra, [], 0, None)
+        num["contraluz_q"] = d["luz"]["q"]
+        ok(d["luz"]["q"]["c_med"] < 30 and d["luz"]["q"]["baixo"] < 60 and m.lx_classe(d, L) == ["escura"],
+           "contraluz sem rosto = escura pelo centro: %r %r" % (d["luz"], m.lx_classe(d, L)))
+        ok("escura" not in m.lx_classe(d, dict(L, esc_centro_med=1)), "contraluz: esc_centro_med é ajustável")
+        antiga = json.loads(json.dumps(d))
+        del antiga["luz"]["q"]["c_med"]
+        ok(m.lx_classe(antiga, L) == [], "medida antiga sem c_med não dispara a regra nova: %r" % m.lx_classe(antiga, L))
+        antiga["luz"]["q"]["c_med"] = None
+        ok(m.lx_classe(antiga, L) == [], "c_med nulo não dispara a regra nova")
+        sem_lim = {k: x for k, x in L.items() if k != "esc_centro_med"}
+        ok(m.lx_classe(d, sem_lim) == ["escura"], "limites gravados antes (sem esc_centro_med) usam o do padrão")
+        d = m.lx_medir(rosto(contra, 30, 4), [ROSTO], 1, 1)
+        ok("escura" in m.lx_classe(d, L), "contraluz com rosto achado mas escuro (mediana abaixo de 40) = escura: %r" % d["luz"])
+        preta = rosto(img0, 150, 20)
+        preta[540:hh - 60, 640:1060] = 6                           # pessoa de roupa preta no centro, rosto bem iluminado
+        d = m.lx_medir(preta, [ROSTO], 1, 1)
+        num["roupa_preta_c_med"] = d["luz"]["q"]["c_med"]
+        ok(m.lx_classe(d, L) == [], "roupa preta no centro com rosto iluminado fica fora: %r %r" % (d["luz"], m.lx_classe(d, L)))
+        d = m.lx_medir(rosto(escq, 150, 20), [ROSTO], 1, 1)
+        num["flash_c_med"] = d["luz"]["q"]["c_med"]
+        ok(d["luz"]["q"]["c_med"] < 30 and m.lx_classe(d, L) == [], "fundo escuro com rosto iluminado pelo flash fica fora: %r %r" % (d["luz"], m.lx_classe(d, L)))
         # ---------- 6: o veredito não muda depois de gravado; limite novo vale só para foto nova ----------
         hoje = m._ff_hoje()
         esc = rosto(img0, 15, 3)
@@ -191,6 +230,27 @@ try:
         ok(m.lx_acrescenta(p6b, hoje, m.lx_medir(esc, [ROSTO], 1, 1)) == [], "6: a foto nova usa o limite novo")
         m.lx_grava()
         ok(linhas("lixeira", p6b) and linhas("lixeira", p6b)[0][3] is None, "6: a foto nova fica gravada sem motivo")
+        m.lx_cfg_gravar({"lim": dict(m.LX_LIM_PADRAO)}, "admin-teste")
+        # ---------- 24/11: config gravada com o padrão antigo de est_quadro_* não prende o padrão novo ----------
+        def grava_cfg(lim):
+            with m.estado_lock:
+                db = m.estado_db()
+                try:
+                    db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                               ("config", "lixeira", json.dumps({"v": 1, "modo": "medir", "valendo": [], "desde": None, "por": "x", "em": None, "lim": lim}), 999000 + len(lim), "t"))
+                    db.commit()
+                finally:
+                    db.close()
+            m._lx_cfg.update(t=0.0, v=None)
+            return m.lx_cfg()["lim"]
+        velho = {k: x for k, x in m.LX_LIM_PADRAO.items() if k != "esc_centro_med"}
+        velho.update(est_quadro_med=235, est_quadro_alto=50, nit_quadro=33)
+        lc = grava_cfg(velho)
+        ok(lc["est_quadro_med"] == m.LX_LIM_PADRAO["est_quadro_med"] and lc["est_quadro_alto"] == m.LX_LIM_PADRAO["est_quadro_alto"]
+           and lc["esc_centro_med"] == m.LX_LIM_PADRAO["esc_centro_med"] and lc["nit_quadro"] == 33, "config antiga: padrão velho gravado = padrão novo, o resto fica: %r" % lc)
+        lc = grava_cfg(dict(velho, est_quadro_alto=60))
+        ok(lc["est_quadro_med"] == 235 and lc["est_quadro_alto"] == 60, "config antiga: limite mexido à mão continua: %r" % lc)
+        grava_cfg(dict(m.LX_LIM_PADRAO))
         m.lx_cfg_gravar({"lim": dict(m.LX_LIM_PADRAO)}, "admin-teste")
 
         # ---------- 5: no leitor, depois da selfie, da fila do fotógrafo e da sessão; erro na medida não derruba ----------
