@@ -261,6 +261,13 @@ try{
     await pg.click('[data-act="assumir-voltar"]');await espera(pg,()=>!ETERNA.state.assumido&&ETERNA.state.user.email==='admin.teste@exemplo.com');await pg.waitForTimeout(500);
     await pg.evaluate(()=>ETERNA.go('treino'));await pg.waitForTimeout(300);await pg.evaluate(()=>ETERNA.go('painel'));await pg.waitForTimeout(300);
     ok(R.posts.length===nC,'Voltar do "ver como" não grava no nome do Admin o que foi escolhido lá: '+J(R.posts.slice(nC).map(x=>x.b)));
+    // a pendência da Validadora (FV, mostrada no Carregar do "ver como") não fica na tela do Admin nem entra na gravação dele
+    ok(await pg.evaluate(p=>!(p in ETERNA.state.train.docs)&&!ETERNA.state.train.itens.length,PIDS[11]),'Voltar do "ver como": a pendência da Validadora não fica na tela do Admin: '+J(await pg.evaluate(p=>ETERNA.state.train.docs[p]||null,PIDS[11])));
+    await pg.evaluate(()=>ETERNA.go('treino'));await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>!ETERNA.state.train.carregando&&ETERNA.state.train.itens.length===12);await pg.waitForTimeout(300);
+    await pg.click('[data-act="tr-go"][data-i="11"]');
+    ok(await pg.$eval('[data-act="tr-ponto"][data-p="outro"]',b=>b.getAttribute('aria-pressed'))!=='true'&&!/warn/.test(await borda(11)),'Admin no Treino: a foto da pendência da Validadora não mostra a escolha dela: '+await borda(11));
+    await blur();await pg.keyboard.press('p');await pg.click('[data-act="tr-next"]');await espera(pg,p=>!ETERNA.trFila().some(x=>x.pid===p&&x.u==='admin.teste@exemplo.com'),5000,PIDS[11]);await pg.waitForTimeout(300);
+    {const g=R.posts.slice(nC).map(x=>x.b);ok(g.length===1&&g[0].pid===PIDS[11]&&g[0].ponto===null&&g[0].qual.nivel==='boa','Admin passa pela foto: grava só a escolha dele, sem o "outro" da Validadora: '+J(g));}
     await pg.evaluate(()=>{localStorage.setItem('eterna.treino.fila.v1','[]');ETERNA.go('treino');});
     // 5. aba escondida (iOS sem pagehide): vai para a fila uma vez só
     R.rotuloStatus=503;const nD=R.posts.length;await pg.click('[data-act="tr-go"][data-i="10"]');await blur();await pg.keyboard.press('o');

@@ -2189,7 +2189,7 @@ function postoDisp(){const d=state.posto&&state.posto.disp;return d&&typeof d===
 state.posto={disp:(()=>{try{const d=JSON.parse(localStorage.getItem('eterna.posto.v1')||'null');return d&&typeof d==='object'&&d.id?{id:String(d.id),nome:String(d.nome||'').slice(0,40),num:+d.num||0}:null;}catch(e){return null;}})(),estado:null,lista:null}; // o último posto confirmado pelo servidor (sem rede, o número da venda segue P<n>)
 // Todo pedido ao agente (fora da galeria /g/) vai por aqui: cookie da sessão ou do posto (mesma origem) e X-Eterna: 1.
 // 401 sem_sessao com alguém conectado neste navegador = a sessão terminou no servidor: volta para a entrada com aviso.
-function agLimite(ms){try{return AbortSignal.timeout?AbortSignal.timeout(ms):undefined;}catch(e){return undefined;}}
+function agLimite(ms){try{if(AbortSignal.timeout)return AbortSignal.timeout(ms);const c=new AbortController();setTimeout(()=>c.abort(),ms);return c.signal;}catch(e){return undefined;}} // sem AbortSignal.timeout (Safari antes do 16, iPads antigos): AbortController com setTimeout
 function agFetch(u,o){o=o||{};
   if(state.assumido&&String(o.method||'GET').toUpperCase()!=='GET')return Promise.resolve(new Response(JSON.stringify({erro:'so_ver'}),{status:403,headers:{'Content-Type':'application/json'}}));
   return fetch(u,Object.assign({},o,{credentials:'same-origin',headers:Object.assign({},o.headers||{},{'X-Eterna':'1'})})).then(r=>{
@@ -7788,6 +7788,8 @@ async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user||state.
       trFilaGrava(resto);mudou=true;}}
   finally{trEnviar.on=false;if(mudou&&state.view==='treino')render();
     if(state.user&&state.user.email!==em&&!state.assumido&&trFila().some(trMinha))setTimeout(trEnviar,0);}} // outra pessoa entrou durante a volta: a fila dela sobe já
+// troca de pessoa (Sair, entrar e voltar do "ver como"): a lista do Treino, o que veio do servidor, a fila mostrada e os rascunhos são da pessoa anterior
+function trZera(){Object.assign(state.train,{itens:[],j:0,docs:{},srv:{},rasc:{},desfaz:[],vendo:null});}
 function trAtual(){const t=state.train;return t.itens[Math.max(0,Math.min(t.itens.length-1,t.j))]||null;}
 // 23/11 (Eduardo no Maracanã: passou 110 fotos com Próxima e só 11 ficaram gravadas): sair de uma foto por qualquer caminho grava a
 // escolha feita nela (Próxima, Anterior, setas, grade, Carregar, outra aba, outra tela, Sair, recarregar). Mesmo trGravar, mesma fila
@@ -11632,7 +11634,7 @@ function logout(){const tv=state.train.vendo,tem=state.user&&state.user.email;co
   // o /auth/sair tem limite de 4 s (fetch abortado não aplica o Set-Cookie, então a sessão seguinte não é zerada) e encadeia num segundo logout
   {const p=Promise.all([logout.sair,tsai?trEsperaEnvio(tv,tem,2000):null]).then(()=>authApi('/auth/sair',{},{signal:agLimite(4000)}));logout.sair=p;p.finally(()=>{if(logout.sair===p)logout.sair=null;});}camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   demoDesliga(); // revisão (segurança): o modo demonstração não passa para a próxima pessoa
-  state.user=null;state.assumido=null;Object.assign(state.train,{itens:[],j:0,docs:{},srv:{},rasc:{},desfaz:[],vendo:null});
+  state.user=null;state.assumido=null;trZera();
   // revisão 23/11 (AF): números por fotógrafo, rascunho dos limites e calibração não ficam para a próxima pessoa
   Object.assign(state.fot,{j:null,chave:null,em:0,erro:null,rasc:{},recusa:null});Object.assign(state.fg.est,{chave:null,dias:null,em:0,erro:null});Object.assign(state.train.luz,{j:null,esc:{},recusa:null});state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
@@ -11658,11 +11660,11 @@ async function authConferir(){if(authSite()||!state.user)return;const r=await au
   if(r.status===200&&r.ok){const a=r.assumido_por?{por:r.assumido_por,nome:r.assumido_nome||r.assumido_por}:null;if(JSON.stringify(a)!==JSON.stringify(state.assumido)){state.assumido=a;render();}}}
 // 16/11 (Ronaldo): "ver como". Só Admin, só de quem não é Admin. O servidor guarda a sessão do Admin e devolve no "Voltar".
 async function authAssumir(usuario){const me=state.user;if(!me||state.assumido)return;const r=await authApi('/auth/assumir',{usuario});
-  if(r.status===200&&r.ok){Object.assign(state.train,{vendo:null,rasc:{},desfaz:[]}); // a escolha de uma pessoa não é gravada no nome da outra
+  if(r.status===200&&r.ok){trZera(); // a escolha (e a fila mostrada) de uma pessoa não vai para a tela nem para a gravação da outra
     state.assumido={por:r.assumido_por,nome:r.assumido_nome||me.name||me.email};state.users.draft=null;authEntrou(r);toast(TE('vc_entrou',(USERS[usuario]||{}).name||usuario));return;}
   toast(TE(r.erro==='alvo_maior'?'vc_e_maior':r.erro==='sem_cadastro'?'vc_e_cadastro':r.status===403?'vc_e_perm':'vc_e_conexao'));}
 async function authVoltar(){const r=await authApi('/auth/voltar',{});
-  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;Object.assign(state.train,{vendo:null,rasc:{},desfaz:[]}); // o que o Admin escolheu no "ver como" não vira gravação dele
+  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;trZera(); // o que foi visto e escolhido no "ver como" não aparece nem vira gravação do Admin
     state.assumido=null;state.auth_next='usuarios';authEntrou(r);if(quem)toast(TE('vc_voltou'));return;}
   if(r.status===401){logout();return;}toast(TE('vc_e_conexao'));}
 function assumidoFaixa(){const a=state.assumido,u=state.user;if(!a||!u)return '';
