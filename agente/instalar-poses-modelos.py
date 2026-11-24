@@ -3,8 +3,10 @@
 # padrão do instalar-recorte-modelos.py. Uma vez por servidor; rodar de novo não baixa nada que já esteja certo.
 #   Qwen3-VL-8B-Instruct (Qwen, Apache 2.0, uso comercial permitido), conversão GGUF oficial do próprio Qwen:
 #   Qwen3VL-8B-Instruct-Q4_K_M.gguf (cerca de 5 GB) e mmproj-Qwen3VL-8B-Instruct-F16.gguf (cerca de 1,2 GB), em
-#   ~/Eterna/modelos. Baixa num temporário, confere o SHA-256 e só então troca. SHA diferente: o arquivo é apagado e o
-#   instalador para com erro.
+#   ~/Eterna/modelos. Baixa num temporário, confere o SHA-256 e só então troca. SHA diferente no que chegou: o temporário é
+#   apagado e o instalador para com erro. O temporário (.baixando-*) também é apagado em qualquer outro erro e no Ctrl-C.
+#   Arquivo já instalado com SHA diferente do informado: o instalador para e pede para conferir o SHA (não apaga nem baixa
+#   de novo sozinho: um SHA digitado errado não pode custar 5 GB de download).
 # Nada é baixado sem saber o SHA-256 esperado de cada arquivo. Ele vem de um destes dois lugares:
 #   - POSE_SHA e POSE_MMPROJ_SHA fixados aqui (os mesmos do eterna-agente.py), depois da primeira instalação; ou
 #   - --esperado-modelo <sha256> e --esperado-mmproj <sha256> na linha de comando, copiados pelo Ronaldo da página de cada
@@ -18,6 +20,9 @@
 #     --esperado-modelo <sha256 do Q4_K_M> --esperado-mmproj <sha256 do mmproj>
 import hashlib, os, re, shutil, sys, tempfile
 
+# Endereço pelo ramo main, não por um commit fixo (como o CENA_URL do instalar-recorte-modelos.py): ainda não há um commit
+# conferido deste repositório. O Ronaldo anota o commit da página (aba Files and versions, "History") junto com os SHA-256, e o
+# programador troca o "main" abaixo por ele. Até lá, quem garante o arquivo é o SHA-256 esperado.
 BASE = "https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF/resolve/main/"
 POSE_ARQ = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"          # o mesmo POSE_ARQ do eterna-agente.py
 POSE_MMPROJ_ARQ = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
@@ -89,20 +94,29 @@ def um(arq, sha):
     """Deixa o arquivo certo (já estava ou baixado e conferido). -> True / False (nada instalado)."""
     dest = os.path.join(PASTA, arq)
     if os.path.isfile(dest):
-        if sha256(dest) == sha:
+        atual = sha256(dest)
+        if atual == sha:
             print("ok   %s (SHA-256 confere)" % arq)
             return True
-        print("SHA diferente em %s: apagado (baixa de novo)" % arq)
-        os.remove(dest)
+        print("PARADO %s: o arquivo já instalado tem SHA-256 %s, e o informado é %s.\n"
+              "Confira o SHA-256 na página do arquivo no Hugging Face. Nada foi apagado nem baixado. Se o SHA informado estiver\n"
+              "certo, apague %s e rode de novo." % (arq, atual, sha, dest))
+        return False
     print("baixando %s ..." % arq)
     tmp = baixar(BASE + arq, dest)
-    atual = sha256(tmp)
-    if atual != sha:
-        os.remove(tmp)
-        print("FALHA %s: SHA-256 %s, esperado %s. Arquivo apagado, nada instalado." % (arq, atual, sha))
-        return False
-    os.replace(tmp, dest)
-    os.chmod(dest, 0o644)
+    try:
+        atual = sha256(tmp)
+        if atual != sha:
+            print("FALHA %s: SHA-256 %s, esperado %s. Arquivo apagado, nada instalado." % (arq, atual, sha))
+            return False
+        os.replace(tmp, dest)
+        os.chmod(dest, 0o644)
+    finally:
+        if os.path.exists(tmp):                      # SHA diferente, erro ou Ctrl-C: o temporário não fica na pasta
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
     print("ok   %s · %.2f GB · SHA-256 %s" % (arq, os.path.getsize(dest) / 1e9, atual))
     return True
 

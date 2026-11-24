@@ -248,7 +248,7 @@ ok(g3["gravados"] == 1, "agenda: teto de documentos (edição continua valendo):
 m.AGENDA_DOCS_MAX = 5000
 
 # --- critério 29: backup e privacidade ---
-ok("OPERACAO_DB" in m.BACKUP_BANCOS and "backup_bancos" in inspect.getsource(m.backup_loop), "29: o operacao.db vai para o backup")
+ok("OPERACAO_DB" in m.BACKUP_BANCOS and "backup_bancos" in inspect.getsource(m.backup_rodada) and "backup_rodada" in inspect.getsource(m.backup_loop), "29: o operacao.db vai para o backup")
 txt = json.dumps(m.metricas_dia(SAB)) + json.dumps(m.metricas_dia(hoje))
 ok("@" not in txt and not re.search(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b", txt) and '"emb' not in txt and "vetor" not in txt and "LPSAB" not in txt,
    "29: o resumo não traz e-mail, CPF nem rosto")

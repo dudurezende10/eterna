@@ -268,7 +268,8 @@ try:
     for args in (["--esperado-modelo", "abc", "--esperado-mmproj", H64], ["--conferir"], ["--esperado-modelo"]):
         r = subprocess.run([sys.executable, "-I", INST] + args, env=env_i, capture_output=True, text=True, timeout=60)
         ok(r.returncode == 2 and "FALHA" in r.stdout, "E: %r recusado: %d %r" % (args, r.returncode, r.stdout[-200:]))
-    # download trocado por um falso (sem rede): SHA diferente apaga e para no primeiro; igual instala; já certo não baixa de novo
+    # download trocado por um falso (sem rede): SHA diferente apaga o baixado e para no primeiro; igual instala; já certo não baixa
+    # de novo; já instalado com SHA diferente para sem apagar; Ctrl-C não deixa o temporário
     spi = importlib.util.spec_from_file_location("inst", INST)
     inst = importlib.util.module_from_spec(spi)
     spi.loader.exec_module(inst)
@@ -296,6 +297,28 @@ try:
        and sorted(os.listdir(inst.PASTA)) == sorted(conteudo), "E: SHA igual instala os dois: %r" % os.listdir(inst.PASTA))
     del baixados[:]
     ok(quieto(inst.main, ["x", "--esperado-modelo", sha_m, "--esperado-mmproj", sha_p]) == 0 and baixados == [], "E: já certo não baixa de novo")
+    # já instalado com SHA diferente do informado: para e pede para conferir; não apaga nem baixa de novo
+    ok(quieto(inst.main, ["x", "--esperado-modelo", H64, "--esperado-mmproj", sha_p]) == 1 and baixados == []
+       and sorted(os.listdir(inst.PASTA)) == sorted(conteudo), "E: instalado com SHA diferente: para sem apagar nem baixar: %r %r" % (baixados, os.listdir(inst.PASTA)))
+    # Ctrl-C (ou erro) depois do download, conferindo o SHA: o .baixando-* não fica na pasta
+    os.remove(os.path.join(inst.PASTA, inst.POSE_ARQ))
+    orig_sha_i = inst.sha256
+
+    def sha_ctrl_c(p_):
+        if os.path.basename(p_).startswith(".baixando-"):
+            raise KeyboardInterrupt
+        return orig_sha_i(p_)
+    inst.sha256 = sha_ctrl_c
+    try:
+        quieto(inst.um, inst.POSE_ARQ, sha_m)
+        ok(False, "E: Ctrl-C deveria subir")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        inst.sha256 = orig_sha_i
+    ok(not [a for a in os.listdir(inst.PASTA) if a.startswith(".baixando-")] and inst.POSE_ARQ not in os.listdir(inst.PASTA),
+       "E: Ctrl-C apaga o temporário: %r" % os.listdir(inst.PASTA))
+    ok(quieto(inst.main, ["x", "--esperado-modelo", sha_m, "--esperado-mmproj", sha_p]) == 0, "E: depois do Ctrl-C, rodar de novo instala")
     inst.POSE_SHA = H64
     ok(quieto(inst.main, ["x", "--esperado-modelo", sha_m, "--esperado-mmproj", sha_p]) == 2, "E: SHA da linha de comando diferente do fixado no código: erro")
 

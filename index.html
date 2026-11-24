@@ -1621,7 +1621,7 @@ function recMini(id){const e=SIM.edits&&SIM.edits[id];if(!e||!(e.z>100)||!fotoSr
 function phStyle(id){if(/^black_/.test(id))return '--img:none;--bs:auto;--bp:center';if(UP[id])return `--img:url(${UP[id].src});--bs:cover;--bp:center`+editStyle(id);const s=spriteOf[id];if(!s)return '';const col=s.i%s.cols,row=Math.floor(s.i/s.cols);const bx=s.cols>1?100*col/(s.cols-1):0,by=s.rows>1?100*row/(s.rows-1):0;return `--img:url(sprites/${s.file});--bs:${s.cols*100}% ${s.rows*100}%;--bp:${bx}% ${by}%`+editStyle(id)}
 
 // ---------- state ----------
-const state={view:'perfis',cartoes:{lotes:null,busy:false,vez:false,erro:null},person:null,session:null,personDay:null,period:'all',imp:{key:'samuel',point:'campo4',photos:[],sent:0,mode:'cartao',timer:null},revFilter:{key:'all',per:'hoje',date:'',venda:'all',foto:'all'},reviews:{},db:null,
+const state={view:'perfis',sessN:0,cartoes:{lotes:null,busy:false,vez:false,erro:null},person:null,session:null,personDay:null,period:'all',imp:{key:'samuel',point:'campo4',photos:[],sent:0,mode:'cartao',timer:null},revFilter:{key:'all',per:'hoje',date:'',venda:'all',foto:'all'},reviews:{},db:null,
   fila:{session:null},caixa:{session:null,pay:'PIX',tef:false,tefStatus:null},guest:{selfie:null},kiosk:{code:'',step:'code'},pub:null,lojaRota:false,navOpen:{},navCur:null,drawer:false,gal:{tab:'sessoes',card:null,q:'',cort:null,ev:null,qr:null}};
 // v92 (revisão): t0 = hora em que o cliente saiu da tela inicial do Checkout, gravada na própria troca de etapa (setter), não no desenho
 function kioskT0(k){let st=k.step;delete k.step;Object.defineProperty(k,'step',{enumerable:true,configurable:true,get(){return st;},set(v){if(v&&v!=='code'&&v!=='emerg'&&!this.t0)this.t0=now().toISOString();st=v;}});return k;}
@@ -2191,11 +2191,11 @@ state.posto={disp:(()=>{try{const d=JSON.parse(localStorage.getItem('eterna.post
 // 401 sem_sessao com alguém conectado neste navegador = a sessão terminou no servidor: volta para a entrada com aviso.
 // Só vale para a pessoa que fez o pedido: resposta que chega depois de ela sair (e de outra entrar) não encerra a sessão seguinte.
 function agLimite(ms){try{if(AbortSignal.timeout)return AbortSignal.timeout(ms);const c=new AbortController();setTimeout(()=>c.abort(),ms);return c.signal;}catch(e){return undefined;}} // sem AbortSignal.timeout (Safari antes do 16, iPads antigos): AbortController com setTimeout
-function agFetch(u,o){o=o||{};const dono=state.user&&state.user.email;
+function agFetch(u,o){o=o||{};const dono=state.sessN; // revisão 24/11: dono = número da sessão (login/logout somam), não o e-mail: 401 atrasado de A não derruba a sessão nova do próprio A
   if(state.assumido&&String(o.method||'GET').toUpperCase()!=='GET')return Promise.resolve(new Response(JSON.stringify({erro:'so_ver'}),{status:403,headers:{'Content-Type':'application/json'}}));
   return fetch(u,Object.assign({},o,{credentials:'same-origin',headers:Object.assign({},o.headers||{},{'X-Eterna':'1'})})).then(r=>{
   if(r.status===401&&state.user&&!authSite()&&!state.lojaRota&&!state.pub&&String(u).startsWith(location.origin+'/')&&!/\/postos\/eu$/.test(String(u).split('?')[0]))
-    r.clone().json().then(j=>{if(j&&j.erro==='sem_sessao'&&state.user&&state.user.email===dono&&!agFetch.saiu){agFetch.saiu=Date.now();logout();toast('Sua sessão terminou. Entre de novo.');setTimeout(()=>{agFetch.saiu=0;},5000);}}).catch(()=>{});
+    r.clone().json().then(j=>{if(j&&j.erro==='sem_sessao'&&state.user&&state.sessN===dono&&!agFetch.saiu){agFetch.saiu=Date.now();logout();toast('Sua sessão terminou. Entre de novo.');setTimeout(()=>{agFetch.saiu=0;},5000);}}).catch(()=>{});
   if(r.status===401&&state.lojaRota&&!/\/postos\/eu$/.test(String(u).split('?')[0])&&Date.now()-(postoCarregar.t||0)>10000)postoCarregar(); // Checkout: o posto foi revogado?
   return r;});}
 async function postoCarregar(){const a=state.agent;if(!a||a.url!==location.origin)return;postoCarregar.t=Date.now();
@@ -7779,7 +7779,7 @@ async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user||state.
   const prox=()=>{const e=logout.espera,f=trFila();const a=e&&e.u===em?f.find(x=>minha(x)&&x.pid===e.pid):null;return a||(state.user?f.find(minha):null);};
   try{for(;;){if(!vale())break;const x=prox();if(!x)break;let r=null,j=null;
       try{r=await agFetch(u+'/treino/rotulo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(x.corpo)});j=await r.json().catch(()=>null);}catch(e){r=null;}
-      const espera=!r||r.status===401||r.status===429||r.status>=500||(r.status===403&&!!j&&(j.erro==='so_ver'||j.erro==='origem')); // 403 so_ver/origem: troca de sessão no meio (ver como, Sair)
+      const espera=!r||r.status===401||r.status===429||r.status>=500||(r.status===403&&!!j&&(j.erro==='so_ver'||(j.erro||j.error)==='origem')); // 403 so_ver/origem: troca de sessão no meio (ver como, Sair)
       if(espera){clearTimeout(trEnviar.tm);trEnviar.tm=setTimeout(()=>{trEnviar.tm=null;trEnviar();},15000);break;} // sem rede, sessão, limite ou servidor: a fila espera
       const resto=trFila().filter(y=>!(y.pid===x.pid&&y.t===x.t&&minha(y)));const t=state.train;const mais=resto.find(y=>y.pid===x.pid&&minha(y));
       if(!state.user||state.user.email!==em){if(r.ok&&j&&j.doc&&mais)mais.corpo.base_em=j.doc.em;} // saiu da conta: a tela seguinte não recebe a marcação
@@ -11628,10 +11628,11 @@ const ACT_MOD={'mtg-modo':'configuracao','ps-modo':'configuracao','fot-cfg-salva
   'bg-on':'configuracao','cartao-lote':'catalogo','loja-fim':'catalogo',price:'catalogo','price-reset':'catalogo'};
 function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;if(state.assumido){toast(TE('vc_so_ver'));return false;}const m=ACT_MOD[a]||MODULE_OF[state.view];if(!m){toast('Sem permissão nesta tela');return false;}if(can(m,op))return true;toast(`Sem permissão para ${OPS.find(o=>o[0]===op)[1].toLowerCase()} em ${MODULES.find(x=>x[0]===m)[1]}`);return false;}
 
+// revisão 24/11: state.sessN é o número da sessão na tela; login() e logout() somam (dono das respostas no agFetch e no authConferir)
 state.assumido=null; // 16/11: {por, nome} enquanto um Admin vê como outra pessoa (só olha; o servidor recusa gravações)
 state.user=null;state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};
 function sessionLoad(){try{const s=JSON.parse(localStorage.getItem('eterna.session')||'null');if(!s||!s.email)return false;if(now()-new Date(s.at)>12*3600e3)return false;const u=userFor(s.email);if(!u)return false;if(sessaoVencida(s,u)){try{localStorage.removeItem('eterna.session')}catch(e){}return false;} /* v92 (D2): sessão de fotógrafo de ontem pede login de novo */state.user=u;state.assumido=s.assumido&&s.assumido.por?s.assumido:null;return true;}catch(e){return false}}
-function login(email){const u=userFor(email);if(!u){state.auth.err='sem_cadastro';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.user=u;if(!state.assumido)loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString(),assumido:state.assumido||undefined}))}catch(e){}
+function login(email){const u=userFor(email);if(!u){state.auth.err='sem_cadastro';render();return false;}try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}state.sessN++;state.user=u;if(!state.assumido)loginMark(u.email);try{localStorage.setItem('eterna.session',JSON.stringify({email:u.email,at:now().toISOString(),assumido:state.assumido||undefined}))}catch(e){}
   state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};const nx=state.auth_next;state.auth_next=null;state.view=(nx&&canView(nx))?nx:homeView();if(state.view!=='quiosque')try{localStorage.setItem('eterna.view',state.view)}catch(e){}render();window.scrollTo({top:0});return true;}
 function logout(){const tv=state.train.vendo,tem=state.user&&state.user.email;const esp=tv&&tem?{pid:tv,u:tem}:null;if(esp)logout.espera=esp; // a volta do trEnviar no Sair só sobe esta foto
   const tsai=!!tv&&trSaiDaFoto(tv);state.train.vendo=null;if(!tsai&&esp&&logout.espera===esp)logout.espera=null; // 23/11: a escolha do Treino vai para a fila antes de sair
@@ -11639,20 +11640,20 @@ function logout(){const tv=state.train.vendo,tem=state.user&&state.user.email;co
   // o /auth/sair tem limite de 4 s (fetch abortado não aplica o Set-Cookie, então a sessão seguinte não é zerada) e encadeia num segundo logout
   // sem resposta do /auth/sair (sem rede ou no limite): a marca authSairPend fica e o pedido é repetido ao abrir e antes do próximo Entrar
   {const ag=tsai?trEsperaEnvio(tv,tem,2000).then(()=>{if(logout.espera===esp)logout.espera=null;}):null;
-    authSairPend(true);const p=Promise.all([logout.sair,ag]).then(()=>authApi('/auth/sair',{},{signal:agLimite(4000)})).then(r=>{if(r&&r.status)authSairPend(false);return r;});
+    authSairPend(true);const p=Promise.all([logout.sair,ag]).then(()=>authApi('/auth/sair',{},{signal:agLimite(4000)})).then(r=>{if(r&&(r.status===200||r.status===401))authSairPend(false);return r;});
     logout.sair=p;p.finally(()=>{if(logout.sair===p)logout.sair=null;});}camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   demoDesliga(); // revisão (segurança): o modo demonstração não passa para a próxima pessoa
-  state.user=null;state.assumido=null;trZera();
+  state.sessN++;state.user=null;state.assumido=null;trZera();
   // revisão 23/11 (AF): números por fotógrafo, rascunho dos limites e calibração não ficam para a próxima pessoa
   Object.assign(state.fot,{j:null,chave:null,em:0,erro:null,rasc:{},recusa:null});Object.assign(state.fg.est,{chave:null,dias:null,em:0,erro:null});Object.assign(state.train.luz,{j:null,esc:{},recusa:null});state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
 // e a sessão vale pelo cookie HttpOnly. O site público não fala com o servidor: lá só a galeria e o Checkout abrem.
 const authSite=()=>/^(www\.)?eterna\.photo$/.test(location.hostname); // o site público; posto.eterna.photo é o servidor do ponto (com login)
 async function authApi(rota,corpo,o){try{const r=await fetch(rota,{method:corpo?'POST':'GET',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:corpo?JSON.stringify(corpo):undefined,signal:o&&o.signal});let j={};try{j=await r.json()}catch(e){}return {status:r.status,...j};}catch(e){return {status:0};}}
-// marca "sair pendente" (só a hora, sem nome): o /auth/sair não teve resposta. Repetido ao abrir (sem ninguém na tela) e antes do Entrar
+// marca "sair pendente" (só a hora, sem nome): o /auth/sair não teve resposta (ou não teve 200/401: com 403 ou 5xx a marca fica). Repetido ao abrir (sem ninguém na tela) e antes do Entrar
 function authSairPend(v){try{if(v===true)localStorage.setItem('eterna.auth.sair',String(Date.now()));else if(v===false)localStorage.removeItem('eterna.auth.sair');else return !!localStorage.getItem('eterna.auth.sair');}catch(e){}return false;}
 function authSairRepete(){if(authSairRepete.p)return authSairRepete.p;
-  const p=authApi('/auth/sair',{},{signal:agLimite(4000)}).then(r=>{if(r&&r.status)authSairPend(false);return r;});authSairRepete.p=p;p.finally(()=>{if(authSairRepete.p===p)authSairRepete.p=null;});return p;}
+  const p=authApi('/auth/sair',{},{signal:agLimite(4000)}).then(r=>{if(r&&(r.status===200||r.status===401))authSairPend(false);return r;});authSairRepete.p=p;p.finally(()=>{if(authSairRepete.p===p)authSairRepete.p=null;});return p;}
 function authSairAoAbrir(){if(authSite()||!authSairPend())return;if(state.user){authSairPend(false);return;}authSairRepete();} // com alguém já dentro, a marca é velha
 function authEntrou(r){if(r.cadastro&&r.usuario){USERS[r.usuario]=migrateUser(r.cadastro)||r.cadastro;}login(r.usuario);} // o cadastro do servidor vale mais que a cópia do navegador
 // o erro fica guardado como chave e é traduzido ao desenhar: trocar a bandeira com o aviso na tela também troca o aviso
@@ -11670,7 +11671,7 @@ async function authTrocar(){const a=state.auth;if(a.busy)return;const dentro=!!s
   if(r.status===200&&r.ok&&dentro){state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view=homeView();toast(TE('senha_alterada'));render();return;}
   if(r.status===200&&r.ok){authSairPend(false);authEntrou(r);return;}if(dentro&&r.status===401){a.senha='';a.err='err_atual';}else a.err=authErro(r);render();}
 // ao abrir: a sessão salva só vale se o servidor ainda reconhecer o cookie. Sem resposta do servidor, ela segue até ele voltar.
-async function authConferir(){if(authSite()||!state.user)return;const dono=state.user.email;const r=await authApi('/auth/eu');if(!state.user||state.user.email!==dono)return; // a resposta é da pessoa que perguntou
+async function authConferir(){if(authSite()||!state.user)return;const dono=state.sessN;const r=await authApi('/auth/eu');if(!state.user||state.sessN!==dono)return; // a resposta é desta sessão (não de uma anterior, nem da mesma pessoa)
   if(r.status===401){logout();return;}
   if(r.status===200&&r.ok){const a=r.assumido_por?{por:r.assumido_por,nome:r.assumido_nome||r.assumido_por}:null;if(JSON.stringify(a)!==JSON.stringify(state.assumido)){state.assumido=a;render();}}}
 // 16/11 (Ronaldo): "ver como". Só Admin, só de quem não é Admin. O servidor guarda a sessão do Admin e devolve no "Voltar".

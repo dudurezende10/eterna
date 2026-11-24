@@ -12680,50 +12680,61 @@ def backup_bancos(s3, pc, ultimo, hoje=None):
     return enviados
 
 
+def backup_rodada(pc, ultimo, est):
+    """Uma rodada do backup_loop (sem o pulso). ultimo: o do backup_bancos. est: {"ok_em", "json_pend"}, atualizado aqui.
+    24/11: os JSON de métricas e sessões sobem junto com banco mudado; se esse envio falha, json_pend fica verdadeiro e a rodada
+    seguinte repete os JSON mesmo sem banco mudado. Só sem nada pendente a rodada sem mudança renova o ok_em (com falha ele
+    envelhece e o alerta da AWS dispara)."""
+    falhou = False
+    try:
+        backup_arquivos(pc)
+    except Exception as ex:
+        falhou = True
+        backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
+        print("  backup na nuvem (arquivos):", str(ex)[:160])
+    try:
+        s3 = _s3_cliente()
+        hoje = _ff_hoje()
+        # 24/11: só o banco que mudou (cada um com a sua marca), não todos quando um muda
+        if backup_bancos(s3, pc, ultimo, hoje):
+            est["json_pend"] = True
+        if not est.get("json_pend"):
+            if not falhou:
+                est["ok_em"] = time.time()
+                _backup_ok_grava(est["ok_em"])
+            return
+        for d in (_ff_hoje(time.time() - 86400), hoje):
+            for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
+                a = os.path.join(pasta, d + ".json")
+                if os.path.exists(a):
+                    s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
+                                  ContentType="application/json")
+        est["json_pend"] = False
+        if not falhou:
+            est["ok_em"] = time.time()
+            _backup_ok_grava(est["ok_em"])
+            backup.update(em=_iso(), ok=True, erro=None)
+    except Exception as ex:
+        backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
+        print("  backup na nuvem:", str(ex)[:160])
+
+
 def backup_loop():
     if not NUVEM_BUCKET:
         return
     pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
     ultimo = {}
-    ok_em = _backup_ok_le()
+    est = {"ok_em": _backup_ok_le(), "json_pend": False}
     while True:
         time.sleep(120)
         # 15/11: pulso para o alerta na AWS (servidor/nuvem/alerta-backup.sh): a cada rodada, mesmo sem mudança. Sem pulso
         # novo há 30 min (servidor desligado, sem internet) ou com ok_em velho (backup falhando), a AWS manda e-mail.
         try:
             _s3_cliente().put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/pulso.json" % pc, ContentType="application/json",
-                                     Body=json.dumps({"em": time.time(), "ok_em": ok_em, "ok": backup.get("ok"), "erro": backup.get("erro")}).encode())
+                                     Body=json.dumps({"em": time.time(), "ok_em": est["ok_em"], "ok": backup.get("ok"), "erro": backup.get("erro")}).encode())
         except Exception as ex:
             print("  backup na nuvem (pulso):", str(ex)[:160])
-        falhou = False
-        try:
-            backup_arquivos(pc)
-        except Exception as ex:
-            falhou = True
-            backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
-            print("  backup na nuvem (arquivos):", str(ex)[:160])
-        try:
-            s3 = _s3_cliente()
-            hoje = _ff_hoje()
-            # 24/11: só o banco que mudou (cada um com a sua marca), não todos quando um muda
-            if not backup_bancos(s3, pc, ultimo, hoje):
-                if not falhou:
-                    ok_em = time.time()
-                    _backup_ok_grava(ok_em)
-                continue
-            for d in (_ff_hoje(time.time() - 86400), hoje):
-                for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
-                    a = os.path.join(pasta, d + ".json")
-                    if os.path.exists(a):
-                        s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
-                                      ContentType="application/json")
-            if not falhou:
-                ok_em = time.time()
-                _backup_ok_grava(ok_em)
-                backup.update(em=_iso(), ok=True, erro=None)
-        except Exception as ex:
-            backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
-            print("  backup na nuvem:", str(ex)[:160])
+        backup_rodada(pc, ultimo, est)
 
 
 def metricas_periodo(de, ate):
@@ -14176,7 +14187,8 @@ LUZ_LIM_PADRAO = {"v": 1, "rosto_p95_alto": 250, "rosto_alto_pct": 8, "rosto_med
 LUZ_CRIT = {"escuras": 30, "estouradas": 30, "boas": 150, "precisao": 0.85, "revocacao": 0.70}
 LUZ_CLASSES = ("escura", "estourada")
 LUZ_DIAS = 30               # a varredura mede o que ficou sem medida nestes dias
-LUZ_RET_DIAS = RETENCAO_DIAS  # 24/11: a medida vence com o prazo da biblioteca (fica a das fotos marcadas no Treino); luz_limpa
+LUZ_RET_DIAS = max(RETENCAO_DIAS, LUZ_DIAS)  # 24/11: a medida vence com o prazo da biblioteca, nunca antes da janela da varredura
+#                                               (que mediria de novo); ficam a das fotos marcadas no Treino e a das ainda na biblioteca. luz_limpa
 LUZ_FILA_MAX = 20000
 LUZ_GRAVA_SEG = 5
 LUZ_VARRE_SEG = 3600
@@ -14186,7 +14198,7 @@ LUZ_GRADE = {"rosto_med_baixo": "escura", "quadro_med_baixo": "escura", "rosto_a
 luz_lock = threading.Lock()
 luz_novas = collections.OrderedDict()       # pid -> valor (JSON) esperando o luz_grava_loop
 luz_st = {"dia": "", "hoje": 0, "ms_total": 0.0, "ms_n": 0, "pendentes": None, "rodando": False, "ultima": None, "hora": "", "hora_n": 0,
-          "limpa_dia": ""}
+          "limpa_dia": "", "limpa_tent": 0.0}
 luz_parar = threading.Event()               # só os testes ligam: o luz_loop termina
 _luz_med = {"t": 0.0, "r": None, "lim": None}
 _luz_det = {"d": None, "ok": None}
@@ -14421,12 +14433,14 @@ def _luz_pids_janela(dias, agora=None):
 
 def luz_limpa(agora=None):
     """24/11: a medida de luz vence com o prazo da biblioteca (LUZ_RET_DIAS): sai a de foto que não está nas sessões desses dias.
-    Ficam a das fotos marcadas no Treino (rotulo, a calibração usa) e a gravada nas últimas 24 h (foto que ainda não entrou numa
-    sessão). Roda de madrugada pelo luz_loop. -> linhas apagadas"""
+    Ficam a das fotos marcadas no Treino (rotulo, a calibração usa), a das fotos ainda na biblioteca (lib) e a gravada nas últimas
+    24 h (foto que ainda não entrou numa sessão). Roda de madrugada pelo luz_loop. -> linhas apagadas"""
     if not os.path.exists(TREINO_DB):
         return 0
     agora = agora or time.time()
     janela = _luz_pids_janela(LUZ_RET_DIAS, agora)
+    with lock:
+        janela.update(lib)
     recente = _iso(agora - 86400)
     with treino_lock:
         db = treino_db()
@@ -14644,12 +14658,18 @@ def luz_loop():
 
 def luz_limpa_noite(t=None):
     """Uma vez por madrugada (LUZ_NOITE: fora do horário de visita), com a exposição ligada ou não: luz_limpa. Cede ao leitor,
-    à selfie, ao recorte, à montagem e às poses (_luz_ocupado): tenta de novo na volta seguinte do luz_loop. -> apagadas ou None"""
+    à selfie, ao recorte, à montagem e às poses (_luz_ocupado): tenta de novo na volta seguinte do luz_loop. Se a luz_limpa
+    falha, a próxima tentativa espera 10 min (não repete a cada volta de 3 s nem enche o console). -> apagadas ou None"""
     t = time.time() if t is None else t
     hoje = _ff_hoje(t)
-    if not _luz_noite(t) or luz_st["limpa_dia"] == hoje or _luz_ocupado():
+    if not _luz_noite(t) or luz_st["limpa_dia"] == hoje or _luz_ocupado() or 0 <= t - luz_st["limpa_tent"] < 600:
         return None
-    n = luz_limpa(t)
+    luz_st["limpa_tent"] = t
+    try:
+        n = luz_limpa(t)
+    except Exception as ex:
+        print("  luz: limpeza das medidas falhou (%s); nova tentativa em 10 min" % type(ex).__name__)
+        return None
     luz_st["limpa_dia"] = hoje
     if n:
         print("  luz: %d medida(s) fora do prazo de %d dias apagada(s)" % (n, LUZ_RET_DIAS))
@@ -19057,16 +19077,18 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"erro": "fraca", "motivo": motivo}, 400, True)
             auth_trocar(usuario, nova, ip)
             situacao = "ok"
-        elif situacao == "provisoria":
-            return self.js({"ok": False, "troca": True}, 200, True)
-        # sessão anterior encerrada ao entrar: a deste navegador (e a do Admin guardada no "ver como") não fica valendo ao lado da nova
+        # sessão anterior encerrada ao entrar: a deste navegador (e a do Admin guardada no "ver como") não fica valendo ao lado da nova.
+        # Revisão 24/11: também com senha provisória, antes de pedir a troca (senão o /auth/trocar seguinte ia com a sessão do "ver como")
         auth_sessao_apaga(self.auth_token())
         adm_tok = self.cookie_val(ASSUMIR_COOKIE)
         if adm_tok:
             auth_sessao_apaga(adm_tok)
-        self.auth_cookie(auth_sessao_nova(usuario), AUTH_SESSAO)
-        if adm_tok:
             self.auth_cookie("", 0, ASSUMIR_COOKIE)
+        if situacao == "provisoria":
+            if self.auth_token():
+                self.auth_cookie("", 0)
+            return self.js({"ok": False, "troca": True}, 200, True)
+        self.auth_cookie(auth_sessao_nova(usuario), AUTH_SESSAO)
         return self.js(dict(dados, ok=True), 200, True)
 
     def ativ_post(self, rota):
@@ -19294,7 +19316,7 @@ class H(BaseHTTPRequestHandler):
         """16/11: POST /treino/rotulo (qualidade.u) e /treino/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
         (conferido no autoriza), 120 por minuto por pessoa nas marcações e 6 no interruptor, corpo até 4 KB. O console nunca imprime o corpo."""
         if not self.origem_local():
-            return self.js({"ok": False, "error": "origem"}, 403)
+            return self.js({"ok": False, "erro": "origem"}, 403)
         eu = self.sessao() or {}
         quem = eu.get("usuario") or ""
         # 18/11 (revisão de segurança): o interruptor tem limite próprio (6 por minuto por pessoa), separado das marcações
@@ -19314,7 +19336,7 @@ class H(BaseHTTPRequestHandler):
         """23/11 (P1 de poses): POST /poses/config {modo?, janela?} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
         (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo."""
         if not self.origem_local():
-            return self.js({"ok": False, "error": "origem"}, 403)
+            return self.js({"ok": False, "erro": "origem"}, 403)
         quem = (self.sessao() or {}).get("usuario") or ""
         if not limite_ok("u:" + quem, "poses_cfg", 6):
             return self.js({"ok": False, "error": "limite"}, 429)
@@ -19372,7 +19394,7 @@ class H(BaseHTTPRequestHandler):
         mexem nos números por fotógrafo). Origem local, X-Eterna (conferido no autoriza), 6 por minuto por pessoa, corpo até 4 KB.
         O console nunca imprime o corpo, só os campos que mudaram."""
         if not self.origem_local():
-            return self.js({"ok": False, "error": "origem"}, 403)
+            return self.js({"ok": False, "erro": "origem"}, 403)
         if not self.pode_desempenho():
             return self.js({"ok": False, "error": "sem_permissao"}, 403)
         quem = (self.sessao() or {}).get("usuario") or ""
@@ -19392,7 +19414,7 @@ class H(BaseHTTPRequestHandler):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
         Mesma guarda do /ponto/entradas (posto + origem + X-Eterna + 30 por minuto), corpo até 1 KB. O console nunca imprime o corpo."""
         if not self.posto() or not self.origem_local() or self.headers.get("X-Eterna") != "1":
-            return self.js({"ok": False, "error": "origem"}, 403)
+            return self.js({"ok": False, "erro": "origem"}, 403)
         if not limite_ok(self.client_address[0], "montagens", 30):
             return self.js({"ok": False, "error": "limite"}, 429)
         body, err = self.corpo(1024)

@@ -735,6 +735,45 @@ try:
     del subidos[:]
     env3 = m.backup_bancos(S3Falso(), "pc", ultimo, "2026-11-25")
     ok(set(env3) == set(env1) and "poses.db" not in env3, "I3: no dia seguinte, a cópia do dia de cada banco (sem o poses.db): %r" % env3)
+    # C2 (24/11): envio dos JSON que falha é repetido na rodada seguinte (mesmo sem banco mudado) e o ok_em não anda até subir
+    ontem_j = m._ff_hoje(time.time() - 86400)
+    met_j = os.path.join(m.MET_DIR, ontem_j + ".json")
+    criou_j = not os.path.exists(met_j)
+    if criou_j:
+        os.makedirs(m.MET_DIR, exist_ok=True)
+        open(met_j, "w").write("{}")
+    tent_j, cai_j = [], [True]
+
+    class S3Json:
+        def put_object(self, **k):
+            if "/metricas/" in k["Key"] or "/sessoes/" in k["Key"]:
+                tent_j.append(k["Key"])
+                if cai_j[0]:
+                    raise RuntimeError("sem rede")
+    orig_s3, orig_arq = m._s3_cliente, m.backup_arquivos
+    m._s3_cliente, m.backup_arquivos = (lambda: S3Json()), (lambda pc: 0)
+    try:
+        ult_j, est_j = {}, {"ok_em": None, "json_pend": False}
+        m.backup_rodada("pc", ult_j, est_j)
+        ok(ult_j and tent_j and est_j["json_pend"] and est_j["ok_em"] is None and m.backup.get("ok") is False,
+           "C2: JSON falhou: fica pendente, ok_em parado: %r %r" % (est_j, tent_j))
+        n_j = len(tent_j)
+        m.backup_rodada("pc", ult_j, est_j)
+        ok(len(tent_j) > n_j and est_j["json_pend"] and est_j["ok_em"] is None,
+           "C2: sem banco mudado, a rodada seguinte repete os JSON e o ok_em segue parado: %r %r" % (est_j, tent_j[n_j:]))
+        cai_j[0] = False
+        n_j = len(tent_j)
+        m.backup_rodada("pc", ult_j, est_j)
+        ok(len(tent_j) > n_j and not est_j["json_pend"] and est_j["ok_em"] and m.backup.get("ok") is True,
+           "C2: com a rede de volta os JSON sobem e o ok_em anda: %r" % est_j)
+        ok_1, n_j = est_j["ok_em"], len(tent_j)
+        time.sleep(0.02)
+        m.backup_rodada("pc", ult_j, est_j)
+        ok(len(tent_j) == n_j and est_j["ok_em"] > ok_1, "C2: nada pendente nem mudado: não sobe JSON e o ok_em anda: %r" % tent_j[n_j:])
+    finally:
+        m._s3_cliente, m.backup_arquivos = orig_s3, orig_arq
+        if criou_j:
+            os.remove(met_j)
     # luz: vence com o prazo da biblioteca; ficam a das fotos marcadas no Treino e a das últimas 24 h
     velho = m._ff_hoje(time.time() - (m.LUZ_RET_DIAS + 3) * 86400)
     ps_v = leva(velho, "antigo", 4)
@@ -749,10 +788,14 @@ try:
         db.execute("insert or replace into rotulo (pid, v, dia, dados, em) values (?, 1, ?, '{}', 'x')", (ps_v[0], velho))
         db.commit()
         db.close()
-    ok(m.luz_limpa() == 3, "I3: luz_limpa apaga as medidas fora do prazo")
+    with m.lock:                                         # saíram da biblioteca (prazo vencido); ps_v[2] ainda está nela
+        for p in (ps_v[0], ps_v[1], ps_v[3], solta):
+            m.lib.pop(p, None)
+    ok(m.LUZ_RET_DIAS >= max(m.RETENCAO_DIAS, m.LUZ_DIAS), "I3: prazo da luz nunca menor que a janela da varredura: %r" % m.LUZ_RET_DIAS)
+    ok(m.luz_limpa() == 2, "I3: luz_limpa apaga as medidas fora do prazo")
     resta = set(m.luz_ler())
-    ok(ps_v[0] in resta and ps_v[3] in resta and not {ps_v[1], ps_v[2], solta} & resta and set(ps_n) <= resta,
-       "I3: fica a marcada no Treino, a das últimas 24 h e as do prazo; saem as velhas: %r" % sorted(resta & set(ps_v + ps_n + [solta])))
+    ok(ps_v[0] in resta and ps_v[2] in resta and ps_v[3] in resta and not {ps_v[1], solta} & resta and set(ps_n) <= resta,
+       "I3: fica a marcada no Treino, a ainda na biblioteca, a das últimas 24 h e as do prazo; saem as velhas: %r" % sorted(resta & set(ps_v + ps_n + [solta])))
     # a limpeza é de madrugada, uma vez por noite, e cede às poses
     noite_t = time.mktime(time.strptime(HOJE + " 03:00", "%Y-%m-%d %H:%M"))
     dia_t = time.mktime(time.strptime(HOJE + " 14:00", "%Y-%m-%d %H:%M"))
@@ -762,6 +805,26 @@ try:
     ok(m.luz_limpa_noite(noite_t) is None and m.luz_st["limpa_dia"] == "", "I3: com as poses rodando, a limpeza espera")
     m.poses_st["rodando"] = False
     ok(m.luz_limpa_noite(noite_t) == 0 and m.luz_st["limpa_dia"] == HOJE and m.luz_limpa_noite(noite_t) is None, "I3: limpa uma vez por noite")
+    # luz_limpa com erro: a próxima tentativa espera 10 min (não a cada volta de 3 s do luz_loop)
+    chamadas_l, orig_limpa = [], m.luz_limpa
+
+    def limpa_cai(t=None):
+        chamadas_l.append(t)
+        raise sqlite3.OperationalError("database is locked")
+    m.luz_limpa = limpa_cai
+    try:
+        m.luz_st.update(limpa_dia="", limpa_tent=0.0)
+        r1 = m.luz_limpa_noite(noite_t)
+        r2 = m.luz_limpa_noite(noite_t + 3)
+        r3 = m.luz_limpa_noite(noite_t + 599)
+        ok(r1 is None and r2 is None and r3 is None and len(chamadas_l) == 1 and m.luz_st["limpa_dia"] == "",
+           "I3: luz_limpa com erro não repete antes de 10 min: %r" % chamadas_l)
+        m.luz_limpa_noite(noite_t + 601)
+        ok(len(chamadas_l) == 2 and m.luz_st["limpa_dia"] == "", "I3: depois de 10 min tenta de novo: %r" % chamadas_l)
+    finally:
+        m.luz_limpa = orig_limpa
+    m.luz_st.update(limpa_dia="", limpa_tent=0.0)
+    ok(m.luz_limpa_noite(noite_t + 700) == 0 and m.luz_st["limpa_dia"] == HOJE, "I3: sem erro, limpa e marca a noite")
     # o dia mais antigo que o prazo da luz, refeito de madrugada, fica com o bloco de luz já gravado
     fd_grava(velho, "antigo", {"familias": 1, "cliques_soma": 4, "por_n": {"4": 1}, "fotos": 4, "luz": {"n": 4, "escuras": 1, "estouradas": 2, "sem_dado": 0}})
     ok(m.fot_dia(velho)["antigo"]["luz"] == {"n": 4, "escuras": 1, "estouradas": 2, "sem_dado": 0}, "I3: dia fora do prazo da luz mantém a luz gravada: %r" % m.fot_dia(velho)["antigo"])
