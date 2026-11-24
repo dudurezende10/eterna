@@ -284,7 +284,8 @@ venda = [f["pid"] for f in r["galeria"]["fotos"] if f["direito"] == "venda"]
 cli = {"nome": "Cliente Teste", "email": "cliente@exemplo.com", "cpf": "529.982.247-25"}
 ped = lambda corpo, ip="5.0.0.1": chama("POST", "/g/%s/pedido" % tokP, dict({"acesso": aceP}, **corpo), ip=ip)
 ok(ped({"pids": venda[:4], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli})[0] == 400, "carrinho que não cobre as fotos: recusado")
-ok(ped({"pids": venda[:1], "itens": [{"id": "extra", "qtd": 1}], "cliente": cli})[0] == 400, "adicional sem pacote: recusado")
+ok(ped({"pids": venda[:2], "itens": [{"id": "extra", "qtd": 1}], "cliente": cli})[0] == 400, "avulsa que não cobre as fotos: recusada")
+ok((app.cesta(app.manifesto(tokP), [{"id": "extra", "qtd": 2}], 2) or [0, 0])[1] == 70, "só a foto avulsa, sem pacote: 2 fotos = 70")
 ok(ped({"pids": venda[:1], "itens": [{"id": "zona", "qtd": 1}], "cliente": dict(cli, cpf="111.111.111-11")})[1].get("campo") == "documento", "CPF inválido: recusado")
 ok(ped({"pids": ["zz0000"], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli})[0] == 400, "foto fora do acesso: recusada")
 st, r = ped({"pids": venda[:4], "itens": [{"id": "zona", "qtd": 1}, {"id": "extra", "qtd": 1}], "cliente": cli, "marketing": True, "idioma": "pt"})

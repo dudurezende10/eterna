@@ -575,12 +575,12 @@ def catalogo_ok(cat):
 
 
 def cesta(m, itens, n):
-    """Confere o carrinho da galeria: produtos do catálogo online, ao menos um pacote, cobrindo as n fotos escolhidas.
+    """Confere o carrinho da galeria: produtos do catálogo online cobrindo as n fotos escolhidas (24/11: foto avulsa sem pacote vale).
     O preço é o do manifesto (o que o navegador mandar é ignorado). Devolve (itens, total, todas) ou None."""
     cat = {c["id"]: c for c in m.get("catalogo") or []}
     if not isinstance(itens, list) or not 1 <= len(itens) <= 5:
         return None
-    out, total, cobre, todas, pacote = [], 0.0, 0, False, False
+    out, total, cobre, todas = [], 0.0, 0, False
     for i in itens:
         c = cat.get(str(i.get("id"))) if isinstance(i, dict) else None
         q = i.get("qtd") if isinstance(i, dict) else None
@@ -588,12 +588,11 @@ def cesta(m, itens, n):
             return None
         out.append({"id": c["id"], "sku": c["sku"], "nome": c["nome"], "qtd": q, "preco": c["preco"]})
         total += c["preco"] * q
-        pacote = pacote or c["kind"] == "pacote"
         if c["digital"] == "todas":
             todas = True
         else:
             cobre += c["digital"] * q
-    if not pacote or not (todas or cobre >= n):
+    if not (todas or cobre >= n):
         return None
     return out, round(total, 2), todas
 
