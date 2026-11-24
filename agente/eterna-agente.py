@@ -11469,6 +11469,19 @@ def posto_quem(token, ip=""):
     return {"id": r[0], "nome": r[1], "num": r[2], "auto": str(r[3] or "").startswith("auto:")} if r else None
 
 
+def postos_lado_valida(v):
+    """config/postos-lado (23/11): {lados: {<id do posto>: "esq"}, por, em}; só "esq" fica gravado (sem entrada = direita), até 200 postos."""
+    if not isinstance(v, dict) or not isinstance(v.get("lados"), dict) or len(v["lados"]) > 200:
+        return None
+    lados = {}
+    for k, x in v["lados"].items():
+        if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k) or x not in ("esq", "dir"):
+            return None
+        if x == "esq":
+            lados[k] = "esq"
+    return {"lados": lados, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
+
+
 def posto_lista():
     with estado_lock:
         db = auth_db()
@@ -11991,6 +12004,11 @@ def estado_gravar(body, quem=""):
                         v = {**ok_, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
                     r_ = db.execute("select valor from doc where col = 'config' and id = 'ia'").fetchone()
                     auditoria.append((r_[0] if r_ else None, v))
+                if d["col"] == "config" and d["id"] == "postos-lado" and v is not None:   # 23/11: lado da barra do Checkout por posto
+                    v = postos_lado_valida(v)
+                    if v is None:
+                        print("  config/postos-lado recusada (formato inválido) · de %s" % (quem or "?"))
+                        continue
                 if d["col"] == "config" and d["id"] == "montagem" and v is not None:   # montagem no servidor: só {modo, por, em}
                     v = montagem_valida(v)
                     if v is None:
