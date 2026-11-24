@@ -122,6 +122,22 @@ def calc_em(dia):
     return r[0] if r else (None, None)
 
 
+FEITOS = []                       # dias recalculados (fot_dia), de qualquer thread: "refeito" não depende de regravar (24/11)
+_FOT_DIA = m.fot_dia
+
+
+def _fot_dia_espia(dia):
+    FEITOS.append(dia)
+    return _FOT_DIA(dia)
+
+
+m.fot_dia = _fot_dia_espia
+
+
+def mtimes(b):
+    return tuple(os.path.getmtime(x) if os.path.exists(x) else None for x in (b, b + "-wal"))
+
+
 def tipos(r, k=None):
     return [a["tipo"] for a in r["alertas"] if k is None or a["k"] == k]
 
@@ -566,18 +582,17 @@ try:
     m.fot_gravar(D_V)
     em_v = calc_em(D_V)[0]
     m.fot_st["sujo"] = False
-    time.sleep(1.1)
-    t_r = m._iso()
+    del FEITOS[:]
     st, r = pede("POST", "/fotografos/config", {"cliques_min": 18, "luz": {"quadro_med_baixo": 50}}, cookie=sup)
     ok(st == 200 and r.get("refeitos") == 7 and r.get("noite") is True, "R2: limite de luz novo refaz 7 dias na hora: %r" % r)
-    ok(all((calc_em(m._dia_mais(HOJE, -i))[0] or "") >= t_r for i in range(7)) and calc_em(D_V)[0] == em_v,
-       "R2: hoje e os 6 dias antes refeitos; o dia 10 não: %r" % ([calc_em(m._dia_mais(HOJE, -i))[0] for i in range(8)] + [em_v, t_r],))
+    ok(all(m._dia_mais(HOJE, -i) in FEITOS for i in range(7)) and D_V not in FEITOS, "R2: hoje e os 6 dias antes refeitos; o dia 10 não: %r" % FEITOS)
+    del FEITOS[:]
     m.fot_rodada(HOJE, False, hora=12)
-    ok(calc_em(D_V)[0] == em_v and m.fot_st["sujo"] is True, "R2: fora da madrugada o resto não é refeito")
+    ok(D_V not in FEITOS and calc_em(D_V)[0] == em_v and m.fot_st["sujo"] is True, "R2: fora da madrugada o resto não é refeito")
     ok(m.fot_alertas(HOJE, HOJE, agora_hoje=False)["sujo"] is True, "R2: a resposta avisa que os dias antigos esperam a madrugada")
     m.fot_st["noite"] = None
     m.fot_rodada(HOJE, False, hora=3)
-    ok(calc_em(D_V)[0] > em_v and m.fot_st["sujo"] is False and m.fot_st["noite"] == HOJE, "R2: a madrugada refaz o resto e limpa o sujo")
+    ok(D_V in FEITOS and m.fot_st["sujo"] is False and m.fot_st["noite"] == HOJE, "R2: a madrugada refaz o resto e limpa o sujo")
     ok(st == 200 and r["limites"]["cliques_min"] == 18 and r["antes"]["cliques_min"] == 20 and set(r["mudou"]) == {"cliques_min", "luz.quadro_med_baixo"}
        and r["por"] == "supervisora-af", "11: mudança válida com antes e depois (auditLog da tela): %s %r" % (st, r))
     m._fot_cfg["t"] = 0.0
@@ -639,13 +654,12 @@ try:
     ok(not sem_lock, "S3: a rodada grava cada dia com o fot_lock: %r" % sem_lock)
     ok(m.fot_st["sujo"] is True and m.fot_st["noite"] != HOJE, "S3: limite mudou durante a rodada: o sujo fica e a noite não conta: %r" % m.fot_st)
     ok(m.fot_alertas(HOJE, HOJE, agora_hoje=False)["refeitos"] == 7, "S3: a resposta dos alertas traz quantos dias foram refeitos")
-    em_meio = calc_em(D_MEIO)[0]
-    time.sleep(1.1)
+    del FEITOS[:]
     m.fot_rodada(HOJE, False, hora=3)
-    ok(m.fot_st["sujo"] is False and m.fot_st["noite"] == HOJE and calc_em(D_MEIO)[0] > em_meio,
+    ok(m.fot_st["sujo"] is False and m.fot_st["noite"] == HOJE and D_MEIO in FEITOS,
        "S3: a próxima volta na janela refaz com o limite novo e limpa o sujo: %r" % m.fot_st)
     orig_refaz = m.fot_dia
-    m.fot_dia = lambda d: (_ for _ in ()).throw(RuntimeError("teste"))
+    m.fot_dia = lambda d: (_ for _ in ()).throw(RuntimeError("teste"))   # orig_refaz é o espião (volta no finally)
     try:
         ok(m.fot_refaz_recentes() == 0 and m.fot_st["refeitos"] == 0, "S5: refazer que falha devolve 0 (a tela não diz que refez)")
     finally:
@@ -679,6 +693,95 @@ try:
     ok(meses.get("2025-04", {}).get("carlos", {}).get("familias") == 7 and meses.get("2025-01", {}).get("carlos", {}).get("familias") == 2,
        "R3: o mês atrasado e o mais antigo congelados: %r" % sorted(meses))
     ok(m.fot_mes_fechar("2025-05-21", noite=True) == "ja", "R3: nada mais a fechar")
+
+    # ---------- I3 (24/11): fot_gravar não regrava o dia igual; backup só do banco que mudou e nunca do poses.db; prazo da luz ----------
+    D_I = m._dia_mais(HOJE, -5)
+    ps_i = leva(D_I, "idem", 12)
+    m.fot_gravar(D_I)
+    em_i, lin_i = calc_em(D_I)[0], m.op_ler("select fotografo, dados, em from fotografo_dia where dia = ?", (D_I,))
+    t0 = mtimes(m.OPERACAO_DB)
+    time.sleep(1.1)
+    for _ in range(3):
+        m.fot_gravar(D_I)
+    ok(calc_em(D_I)[0] == em_i and m.op_ler("select fotografo, dados, em from fotografo_dia where dia = ?", (D_I,)) == lin_i and mtimes(m.OPERACAO_DB)[0] == t0[0],
+       "I3: dia igual não é regravado (nem o em, nem o arquivo): %r %r" % (t0, mtimes(m.OPERACAO_DB)))
+    leva(D_I, "idem", 3)
+    m.fot_gravar(D_I)
+    d_i = json.loads(m.op_ler("select dados from fotografo_dia where dia = ? and fotografo = 'idem'", (D_I,))[0][0])
+    ok(d_i["familias"] == 2 and calc_em(D_I)[0] > em_i, "I3: dia com dado novo é regravado: %r" % d_i)
+    # backup: só o banco que mudou; o poses.db e o cena.db nunca
+    subidos = []
+
+    class S3Falso:
+        def put_object(self, **k):
+            subidos.append(k["Key"])
+    for b_ in (m.POSES_DB, m.CENA_DB):
+        os.makedirs(os.path.dirname(b_), exist_ok=True)
+        sqlite3.connect(b_).execute("create table if not exists t (x)").connection.commit()
+    ultimo = {}
+    env1 = m.backup_bancos(S3Falso(), "pc", ultimo, "2026-11-24")
+    ok(env1 and "poses.db" not in env1 and "cena.db" not in env1 and not any("poses" in k or "cena" in k for k in subidos),
+       "I3: backup sem poses.db nem cena.db: %r" % env1)
+    del subidos[:]
+    ok(m.backup_bancos(S3Falso(), "pc", ultimo, "2026-11-24") == [] and not subidos, "I3: nada mudou, nada sobe: %r" % subidos)
+    m.fot_gravar(D_I)                                    # igual: não muda o operacao.db
+    ok(m.backup_bancos(S3Falso(), "pc", ultimo, "2026-11-24") == [], "I3: fot_gravar igual não faz subir o operacao.db")
+    time.sleep(1.1)
+    leva(D_I, "idem", 4)
+    m.fot_gravar(D_I)
+    env2 = m.backup_bancos(S3Falso(), "pc", ultimo, "2026-11-24")
+    ok(env2 == ["operacao.db"] and sorted(subidos) == ["backup/pc/dia/2026-11-24/operacao.db", "backup/pc/operacao.db"],
+       "I3: só o banco que mudou sobe: %r %r" % (env2, subidos))
+    del subidos[:]
+    env3 = m.backup_bancos(S3Falso(), "pc", ultimo, "2026-11-25")
+    ok(set(env3) == set(env1) and "poses.db" not in env3, "I3: no dia seguinte, a cópia do dia de cada banco (sem o poses.db): %r" % env3)
+    # luz: vence com o prazo da biblioteca; ficam a das fotos marcadas no Treino e a das últimas 24 h
+    velho = m._ff_hoje(time.time() - (m.LUZ_RET_DIAS + 3) * 86400)
+    ps_v = leva(velho, "antigo", 4)
+    ps_n = leva(m._dia_mais(HOJE, -2), "novo", 2)
+    solta = foto()
+    em_velho = m._iso(time.time() - 40 * 86400)
+    with m.treino_lock:
+        db = m.treino_db()
+        db.executemany("insert or replace into medida (pid, tipo, valor, em) values (?, 'luz', '{}', ?)",
+                       [(p, em_velho) for p in ps_v + ps_n + [solta]])
+        db.execute("insert or replace into medida (pid, tipo, valor, em) values (?, 'luz', '{}', ?)", (ps_v[3], m._iso()))   # medida de agora
+        db.execute("insert or replace into rotulo (pid, v, dia, dados, em) values (?, 1, ?, '{}', 'x')", (ps_v[0], velho))
+        db.commit()
+        db.close()
+    ok(m.luz_limpa() == 3, "I3: luz_limpa apaga as medidas fora do prazo")
+    resta = set(m.luz_ler())
+    ok(ps_v[0] in resta and ps_v[3] in resta and not {ps_v[1], ps_v[2], solta} & resta and set(ps_n) <= resta,
+       "I3: fica a marcada no Treino, a das últimas 24 h e as do prazo; saem as velhas: %r" % sorted(resta & set(ps_v + ps_n + [solta])))
+    # a limpeza é de madrugada, uma vez por noite, e cede às poses
+    noite_t = time.mktime(time.strptime(HOJE + " 03:00", "%Y-%m-%d %H:%M"))
+    dia_t = time.mktime(time.strptime(HOJE + " 14:00", "%Y-%m-%d %H:%M"))
+    m.luz_st["limpa_dia"] = ""
+    ok(m.luz_limpa_noite(dia_t) is None and m.luz_st["limpa_dia"] == "", "I3: fora da madrugada não limpa")
+    m.poses_st["rodando"] = True
+    ok(m.luz_limpa_noite(noite_t) is None and m.luz_st["limpa_dia"] == "", "I3: com as poses rodando, a limpeza espera")
+    m.poses_st["rodando"] = False
+    ok(m.luz_limpa_noite(noite_t) == 0 and m.luz_st["limpa_dia"] == HOJE and m.luz_limpa_noite(noite_t) is None, "I3: limpa uma vez por noite")
+    # o dia mais antigo que o prazo da luz, refeito de madrugada, fica com o bloco de luz já gravado
+    fd_grava(velho, "antigo", {"familias": 1, "cliques_soma": 4, "por_n": {"4": 1}, "fotos": 4, "luz": {"n": 4, "escuras": 1, "estouradas": 2, "sem_dado": 0}})
+    ok(m.fot_dia(velho)["antigo"]["luz"] == {"n": 4, "escuras": 1, "estouradas": 2, "sem_dado": 0}, "I3: dia fora do prazo da luz mantém a luz gravada: %r" % m.fot_dia(velho)["antigo"])
+    # N3: a medida que espera na fila em memória não é gravada depois da exclusão LGPD; nem a que chega no meio
+    m.luz_acrescenta(ps_n[0], {"v": 1, "src": "original", "q": None, "r": None})
+    m.lgpd_excluir([ps_n[0]], [], quem="teste")
+    ok(ps_n[0] not in m.luz_novas and ps_n[0] not in m.luz_ler(), "N3: LGPD limpa a fila em memória da luz")
+    m.luz_acrescenta(ps_n[1], {"v": 1, "src": "original", "q": None, "r": None})
+    orig_db = m.treino_db
+
+    def db_e_lgpd():                                     # a foto sai da biblioteca entre a conferência e a gravação
+        with m.lock:
+            m.lib.pop(ps_n[1], None)
+        return orig_db()
+    m.treino_db = db_e_lgpd
+    try:
+        m.luz_grava()
+    finally:
+        m.treino_db = orig_db
+    ok(ps_n[1] not in m.luz_ler(), "N3: foto que sai da biblioteca no meio da gravação não fica com a medida")
 
     # /status: luz e estatisticas.fot só com números
     st, s_ = pede("GET", "/status", cookie=sup)

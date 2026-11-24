@@ -90,7 +90,7 @@ O roteiro fica em `servidor/linux/visao-instalar.sh` (repositório, sem segredo)
 
 **`agente/eterna-agente.py`, bloco "Poses" depois do bloco "Cena"**
 - Constantes:
-  - `POSES_DB = ~/Eterna/ponto/poses.db`, que entra na lista de `bancos` do backup ao lado do `TREINO_DB`.
+  - `POSES_DB = ~/Eterna/ponto/poses.db`, fora do backup na nuvem (revisão 24/11: tem pid e card, e dado de visitante não sai do servidor).
   - `POSE_TAXO` (abaixo) e `POSE_SAIDA` (esquema da resposta com chaves curtas).
   - `POSE_VERSAO`: hash de SHA do modelo, SHA do mmproj, prompt e versão da taxonomia.
   - `POSE_JANELA_PADRAO = ("20:00","07:00")`, `POSE_LOTE = 8`, `POSE_VRAM_LIVRE_MB = 9000`, `POSE_DIAS = 7` (quantos dias para trás a noite cobre), `POSE_MORTES_MAX = 3`, `POSE_BIN` (caminho fixo; os testes trocam pelo módulo).
@@ -410,7 +410,7 @@ O `POSE_GUIA_PADRAO` da P4 sai do roteiro dos fotógrafos por set de 22/11, item
 - **Texto dentro da foto tentando mandar no modelo** (placa, camiseta): a gramática fechada mais o `pose_valida` limitam o estrago a um rótulo errado. Nada da resposta vira HTML sem `esc()`, e nada vira comando.
 - **Ranking dos fotógrafos:** a permissão é conferida no servidor, em todas as rotas e no Exportar, nunca só na tela.
   - Números por fotógrafo são dado pessoal de funcionário: acesso restrito, sem nada sobre presença, e o PDF geral sem nomes.
-- **LGPD:** as linhas de `pose` saem na exclusão e vencem em 60 dias. Os agregados são só contagens, sem pid. Nenhuma foto sai do servidor. `poses.db` vai para o backup só com texto.
+- **LGPD:** as linhas de `pose` saem na exclusão e vencem em 60 dias. Os agregados são só contagens, sem pid. Nenhuma foto sai do servidor. `poses.db` fica fora do backup na nuvem.
 - **Disputa pela placa no dia de operação:** janela, pausa quando o recorte tem trabalho, conferência de memória livre e o filho fechado fora da janela.
   - Risco que sobra: falta de memória na placa durante um lote noturno se chegar um cartão com muitas fotos. A defesa é terminar o lote (no máximo 8 fotos) antes de liberar.
 - **Escala:** cada venue classifica no próprio servidor. Com 100 venues, a taxonomia e o guia ficam por venue em `poses.db`. Venue sem placa não tem esta função (com o processador seriam mais de 20 s por foto).

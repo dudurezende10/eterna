@@ -401,6 +401,25 @@ try:
     ok(alvo in linhas(), "9: a foto tem linha")
     m.lgpd_excluir([alvo], [], quem="teste")
     ok(alvo not in linhas(), "9: LGPD apagou a linha de pose")
+    # N3 (24/11): a foto que sai da biblioteca entre a conferência do poses_gravar e a gravação não fica com linha
+    alvo2 = P_OK[6]
+    orig_pdb = m.poses_db
+    tirou = []
+
+    def pdb_e_lgpd():
+        if not tirou:
+            with m.lock:
+                tirou.append(m.lib.pop(alvo2, None))
+        return orig_pdb()
+    m.poses_db = pdb_e_lgpd
+    try:
+        m.poses_gravar([{"pid": alvo2, "bruto": base, "ms": 900}], {alvo2: {"dia": HOJE, "card": "LPX", "fotografo": "carlos"}})
+    finally:
+        m.poses_db = orig_pdb
+        with m.lock:
+            if tirou and tirou[0]:
+                m.lib[alvo2] = tirou[0]
+    ok(tirou and tirou[0] and alvo2 not in linhas(), "N3: foto que sai da biblioteca no meio da gravação não fica com linha de pose")
 
     # ---------- limpeza de 60 dias ----------
     db = sqlite3.connect(m.POSES_DB)

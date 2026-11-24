@@ -652,7 +652,7 @@ try:
     m.cena_limpa(time.time() + 61 * 86400)
     ok(linha(pl) is None and linha(ISO[0]) is not None, "19: a linha some com 60 dias (a rotulada fica)")
     fonte = open(sys.argv[1], encoding="utf8").read()
-    ok("CENA_DB" not in fonte.split("bancos = [b for b in (")[1].split(")")[0], "19: cena.db fora do backup")
+    ok("CENA_DB" not in m.BACKUP_BANCOS and "POSES_DB" not in m.BACKUP_BANCOS, "19: cena.db (e o poses.db, 24/11) fora do backup")
 
     # ---------- revisão: rótulo com mais de 60 dias não volta para a fila nem entra na medida ----------
     DIA61 = m._ff_hoje(time.time() - 61 * 86400)

@@ -1680,6 +1680,9 @@ def lgpd_excluir(pids, tokens, quem="", posto="", sessao=""):
             metricas.append(md); metrica_grava(md)
     falhas += treino_lgpd(alvo)             # 16/11: marcações do treino e ajuste, aviso, descarte e treino antigo do estado.db
     falhas += poses_lgpd(alvo)              # 23/11: a classificação de pose da foto
+    with luz_lock:                          # 24/11: a medida de luz que ainda espera o luz_grava_loop não é gravada
+        for pid in alvo:
+            luz_novas.pop(pid, None)
     try:
         sess_esquecer_disco(apagados_sess)   # v91 (S14): o pid sai também dos arquivos de sessão dos dias anteriores
     except Exception as ex:
@@ -12633,11 +12636,55 @@ def _backup_ok_grava(t):
         pass
 
 
+# Bancos que vão para o backup na nuvem. Dado de visitante não sai do servidor: o cena.db (vetores das fotos) e o poses.db (pid e
+# card de cada foto) ficam de fora.
+BACKUP_BANCOS = ("VENDAS_DB", "ESTADO_DB", "OPERACAO_DB", "NUVEM_DB", "TREINO_DB")   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
+
+
+def _backup_marca(banco):
+    """A marca de mudança de um banco: o maior mtime entre ele e o -wal (None se não existe)."""
+    ts = [os.path.getmtime(x) for x in (banco, banco + "-wal") if os.path.exists(x)]
+    return max(ts) if ts else None
+
+
+def backup_bancos(s3, pc, ultimo, hoje=None):
+    """Sobe só o banco que mudou desde a última subida e, uma vez por dia, a cópia do dia de cada um. ultimo: banco -> (marca,
+    dia, md5 da cópia enviada), atualizado aqui. Marca igual: nem copia. Marca diferente (o -wal some no checkpoint e muda a
+    marca sem mudar o dado): copia e compara o conteúdo; igual ao enviado no mesmo dia, só guarda a marca nova. -> bancos enviados"""
+    hoje = hoje or _ff_hoje()
+    enviados = []
+    for banco in [globals()[n] for n in BACKUP_BANCOS]:
+        marca = _backup_marca(banco)
+        u = ultimo.get(banco)
+        if marca is None or (u and u[0] == marca and u[1] == hoje):
+            continue
+        tmp = banco + ".backup"
+        src, dst = sqlite3.connect(banco, timeout=30), sqlite3.connect(tmp)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        corpo = open(tmp, "rb").read()
+        os.remove(tmp)
+        md5 = hashlib.md5(corpo).digest()
+        if u and u[1] == hoje and u[2] == md5:
+            ultimo[banco] = (marca, hoje, md5)
+            continue
+        nome = os.path.basename(banco)
+        for chave in ("backup/%s/%s" % (pc, nome), "backup/%s/dia/%s/%s" % (pc, hoje, nome)):
+            s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
+                          ContentMD5=base64.b64encode(md5).decode())
+        ultimo[banco] = (marca, hoje, md5)
+        enviados.append(nome)
+    return enviados
+
+
 def backup_loop():
     if not NUVEM_BUCKET:
         return
     pc = re.sub(r"[^a-z0-9-]", "", socket.gethostname().lower()) or "servidor"
-    ultimo = None
+    ultimo = {}
     ok_em = _backup_ok_le()
     while True:
         time.sleep(120)
@@ -12656,38 +12703,20 @@ def backup_loop():
             backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
             print("  backup na nuvem (arquivos):", str(ex)[:160])
         try:
-            bancos = [b for b in (VENDAS_DB, ESTADO_DB, OPERACAO_DB, NUVEM_DB, TREINO_DB, POSES_DB) if os.path.exists(b)]   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino; 23/11: poses
-            if not bancos:
-                continue
-            marca = max(os.path.getmtime(x) for b in bancos for x in (b, b + "-wal") if os.path.exists(x))
-            if marca == ultimo:
+            s3 = _s3_cliente()
+            hoje = _ff_hoje()
+            # 24/11: só o banco que mudou (cada um com a sua marca), não todos quando um muda
+            if not backup_bancos(s3, pc, ultimo, hoje):
                 if not falhou:
                     ok_em = time.time()
                     _backup_ok_grava(ok_em)
                 continue
-            s3 = _s3_cliente()
-            hoje = _ff_hoje()
-            for banco in bancos:
-                tmp = banco + ".backup"
-                src, dst = sqlite3.connect(banco, timeout=30), sqlite3.connect(tmp)
-                try:
-                    src.backup(dst)
-                finally:
-                    dst.close()
-                    src.close()
-                corpo = open(tmp, "rb").read()
-                os.remove(tmp)
-                nome = os.path.basename(banco)
-                for chave in ("backup/%s/%s" % (pc, nome), "backup/%s/dia/%s/%s" % (pc, hoje, nome)):
-                    s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
-                                  ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
             for d in (_ff_hoje(time.time() - 86400), hoje):
                 for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
                     a = os.path.join(pasta, d + ".json")
                     if os.path.exists(a):
                         s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
                                       ContentType="application/json")
-            ultimo = marca
             if not falhou:
                 ok_em = time.time()
                 _backup_ok_grava(ok_em)
@@ -14147,6 +14176,7 @@ LUZ_LIM_PADRAO = {"v": 1, "rosto_p95_alto": 250, "rosto_alto_pct": 8, "rosto_med
 LUZ_CRIT = {"escuras": 30, "estouradas": 30, "boas": 150, "precisao": 0.85, "revocacao": 0.70}
 LUZ_CLASSES = ("escura", "estourada")
 LUZ_DIAS = 30               # a varredura mede o que ficou sem medida nestes dias
+LUZ_RET_DIAS = RETENCAO_DIAS  # 24/11: a medida vence com o prazo da biblioteca (fica a das fotos marcadas no Treino); luz_limpa
 LUZ_FILA_MAX = 20000
 LUZ_GRAVA_SEG = 5
 LUZ_VARRE_SEG = 3600
@@ -14155,7 +14185,8 @@ LUZ_NOITE = (2, 6)          # o resto da varredura só de madrugada (2h às 6h, 
 LUZ_GRADE = {"rosto_med_baixo": "escura", "quadro_med_baixo": "escura", "rosto_alto_pct": "estourada", "quadro_alto_pct": "estourada"}
 luz_lock = threading.Lock()
 luz_novas = collections.OrderedDict()       # pid -> valor (JSON) esperando o luz_grava_loop
-luz_st = {"dia": "", "hoje": 0, "ms_total": 0.0, "ms_n": 0, "pendentes": None, "rodando": False, "ultima": None, "hora": "", "hora_n": 0}
+luz_st = {"dia": "", "hoje": 0, "ms_total": 0.0, "ms_n": 0, "pendentes": None, "rodando": False, "ultima": None, "hora": "", "hora_n": 0,
+          "limpa_dia": ""}
 luz_parar = threading.Event()               # só os testes ligam: o luz_loop termina
 _luz_med = {"t": 0.0, "r": None, "lim": None}
 _luz_det = {"d": None, "ok": None}
@@ -14323,7 +14354,19 @@ def luz_grava():
             db.commit()
         finally:
             db.close()
-    return len(itens)
+    # foto que saiu da biblioteca (LGPD) entre a conferência acima e a gravação: a medida sai já. O lgpd_excluir tira a foto da
+    # biblioteca antes do treino_lgpd, então o que foi gravado antes desta conferência é apagado por ele
+    with lock:
+        sairam = [p for p, _ in itens if p not in lib]
+    if sairam:
+        with treino_lock:
+            db = treino_db()
+            try:
+                db.executemany("delete from medida where tipo = 'luz' and pid = ?", [(p,) for p in sairam])
+                db.commit()
+            finally:
+                db.close()
+    return len(itens) - len(sairam)
 
 
 def luz_grava_loop():
@@ -14358,6 +14401,46 @@ def luz_ler(pids=None, dias=None):
         except ValueError:
             pass
     return out
+
+
+def _luz_pids_janela(dias, agora=None):
+    """Fotos (e bases dos fundos de IA) das sessões não removidas dos últimos `dias` dias."""
+    agora = agora or time.time()
+    out = set()
+    for i in range(dias):
+        a = os.path.join(SESS_DIR, _ff_hoje(agora - i * 86400) + ".json")
+        try:
+            ss = json.load(open(a, encoding="utf8")).get("sessoes") or []
+        except Exception:
+            continue
+        for x in ss:
+            if isinstance(x, dict) and not x.get("removida"):
+                out.update(p for p in list(x.get("fotos") or []) + list(x.get("ia") or []) if isinstance(p, str))
+    return out
+
+
+def luz_limpa(agora=None):
+    """24/11: a medida de luz vence com o prazo da biblioteca (LUZ_RET_DIAS): sai a de foto que não está nas sessões desses dias.
+    Ficam a das fotos marcadas no Treino (rotulo, a calibração usa) e a gravada nas últimas 24 h (foto que ainda não entrou numa
+    sessão). Roda de madrugada pelo luz_loop. -> linhas apagadas"""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    agora = agora or time.time()
+    janela = _luz_pids_janela(LUZ_RET_DIAS, agora)
+    recente = _iso(agora - 86400)
+    with treino_lock:
+        db = treino_db()
+        try:
+            rot = {r[0] for r in db.execute("select pid from rotulo")}
+            fora = [p for p, em in db.execute("select pid, em from medida where tipo = 'luz'")
+                    if p not in janela and p not in rot and (em or "") < recente]
+            for i in range(0, len(fora), 500):
+                bl = fora[i:i + 500]
+                db.execute("delete from medida where tipo = 'luz' and pid in (%s)" % ",".join("?" * len(bl)), bl)
+            db.commit()
+        finally:
+            db.close()
+    return len(fora)
 
 
 def _luz_prio_baixa():
@@ -14543,6 +14626,10 @@ def luz_loop():
     antes, ultima = "desligada", 0.0
     while not luz_parar.is_set():
         try:
+            luz_limpa_noite()
+        except Exception as ex:
+            print("  luz: limpeza %s" % str(ex)[:80])
+        try:
             agora = treino_cfg_mem().get("exposicao")
             t = time.time()
             if agora != "desligada" and (antes == "desligada" or t - ultima >= LUZ_VARRE_SEG
@@ -14553,6 +14640,20 @@ def luz_loop():
         except Exception as ex:
             print("  luz: varredura %s" % str(ex)[:80])
         luz_parar.wait(3)
+
+
+def luz_limpa_noite(t=None):
+    """Uma vez por madrugada (LUZ_NOITE: fora do horário de visita), com a exposição ligada ou não: luz_limpa. Cede ao leitor,
+    à selfie, ao recorte, à montagem e às poses (_luz_ocupado): tenta de novo na volta seguinte do luz_loop. -> apagadas ou None"""
+    t = time.time() if t is None else t
+    hoje = _ff_hoje(t)
+    if not _luz_noite(t) or luz_st["limpa_dia"] == hoje or _luz_ocupado():
+        return None
+    n = luz_limpa(t)
+    luz_st["limpa_dia"] = hoje
+    if n:
+        print("  luz: %d medida(s) fora do prazo de %d dias apagada(s)" % (n, LUZ_RET_DIAS))
+    return n
 
 
 def luz_status():
@@ -14920,7 +15021,13 @@ def fot_dia(dia):
     if ponto and todos and sum(1 for p in todos if (cena_.get(p) or (None,))[0]) < FOT_PONTO_COBERTURA * len(todos):
         ponto = False                                  # dia sem leitura do ponto (antes de ligar): conta todas as fotos
     fonte = "ponto" if ponto else "todas"
-    luz = luz_ler(todos) if todos else {}
+    # 24/11: a medida de luz vence em LUZ_RET_DIAS (luz_limpa). Dia mais antigo que isso (a madrugada refaz até FOT_DIAS_NOITE)
+    # fica com o bloco de luz já gravado de cada fotógrafo, em vez de virar sem_dado
+    luz_fixa = {}
+    if todos and dia < _ff_hoje(time.time() - (LUZ_RET_DIAS - 1) * 86400):
+        luz_fixa = {f: d["luz"] for f, d in _fot_json(op_ler("select fotografo, dados from fotografo_dia where dia = ?", (dia,))).items()
+                    if isinstance(d, dict) and isinstance(d.get("luz"), dict)}
+    luz = luz_ler(todos) if todos and not luz_fixa else {}
     vendas = _fot_vendas(dia) if todos else []
     sel_tudo = set().union(*[s for s, _ in vendas]) if vendas else set()
     ai_tudo = set().union(*[a for _, a in vendas]) if vendas else set()
@@ -14962,6 +15069,20 @@ def fot_dia(dia):
                     d["luz"]["escuras"] += 1
                 elif k == "estourada":
                     d["luz"]["estouradas"] += 1
+    for f, lz in luz_fixa.items():
+        if f in out:
+            out[f]["luz"] = dict(lz)
+    return out
+
+
+def _fot_json(linhas):
+    """[(fotografo, dados JSON)] -> {fotografo: dados}, para comparar sem depender da ordem das chaves."""
+    out = {}
+    for f, d in linhas:
+        try:
+            out[f] = json.loads(d)
+        except (TypeError, ValueError):
+            out[f] = d
     return out
 
 
@@ -14972,15 +15093,20 @@ def fot_gravar(dia):
     ponto = (1 if treino_cfg().get("ponto") == "ligada" else 0) if dia == hoje else None
     dados = fot_dia(dia)
     em = _iso()
+    novo = {f: json.dumps(d, ensure_ascii=False, separators=(",", ":")) for f, d in dados.items()}
     with op_lock:
         db = operacao_db()
         try:
-            with db:
-                db.execute("delete from fotografo_dia where dia = ?", (dia,))
-                db.executemany("insert into fotografo_dia values (?,?,?,?)",
-                               [(dia, f, json.dumps(d, ensure_ascii=False, separators=(",", ":")), em) for f, d in dados.items()])
-                db.execute("insert into fotografo_dia_calc (dia, em, ponto) values (?, ?, ?) on conflict(dia) do update set em = excluded.em,"
-                           " ponto = coalesce(excluded.ponto, fotografo_dia_calc.ponto)", (dia, em, ponto))
+            # 24/11: dia igual ao gravado (comparado sem o em) não é regravado: o operacao.db só muda, e só sobe no backup, com dado novo
+            calc = db.execute("select ponto from fotografo_dia_calc where dia = ?", (dia,)).fetchone()
+            igual = calc is not None and (ponto is None or calc[0] == ponto) and \
+                _fot_json(db.execute("select fotografo, dados from fotografo_dia where dia = ?", (dia,)).fetchall()) == _fot_json(novo.items())
+            if not igual:
+                with db:
+                    db.execute("delete from fotografo_dia where dia = ?", (dia,))
+                    db.executemany("insert into fotografo_dia values (?,?,?,?)", [(dia, f, d, em) for f, d in novo.items()])
+                    db.execute("insert into fotografo_dia_calc (dia, em, ponto) values (?, ?, ?) on conflict(dia) do update set em = excluded.em,"
+                               " ponto = coalesce(excluded.ponto, fotografo_dia_calc.ponto)", (dia, em, ponto))
         finally:
             db.close()
     if not fot_st["ultimo_dia"] or dia >= fot_st["ultimo_dia"]:
@@ -16510,7 +16636,7 @@ def cena_loop():
 #   desligada (padrão)  nada roda, o filho nem abre e o poses.db nem é criado
 #   sombra              classifica (e na P3 agrega); a tela mostra "Em teste", sem alertas nem fechamento
 #   ligada              alertas e fechamento mensal (P4 e P5); só com a Medição em POSE_MEDIDA_MIN ou mais (409 criterio)
-# ETERNA_POSES=0 força desligada. ~/Eterna/ponto/poses.db vai para o backup (só texto: nenhum pixel, nenhuma chave).
+# ETERNA_POSES=0 força desligada. ~/Eterna/ponto/poses.db fica FORA do backup na nuvem (24/11: tem pid e card; dado de visitante não sai do servidor).
 POSES_DB = os.path.join(HOME, "ponto", "poses.db")
 POSE_FILHO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eterna-poses.py")
 POSE_BIN = "/opt/eterna/visao/bin/llama-server"     # root:root 755 (servidor/linux/visao-instalar.sh); os testes trocam
@@ -17286,6 +17412,18 @@ def poses_gravar(res, info):
                 db.commit()
             finally:
                 db.close()
+        # 24/11: foto que saiu da biblioteca (LGPD) entre a conferência acima e a gravação: a linha sai já (o poses_lgpd, que vem
+        # depois de tirar a foto da biblioteca, apaga o que foi gravado antes desta conferência)
+        with lock:
+            sairam = [ln[0] for ln in linhas if ln[0] not in lib]
+        if sairam:
+            with poses_db_lock:
+                db = poses_db()
+                try:
+                    db.executemany("delete from pose where pid = ?", [(p,) for p in sairam])
+                    db.commit()
+                finally:
+                    db.close()
     with poses_lock:
         n = poses_st["noite"]
         n["feitas"] += feitas
@@ -17434,6 +17572,8 @@ def poses_loop():
                 fila, fila_t = poses_pendentes(), time.time()
                 with poses_lock:
                     poses_st.update(pendentes=len(fila), pend_t=fila_t)
+            with lock:                               # 24/11: foto apagada (LGPD) depois de montar a lista sai dela antes do lote
+                fila[:] = [x for x in fila if x["pid"] in lib]
             if not fila:
                 _poses_para("fim_fila")
                 poses_parar.wait(POSE_DORME)
