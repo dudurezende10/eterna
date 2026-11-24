@@ -2,6 +2,12 @@
 
 Fatia própria, independente do modelo de visão das poses; pode sair antes da P2 do plano `2026-11-23-poses-estatistica.md`. Os números que aparecem nos exemplos deste plano são inventados e servem só para mostrar o formato; nenhum vem de venda real.
 
+## Status (24/11/2026)
+- **Pronto:** a AF inteira deste plano (medida de luz, varredura, calibração, agregado por dia e mês, rotas, Alertas, abas de Fotógrafos, limites editáveis), com as revisões de 23/11 e 24/11. Revisor, testador e segurança aprovaram. Sai na **v99.38.0**, junto com a P1 das poses e as correções do Treino e da sessão.
+- **Na operação, sem depender do Ronaldo:** a exposição começa Desligada. Para os alertas de luz: Só medir, marcar fotos no Treino até a calibração passar no `LUZ_CRIT` e então Ligada. Os alertas de cliques e de conversão funcionam desde o deploy.
+- **Depende do Eduardo:** a lista do backup na nuvem (`BACKUP_BANCOS`, onde está o `treino.db` com a medida de luz) e o comentário dela ficam como estão até a decisão dele.
+- **Fica para depois:** comparação por set (com o reconhecimento do ponto Ligado) e a aba "Poses e roteiro" (P4 do plano de poses).
+
 ## Objetivo
 Avisar na tela Alertas, só para Admin e Supervisora, quando um fotógrafo fica abaixo de 20 ou acima de 40 cliques por família, quando a conversão dele fica abaixo da média da equipe, e quando muitas fotos saem da câmera escuras ou estouradas. Tudo é calculado no servidor, com o número completo: "Márcio: 20 de 100 fora da exposição: 12 estouradas, 8 escuras" (exemplo do Eduardo).
 Junto, tudo o que é por fotógrafo fica em Curadoria › Fotógrafos: a seção `b` "Fotógrafos" sai da Estatísticas e vira a aba "Estatísticas" da view Fotógrafos.

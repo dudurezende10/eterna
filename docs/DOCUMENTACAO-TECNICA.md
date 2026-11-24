@@ -2524,3 +2524,115 @@ Plano: `docs/planos/2026-11-23-poses-estatistica.md` (fatia P1). À noite, o ser
 | Tela | Sistema › Fundos de IA (técnico), cartão `posesPanel` ao lado do `mtgPanel`: modo em 3 botões (`ps-modo`, `configuracao.u`, `confirm`, auditoria `poses_modo`), janela, modelo, fila e a última noite com o motivo da parada em palavras (`ps_parou_*`). |
 
 Testes: `testes/poses_agente.py`, com o `llama-server` trocado por `testes/_poses_filho_falso.py` e o `eterna-poses.py` real, e as rotas em `testes/seguranca_rotas_agente.py`. A medição no servidor (`agente/medir-poses.py`) é manual. Ela se recusa a rodar com o classificador do agente aberto.
+
+## v99.38.0 (24/11/2026): alertas do fotógrafo, Treino, sessão e backup
+
+Três entregas publicadas juntas, como v99.38.0: os alertas do fotógrafo (AF), a classificação de poses P1 (seção acima) e as correções do Treino e da sessão. Planos: `docs/planos/2026-11-23-alertas-fotografo.md` e `docs/planos/2026-11-23-poses-estatistica.md`. Nomes de código em `docs/CONTEXTO-ETERNA.md`, seção 4.
+
+### 1. Alertas do fotógrafo e Fotógrafos na Curadoria (AF)
+
+O servidor mede a luz de cada foto como ela saiu da câmera e soma, por fotógrafo e por dia, famílias, cliques, conversão e exposição. A tela Alertas mostra os cartões e Curadoria › Fotógrafos mostra os números.
+
+```mermaid
+sequenceDiagram
+  participant LR as Leitor de rostos (agente)
+  participant TD as treino.db (medida)
+  participant OP as operacao.db
+  participant APP as App (Alertas, Fotógrafos)
+  LR->>LR: decodifica o original (já faz para os rostos)
+  LR->>TD: luz_medir -> medida(tipo='luz'), em lote a cada 5 s
+  Note over LR,TD: luz_varre mede o que faltou (30 dias), de madrugada
+  OP->>OP: fot_dia (hoje a cada 10 min, ontem na virada, 35 dias de madrugada)
+  OP->>OP: fotografo_mes congela o mês anterior a partir do dia 4
+  APP->>OP: GET /fotografos/alertas?de=&ate=
+  OP-->>APP: somas, equipe e alertas (fot_*)
+```
+
+**Decisões (Eduardo, 23/11):**
+- Unidade = família (leva). Cada leva é de um fotógrafo só. Leva sem fotógrafo fica fora.
+- Cliques: com o reconhecimento do ponto Ligado, contam gramado, troféu e arquibancada (confiança 0,70 ou mais) e o chute aparece à parte. Sem ele, contam todas as fotos da leva, e a tela diz isso.
+- Conversão por foto: a família comprou quando alguma foto da leva foi vendida (venda paga, não cancelada). Cada fotógrafo recebe só as fotos dele. Comparada com a equipe toda. Vendas online ficam fora, e a tela avisa.
+- Exposição: medida no original, então o Ajuste automático não esconde a foto ruim. "Fora da exposição" é só a foto que não serve (escura ou estourada).
+- Chave da exposição = `config/treino.exposicao`: Desligada não mede; Só medir mostra com o selo "Em teste" e sem alerta; Ligada gera alertas e só liga passando no critério da calibração (`LUZ_CRIT`: 30 escuras, 30 estouradas, 150 boas, precisão 0,85 e revocação 0,70 nas duas classes).
+- Números por fotógrafo só com `desempenho.r`, conferido no servidor pela sessão. Sem a letra, `/metricas/dia` e `/metricas` saem sem `por_fotografo`, e o Painel não mostra "Por fotógrafo".
+- Nenhum texto, campo ou coluna fala em hora, presença, falta ou turno.
+
+**Rotas**
+
+| Rota | Quem | Formato |
+| --- | --- | --- |
+| `GET /fotografos/alertas?de=&ate=` | sessão com `desempenho.r`; 30 por minuto por pessoa; até 92 dias | resposta abaixo |
+| `GET /fotografos/dias?de=&ate=` | sessão com `desempenho.r`; até 366 dias | `{"ok":true,"dias":[{"dia","por_fotografo":{"<chave>":{fotos,sessoes,sessoes_com_venda,vendas,faturamento,fotos_vendidas,clique_checkout_s}}}]}` |
+| `GET /fotografos/luz/medida` | sessão com `qualidade.r`; 10 por minuto | `{v:1, limites, classes:{escura:{n,precisao,revocacao}, estourada:{...}}, boas_n, matriz, grade, sem_medida, criterio:{passa, falta}, crit, refaz_ja}` |
+| `POST /fotografos/config` | `configuracao.u` e `desempenho.r`; origem local; 6 por minuto; corpo até 4 KB | só os campos que mudam. 200 `{ok, limites, antes, mudou, por, em}` (com limite de luz novo, também `refeitos` e `noite`); 200 `igual:true` sem mudança; 400 `campo` com o nome do campo; 409 `criterio` com `falta` (exposição Ligada e calibração que não passa com os limites novos); 429 |
+| `POST /treino/config {exposicao:"ligada"}` | `configuracao.u` | 409 `criterio` com `falta` até a calibração passar |
+| `/status` | app | ganha `luz: {v, medidas_hoje, fila, ms_med, varredura:{pendentes, rodando}, opencv}` e `estatisticas.fot: {ultimo_dia, em}`. Sem pid nem nome |
+
+Exemplo de `GET /fotografos/alertas` (números inventados; a chave é a do cadastro):
+
+```json
+{"ok":true,"v":1,"de":"2026-11-17","ate":"2026-11-23","exposicao":"ligada","fonte_cliques":"ponto","dias":7,
+ "limites":{"cliques_min":20,"cliques_max":40,"fam_min":5,"luz_pct":15,"luz_grave_pct":25,"luz_fotos_min":50,"luz":{"...":0}},
+ "equipe":{"familias":310,"fam_compraram":160,"fotos":7400,"fotos_vendidas":1600,"cliques_soma":7000,"chute_soma":900},
+ "fotografos":[{"k":"fotografo_a","familias":14,
+   "cliques":{"media":16.2,"abaixo":9,"acima":0,"chute_media":3.1,"nao_contadas":12},
+   "conv":{"fam":[6,14],"fotos":[40,260]},
+   "luz":{"n":100,"escuras":8,"estouradas":12,"sem_dado":0}}],
+ "alertas":[{"tipo":"fot_luz","k":"fotografo_a","sev":"warn","args":[20,100,12,8]}],
+ "em":"2026-11-23T21:10:00-03:00","sujo":false,"refeitos":0}
+```
+
+- `fonte_cliques`: `ponto`, `todas` ou `misto` (parte dos dias por um jeito, parte por outro).
+- `luz` vem `null` com a exposição Desligada.
+- Tipos de alerta: `fot_poucos` e `fot_muitos` (média de cliques fora dos limites, com `fam_min` famílias), `fot_conv_fam` e `fot_conv_fotos` (conversão `conv_fam_pp` ou `conv_fotos_pp` pontos abaixo da equipe, com `conv_fam_min` famílias e `conv_equipe_min` fotógrafos), `fot_luz` (só com a exposição Ligada, `luz_fotos_min` fotos, `luz_pct` ou mais fora; `sev:"bad"` a partir de `luz_grave_pct`).
+- `sujo`: o limite de luz mudou e os dias mais antigos que os 7 recentes só serão refeitos de madrugada.
+
+**Dados gravados**
+- `treino.db` `medida(pid, tipo='luz', valor, em)`: `{v:1, src:"original", q:{med,p5,p95,alto,baixo}, r:{med,p95,alto,n}|null}`. `q` = 60% centrais do quadro; `r` = maior rosto. Apagada na exclusão LGPD e pela limpeza da madrugada.
+- `operacao.db` `fotografo_dia(dia, fotografo, dados, em)`: só somas (`familias`, `cliques_soma`, `chute_soma`, `nao_contadas`, `por_n`, `fonte`, `fam_compraram`, `fotos`, `fotos_vendidas`, `luz`). Sem pid e sem cliente. Dia com os mesmos dados não é regravado.
+- `operacao.db` `fotografo_dia_calc(dia, em, ponto)` e `fotografo_mes(mes, dados, fechado_em)` (o mês não muda depois de congelado; a P5 das poses lê daqui).
+- `estado.db` `config/fotografos`: os limites (padrões do plano). Só pela rota; a sincronização do `/ponto/docs` recusa.
+
+**Prazo da medida de luz:** `LUZ_RET_DIAS` é o maior entre `RETENCAO_DIAS` e `LUZ_DIAS`. A `luz_limpa` roda uma vez por madrugada (`luz_limpa_noite` no `luz_loop`), cede ao leitor, à selfie, ao recorte, à montagem e às poses, e se falhar tenta de novo só depois de 10 min. Ficam a medida das fotos marcadas no Treino, das que ainda estão na biblioteca e das últimas 24 h.
+
+**Tela:** Curadoria › Fotógrafos com as abas Índice, Estatísticas (a antiga seção Fotógrafos da Estatísticas, que saiu de lá) e Cliques, conversão e exposição (tabela, linha Equipe e o cartão Limites dos alertas). Alertas com o período Hoje, 7 dias ou 30 dias (padrão 7). Treino da IA › Medição com o bloco Exposição e o botão "Usar estes limites". O Exportar de Fotógrafos segue a aba aberta.
+
+### 2. Treino da IA: a escolha é gravada ao sair da foto
+
+Pedido do Eduardo em 23/11, no Maracanã: muitas fotos passadas com Próxima ficavam sem marcação.
+
+- Sair da foto por qualquer caminho grava a escolha nova pelo mesmo `POST /treino/rotulo` e a mesma fila: Próxima, Anterior, setas, número da grade, Carregar, outra aba, outra tela, Sair, recarregar ou fechar a aba (pela fila local, sem pergunta do navegador).
+- Foto só vista, sem escolha ou com a escolha igual à gravada, não grava. Sem Qualidade e IA em Alterar, nada muda.
+- Pular as marcadas continua só no Confirmar e próxima (Enter).
+- Grade: verde = gravada; amarelo = enviando; vermelho tracejado = foto atual com escolha ainda não gravada.
+- Recusa do servidor (4xx) devolve a miniatura ao que o servidor tem. O rascunho feito sobre outra versão do rótulo sai no Carregar.
+- "Ver como": nada é gravado nem enviado. Enter, Z e sair da foto avisam "Só visualização". A fila pendente fica intacta.
+- Troca de pessoa (Sair, entrar, entrar ou voltar do "ver como"): a tela do Treino é zerada e é preciso Carregar de novo.
+
+### 3. Sessão e troca de pessoa no mesmo navegador
+
+- `/auth/entrar` (também com senha provisória) e `/auth/trocar` encerram, antes de criar a nova, a sessão do cookie atual e a sessão do Admin guardada no "ver como" (cookie `eterna_sessao_adm`).
+- Na tela, `state.sessN` numera a sessão. Uma resposta 401 só encerra a sessão que fez o pedido.
+- O Sair espera o envio da escolha nova do Treino por até 2 s e chama `/auth/sair` com limite de 4 s. Sem resposta 200 ou 401, a marca `eterna.auth.sair` (só a hora) fica no aparelho, e o Sair é repetido ao abrir e antes do próximo Entrar.
+
+### 4. Backup na nuvem só do que mudou
+
+- `backup_bancos` sobe só o banco de `BACKUP_BANCOS` (vendas, estado, operacao, nuvem e treino) que mudou desde a última subida, e a cópia do dia uma vez por dia. Marca nova com o mesmo conteúdo não sobe.
+- `poses.db` e `cena.db` ficam fora do backup.
+- JSON de métricas e sessões que não subiu fica pendente e é repetido na rodada seguinte (`backup_rodada`). O `ok_em` não anda enquanto isso, então o alerta da AWS dispara se a falha continuar.
+
+### 5. Modelo das poses: instalação
+
+- `instalar-poses-modelos.py` só baixa com o SHA-256 esperado de cada arquivo, vindo do código (`POSE_SHA`, `POSE_MMPROJ_SHA`) ou de `--esperado-modelo` e `--esperado-mmproj`. Com os dois, têm que ser iguais.
+- Download com SHA diferente: o temporário é apagado (também em erro e no Ctrl-C) e o instalador para com `FALHA`.
+- Arquivo já instalado com SHA diferente: para com `PARADO`, sem apagar nem baixar de novo.
+- `visao-instalar.sh`: sem SHA fixado no código, exige `POSE_SHA_MODELO` e `POSE_SHA_MMPROJ` antes do passo 1.
+- Passos do Ronaldo e a ordem de fixar os valores: `docs/SERVIDOR-ESTADIO.md`, "Classificação de poses".
+
+### Pendências
+
+- **IMPORTANTE:** o modelo das poses não está instalado. `POSE_SHA` e `POSE_MMPROJ_SHA` estão vazios, `LLAMA_TAG` e `LLAMA_COMMIT` não têm padrão no `visao-instalar.sh` e o `BASE` do instalador aponta para `main`. Enquanto isso a classificação não abre (falha fechada). Fixar só com os valores conferidos pelo Ronaldo.
+- **IMPORTANTE:** a lista `BACKUP_BANCOS` e o comentário dela esperam uma decisão do Eduardo sobre o que vai para a nuvem. Não mudar sem ele.
+- **IMPORTANTE:** números por fotógrafo são dado de funcionário. A permissão `desempenho.r` é conferida no servidor em todas as rotas novas, no `/metricas/dia` e no `/metricas`. Rota nova com dado por fotógrafo tem que fazer o mesmo.
+- A exposição começa Desligada (padrão). Para medir, alguém com Configuração em Alterar põe em Só medir no Treino da IA. Para gerar alertas de luz, a calibração precisa de marcações suficientes no Treino (critério acima).
+- Comparação por set na conversão e a aba "Poses e roteiro" ficam para as próximas fatias.

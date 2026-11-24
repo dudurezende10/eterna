@@ -103,16 +103,50 @@ Conferir a placa: `ssh srv-viva-maracana 'nvidia-smi'` e, como o usuário `etern
 
 Plano: `docs/planos/2026-11-23-poses-estatistica.md`. À noite o servidor classifica cada foto (set, quem aparece, adereço, pose, enquadramento, vibração) com o Qwen3-VL-8B-Instruct (Apache 2.0) num `llama-server` do llama.cpp que só escuta em `127.0.0.1`, numa porta escolhida na hora e com uma chave nova a cada abertura (arquivo 0600 em `~/Eterna/ponto/poses-*/`, apagado ao fechar). Nenhuma foto sai do servidor. O recorte e a montagem dos fundos de IA têm prioridade: a classificação só roda na janela (padrão 20:00 às 07:00), para quando chega recorte ou montagem do Checkout e volta 2 minutos depois, e só abre com 9 GB livres na placa. Chave em Fundos de IA (técnico) › Classificação de poses (Desligada, Sombra, Ligada; padrão Desligada). `ETERNA_POSES=0` no `nuvem.env` força Desligada.
 
-**Ronaldo (sudo, uma vez):**
+**Situação em 24/11:** o código está publicado, mas o modelo ainda não foi instalado. `POSE_SHA` e `POSE_MMPROJ_SHA` estão vazios, o `visao-instalar.sh` não tem `LLAMA_TAG` nem `LLAMA_COMMIT` fixos e o `BASE` do `instalar-poses-modelos.py` aponta para `main`. Enquanto isso, a classificação não abre (motivo `sem_modelo`) e nada muda na operação.
 
-1. Escolher a tag do llama.cpp (`bNNNN`, de uma release com suporte a Qwen3-VL) e conferir a versão do CUDA Toolkit da mesma geração do driver. Rodar:
-   `ssh -t srv-viva-maracana "sudo LLAMA_TAG=bNNNN LLAMA_COMMIT=<hash completo do commit da tag> POSE_SHA_MODELO=<SHA256 do Q4_K_M> POSE_SHA_MMPROJ=<SHA256 do mmproj> bash /opt/eterna/app/servidor/linux/visao-instalar.sh"`
-   Os dois SHA256 vêm da página de cada arquivo no Hugging Face (Qwen/Qwen3-VL-8B-Instruct-GGUF, aba Files and versions, clicar no arquivo, quadro Git LFS Details). Sem eles o roteiro para antes de instalar qualquer coisa.
-   Ele instala `build-essential`, `cmake`, `git` e o CUDA Toolkit (versão fixa em `CUDA_PACOTE`, bloqueado no unattended-upgrades), confere que a tag está no commit `LLAMA_COMMIT` (se a tag foi movida, o roteiro para), compila só o `llama-server` com CUDA para a placa (sm_120), estático e sem libcurl, e instala em `/opt/eterna/visao/bin/llama-server` (root, 755). Sem libcurl é só uma dependência a menos: quem garante que nada é baixado é a linha de comando que o agente monta (`agente/eterna-poses.py`: só `127.0.0.1`, `-m` e `--mmproj` com arquivos locais, chave por arquivo, `LLAMA_OFFLINE=1`, nunca `-hf` nem outra opção de baixar modelo), e o roteiro confere isso no arquivo publicado. Plano B se a compilação falhar: o binário Vulkan oficial do mesmo `LLAMA_TAG` e `LLAMA_COMMIT`, instalado no mesmo caminho e do mesmo jeito.
-2. No passo 3 o script roda `agente/instalar-poses-modelos.py --esperado-modelo <sha> --esperado-mmproj <sha>`: baixa os dois arquivos (cerca de 6,2 GB) para `~/Eterna/modelos` do usuário `eterna`, num temporário, e confere o SHA-256 de cada um com o esperado. Diferente: o arquivo é apagado e o roteiro para (nada instalado). Sem o SHA esperado, nada é baixado. Depois de instalado, mandar os dois valores ao programador, que fixa `POSE_SHA` e `POSE_MMPROJ_SHA` no agente e no instalador (como foi com o `CENA_SHA`). Sem os dois fixados, o Eterna não abre o modelo (motivo `sem_modelo`).
-3. Depois de publicado, à noite, com a classificação **Desligada** no Eterna (dois modelos de visão juntos não cabem na placa) e o agente e o recorte no ar, medir 50 fotos e mandar o resultado:
+**Ronaldo: instalar (sudo, uma vez)**
+
+1. **Anotar os valores antes de rodar.** São cinco:
+   - `LLAMA_TAG`: a tag do llama.cpp (`bNNNN`, de uma release com suporte a Qwen3-VL).
+   - `LLAMA_COMMIT`: o hash completo (40 caracteres) do commit dessa tag, na página da release.
+   - `POSE_SHA_MODELO`: o SHA-256 do `Qwen3VL-8B-Instruct-Q4_K_M.gguf`.
+   - `POSE_SHA_MMPROJ`: o SHA-256 do `mmproj-Qwen3VL-8B-Instruct-F16.gguf`.
+   - O commit do repositório do modelo no Hugging Face (aba Files and versions, "History").
+
+   Os dois SHA-256 ficam na página de cada arquivo no Hugging Face (Qwen/Qwen3-VL-8B-Instruct-GGUF, aba Files and versions, clicar no arquivo, quadro Git LFS Details). São 64 letras e números. Confira também a versão do CUDA Toolkit da mesma geração do driver.
+2. **Rodar o instalador:**
+   `ssh -t srv-viva-maracana "sudo LLAMA_TAG=bNNNN LLAMA_COMMIT=<hash do commit> POSE_SHA_MODELO=<SHA-256 do Q4_K_M> POSE_SHA_MMPROJ=<SHA-256 do mmproj> bash /opt/eterna/app/servidor/linux/visao-instalar.sh"`
+   - Sem os dois SHA-256 (ou fora do formato), o roteiro para antes de instalar qualquer coisa.
+   - Ele instala `build-essential`, `cmake`, `git` e o CUDA Toolkit (versão fixa em `CUDA_PACOTE`, bloqueado no unattended-upgrades), confere que a tag está no commit `LLAMA_COMMIT` (se a tag foi movida, o roteiro para), compila só o `llama-server` com CUDA para a placa (sm_120), estático e sem libcurl, e instala em `/opt/eterna/visao/bin/llama-server` (root, 755).
+   - Quem garante que nada é baixado pelo `llama-server` é a linha de comando que o agente monta (`agente/eterna-poses.py`: só `127.0.0.1`, `-m` e `--mmproj` com arquivos locais, chave por arquivo, `LLAMA_OFFLINE=1`, nunca `-hf` nem outra opção de baixar modelo). O roteiro confere isso no arquivo publicado.
+   - Plano B se a compilação falhar: o binário Vulkan oficial do mesmo `LLAMA_TAG` e `LLAMA_COMMIT`, instalado no mesmo caminho e do mesmo jeito.
+3. **O modelo (passo 3 do roteiro).** O roteiro chama `agente/instalar-poses-modelos.py --esperado-modelo <sha> --esperado-mmproj <sha>`. Ele baixa os dois arquivos (cerca de 6,2 GB) para `~/Eterna/modelos` do usuário `eterna`, num temporário, e confere o SHA-256 de cada um.
+   - Chegou com SHA-256 diferente: o temporário é apagado, aparece `FALHA` e o roteiro para. Nada fica instalado.
+   - Arquivo já instalado com SHA-256 diferente do informado: aparece `PARADO`. Nada é apagado nem baixado de novo. Confira o SHA na página do arquivo. Se o informado estiver certo, apague o arquivo indicado na mensagem e rode de novo.
+   - Sem o SHA-256 esperado, nada é baixado.
+   - Para rodar só o modelo, sem o roteiro inteiro: `ssh -t srv-viva-maracana "sudo -u eterna env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/instalar-poses-modelos.py --esperado-modelo <sha> --esperado-mmproj <sha>"`
+4. **Mandar os cinco valores do passo 1 ao programador.** Não são segredo: são números públicos de arquivos públicos.
+
+**Fixar os valores no código (programador, ou o Ronaldo com commit em `idiomas-base`)**
+
+5. Preencher, com os valores conferidos:
+   - `POSE_SHA` e `POSE_MMPROJ_SHA` em `agente/eterna-agente.py` e em `agente/instalar-poses-modelos.py` (os mesmos nos dois).
+   - O padrão de `LLAMA_TAG` e `LLAMA_COMMIT` em `servidor/linux/visao-instalar.sh` (por exemplo `LLAMA_TAG="${LLAMA_TAG:-bNNNN}"`), para a próxima instalação sair igual.
+   - O commit do Hugging Face no `BASE` do `agente/instalar-poses-modelos.py`, no lugar de `main`.
+
+   Publicar pelo git. Só depois disso o Eterna reconhece o modelo.
+
+**Ronaldo: medir (depois de publicado, à noite)**
+
+6. Com a classificação **Desligada** no Eterna (Fundos de IA (técnico) › Classificação de poses; dois modelos de visão juntos não cabem na placa) e o agente e o recorte no ar, medir 50 fotos e mandar o resultado:
    `ssh -t srv-viva-maracana "sudo -u eterna env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/medir-poses.py --n 50"`
-   Mostra ms por foto (mediana e p90), % de respostas válidas, pico de memória da placa e os processos na placa nesse pico (o recorte tem que aparecer lá: continua na placa). Meta: mediana até 2,5 s e 95% ou mais de válidas. Nada é gravado e nenhum id de foto aparece. Ele se recusa a rodar com o classificador do agente aberto e, se a abertura ou um lote passar do prazo, encerra o classificador (SIGTERM, que fecha o `llama-server`). A chave e o registro da medição ficam numa pasta própria, `~/Eterna/ponto/medir/`, para a limpeza de órfãos do agente (que procura em `~/Eterna/ponto/poses-*`) não derrubar o `llama-server` da medição.
+   - Mostra ms por foto (mediana e p90), % de respostas válidas, pico de memória da placa e os processos na placa nesse pico (o recorte tem que aparecer lá).
+   - Meta: mediana até 2,5 s e 95% ou mais de válidas.
+   - Nada é gravado e nenhum id de foto aparece.
+   - Ele não roda antes do passo 5: com os SHA vazios no código, responde "modelo indisponível".
+   - Ele se recusa a rodar com o classificador do agente aberto. Se a abertura ou um lote passar do prazo, encerra o classificador (SIGTERM, que fecha o `llama-server`). A chave e o registro da medição ficam numa pasta própria, `~/Eterna/ponto/medir/`, para a limpeza de órfãos do agente (que procura em `~/Eterna/ponto/poses-*`) não derrubar o `llama-server` da medição.
+7. Depois da medição, o Eduardo decide quando pôr a classificação em **Sombra**. Ligada só depois da conferência (fatia P2 do plano).
 
 **Para conferir (sem sudo):** `ssh srv-viva-maracana 'journalctl -u eterna --since "-12 h" --no-pager | grep "poses:"'` (só contagens: quando começou, quando parou e por quê, feitas, dúvidas, erros, ms por foto) e `nvidia-smi` durante a noite (aparece o `llama-server`). Motivos de parada: `desligada`, `fora_janela`, `recorte_ocupado`, `montagem_ocupada`, `conferindo` (lendo o SHA dos 6,2 GB: só acontece à noite, com Sombra ou Ligada e sem recorte ou montagem esperando, e uma vez por arquivo; o resultado fica em `~/Eterna/ponto/poses-sha.json`, 0600, com tamanho, data e inode, e só é relido se o arquivo mudar), `sem_modelo` (também quando a leitura do arquivo falha no meio: só tenta de novo na noite seguinte ou se o arquivo mudar), `vram` (menos de 9 GB livres ou sem `nvidia-smi`), `parado` (3 quedas seguidas, contando lote inteiro com erro do servidor do modelo, motivo `servidor`; volta na noite seguinte), `versao` (classificador de outra versão: publicar de novo; parado até a noite seguinte), `fim_fila`. Na partida, o agente encerra classificador e `llama-server` que tenham sobrado de uma partida anterior (pelo `~/Eterna/ponto/poses-filho.json` e pela chave em `~/Eterna/ponto/poses-*`). O registro do `llama-server` da última abertura fica em `~/Eterna/ponto/poses-llama.log` (sem imagens).
 

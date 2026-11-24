@@ -1021,7 +1021,7 @@ O Eterna **não faz controle de ponto**. Não marca presença, falta nem atraso.
 
 1. No menu, abra **Dashboard › Estatísticas** (logo abaixo do Painel).
 2. Escolha o período: **Hoje**, **Ontem**, **7 dias**, **30 dias** ou **Personalizado**. Os dias seguem o horário do Rio. Dá para ver até um ano.
-3. Toque na seção que quer ver: **Vendas e produtos**, **Fotógrafos**, **Rapidez**, **Dias e eventos**, **Visitantes** ou **Movimento**.
+3. Toque na seção que quer ver: **Vendas e produtos**, **Rapidez**, **Dias e eventos**, **Visitantes** ou **Movimento**. Desde 24/11, os números de **Fotógrafos** ficam em **Curadoria › Fotógrafos › Estatísticas**.
 4. **Com histórico Roverpix**: ligado, os números por dia incluem os dias que vieram da Roverpix. Desligado, só o que passou pelo Eterna.
 
 Os números vêm do servidor do ponto e somam todos os caixas. Sem o servidor, aparece "Sem conexão com o servidor do ponto". Se aparecer "O relógio do servidor do ponto está em outro fuso", avise a TI: as horas ficam erradas até ajustar o computador servidor.
@@ -1036,7 +1036,7 @@ Os números vêm do servidor do ponto e somam todos os caixas. Sem o servidor, a
 - **Por dia da semana**: a média de vendas por dia em cada dia da semana.
 - **Hora × dia da semana**: a tabela que mostra os horários mais fortes de cada dia.
 
-**Fotógrafos** (só produção)
+**Fotógrafos** (só produção; desde 24/11 em Curadoria › Fotógrafos › Estatísticas)
 - **Dias com produção**: dias em que o fotógrafo teve fotos ou sessões no servidor. Não é presença.
 - **Sessões e Fotos**: quantas sessões ele abriu e quantas fotos tirou.
 - **Fotos por sessão**: a média de fotos em cada sessão.
@@ -1325,6 +1325,82 @@ Para voltar atrás: **Sombra** ou **Desligada** na mesma tela. O Checkout volta 
 ### Detalhe conhecido
 
 No celular (tela estreita), com o reconhecimento ligado, o texto "Versão ligada" na Medição sai do cartão e a página rola para o lado. Use a Medição no computador ou no tablet.
+
+## Novidades da v99.38 (24/11/2026): Treino da IA, alertas do fotógrafo e troca de pessoa
+
+### Treino da IA: a escolha é salva sozinha
+
+Vale para quem marca fotos em **Curadoria › Treino da IA › Marcar**.
+
+1. Toque em **Carregar** e marque a foto como sempre: ponto, Pode ou Não pode, motivo, Dúvida ou observação.
+2. Pode seguir para outra foto do jeito que preferir: **Próxima**, **Anterior**, as setas do teclado ou o número da foto na grade. A escolha é salva ao sair da foto.
+3. Também é salva se você trocar de aba, abrir outra tela, tocar em Sair, recarregar a página ou fechar a aba.
+4. Se você só olhou a foto e não escolheu nada, nada é salvo. Ela continua sem marcação.
+5. **Confirmar e próxima** (ou Enter) continua igual: salva e pula direto para a próxima foto ainda sem marcação.
+6. Errou? **Desfazer** (ou Z) volta a última marcação.
+
+**As cores na grade de números**
+
+| Como aparece | O que quer dizer |
+| --- | --- |
+| Borda verde | A marcação já está no servidor. |
+| Borda amarela | A marcação está sendo enviada. Sem internet, ela espera e sobe sozinha depois. |
+| Borda vermelha tracejada | É a foto aberta agora. Você já escolheu algo, mas ainda não saiu dela. Ao sair, é salva. |
+
+**Depois do "Ver como"**
+
+- O Admin que usa **Ver como** só olha. Nada é salvo nesse modo: nem ao sair da foto, nem com Enter, nem com Z. Aparece o aviso "Só visualização".
+- Ao entrar no "Ver como" e ao tocar em **Voltar**, a tela do Treino fica vazia. Toque em **Carregar** de novo para continuar marcando com o seu nome.
+- O mesmo acontece quando uma pessoa sai e outra entra no mesmo computador: cada um carrega a própria lista.
+
+### Fotógrafos agora fica na Curadoria (Admin e Supervisora)
+
+A tela **Fotógrafos** saiu do Dashboard e está em **Curadoria › Fotógrafos**, com três abas:
+
+1. **Índice:** o mesmo de antes.
+2. **Estatísticas:** a parte de fotógrafos que ficava na tela Estatísticas. Saiu de lá e agora fica só aqui.
+3. **Cliques, conversão e exposição:** para cada fotógrafo, no período escolhido:
+   - quantas famílias atendeu;
+   - quantos cliques fez por família, e quantas famílias ficaram abaixo ou acima do limite;
+   - o chute, à parte;
+   - quantas famílias compraram e quantas fotos foram vendidas;
+   - quantas fotos saíram escuras ou estouradas da câmera.
+
+   A última linha é a média da equipe. Quem pode alterar a Configuração muda os limites no quadro **Limites dos alertas**. Toda mudança fica registrada com o valor de antes e o novo.
+
+Só quem vê o Índice do fotógrafo vê estes números. O fotógrafo não vê os próprios números.
+
+### Alertas do fotógrafo (Admin e Supervisora)
+
+Em **Curadoria › Alertas**, escolha o período: **Hoje**, **7 dias** (padrão) ou **30 dias**. Os avisos por fotógrafo aparecem quando:
+
+- a média de cliques por família fica abaixo de 20 ou acima de 40;
+- a porcentagem de famílias que compraram fica 10 pontos ou mais abaixo da equipe, ou a de fotos vendidas fica 5 pontos ou mais abaixo;
+- muitas fotos saem escuras ou estouradas. Exemplo: "20 de 100 fora da exposição: 12 estouradas, 8 escuras". A partir de 25% o aviso fica vermelho.
+
+Os números são calculados no servidor do estádio. Os avisos só aparecem quando há famílias suficientes no período, para não comparar com pouca coisa. A foto escura ou estourada é medida como saiu da câmera, então o Ajuste automático não esconde o problema.
+
+**Para os avisos de exposição aparecerem:**
+
+1. Em **Curadoria › Treino da IA**, no quadro **Análise automática do servidor**, ponha **Medir a exposição** em **Só medir** (só quem pode alterar a Configuração). Os números aparecem com o selo "Em teste", sem aviso.
+2. Marque fotos no Treino, inclusive as escuras e as estouradas que não servem.
+3. Em **Treino da IA › Medição**, bloco **Exposição**, confira quanto o servidor acerta. Se quiser, escolha outros limites e toque em **Usar estes limites**.
+4. Quando a Medição disser que passa no critério, ponha **Medir a exposição** em **Ligada**. Antes disso o servidor não deixa.
+
+### Trocar de pessoa no mesmo computador (todos)
+
+- Ao entrar com o seu usuário e senha, a sessão de quem estava antes naquele navegador é encerrada no servidor. Vale também para o "Ver como" que tenha ficado aberto.
+- Trocar a senha também encerra a sessão anterior.
+- Tocou em **Sair** sem internet? O computador lembra e tenta encerrar a sessão no servidor de novo quando o Eterna for aberto e antes do próximo login.
+- Se aparecer "Sua sessão terminou. Entre de novo.", é só entrar de novo.
+
+### Para o vendedor e o anfitrião
+
+Nada muda na venda, no Checkout nem na impressão. Depois da atualização, recarregue a página uma vez.
+
+### Classificação de poses (TI)
+
+O servidor já tem o programa que, à noite, vai separar as fotos por pose. Ele ainda não roda: falta o Ronaldo instalar o modelo. Os passos estão em `docs/SERVIDOR-ESTADIO.md`. Nada muda para a equipe por enquanto.
 
 ---
 
