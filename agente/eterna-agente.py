@@ -11485,6 +11485,25 @@ def posto_quem(token, ip=""):
     return {"id": r[0], "nome": r[1], "num": r[2], "auto": str(r[3] or "").startswith("auto:")} if r else None
 
 
+def porta_retratos_valida(v):
+    """config/porta-retratos (24/11): {itens: [{id: pr1|pr2|pr3, nome, preco, foto (JPEG em data URL, até 300 KB), ativo}], por, em}."""
+    if not isinstance(v, dict) or not isinstance(v.get("itens"), list) or len(v["itens"]) > 3:
+        return None
+    itens, vistos = [], set()
+    for x in v["itens"]:
+        if not isinstance(x, dict) or x.get("id") not in ("pr1", "pr2", "pr3") or x["id"] in vistos:
+            return None
+        nome, preco, foto = x.get("nome"), x.get("preco"), x.get("foto")
+        if not isinstance(nome, str) or not 0 < len(nome.strip()) <= 60 or isinstance(preco, bool) or not isinstance(preco, (int, float)) or not 0 < preco <= 10000:
+            return None
+        if foto is not None and not (isinstance(foto, str) and foto.startswith("data:image/jpeg;base64,") and len(foto) <= 300 * 1024
+                                     and re.fullmatch(r"[A-Za-z0-9+/=]+", foto[23:])):
+            return None
+        vistos.add(x["id"])
+        itens.append({"id": x["id"], "nome": nome.strip(), "preco": round(float(preco), 2), "foto": foto, "ativo": x.get("ativo") is True})
+    return {"itens": itens, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
+
+
 def postos_lado_valida(v):
     """config/postos-lado (23/11): {lados: {<id do posto>: "esq"}, por, em}; só "esq" fica gravado (sem entrada = direita), até 200 postos."""
     if not isinstance(v, dict) or not isinstance(v.get("lados"), dict) or len(v["lados"]) > 200:
@@ -12024,6 +12043,11 @@ def estado_gravar(body, quem=""):
                     v = postos_lado_valida(v)
                     if v is None:
                         print("  config/postos-lado recusada (formato inválido) · de %s" % (quem or "?"))
+                        continue
+                if d["col"] == "config" and d["id"] == "porta-retratos" and v is not None:   # 24/11: cadastro dos porta-retratos
+                    v = porta_retratos_valida(v)
+                    if v is None:
+                        print("  config/porta-retratos recusada (formato inválido) · de %s" % (quem or "?"))
                         continue
                 if d["col"] == "config" and d["id"] == "montagem" and v is not None:   # montagem no servidor: só {modo, por, em}
                     v = montagem_valida(v)
