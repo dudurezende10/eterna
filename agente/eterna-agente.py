@@ -14909,6 +14909,7 @@ LX_LIGADO_PRONTO = False     # Parte A: o Ligado chega na próxima versão (POST
 LX_FILA_MAX = 20000
 LX_GRAVA_SEG = 5
 LX_ITENS_MAX = 3000
+LX_MENU_DIAS = 7             # Eduardo (24/11): a contagem do menu é dos últimos 7 dias (hoje incluído), sem as recuperadas
 LX_ON = os.environ.get("ETERNA_LIXEIRA") != "0"
 LX_QUADRO_LADO = 1024        # o quadro central (60%) é medido com o lado maior reduzido a este tamanho; o rosto, na MESMA escala
 #                              (24/11: reduzido a 160 px, como no plano, o valor do rosto borrado ia de 11 a 88 conforme o tamanho
@@ -14916,7 +14917,7 @@ LX_QUADRO_LADO = 1024        # o quadro central (60%) é medido com o lado maior
 LX_TREINO_MOTIVO = {"escura": "escura", "estourada": "estourada", "desfocada": "desfocada", "sem_ninguem": "semrosto"}
 lx_lock = threading.Lock()
 lx_novas = collections.OrderedDict()        # pid -> (dia, dados, mot, em) esperando o lx_grava_loop
-lx_mem = {}                                 # pid -> {"dia", "mot", "em", "rec"} de hoje e ontem (contagem do menu, Parte B)
+lx_mem = {}                                 # pid -> {"dia", "mot", "em", "rec"} dos últimos LX_MENU_DIAS dias (contagem do menu, Parte B)
 lx_st = {"rev": 0, "limpa_dia": "", "limpa_tent": 0.0}
 lx_parar = threading.Event()                # só os testes ligam: os laços terminam
 _lx_med = {"t": 0.0, "r": None}
@@ -15154,18 +15155,20 @@ def lx_grava_loop():
 
 
 def _lx_dias_mem(t=None):
+    """Os dias que ficam na memória: hoje e os LX_MENU_DIAS - 1 anteriores (a contagem do menu; hoje e ontem bastam à Parte B)."""
     t = time.time() if t is None else t
-    return (_ff_hoje(t), _ff_hoje(t - 86400))
+    return tuple(_ff_hoje(t - i * 86400) for i in range(LX_MENU_DIAS))
 
 
 def lx_mem_carregar():
-    """Na partida: as linhas de hoje e ontem com a foto ainda na biblioteca."""
+    """Na partida: as linhas dos últimos LX_MENU_DIAS dias com a foto ainda na biblioteca."""
     if not os.path.exists(TREINO_DB):
         return 0
     with treino_lock:
         db = treino_db()
         try:
-            rs = db.execute("select pid, dia, mot, em, rec_em from lixeira where dia in (?, ?)", _lx_dias_mem()).fetchall()
+            ds = _lx_dias_mem()
+            rs = db.execute("select pid, dia, mot, em, rec_em from lixeira where dia in (%s)" % ",".join("?" * len(ds)), ds).fetchall()
         finally:
             db.close()
     with lock:
@@ -15399,15 +15402,18 @@ def lx_medida(lim=None):
 
 
 def lx_status():
-    """/status.lixeira: só números e códigos. hoje = fotos de hoje na lixeira, sem recuperar, ainda na biblioteca."""
+    """/status.lixeira: só números e códigos. hoje = fotos de hoje na lixeira, sem recuperar, ainda na biblioteca; n7 = o mesmo
+    dos últimos LX_MENU_DIAS dias (a contagem do menu, decisão do Eduardo de 24/11); dias = LX_MENU_DIAS."""
     hoje = _ff_hoje()
+    dias = set(_lx_dias_mem())
     with lx_lock:
-        ps = [p for p, x in lx_mem.items() if x["dia"] == hoje and x["mot"] and not x["rec"]]
+        ps = [(p, x["dia"] == hoje) for p, x in lx_mem.items() if x["dia"] in dias and x["mot"] and not x["rec"]]
         rev = lx_st["rev"]
     with lock:
-        n = sum(1 for p in ps if p in lib)
+        vivas = [h for p, h in ps if p in lib]
     c = lx_cfg()
-    return {"v": 1, "on": LX_ON, "modo": c["modo"], "rev": rev, "hoje": n if LX_ON else 0, "valendo": c["valendo"], "hoje_fora": 0}
+    return {"v": 1, "on": LX_ON, "modo": c["modo"], "rev": rev, "hoje": sum(vivas) if LX_ON else 0, "n7": len(vivas) if LX_ON else 0,
+            "dias": LX_MENU_DIAS, "valendo": c["valendo"], "hoje_fora": 0}
 
 
 def lx_limpa(agora=None):
@@ -15456,7 +15462,7 @@ def lx_limpa_noite(t=None):
 
 
 def lx_loop():
-    """A limpeza da madrugada e a memória de hoje e ontem (sai o que ficou para trás na virada do dia)."""
+    """A limpeza da madrugada e a memória dos últimos LX_MENU_DIAS dias (sai o que ficou para trás na virada do dia)."""
     while not lx_parar.is_set():
         try:
             lx_limpa_noite()

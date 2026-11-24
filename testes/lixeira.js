@@ -30,9 +30,9 @@ function lista(R,dia){const base=dia===HOJE?[
   const n=its.filter(x=>!x.rec).length;return {v:1,dia,on:true,modo:'medir',valendo:[],n,recuperadas:its.length-n,itens:its,
     dias:[{dia:HOJE,n:3-Object.keys(R.rec).filter(p=>p!==P4).length},{dia:ONTEM,n:R.rec[P4]?0:1}],mais:false};}
 async function agente(ctx,R){const js=(r,o,st)=>r.fulfill({status:st||200,contentType:'application/json',body:J(o)});
-  R.listas=[];R.posts=[];R.medidas=0;R.rec={};R.hoje=3;R.rev=1;R.sumiu=false;
+  R.listas=[];R.posts=[];R.cfg=[];R.modo='medir';R.medidas=0;R.rec={};R.hoje=3;R.n7=4;R.rev=1;R.sumiu=false;
   await ctx.route(ORIG+'/status',r=>js(r,{ok:true,agent:'eterna-agente',version:3,boot:'blx',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:false},
-    treino:{v:1,rotulos:0,analise:{ponto:'medir',exposicao:'medir'},modelo_ponto:null,ajuste:null},lixeira:{v:1,on:true,modo:'medir',rev:R.rev,hoje:R.hoje,valendo:[],hoje_fora:0}}));
+    treino:{v:1,rotulos:0,analise:{ponto:'medir',exposicao:'medir'},modelo_ponto:null,ajuste:null},lixeira:{v:1,on:true,modo:R.modo,rev:R.rev,hoje:R.hoje,n7:R.n7,dias:7,valendo:[],hoje_fora:0}}));
   await ctx.route(ORIG+'/events*',r=>js(r,{events:[],next:0,total:0}));
   await ctx.route(ORIG+'/biblioteca',r=>js(r,{fotos:[]}));
   await ctx.route(ORIG+'/ponto/docs/revs',r=>js(r,{ok:true,revs:{}}));
@@ -41,6 +41,8 @@ async function agente(ctx,R){const js=(r,o,st)=>r.fulfill({status:st||200,conten
   await ctx.route(ORIG+'/fotografos/alertas*',r=>js(r,{ok:true,v:1,fotografos:[],alertas:[],equipe:{}}));
   await ctx.route(ORIG+'/thumb/*',r=>r.fulfill({status:200,contentType:'image/jpeg',body:FOTO}));
   await ctx.route(ORIG+'/file/*',r=>r.fulfill({status:200,contentType:'image/jpeg',body:FOTO}));
+  await ctx.route(ORIG+'/lixeira/config',r=>{const b=JSON.parse(r.request().postData()||'{}');R.cfg.push(b);
+    if(b.modo==='ligada')return js(r,{ok:false,error:'em_breve'},409);if(b.modo===R.modo)return js(r,{ok:true,igual:true,cfg:{modo:R.modo}});R.modo=b.modo;js(r,{ok:true,cfg:{modo:R.modo}});});
   await ctx.route(ORIG+'/lixeira/medida',r=>{R.medidas++;js(r,{v:1,lim:{},crit:{n:20,precisao:0.95},sem_medida:0,recuperadas:1,motivos:{
     escura:{n:23,certas:21,erradas:2,precisao:0.913,passa:false,falta:[{k:'precisao',tem:0.913,precisa:0.95}],mesmo_motivo:16},
     estourada:{n:5,certas:5,erradas:0,precisao:1,passa:false,falta:[{k:'n',tem:5,precisa:20}],mesmo_motivo:5},
@@ -49,7 +51,7 @@ async function agente(ctx,R){const js=(r,o,st)=>r.fulfill({status:st||200,conten
   await ctx.route(ORIG+'/lixeira/recuperar',r=>{const b=JSON.parse(r.request().postData()||'{}');R.posts.push({h:r.request().headers(),b});
     if(R.sumiu)return js(r,{ok:false,error:'pid'},404);
     if(R.rec[b.pid])return js(r,{ok:true,igual:true,rec:R.rec[b.pid]});
-    R.rec[b.pid]={por:'admin.teste@exemplo.com',nome:'Admin de teste',em:new Date().toISOString()};if(b.pid!==P4)R.hoje--;R.rev++;js(r,{ok:true,rec:R.rec[b.pid]});});
+    R.rec[b.pid]={por:'admin.teste@exemplo.com',nome:'Admin de teste',em:new Date().toISOString()};if(b.pid!==P4)R.hoje--;R.n7--;R.rev++;js(r,{ok:true,rec:R.rec[b.pid]});});
   await ctx.route(new RegExp('^'+ORIG.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'/lixeira(\\?.*)?$'),r=>{const q=new URL(r.request().url()).searchParams;const dia=q.get('dia')||HOJE;R.listas.push(dia);js(r,lista(R,dia));});}
 function usuario(pg,email,nome,preset,extra){return pg.evaluate(([e,n,p,x])=>{const U0=JSON.parse(localStorage.getItem('eterna.users.v1')||'null')||JSON.parse(JSON.stringify(ETERNA.USERS));
   U0[e]=Object.assign({v:2,email:e,name:n,active:true,preset:p,perms:ETERNA.presetPerms(p),menu:ETERNA.presetMenu(p),key:null},x||{});localStorage.setItem('eterna.users.v1',JSON.stringify(U0));},[email,nome,preset,extra]);}
@@ -65,7 +67,7 @@ try{
   {const {ctx,pg,R}=await nova({width:1280,height:900});await entra(pg,null,null,'admin');
     await pg.evaluate(()=>ETERNA.go('lixeira'));ok(await espera(pg,()=>document.querySelectorAll('.lx-item').length===3,8000),'10: as 3 fotos de hoje não apareceram');
     const mv=await menu(pg);ok(mv.indexOf('lixeira')===mv.indexOf('alertas')+1,'8: Lixeira da IA logo depois de Alertas no menu do Admin: '+J(mv));
-    ok(await espera(pg,()=>{const p=document.querySelector('#nav [data-v="lixeira"] #rail-lx');return p&&p.textContent==='3';}),'9: o item do menu mostra 3');
+    ok(await espera(pg,()=>{const p=document.querySelector('#nav [data-v="lixeira"] #rail-lx');return p&&p.textContent==='4'&&p.getAttribute('aria-label')==='4 fotos na lixeira nos últimos 7 dias';}),'9: o item do menu mostra os 7 dias (4)');
     const h1=(await pg.textContent('#main h1')).trim();ok(h1==='Lixeira da IA','título: '+h1);
     ok(/Em teste: estas fotos continuam à venda/.test(await pg.textContent('#main .lx-modo')),'pílula Em teste');
     const cards=await pg.$$eval('.lx-item',x=>x.map(e=>({tag:(e.querySelector('.ph .tag')||{}).textContent,info:e.querySelector('.lx-info').textContent.replace(/\s+/g,' ').trim(),
@@ -99,7 +101,7 @@ try{
     ok(/Anotado\. A foto já estava à venda\./.test(await pg.textContent('#toast')),'11: toast de Teste');
     const fim=await pg.$$eval('.lx-item',x=>x.map(e=>e.classList.contains('lx-feita')));ok(J(fim)===J([false,false,true]),'11: a recuperada vai para o fim: '+J(fim));
     ok(/Recuperada por Admin de teste às \d\d:\d\d/.test(await pg.textContent('.lx-item.lx-feita')),'11: quem e a hora');
-    ok(await espera(pg,()=>{const p=document.querySelector('#nav [data-v="lixeira"] #rail-lx');return p&&p.textContent==='2';}),'9: o número do menu cai para 2 sem recarregar');
+    ok(await espera(pg,()=>{const p=document.querySelector('#nav [data-v="lixeira"] #rail-lx');return p&&p.textContent==='3';}),'9: o número do menu cai para 3 sem recarregar');
     ok((await pg.$$('.lx-item.lx-feita [data-act="lx-rec"]')).length===0,'11: recuperada sem botão');
     // 404: a foto já saiu
     R.sumiu=true;await pg.click(`[data-act="lx-rec"][data-pid="${P2}"]`);await pg.waitForTimeout(250);ok(/Esta foto já saiu da lixeira\./.test(await pg.textContent('#toast')),'11: 404 avisa');R.sumiu=false;
@@ -119,6 +121,16 @@ try{
     await pg.evaluate(()=>ETERNA.idiomaEquipe('pt'));
     const chaves=await pg.evaluate(()=>{const f=[];for(const k of Object.keys(ETERNA.EQ||{}))if(/^(lx_|v_lixeira|vd_lixeira)/.test(k)){const e=ETERNA.EQ[k];if(!Array.isArray(e)||e.length!==5||e.some(x=>x==null||x===''))f.push(k);else e.forEach(x=>{const s=typeof x==='function'?x(1,2):x;if(/[—–]/.test(s))f.push(k+' travessão');});}return {f,n:Object.keys(ETERNA.EQ||{}).filter(k=>/^lx_/.test(k)).length};});
     ok(!chaves.n||!chaves.f.length,'19: as chaves lx_* nas 5 línguas e sem travessão: '+J(chaves.f));
+    // ---------- 13: a chave em Configurações › IA automática (Admin) ----------
+    await pg.evaluate(()=>ETERNA.go('ia-auto'));ok(await espera(pg,()=>!!document.querySelector('#lx-cfg')),'13: o bloco da Lixeira em IA automática');
+    const ch=await pg.evaluate(()=>{const q=v=>document.querySelector(`#lx-cfg [data-act="lx-cfg"][data-v="${v}"]`);return {t:q('medir')&&q('medir').getAttribute('aria-pressed'),td:q('medir')&&q('medir').disabled,l:!!q('ligada'),ld:q('ligada')&&q('ligada').disabled,txt:document.querySelector('#lx-cfg').textContent};});
+    ok(ch.t==='true'&&!ch.td&&ch.l&&ch.ld&&/Lixeira da IA/.test(ch.txt)&&/O Ligado chega na próxima versão\./.test(ch.txt)&&/Em Teste, a IA só separa as fotos para conferir\. Ligado, elas saem do Checkout\./.test(ch.txt),'13: Teste valendo, Ligado travado com o aviso: '+J(ch));
+    const m0=(await menu(pg));ok(m0.indexOf('ia-auto')>=0,'13: IA automática no menu do Admin');
+    await pg.click('#lx-cfg [data-act="lx-cfg"][data-v="medir"]');await pg.waitForTimeout(250);ok(R.cfg.length===1&&R.cfg[0].modo==='medir'&&/Nada mudou/.test(await pg.textContent('#toast')),'13: Teste de novo = igual: '+J(R.cfg));
+    await pg.evaluate(()=>ETERNA.lxCfg('ligada'));await pg.waitForTimeout(150);ok(R.cfg.length===1&&/O Ligado chega na próxima versão/.test(await pg.textContent('#toast')),'13: Ligado travado não vai ao servidor');
+    await pg.evaluate(()=>{ETERNA.state.assumido={por:'x',nome:'X'};});await pg.evaluate(()=>ETERNA.lxCfg('medir'));await pg.waitForTimeout(150);
+    ok(R.cfg.length===1&&/Só visualização/.test(await pg.textContent('#toast')),'13: ver como não muda a chave');await pg.evaluate(()=>{ETERNA.state.assumido=null;ETERNA.render();});
+    await pg.screenshot({path:path.join(PRINTS,'lixeira-chave-1280.png'),fullPage:true});
     await ctx.close();}
   // ---------- 19: 390 px ----------
   {const {ctx,pg,R}=await nova({width:390,height:844});await entra(pg,null,null,'admin');
@@ -127,6 +139,10 @@ try{
       cols:getComputedStyle(document.querySelector('.lx-grade')).gridTemplateColumns.split(' ').length}));
     ok(m.sw<=m.iw,'19: 390 px sem rolagem lateral: '+J(m));ok(m.bt.every(h=>h>=44),'19: botões com 44 px: '+J(m.bt));ok(m.cols===2,'19: duas colunas em 390 px: '+m.cols);
     await pg.screenshot({path:path.join(PRINTS,'lixeira-390.png'),fullPage:true});
+    await pg.evaluate(()=>ETERNA.go('ia-auto'));await espera(pg,()=>!!document.querySelector('#lx-cfg'));
+    const k=await pg.evaluate(()=>({sw:document.documentElement.scrollWidth,iw:innerWidth,h:[...document.querySelectorAll('#lx-cfg [data-act="lx-cfg"]')].map(e=>Math.round(e.getBoundingClientRect().height))}));
+    ok(k.sw<=k.iw&&k.h.length===2,'19: a chave em 390 px sem rolagem lateral: '+J(k));
+    await pg.evaluate(()=>document.querySelector('#lx-cfg').scrollIntoView());await pg.screenshot({path:path.join(PRINTS,'lixeira-chave-390.png')});
     await ctx.close();}
   // ---------- 8: Supervisora (pronta e já gravada pela migração) vê; Validador, Fotógrafo, venda e Checkout não ----------
   {const {ctx,pg}=await nova();await pg.goto(U);await pg.waitForTimeout(300);
@@ -141,6 +157,10 @@ try{
   {const {ctx,pg}=await nova();await entra(pg,'supervisora.lx@exemplo.com','Supervisora Teste','supervisor');
     await pg.evaluate(()=>ETERNA.go('lixeira'));await espera(pg,()=>document.querySelectorAll('.lx-item').length===3,8000);
     const mv=await menu(pg);ok(mv.includes('lixeira')&&(await pg.$$('[data-act="lx-rec"]')).length===3,'8: a Supervisora vê e pode recuperar: '+J(mv));
+    await pg.evaluate(()=>ETERNA.go('ia-auto'));await espera(pg,()=>!!document.querySelector('#lx-cfg'));
+    const sc=await pg.evaluate(()=>({chips:document.querySelectorAll('#lx-cfg [data-act="lx-cfg"]').length,txt:document.querySelector('#lx-cfg').textContent,v:ETERNA.state.view}));
+    ok(sc.v==='ia-auto'&&sc.chips===0&&/Teste/.test(sc.txt)&&/Só o Admin muda a Lixeira da IA\./.test(sc.txt),'13: a Supervisora vê a chave e o estado, sem mudar: '+J(sc));
+    await pg.evaluate(()=>ETERNA.lxCfg('medir'));await pg.waitForTimeout(150);ok(/Só o Admin muda a Lixeira da IA/.test(await pg.textContent('#toast')),'13: a Supervisora não grava pela tela');
     await ctx.close();}
   for(const [pr,email] of [['valida','validador.lx@exemplo.com'],['foto','fotografo.lx@exemplo.com'],['venda','venda.lx@exemplo.com']]){
     const {ctx,pg}=await nova();await entra(pg,email,'Pessoa '+pr,pr);await pg.evaluate(()=>ETERNA.go('lixeira'));await pg.waitForTimeout(250);
@@ -149,5 +169,5 @@ try{
 }catch(e){fails.push('exceção: '+(e&&e.stack||e).toString().slice(0,600));}
 await b.close();
 const erros=errs.filter(e=>!/favicon/.test(e));ok(!erros.length,'erros no console: '+J(erros.slice(0,3)));
-console.log(fails.length?'FALHA lixeira: '+fails.join(' | '):'OK lixeira: Curadoria › Lixeira da IA (critérios 8 a 11, 13, 15 e 19; prints em '+PRINTS+')');
+console.log(fails.length?'FALHA lixeira: '+fails.join(' | '):'OK lixeira: Curadoria › Lixeira da IA (critérios 8 a 11, 13 com a chave, 15 e 19; prints em '+PRINTS+')');
 process.exit(fails.length?1:0);})();

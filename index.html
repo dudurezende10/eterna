@@ -1547,7 +1547,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.43.0 · 24/11 10:53"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.44.0 · 24/11 12:17"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -8163,7 +8163,7 @@ function trCfgPanel(){if(!canView('ia-auto'))return '';const t=state.train;
   const aj=SIM.autoAj!==false?'ligada':'medir';const ap=SIM.autoAjPor;
   const ajuste=bloco('ajuste',pode?seg('ajuste',aj,false):trCfgPilula(aj),TE('mf_aj_nota'),ap&&ap.nome?`<div class="note" id="aj-auto-por"><b>${TE('mf_aj_por',ap.on,esc(ap.nome),hhmm(new Date(ap.em)))}</b></div>`:'');
   return `<div class="panel tr-an" id="tr-cfg">${srv}${ajuste}</div>`;}
-function vIaAuto(){return `<div class="head"><div><div class="eyebrow">${TE('g_configuracoes')}</div><h1>${esc(viewLabel('ia-auto'))}</h1><div class="note">${TE('ia_auto_nota')}</div></div></div>${trCfgPanel()}`;}
+function vIaAuto(){return `<div class="head"><div><div class="eyebrow">${TE('g_configuracoes')}</div><h1>${esc(viewLabel('ia-auto'))}</h1><div class="note">${TE('ia_auto_nota')}</div></div></div>${trCfgPanel()}${lxCfgPanel()}`;}
 function vTreinoMarcar(){const t=state.train;const ag=trAg();
   if(!ag)return `<div class="panel"><div class="note">${TE('tr_sem_servidor')}</div></div>`;
   if(!t.diasPedido&&t.dias===null)setTimeout(trDias,0);
@@ -8364,11 +8364,12 @@ function alerts(){
 // O servidor do ponto separa as fotos sem salvação (muito escura, muito estourada, tremida ou desfocada, sem ninguém). Aqui Admin e
 // Supervisora conferem e devolvem com "Não é ruim". Tudo vem do servidor (GET /lixeira) e só fica na memória da tela (state.lx; o Sair
 // zera): nada vai para o SIM nem para o localStorage. Em Teste (Parte A) nenhuma foto sai do Checkout, das sessões nem das galerias.
-// Decisões provisórias do Eduardo (24/11), fáceis de mudar: a contagem do menu é só de hoje (o servidor manda /status.lixeira.hoje);
-// a tela fica no menu do Admin e da Supervisora (PRESETS e migraLixeira24), não no do Validador; o "Ruim mesmo" fica para depois.
+// Decisões do Eduardo (24/11): a contagem do menu é dos últimos 7 dias, sem as recuperadas (o servidor manda /status.lixeira.n7; o
+// número de dias é LX_MENU_DIAS no agente); a tela fica no menu do Admin e da Supervisora (PRESETS e migraLixeira24), não no do
+// Validador; o "Ruim mesmo" fica para a Parte B; o Ligado só destrava pela meta (sem "ligar mesmo assim"), também na Parte B.
 const LX_MOTIVOS=['escura','estourada','desfocada','sem_ninguem'];
 const LX_RELER_MS=15000; // com a tela aberta e o /status mudando (foto nova ou recuperada em outro aparelho), relê a lista no máximo a cada 15 s
-function lxZera(){state.lx={dia:null,mot:'todos',j:null,busy:false,err:null,pedido:false,med:null,medBusy:false,medErr:null,regua:false,voo:{},t:0,rev:null};}
+function lxZera(){state.lx={dia:null,mot:'todos',j:null,busy:false,err:null,pedido:false,med:null,medBusy:false,medErr:null,regua:false,voo:{},t:0,rev:null,cfgVoo:false};}
 lxZera();
 const lxMotTxt=ms=>(ms||[]).map(m=>TEk('lx_mot_'+m,m)).join(', ');
 const lxHora=iso=>{const d=new Date(iso||'');return isNaN(d)?'':d.toLocaleTimeString(localeEq(),{hour:'2-digit',minute:'2-digit'});};
@@ -8388,8 +8389,8 @@ async function lxMedida(){const L=state.lx,u=trAg();if(!u||L.medBusy)return;L.me
 // /status.lixeira: guarda, acerta a contagem do menu e, com a tela aberta, relê a lista quando algo mudou no servidor
 function lxStatus(st){const a=state.agent;const x=st&&st.lixeira&&typeof st.lixeira==='object'?st.lixeira:null;const rev=x?x.rev:null;a.lixeira=x;lxPillUpd();
   const L=state.lx;if(state.view==='lixeira'&&L.j&&rev!=null&&L.rev!=null&&rev!==L.rev&&!L.busy&&Date.now()-L.t>LX_RELER_MS)lxPull({quieto:true});if(rev!=null)L.rev=rev;}
-function lxPill(){const x=state.agent&&state.agent.lixeira;const n=x&&x.on!==false?Math.max(0,+x.hoje||0):0;
-  return n&&canView('lixeira')?`<span class="pill neutral" id="rail-lx" aria-label="${esc(TE('lx_pill',n))}">${n}</span>`:'';}
+function lxPill(){const x=state.agent&&state.agent.lixeira;const n=x&&x.on!==false?Math.max(0,+(x.n7!=null?x.n7:x.hoje)||0):0;
+  return n&&canView('lixeira')?`<span class="pill neutral" id="rail-lx" aria-label="${esc(TE('lx_pill',n,(x&&+x.dias)||7))}">${n}</span>`:'';}
 function lxPillUpd(){const it=document.querySelector('#nav [data-v="lixeira"]');if(!it)return;const old=it.querySelector('#rail-lx'),h=lxPill();if((old?old.outerHTML:'')!==h){if(old)old.remove();if(h)it.insertAdjacentHTML('beforeend',h);}}
 // "Não é ruim": grava quem e quando no servidor (lixeira e lixeira_log); a foto fica como recuperada e sai da contagem
 async function lxRec(pid){const L=state.lx,u=trAg();if(!u||!/^[0-9a-f]{6,40}$/.test(pid||'')||L.voo[pid])return;
@@ -8398,7 +8399,7 @@ async function lxRec(pid){const L=state.lx,u=trAg();if(!u||!/^[0-9a-f]{6,40}$/.t
     if(r.ok&&j&&j.ok){const J=L.j;const it=J&&J.itens.find(x=>x.pid===pid);
       if(it&&!it.rec){it.rec=j.rec||{em:new Date().toISOString()};J.itens=J.itens.filter(x=>x!==it).concat([it]);J.n=Math.max(0,(J.n||1)-1);J.recuperadas=(J.recuperadas||0)+1;
         const dd=(J.dias||[]).find(x=>x.dia===J.dia);if(dd)dd.n=Math.max(0,dd.n-1);
-        const s=state.agent.lixeira;if(s&&J.dia===venueToday()&&!j.igual)s.hoje=Math.max(0,(+s.hoje||0)-1);}
+        const s=state.agent.lixeira;if(s&&!j.igual){const hj=venueToday();if(J.dia===hj)s.hoje=Math.max(0,(+s.hoje||0)-1);if(s.n7!=null&&J.dia>addDays(hj,-((+s.dias||7))))s.n7=Math.max(0,(+s.n7||0)-1);}}
       if(!j.igual)toast(TE(((J&&J.modo)||'medir')==='ligada'?'lx_rec_ok':'lx_rec_ok_teste'));L.med=null;}
     else if(r.status===404){toast(TE('lx_sumiu'));L.j=null;delete L.voo[pid];lxPull({quieto:true});return;}
     else if(r.status===403&&j&&j.erro==='so_ver')toast(TE('vc_so_ver'));
@@ -8433,6 +8434,26 @@ function vLixeira(){const L=state.lx,u=trAg();const st=state.agent.lixeira||null
 // filtro de dia (select): busca o dia no servidor
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset||t.dataset.act!=='lx-dia'||state.view!=='lixeira')return;
   const v=String(t.value||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return;const L=state.lx;L.dia=v;L.j=null;L.err=null;lxPull();});
+// 24/11: a chave da Lixeira da IA em Configurações › IA automática (plano D2). Só o Admin muda (o servidor confere de novo pela sessão:
+// 403 so_admin); os outros veem a situação. Parte A: Teste valendo e Ligado visível mas travado ("chega na próxima versão"; o servidor
+// responde 409 em_breve). Estado do servidor: /status.lixeira.modo.
+const LX_LIGADO_PRONTO=false; // Parte B: destrava só para os motivos que passam na meta (Eduardo, 24/11: sem "ligar mesmo assim")
+function lxCfgPanel(){if(!canView('ia-auto'))return '';const s=state.agent.lixeira;const ag=trAg();const L=state.lx;
+  const modo=s&&s.modo==='ligada'?'ligada':'medir';const pode=isAdminUser(state.user)&&!state.assumido;
+  const pil=`<span class="pill ${modo==='ligada'?'good':'neutral'}">${TE(modo==='ligada'?'lx_cfg_ligado':'lx_cfg_teste')}</span>`;
+  const ctl=!ag||!s?`<span class="note">${TE('tr_sem_servidor')}</span>`:pode?`<span class="seg" role="group" aria-label="${esc(TE('lx_cfg_k'))}"><button class="chip" data-act="lx-cfg" data-v="medir" aria-pressed="${modo==='medir'}" ${L.cfgVoo?'disabled':''}>${TE('lx_cfg_teste')}</button><button class="chip" data-act="lx-cfg" data-v="ligada" aria-pressed="${modo==='ligada'}" ${L.cfgVoo||!LX_LIGADO_PRONTO?'disabled':''}>${TE('lx_cfg_ligado')}</button></span>`:pil;
+  const ex=(!LX_LIGADO_PRONTO?`<div class="note lx-cfg-breve">${TE('lx_cfg_em_breve')}</div>`:'')+(!pode&&ag&&s?`<div class="note">${TE('lx_cfg_so_admin')}</div>`:'')+(s&&s.on===false?`<div class="note">${TE('lx_cfg_desligada')}</div>`:'');
+  return `<div class="panel tr-an" id="lx-cfg"><div class="tr-an-b" data-k="lixeira"><div class="tr-an-l"><span class="tr-an-k">${TE('lx_cfg_k')}</span>${ctl}</div><div class="note">${TE('lx_cfg_nota')}</div>${ex}</div></div>`;}
+async function lxCfg(v){if(state.assumido){toast(TE('vc_so_ver'));return;}if(!isAdminUser(state.user)){toast(TE('lx_cfg_so_admin'));return;}
+  if(!['medir','ligada'].includes(v))return;if(v==='ligada'&&!LX_LIGADO_PRONTO){toast(TE('lx_cfg_em_breve'));return;}
+  const L=state.lx,u=trAg(),s=state.agent.lixeira;if(!u||L.cfgVoo)return;const de=(s&&s.modo)||null;L.cfgVoo=true;render();
+  try{const r=await agFetch(u+'/lixeira/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:v})});const j=await r.json().catch(()=>null);
+    if(r.ok&&j&&j.ok){if(s)s.modo=(j.cfg&&j.cfg.modo)||v;if(j.igual)toast(TE('tr_med_cfg_igual'));else auditLog('lixeira_modo','config/lixeira',[{campo:'modo',de,para:v}]);}
+    else if(r.status===409&&j&&j.error==='em_breve')toast(TE('lx_cfg_em_breve'));
+    else if(r.status===403&&j&&j.error==='so_admin')toast(TE('lx_cfg_so_admin'));
+    else if(r.status===403&&j&&j.erro==='so_ver')toast(TE('vc_so_ver'));
+    else toast(TE('lx_erro'));}
+  catch(e){toast(TE('lx_erro'));}finally{L.cfgVoo=false;render();}}
 // 24/11 (D1): a Supervisora (perfil pronto) já gravada ganha a tela Lixeira da IA no menu, logo depois de Alertas. Só põe a tela;
 // personalizado não muda. Registra migracao_lixeira24 e grava a marca de volta (como migraTreino16).
 function migraLixeira24(x){x.mlx24=1;if(x.preset!=='supervisor'||!Array.isArray(x.menu)||x.menu.includes('lixeira'))return;
@@ -11996,12 +12017,13 @@ const EQ={
   lx_regua_linha:[(n,p)=>`${n} fotos marcadas no Treino, ${p}% eram mesmo ruins`,(n,p)=>`${n} photos marked in Training, ${p}% were really bad`,(n,p)=>`${n} fotos marcadas en el Entrenamiento, ${p}% eran realmente malas`,(n,p)=>`${n} photos marquées dans l'Entraînement, ${p} % étaient vraiment mauvaises`,(n,p)=>`${n} im Training markierte Fotos, ${p} % waren wirklich schlecht`],
   lx_regua_falta:[(n)=>`Faltam ${n} fotos marcadas no Treino para medir`,(n)=>`${n} more photos marked in Training are needed to measure`,(n)=>`Faltan ${n} fotos marcadas en el Entrenamiento para medir`,(n)=>`Il manque ${n} photos marquées dans l'Entraînement pour mesurer`,(n)=>`Zum Messen fehlen noch ${n} im Training markierte Fotos`],
   lx_regua_nota:["A conta usa as marcações do Treino e cada \"Não é ruim\".","The count uses the Training marks and every \"Not bad\".","La cuenta usa las marcas del Entrenamiento y cada \"No está mal\".","Le calcul utilise les marquages de l'Entraînement et chaque « Pas mauvaise ».","Die Rechnung nutzt die Markierungen aus dem Training und jedes „Nicht schlecht“."],
-  lx_pill:[(n)=>`${n} fotos na lixeira hoje`,(n)=>`${n} photos in the bin today`,(n)=>`${n} fotos en la papelera hoy`,(n)=>`${n} photos dans la corbeille aujourd'hui`,(n)=>`${n} Fotos heute im Papierkorb`],
+  lx_pill:[(n,d)=>`${n} fotos na lixeira nos últimos ${d} dias`,(n,d)=>`${n} photos in the bin in the last ${d} days`,(n,d)=>`${n} fotos en la papelera en los últimos ${d} días`,(n,d)=>`${n} photos dans la corbeille ces ${d} derniers jours`,(n,d)=>`${n} Fotos im Papierkorb in den letzten ${d} Tagen`],
   lx_cfg_k:["Lixeira da IA","AI bin","Papelera de la IA","Corbeille de l'IA","KI-Papierkorb"],
   lx_cfg_nota:["Em Teste, a IA só separa as fotos para conferir. Ligado, elas saem do Checkout.","In Test, the AI only sets the photos aside for checking. When On, they leave the Checkout.","En Prueba, la IA solo separa las fotos para revisar. Activado, salen del Checkout.","En Test, l'IA met seulement les photos de côté pour vérification. Activé, elles quittent le Checkout.","Im Test legt die KI die Fotos nur zur Prüfung beiseite. Eingeschaltet verschwinden sie aus dem Checkout."],
   lx_cfg_teste:["Teste","Test","Prueba","Test","Test"],
   lx_cfg_ligado:["Ligado","On","Activado","Activé","Ein"],
   lx_cfg_em_breve:["O Ligado chega na próxima versão.","On arrives in the next version.","Activado llega en la próxima versión.","Activé arrive dans la prochaine version.","Ein kommt mit der nächsten Version."],
+  lx_cfg_desligada:["A Lixeira da IA está desligada neste servidor.","The AI bin is turned off on this server.","La Papelera de la IA está desactivada en este servidor.","La corbeille de l'IA est désactivée sur ce serveur.","Der KI-Papierkorb ist auf diesem Server ausgeschaltet."],
   lx_cfg_so_admin:["Só o Admin muda a Lixeira da IA.","Only the Admin changes the AI bin.","Solo el Admin cambia la Papelera de la IA.","Seul l'Admin modifie la corbeille de l'IA.","Nur der Admin ändert den KI-Papierkorb."],
 };
 // chave montada na hora (prefixo + código): o texto do dicionário ou, sem chave, o de antes
@@ -13503,6 +13525,7 @@ document.addEventListener('click',e=>{
     // 24/11: Lixeira da IA
     case 'lx-mot':if(['todos',...LX_MOTIVOS].includes(d.m)){state.lx.mot=d.m;render();}break;
     case 'lx-rec':lxRec(d.pid);break;
+    case 'lx-cfg':lxCfg(d.v);break;
     case 'lx-reler':state.lx.err=null;lxPull();break;
     case 'lx-regua':{e.preventDefault();const L=state.lx;L.regua=!L.regua;if(L.regua&&!L.med&&!L.medBusy)lxMedida();else render();break;}
   }
@@ -13718,7 +13741,7 @@ window.ETERNA={trCfgMuda,TR_IA_MOTIVOS,fgFotoAgrega,fgEstTela,esSecBVai,fotAlert
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 Object.assign(window.ETERNA,{FIA_PADRAO,IMP_PX,FIA_ROSTOS,BG_DEF,mtgPanel,mtgModoSalva,MTG_MODOS,posesPanel,psModoSalva,PS_MODOS,mtgSrv,mtgFundo,mtgPedir,MTG,mtgCanvasOk,mtgConhecido,mtgGer:()=>MTG_GER,fiaMontagens:FIA_CONTA,mtgTempos:(e,p,d,h,t,n)=>{if(e!=null)MTG_ESPERA_MS=e;if(p!=null)MTG_PASSO_MS=p;if(d!=null)MTG_DE_NOVO_MS=d;if(h!=null)MTG_HI_ESPERA_MS=h;if(t!=null)MTG_PASSO_TETO_MS=t;if(n!=null)MTG_FALHAS_MAX=n;}}); // montagem no servidor (E1): tabelas para o teste de paridade com o agente/eterna-montagem.py e a chave do modo
 Object.assign(window.ETERNA,{ljEscolhidas,ljEscUpd,ljFsUpd,ljDesfMs:v=>{LJ_DESF_MS=v;}}); // 17/11: barra das escolhidas (testes/checkout-barra-escolhidas.js)
-Object.assign(window.ETERNA,{lxFiltrados,lxStatus,lxPill,migraLixeira24,migrateUser,LX_MOTIVOS,lxModalN:()=>MODAL.list.length}); // 24/11: Lixeira da IA (testes/lixeira.js)
+Object.assign(window.ETERNA,{lxFiltrados,lxStatus,lxPill,lxCfgPanel,lxCfg,migraLixeira24,migrateUser,LX_MOTIVOS,lxModalN:()=>MODAL.list.length}); // 24/11: Lixeira da IA (testes/lixeira.js)
 })();
 </script>
 

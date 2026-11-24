@@ -351,8 +351,18 @@ try:
     # 12 (servidor): em Teste nada some: /status.lixeira.hoje_fora = 0 e o modo é medir
     st, s_ = pede("GET", "/status", cookie=adm)
     lx = s_.get("lixeira") or {}
-    ok(st == 200 and set(lx) == {"v", "on", "modo", "rev", "hoje", "valendo", "hoje_fora"} and lx["on"] is True and lx["modo"] == "medir"
-       and lx["hoje_fora"] == 0 and lx["hoje"] == base_hoje - 1, "12: /status.lixeira só números e códigos: %r" % lx)
+    ok(st == 200 and set(lx) == {"v", "on", "modo", "rev", "hoje", "n7", "dias", "valendo", "hoje_fora"} and lx["on"] is True and lx["modo"] == "medir"
+       and lx["hoje_fora"] == 0 and lx["hoje"] == base_hoje - 1 and lx["n7"] == base_hoje and lx["dias"] == 7, "12: /status.lixeira só números e códigos: %r" % lx)
+    # 9 (Eduardo, 24/11): o menu conta os últimos 7 dias; a de 8 dias atrás fica fora
+    p8 = foto()
+    m.lx_acrescenta(p8, m._ff_hoje(time.time() - 8 * 86400), ESC)
+    p6d = foto()
+    m.lx_acrescenta(p6d, m._ff_hoje(time.time() - 6 * 86400), ESC)
+    ok(m.lx_status()["n7"] == base_hoje + 1, "9: n7 = hoje, ontem e 6 dias atrás; 8 dias fora: %r" % m.lx_status())
+    with m.lx_lock:
+        m.lx_mem.pop(p8, None); m.lx_mem.pop(p6d, None)
+    with m.lock:
+        m.lib.pop(p8, None); m.lib.pop(p6d, None)
     ok(not any(p in json.dumps(lx) for p in (pe, pd, ps_)), "/status.lixeira sem pid")
     # ---------- 13: a chave ----------
     st, r = pede("POST", "/lixeira/config", {"modo": "medir"}, cookie=sup)
