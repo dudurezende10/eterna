@@ -13141,57 +13141,85 @@ _ZERAR_POS_MARCA = []
 _re_zerar_pos = re.compile(r"\.pos-\d{8}-\d{6}(-\d+)?(-wal|-shm|-journal)?$")
 
 
+_ZERAR_PARES = ("-wal", "-shm", "-journal")
+
+
+def _zerar_base(n):
+    """-> (base, sufixo): "rostos.db-wal" é ("rostos.db", "-wal"); nome sem sufixo de par do SQLite é (nome, "")."""
+    for s in _ZERAR_PARES:
+        if n.endswith(s) and len(n) > len(s):
+            return n[:-len(s)], s
+    return n, ""
+
+
+def _zerar_grupos(nomes):
+    """Junta cada banco com os pares dele (-wal, -shm, -journal), na ordem em que aparecem. -> [(base, [nomes, o banco primeiro])]."""
+    g = {}
+    for n in nomes:
+        g.setdefault(_zerar_base(n)[0], []).append(n)
+    return [(b, sorted(v, key=lambda n: _zerar_base(n)[1] != "")) for b, v in g.items()]
+
+
 def _zerar_ao_lado(dst):
     """24/11 (testador): nome livre ao lado de dst, dentro do arquivo: <nome>.pos-AAAAMMDD-HHMMSS (-2, -3 se já existir). Para
-    -wal/-shm/-journal a marca vai antes do sufixo (rostos.db.pos-X e rostos.db.pos-X-wal continuam um par do SQLite)."""
+    -wal/-shm/-journal a marca vai antes do sufixo (rostos.db.pos-X e rostos.db.pos-X-wal continuam um par do SQLite). O nome só
+    é livre se o grupo inteiro (banco e pares) está livre: quem pede para o banco pode usar a mesma marca nos pares."""
     if not _ZERAR_POS_MARCA:
         _ZERAR_POS_MARCA.append(time.strftime("%Y%m%d-%H%M%S"))
-    d, n = os.path.split(dst)
-    fim = ""
-    for s in ("-wal", "-shm", "-journal"):
-        if n.endswith(s):
-            n, fim = n[:-len(s)], s
-            break
+    d, nome = os.path.split(dst)
+    n, fim = _zerar_base(nome)
     i = 1
     while True:
-        p = os.path.join(d, "%s.pos-%s%s%s" % (n, _ZERAR_POS_MARCA[0], "" if i == 1 else "-%d" % i, fim))
-        if not os.path.lexists(p):
-            return p
+        p = os.path.join(d, "%s.pos-%s%s" % (n, _ZERAR_POS_MARCA[0], "" if i == 1 else "-%d" % i))
+        if not any(os.path.lexists(p + s) for s in ("",) + _ZERAR_PARES):
+            return p + fim
         i += 1
+
+
+def _zerar_mover_grupo(src_dir, dst_dir, base, nomes):
+    """24/11 (revisão): um banco e os pares dele (-wal, -shm, -journal) andam juntos; nomes = os do grupo que estão em src_dir.
+    Se qualquer nome do grupo já está no arquivo, o grupo inteiro da origem vai ao lado com a mesma marca (<banco>.pos-X,
+    <banco>.pos-X-wal), mesmo o par que não tem xará no arquivo: senão o -wal novo cairia ao lado do banco da fase de teste e o
+    SQLite abriria esse banco com o -wal errado. Par que sobrou sozinho na origem (o banco foi antes) também vai ao lado: não dá
+    para provar que é do banco que já está no arquivo. -> True se foi ao lado. Nunca sobrescreve."""
+    lado = any(os.path.lexists(os.path.join(dst_dir, base + s)) for s in ("",) + _ZERAR_PARES)
+    alvo = _zerar_ao_lado(os.path.join(dst_dir, base)) if lado else os.path.join(dst_dir, base)
+    os.makedirs(dst_dir, mode=0o700, exist_ok=True)
+    for n in nomes:
+        os.rename(os.path.join(src_dir, n), alvo + _zerar_base(n)[1])
+    return lado
 
 
 def _zerar_mover(src_dir, dst_dir, fica=None):
     """Move cada entrada do primeiro nível de src_dir (menos nomes com ponto e as de fica) para dst_dir. Idempotente (24/11,
     testador): o que já foi não está mais em src_dir e segue. Se o mesmo nome já está no arquivo, o do arquivo é a cópia da fase de
     teste (movida numa tentativa anterior) e o da origem nasceu depois (o agente subiu entre as tentativas): o novo vai inteiro,
-    arquivo ou pasta, para o lado (_zerar_ao_lado), também dentro do arquivo. Nunca sobrescreve nem junta pastas."""
+    arquivo ou pasta, para o lado (_zerar_ao_lado), também dentro do arquivo. Nunca sobrescreve nem junta pastas. Banco e pares
+    vão em grupo (_zerar_mover_grupo)."""
     nomes = [n for n in _zerar_ls(src_dir) if not (fica and n in fica)]
     if not nomes:
         return 0
-    os.makedirs(dst_dir, mode=0o700, exist_ok=True)
     lado = 0
-    for n in nomes:
-        dst = os.path.join(dst_dir, n)
-        if os.path.lexists(dst):
-            dst = _zerar_ao_lado(dst)
-            lado += 1
-        os.rename(os.path.join(src_dir, n), dst)
+    for base, grupo in _zerar_grupos(nomes):
+        if _zerar_mover_grupo(src_dir, dst_dir, base, grupo):
+            lado += len(grupo)
     if lado:
         print("  zerar: %d item(ns) de %s já estavam no arquivo; os novos foram ao lado (.pos-)" % (lado, os.path.relpath(src_dir, HOME)))
     return len(nomes)
 
 
 def _zerar_mover_arq(src, dst):
-    """Um arquivo solto. Origem sumiu = já feito (ou não havia). Origem e destino presentes: o da origem nasceu depois e vai para o
-    lado, dentro do arquivo (ver _zerar_mover)."""
-    if not os.path.lexists(src):
+    """Um arquivo solto, com o grupo dele: pedir o banco ou um par (-wal, -shm, -journal) move o que houver do grupo na origem, de
+    uma vez (_zerar_mover_grupo). Origem sumiu = já feito (ou não havia). Algum nome do grupo já no arquivo: o da origem nasceu
+    depois e vai para o lado, dentro do arquivo (ver _zerar_mover). -> quantos arquivos foram."""
+    src_dir, dst_dir = os.path.dirname(src), os.path.dirname(dst)
+    base = _zerar_base(os.path.basename(src))[0]
+    nomes = [base + s for s in ("",) + _ZERAR_PARES if os.path.lexists(os.path.join(src_dir, base + s))]
+    if not nomes:
         return 0
-    if os.path.lexists(dst):
-        dst = _zerar_ao_lado(dst)
-        print("  zerar: %s já estava no arquivo; o novo foi ao lado (.pos-)" % os.path.relpath(src, HOME))
-    os.makedirs(os.path.dirname(dst), mode=0o700, exist_ok=True)
-    os.rename(src, dst)
-    return 1
+    if _zerar_mover_grupo(src_dir, dst_dir, base, nomes):
+        print("  zerar: %s já estava no arquivo; o novo foi ao lado (.pos-)" % os.path.relpath(os.path.join(src_dir, base), HOME))
+    return len(nomes)
 
 
 def _zerar_imp_arqs():
@@ -13465,6 +13493,8 @@ def _zerar_grava_falha(dados, src=None):
     """24/11 (testador): o zerar-falhou.json sempre com passo e motivo legíveis. Normal: grava pelo .tmp. Sem espaço: src (o
     andamento ou o pedido) vai para o lugar do zerar-falhou.json (rename não precisa de espaço) e é reescrito no próprio bloco
     (o texto é pequeno). -> True se o texto legível ficou gravado. src nunca fica no lugar quando há erro."""
+    # A reescrita no lugar só não pede bloco novo porque este texto é menor que o andamento/pedido que estava lá. Se o texto da
+    # falha crescer (campo novo, motivo longo), o write pode dar ENOSPC e o arquivo fica sem o passo e o motivo (retorno False).
     txt = json.dumps(dados)
     try:
         _grava_privado(ZERAR_FALHOU, txt)
@@ -13618,20 +13648,29 @@ def zerar_partida_segura():
 _ZERAR_FICOU = []
 
 
-def _zerar_volta(src_dir, dst_dir, pos):
-    """Desfazer: devolve cada entrada de src_dir (arquivo) a dst_dir; o que já existe no lugar vai antes para pos."""
+def _zerar_volta(src_dir, dst_dir, pos, soltos=False):
+    """Desfazer: devolve cada entrada de src_dir (arquivo) a dst_dir; o que já existe no lugar vai antes para pos. Banco e pares
+    (-wal, -shm, -journal) voltam em grupo: o grupo que está no lugar sai inteiro antes, mesmo o par sem xará no arquivo (senão o
+    banco devolvido ficaria com o -wal do banco de agora). soltos: só os arquivos (as pastas de dentro são de quem chamou),
+    também os de nome com ponto."""
     n = 0
-    for nome in _zerar_ls(src_dir):
+    nomes = []
+    for nome in (sorted(os.listdir(src_dir)) if soltos else _zerar_ls(src_dir)):
+        if soltos and os.path.isdir(os.path.join(src_dir, nome)):
+            continue
         if _re_zerar_pos.search(nome):           # o que nasceu entre tentativas (_zerar_ao_lado) fica no arquivo
             _ZERAR_FICOU.append(nome)
-            continue
-        dst = os.path.join(dst_dir, nome)
+        else:
+            nomes.append(nome)
+    for base, grupo in _zerar_grupos(nomes):
         os.makedirs(dst_dir, exist_ok=True)
-        if os.path.lexists(dst):
-            os.makedirs(pos, mode=0o700, exist_ok=True)
-            os.rename(dst, os.path.join(pos, nome))
-        os.rename(os.path.join(src_dir, nome), dst)
-        n += 1
+        for s in ("",) + _ZERAR_PARES:
+            if os.path.lexists(os.path.join(dst_dir, base + s)):
+                os.makedirs(pos, mode=0o700, exist_ok=True)
+                os.rename(os.path.join(dst_dir, base + s), os.path.join(pos, base + s))
+        for nome in grupo:
+            os.rename(os.path.join(src_dir, nome), os.path.join(dst_dir, nome))
+            n += 1
     return n
 
 
@@ -13665,22 +13704,16 @@ def zerar_desfazer(zid, sobrescrever=False):
     for rel in ZERAR_NVME_PASTAS:
         voltou[rel] = _zerar_volta(os.path.join(base, *rel.split("/")), _zh(rel), os.path.join(pos, *rel.split("/")))
     n = 0
+    soltos = []
     for raiz, _d, nomes in os.walk(base):
-        for nome in nomes:
-            a = os.path.join(raiz, nome)
-            rel = os.path.relpath(a, base).replace(os.sep, "/")
-            if any(rel.startswith(p + "/") for p in ZERAR_NVME_PASTAS):
-                continue
-            if _re_zerar_pos.search(nome):
-                _ZERAR_FICOU.append(nome)
-                continue
-            dst = _zh(rel)
-            if os.path.lexists(dst):
-                os.makedirs(os.path.dirname(os.path.join(pos, *rel.split("/"))), mode=0o700, exist_ok=True)
-                os.rename(dst, os.path.join(pos, *rel.split("/")))
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            os.rename(a, dst)
-            n += 1
+        rd = os.path.relpath(raiz, base).replace(os.sep, "/")
+        if any((rd + "/").startswith(p + "/") for p in ZERAR_NVME_PASTAS):
+            continue
+        if nomes:
+            soltos.append((raiz, rd))
+    for raiz, rd in soltos:                      # os .pos- ficam; banco e pares em grupo
+        partes = [] if rd == "." else rd.split("/")
+        n += _zerar_volta(raiz, os.path.join(HOME, *partes), os.path.join(pos, *partes), soltos=True)
     voltou["arquivos_soltos"] = n
     # bancos trocados pela cópia (o atual vai para pos-zeragem/bancos)
     for nome in ("VENDAS_DB", "OPERACAO_DB", "NUVEM_DB"):
