@@ -309,6 +309,7 @@ prontas da AWS, começando só contando.
 - 24/11: nuvem atualizada de novo com a v99.40.0 e chave da Imply gravada pelo Ronaldo em `/eterna/imply-chave` (versão 1). Compra ainda desligada até o teste.
 - 24/11 ~01h30: primeiro teste real: o pedido chega à Imply e o setPessoa responde `{"code": 0, "message": "Sem permissão"}`. A chave gravada não tem permissão para criar pessoa/carrinho; falta a Imply liberar o setPessoa (e o GetCart) para essa chave ou passar a chave do usuário de serviço certo.
 - 24/11 (v99.41.0): liga e desliga pelo painel em Configurações › Preços e Checkout › Checkout, card "Compra online na galeria" (Configurações em Alterar). A chave fica na nuvem (`CFG/compra` na tabela, sem registro = ligada) pelas rotas `GET|POST /ponto/compra` com o segredo do ponto; o servidor do ponto repassa pela `POST /compra-online/config`. `CompraOnline=1` e a chave da Imply continuam valendo por cima (sem elas o card mostra "Indisponível na nuvem"). Precisa de novo deploy da `eterna-galeria` (rotas novas no template).
+- 24/11 11h36: a Imply respondeu que liberou a permissão para o usuário de integração (o mesmo da chave gravada). Próximo passo: nova compra de teste pela galeria.
 - Falta: compra de teste real (paga e cancelada na Imply) para fechar.
 
 ## 10. Antes da produção
