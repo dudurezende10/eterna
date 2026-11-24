@@ -183,6 +183,7 @@ try:
         ok(st6 == 200 and m.lx_cfg()["lim"]["esc_rosto_med"] == 10, "6: limite novo gravado: %s %r" % (st6, r6))
         with m.lx_lock:
             m.lx_mem.pop(p6, None)                  # como se o agente reabrisse e o leitor lesse de novo
+            m.lx_vistos.pop(p6, None)
         m.lx_acrescenta(p6, hoje, m.lx_medir(esc, [ROSTO], 1, 1))
         m.lx_grava()
         ok((linhas("lixeira", p6) or [[0, 0, 0, None]])[0][3] == "escura", "6: o veredito gravado não muda: %r" % linhas("lixeira", p6))
@@ -218,11 +219,32 @@ try:
         nomes = [x[0] for x in ordem]
         ok(nomes[:4] == ["mat_acrescenta", "ff_rosto_lido", "sess_rostos_lidos", "lx_medir"], "5: ordem no leitor: %r" % nomes[:8])
         ok(p5a not in m.lx_mem and p5b in m.lx_mem and "desfocada" in m.lx_mem[p5b]["mot"], "5: erro na 1ª medida não derruba o leitor; a 2ª mede: %r" % m.lx_mem.get(p5b))
+        num["ms_medida"] = m.lx_status()["ms_med"]
+        ok(isinstance(num["ms_medida"], float), "revisão: o tempo da medida vai para o /status.lixeira.ms_med: %r" % num["ms_medida"])
         rdb = m.rostos_db()
         ok(rdb.execute("select count(*) from foto where pid in (?, ?)", (p5a, p5b)).fetchone()[0] == 2, "5: a leitura de rostos das duas fotos foi gravada")
         rdb.close()
         for k, v in reais.items():
             setattr(m, k, v)
+        # revisão 24/11 (obrigatório): o leitor não abre banco do estado nem espera o estado_lock. Com a trava presa aqui e o
+        # estado_db quebrado, o leitor mede a foto do mesmo jeito (os limites vêm só da memória)
+        estado_real = m.estado_db
+        abriu = []
+        m.estado_db = lambda *a, **k: abriu.append(1) or estado_real(*a, **k)
+        m._lx_cfg["t"] = 0.0                     # o cache "venceu": antes da revisão o lx_cfg relia o banco aqui
+        p5c = foto()
+        with m.estado_lock:
+            m.fila_rostos.put((0, 3, p5c, arq, time.time()))
+            t0 = time.time()
+            while time.time() - t0 < 10 and p5c not in m.lx_vistos:
+                time.sleep(0.05)
+            ok(p5c in m.lx_vistos and "desfocada" in (m.lx_mem.get(p5c) or {}).get("mot", []), "obrigatório: com o estado_lock preso o leitor mede assim mesmo")
+        ok(not abriu, "obrigatório: o leitor não abriu o estado.db (%d vezes)" % len(abriu))
+        m.estado_db = estado_real
+        # revisão: lx_mem só com as fotos com motivo; as outras só no conjunto das medidas
+        pok_ = foto()
+        m.lx_acrescenta(pok_, hoje, m.lx_medir(img0, [ROSTO], 1, 1))
+        ok(pok_ in m.lx_vistos and pok_ not in m.lx_mem, "revisão: foto sem motivo fica fora do lx_mem")
         # ---------- 7: ETERNA_LIXEIRA=0: nada medido nem gravado ----------
         m.LX_ON = False
         p7 = foto()
@@ -234,14 +256,14 @@ try:
         rdb.close()
         time.sleep(0.2)
         m.lx_grava()
-        ok(p7 not in m.lx_mem and not linhas("lixeira", p7) and m.lx_status()["on"] is False and m.lx_acrescenta(p7, hoje, {"nb": 0}) == [],
+        ok(p7 not in m.lx_mem and p7 not in m.lx_vistos and not linhas("lixeira", p7) and m.lx_status()["on"] is False and m.lx_acrescenta(p7, hoje, {"nb": 0}) == [],
            "7: ETERNA_LIXEIRA=0: nenhuma linha e /status.lixeira.on false")
         m.LX_ON = True
         m._cv.clear()
 
     # ---------- rotas ----------
     with m.lock:                                   # as fotos da parte de módulo saem da biblioteca (não entram na lista)
-        for p in [p for p in m.lib if p in m.lx_mem]:
+        for p in [p for p in m.lib if p in m.lx_vistos]:
             m.lib.pop(p, None)
     srv = ThreadingHTTPServer(("127.0.0.1", 0), m.H)
     m.PORT = srv.server_address[1]
@@ -351,7 +373,7 @@ try:
     # 12 (servidor): em Teste nada some: /status.lixeira.hoje_fora = 0 e o modo é medir
     st, s_ = pede("GET", "/status", cookie=adm)
     lx = s_.get("lixeira") or {}
-    ok(st == 200 and set(lx) == {"v", "on", "modo", "rev", "hoje", "n7", "dias", "valendo", "hoje_fora"} and lx["on"] is True and lx["modo"] == "medir"
+    ok(st == 200 and set(lx) == {"v", "on", "modo", "rev", "hoje", "n7", "dias", "valendo", "hoje_fora", "ms_med"} and lx["on"] is True and lx["modo"] == "medir"
        and lx["hoje_fora"] == 0 and lx["hoje"] == base_hoje - 1 and lx["n7"] == base_hoje and lx["dias"] == 7, "12: /status.lixeira só números e códigos: %r" % lx)
     # 9 (Eduardo, 24/11): o menu conta os últimos 7 dias; a de 8 dias atrás fica fora
     p8 = foto()
@@ -415,6 +437,11 @@ try:
     rotulo(pa, "ajustar", ["escura"])
     m.lx_acrescenta(pdv, ontem, ESC)
     rotulo(pdv, "fraca", ["escura"], duvida=True)
+    pboa = foto()                                 # marcada "boa" (pode) e mandada para a lixeira: erro
+    m.lx_acrescenta(pboa, ontem, ESC)
+    rotulo(pboa, "boa")
+    psem = foto()                                 # na lixeira, sem marcação nem recuperação: fora da conta
+    m.lx_acrescenta(psem, ontem, ESC)
     pl = foto()                                   # medida só de luz (de antes da lixeira): conta para escura
     with m.treino_lock:
         db = m.treino_db()
@@ -425,9 +452,10 @@ try:
     m.lx_grava()
     st, md = pede("GET", "/lixeira/medida", cookie=sup)
     e = (md.get("motivos") or {}).get("escura") or {}
-    # escura: 20 certas + pl (luz) = 21 certas; pa (ajustar) e pe (recuperada, sem marcação) = 2 erradas; pdv (dúvida) fora
-    ok(st == 200 and e.get("n") == 23 and e.get("certas") == 21 and e.get("erradas") == 2 and e.get("mesmo_motivo") == 16
-       and abs((e.get("precisao") or 0) - 21 / 23) < 1e-3 and e.get("passa") is False and any(f["k"] == "precisao" for f in e.get("falta") or [])
+    # escura: 20 certas + pl (luz) = 21 certas; pa (ajustar), pboa (boa) e pe (recuperada, sem marcação) = 3 erradas; pdv
+    # (dúvida) e psem (sem marcação) fora
+    ok(st == 200 and e.get("n") == 24 and e.get("certas") == 21 and e.get("erradas") == 3 and e.get("mesmo_motivo") == 16
+       and abs((e.get("precisao") or 0) - 21 / 24) < 1e-3 and e.get("passa") is False and any(f["k"] == "precisao" for f in e.get("falta") or [])
        and md.get("recuperadas") == 1, "15: régua da escura: %s %r" % (st, e))
     dsf = md["motivos"]["desfocada"]
     ok(dsf["n"] == 0 and dsf["passa"] is False and dsf["falta"][0] == {"k": "n", "tem": 0, "precisa": 20}, "15: desfocada sem marcação: falta n: %r" % dsf)

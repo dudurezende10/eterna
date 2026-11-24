@@ -1094,8 +1094,9 @@ def leitor_loop(det, rec, db):
         # 24/11 (Lixeira da IA): o veredito sai aqui, na mesma imagem e com as mesmas caixas, depois da selfie e da luz
         if img_l is not None and LX_ON:
             try:
-                lx_acrescenta(pid, os.path.basename(os.path.dirname(path)),
-                              lx_medir(img_l, [f[4] for f in fs_l if len(f) > 4], len(fs_l), nb[0] if nb else None, v_l))
+                t_x = time.time()
+                d_x = lx_medir(img_l, [f[4] for f in fs_l if len(f) > 4], len(fs_l), nb[0] if nb else None, v_l)
+                lx_acrescenta(pid, os.path.basename(os.path.dirname(path)), d_x, round((time.time() - t_x) * 1000, 1))
             except Exception as ex:
                 print("  lixeira: %s" % type(ex).__name__)
         img = img_l = fs_l = None
@@ -14912,13 +14913,17 @@ LX_ITENS_MAX = 3000
 LX_MENU_DIAS = 7             # Eduardo (24/11): a contagem do menu é dos últimos 7 dias (hoje incluído), sem as recuperadas
 LX_ON = os.environ.get("ETERNA_LIXEIRA") != "0"
 LX_QUADRO_LADO = 1024        # o quadro central (60%) é medido com o lado maior reduzido a este tamanho; o rosto, na MESMA escala
+#                              (revisão 24/11: resize INTER_LINEAR, 7 vezes mais barato que o INTER_AREA e com os mesmos números nos
+#                              fundos do repositório: nítida 444 ou mais, sigma 4 de 20 a 43, sigma 8 de 9 a 13)
 #                              (24/11: reduzido a 160 px, como no plano, o valor do rosto borrado ia de 11 a 88 conforme o tamanho
 #                              dele; na escala do quadro, sigma 8 dá 10 a 23 e o rosto nítido dá 430 ou mais; por isso nit_rosto 25)
 LX_TREINO_MOTIVO = {"escura": "escura", "estourada": "estourada", "desfocada": "desfocada", "sem_ninguem": "semrosto"}
 lx_lock = threading.Lock()
 lx_novas = collections.OrderedDict()        # pid -> (dia, dados, mot, em) esperando o lx_grava_loop
-lx_mem = {}                                 # pid -> {"dia", "mot", "em", "rec"} dos últimos LX_MENU_DIAS dias (contagem do menu, Parte B)
-lx_st = {"rev": 0, "limpa_dia": "", "limpa_tent": 0.0}
+lx_mem = {}                                 # pid -> {"dia", "mot", "em", "rec"}: só as fotos COM motivo dos últimos LX_MENU_DIAS dias
+#                                             (contagem do menu; Parte B); o lx_status percorre só estas
+lx_vistos = {}                              # pid -> dia: as fotos já medidas nos últimos LX_MENU_DIAS dias (o veredito não muda)
+lx_st = {"rev": 0, "limpa_dia": "", "limpa_tent": 0.0, "ms_total": 0.0, "ms_n": 0}
 lx_parar = threading.Event()                # só os testes ligam: os laços terminam
 _lx_med = {"t": 0.0, "r": None}
 _lx_cfg = {"t": 0.0, "v": None}
@@ -14953,7 +14958,7 @@ def lx_medir(img, caixas, n, nb, luz=None):
         c = img[y0:y1, x0:x1]
         k = min(1.0, LX_QUADRO_LADO / max(c.shape[:2]))
         if k < 1:
-            c = cv2.resize(c, (max(1, int(c.shape[1] * k)), max(1, int(c.shape[0] * k))), interpolation=cv2.INTER_AREA)
+            c = cv2.resize(c, (max(1, int(c.shape[1] * k)), max(1, int(c.shape[0] * k))), interpolation=cv2.INTER_LINEAR)
         nq = _lx_nitidez(cv2.cvtColor(c, cv2.COLOR_BGR2GRAY) if c.ndim == 3 else c)
         cs = [b for b in (caixas or []) if b and len(b) >= 4 and b[2] > 0 and b[3] > 0]
         if cs:
@@ -14963,7 +14968,7 @@ def lx_medir(img, caixas, n, nb, luz=None):
             if (fx1 - fx0) * k >= 8 and (fy1 - fy0) * k >= 8:
                 f = img[fy0:fy1, fx0:fx1]
                 if k < 1:
-                    f = cv2.resize(f, (max(1, int(f.shape[1] * k)), max(1, int(f.shape[0] * k))), interpolation=cv2.INTER_AREA)
+                    f = cv2.resize(f, (max(1, int(f.shape[1] * k)), max(1, int(f.shape[0] * k))), interpolation=cv2.INTER_LINEAR)
                 nr = _lx_nitidez(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 else f)
     return {"v": LX_V, "nq": _lx_r1(nq), "nr": _lx_r1(nr), "n": int(n or 0), "nb": None if nb is None else int(nb), "luz": lz}
 
@@ -15054,6 +15059,12 @@ def lx_cfg():
     return v
 
 
+def lx_cfg_mem():
+    """A chave e os limites SÓ da memória (revisão 24/11): o leitor de rostos e o /status nunca abrem o estado.db nem esperam o
+    estado_lock. Quem relê o banco é o lx_grava_loop (lx_cfg, a cada LX_GRAVA_SEG); antes da primeira leitura, o padrão."""
+    return _lx_cfg["v"] or dict(LX_CFG_PADRAO, lim=dict(LX_LIM_PADRAO), em=None)
+
+
 def lx_cfg_gravar(corpo, quem):
     """POST /lixeira/config {modo?, lim?}: só o Admin (conferido na rota). -> (status, resposta)"""
     if not isinstance(corpo, dict) or not corpo or set(corpo) - {"modo", "lim"}:
@@ -15093,21 +15104,27 @@ def lx_cfg_gravar(corpo, quem):
     return 200, {"ok": True, "cfg": v}
 
 
-def lx_acrescenta(pid, dia, dados):
-    """Veredito na chegada (D3): os limites de agora decidem. Vai para a fila de gravação e para a memória de hoje e ontem."""
+def lx_acrescenta(pid, dia, dados, ms=None):
+    """Veredito na chegada (D3): os limites de agora decidem (da memória, lx_cfg_mem: roda no leitor de rostos). Vai para a fila
+    de gravação; com motivo, também para a memória da contagem. ms = o tempo da medida (média no /status.lixeira)."""
     if not LX_ON or not isinstance(dados, dict):
         return []
-    mot = lx_classe(dados, lx_cfg()["lim"])
+    mot = lx_classe(dados, lx_cfg_mem()["lim"])
     em = _iso()
     with lx_lock:
-        if pid in lx_mem:                # já tem veredito (o leitor leu de novo a mesma foto): não muda
-            return lx_mem[pid]["mot"] or []
+        if ms is not None:
+            lx_st["ms_total"] += ms
+            lx_st["ms_n"] += 1
+        if pid in lx_vistos:             # já tem veredito (o leitor leu de novo a mesma foto): não muda
+            x = lx_mem.get(pid)
+            return (x or {}).get("mot") or []
         lx_novas.pop(pid, None)
         lx_novas[pid] = (dia, dados, ",".join(mot) or None, em)
         while len(lx_novas) > LX_FILA_MAX:
             lx_novas.popitem(last=False)
-        lx_mem[pid] = {"dia": dia, "mot": mot, "em": em, "rec": None}
+        lx_vistos[pid] = dia
         if mot:
+            lx_mem[pid] = {"dia": dia, "mot": mot, "em": em, "rec": None}
             lx_st["rev"] += 1
     return mot
 
@@ -15146,8 +15163,13 @@ def lx_grava():
 
 
 def lx_grava_loop():
+    """Grava a fila e relê a chave do estado.db (lx_cfg), para o leitor de rostos só ler a memória (lx_cfg_mem)."""
     while not lx_parar.is_set():
         lx_parar.wait(LX_GRAVA_SEG)
+        try:
+            lx_cfg()
+        except Exception as ex:
+            print("  lixeira: chave %s" % type(ex).__name__)
         try:
             lx_grava()
         except Exception as ex:
@@ -15175,7 +15197,10 @@ def lx_mem_carregar():
         rs = [r for r in rs if r[0] in lib]
     with lx_lock:
         for p, d, mot, em, rec in rs:
-            lx_mem[p] = {"dia": d, "mot": [m for m in (mot or "").split(",") if m in LX_MOTIVOS], "em": em, "rec": rec}
+            lx_vistos[p] = d
+            ms = [m for m in (mot or "").split(",") if m in LX_MOTIVOS]
+            if ms:
+                lx_mem[p] = {"dia": d, "mot": ms, "em": em, "rec": rec}
     return len(rs)
 
 
@@ -15184,6 +15209,7 @@ def lx_lgpd_mem(pids):
     with lx_lock:
         for p in pids:
             lx_novas.pop(p, None)
+            lx_vistos.pop(p, None)
             if lx_mem.pop(p, None) is not None:
                 lx_st["rev"] += 1
 
@@ -15357,13 +15383,15 @@ def lx_medida(lim=None):
         mot_treino[p] = set(q.get("motivos") or [])
     meds, recs = {}, set()
     for p, d, rec in lx:
+        if rec:
+            recs.add(p)
+            verdade[p] = False                # "Não é ruim" conta como erro da lixeira
+        elif p not in verdade:
+            continue                          # revisão 24/11: só decodifica a linha que entra na conta (marcada ou recuperada)
         try:
             meds[p] = json.loads(d) or {}
         except ValueError:
             pass
-        if rec:
-            recs.add(p)
-            verdade[p] = False                # "Não é ruim" conta como erro da lixeira
     falta_luz = [p for p in verdade if p not in meds]
     for p, v in luz_ler(falta_luz).items():
         if isinstance(v, dict) and v.get("src") == "original":
@@ -15406,19 +15434,20 @@ def lx_status():
     dos últimos LX_MENU_DIAS dias (a contagem do menu, decisão do Eduardo de 24/11); dias = LX_MENU_DIAS."""
     hoje = _ff_hoje()
     dias = set(_lx_dias_mem())
-    with lx_lock:
-        ps = [(p, x["dia"] == hoje) for p, x in lx_mem.items() if x["dia"] in dias and x["mot"] and not x["rec"]]
+    with lx_lock:                        # lx_mem só tem as fotos com motivo (revisão 24/11): a trava fica pouco tempo
+        ps = [(p, x["dia"] == hoje) for p, x in lx_mem.items() if x["dia"] in dias and not x["rec"]]
         rev = lx_st["rev"]
+        ms = round(lx_st["ms_total"] / lx_st["ms_n"], 1) if lx_st["ms_n"] else None
     with lock:
         vivas = [h for p, h in ps if p in lib]
-    c = lx_cfg()
+    c = lx_cfg_mem()
     return {"v": 1, "on": LX_ON, "modo": c["modo"], "rev": rev, "hoje": sum(vivas) if LX_ON else 0, "n7": len(vivas) if LX_ON else 0,
-            "dias": LX_MENU_DIAS, "valendo": c["valendo"], "hoje_fora": 0}
+            "dias": LX_MENU_DIAS, "valendo": c["valendo"], "hoje_fora": 0, "ms_med": ms}
 
 
 def lx_limpa(agora=None):
-    """Apaga a linha da foto que saiu da biblioteca há mais de 24 h, menos as recuperadas e as marcadas no Treino (são a régua).
-    O lixeira_log fica. -> linhas apagadas"""
+    """Apaga a linha da foto que já não está na biblioteca e foi medida há mais de 24 h (pela hora da medida, em), menos as
+    recuperadas e as marcadas no Treino (são a régua). O lixeira_log fica. -> linhas apagadas"""
     if not os.path.exists(TREINO_DB):
         return 0
     agora = agora or time.time()
@@ -15440,6 +15469,7 @@ def lx_limpa(agora=None):
     with lx_lock:
         for p in fora:
             lx_mem.pop(p, None)
+            lx_vistos.pop(p, None)
     return len(fora)
 
 
@@ -15466,10 +15496,12 @@ def lx_loop():
     while not lx_parar.is_set():
         try:
             lx_limpa_noite()
-            dias = _lx_dias_mem()
+            dias = set(_lx_dias_mem())
             with lx_lock:
                 for p in [p for p, x in lx_mem.items() if x["dia"] not in dias]:
                     lx_mem.pop(p, None)
+                for p in [p for p, d in lx_vistos.items() if d not in dias]:
+                    lx_vistos.pop(p, None)
         except Exception as ex:
             print("  lixeira: %s" % type(ex).__name__)
         lx_parar.wait(60)
@@ -22068,7 +22100,8 @@ def main():
     threading.Thread(target=luz_grava_loop, daemon=True).start()   # 23/11 (AF): medidas de luz em lote no treino.db
     threading.Thread(target=luz_loop, daemon=True).start()         # 23/11 (AF): varredura de 30 dias, prioridade baixa
     try:
-        lx_mem_carregar()                                         # 24/11: Lixeira da IA (hoje e ontem, para a contagem do menu)
+        lx_cfg()                                                  # 24/11: Lixeira da IA: a chave na memória antes do leitor
+        lx_mem_carregar()                                         # e as fotos dos últimos 7 dias (LX_MENU_DIAS), para a contagem do menu
     except Exception as ex:
         print("  lixeira: memória não carregada (%s)" % type(ex).__name__)
     threading.Thread(target=lx_grava_loop, daemon=True).start()    # 24/11: vereditos da Lixeira da IA em lote no treino.db
