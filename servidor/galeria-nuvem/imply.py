@@ -132,7 +132,12 @@ def situacao(ref):
         if j.get("error"):
             raise ImplyErro("GetCart: %s" % json.dumps(j["error"])[:160])
         j = j.get("result")
-    lista = _dicts(j)
+    # 24/11 (log real): o result é uma página {total_pages, total_results, current_page, page_summary, tickets}; cada ticket é
+    # um item do pedido, com o próprio status. O formato da seção 7 (pedido com pag e itens) continua aceito.
+    if isinstance(j, dict) and isinstance(j.get("tickets"), list):
+        lista = _dicts(j["tickets"])
+    else:
+        lista = _dicts(j)
     # 24/11 (1º teste real, "sem pedido" com o PIX pago): a referência é procurada em idreferencia e, se não vier aí, em qualquer
     # campo do pedido com o valor exato do nosso código (o nome do campo na resposta não estava na seção 7)
     peds = [p for p in lista if str(p.get("idreferencia") or "") == ref] or [p for p in lista if any(str(v) == ref for v in p.values())
@@ -147,6 +152,8 @@ def situacao(ref):
             forma += "; campos do item: " + ",".join(sorted(it0[0].keys()))[:300]
         print("GetCart %s: sem pedido com a referência (%s)" % (ref, forma))
         return "pendente", {"bruto": ("sem pedido (%d na resposta)" % len(lista))[:60]}
+    if not any("itens" in p or "pag" in p for p in peds):
+        return _situacao_tickets(ref, peds)
     for p in peds:
         itens = _dicts(p.get("itens"))
         pags = [_st(x) for x in _dicts(p.get("pag"))]
@@ -158,4 +165,31 @@ def situacao(ref):
     bruto = ",".join(sorted(set(todos)))[:60] or "sem itens"
     if todos and all(t in ST_FIM for t in todos):
         return "cancelado", {"idpedido": peds[0].get("localizador") or peds[0].get("idmovimentacao"), "bruto": bruto}
+    return "pendente", {"bruto": bruto}
+
+
+def _valor_tickets(ts):
+    """Soma o valor dos tickets pelo primeiro campo de valor que todos tenham; sem campo de valor, None."""
+    for campo in ("valor_pago", "valor", "total", "subtotal"):
+        try:
+            if all(t.get(campo) not in (None, "") for t in ts):
+                return round(sum(float(t[campo]) for t in ts), 2)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _situacao_tickets(ref, ts):
+    """Tickets da referência (formato real do GetCart): pago se todos PA; cancelado se todos CA/EX/PC. Log só com os nomes
+    dos campos (sem valores, sem dado de pessoa)."""
+    sts = [_st(t) for t in ts]
+    loc = next((str(t.get(k)) for t in ts for k in ("localizador", "idmovimentacao", "idpurchase") if t.get(k)), None)
+    campos = ",".join(sorted(ts[0].keys()))[:400]
+    if sts and all(x == "PA" for x in sts):
+        print("GetCart %s: pago, %d tickets (campos: %s)" % (ref, len(ts), campos))
+        return "pago", {"idpedido": loc, "valor": _valor_tickets(ts), "meio": None, "bruto": "PA %d tickets" % len(ts)}
+    bruto = ",".join(sorted(set(sts)))[:60] or "sem status"
+    print("GetCart %s: tickets %s (campos: %s)" % (ref, bruto, campos))
+    if sts and all(x in ST_FIM for x in sts):
+        return "cancelado", {"idpedido": loc, "bruto": bruto}
     return "pendente", {"bruto": bruto}

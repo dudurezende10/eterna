@@ -271,6 +271,17 @@ ok(gc({"result": {"9": P_}})[0] == "pago", "GetCart: result com pedidos por id")
 ok(gc({"result": {"total": 1, "status": True, "pedidos": [P_]}})[0] == "pago", "GetCart: result com a lista dentro de uma chave")
 ok(gc({"result": dict(P_, pag={"status": "PA"}, itens={"a": it_("PA", 35.0)})})[0] == "pago", "GetCart: pag e itens como objeto")
 ok(gc({"result": {}})[0] == "pendente" and gc({"result": dict(P_, idreferencia="OUTRO", localizador="X")})[0] == "pendente", "GetCart: objeto vazio ou de outra referência não libera")
+# 24/11 (log real): result = página com tickets; cada ticket é um item com status próprio
+PG_ = lambda ts: {"id": None, "error": None, "result": {"total_pages": 1, "total_results": len(ts), "current_page": 1,
+      "page_summary": {"cupom": None, "quantity": len(ts), "subtotal": 35, "total": 35}, "tickets": ts}}
+T_ = lambda st, ref="ON-ABC", v="35": {"idreferencia": ref, "localizador": "11248XX", "status": st, "valor": v}
+st_, d_ = gc(PG_([T_("PA"), T_("PA", v="10")]))
+ok(st_ == "pago" and d_["idpedido"] == "11248XX" and d_["valor"] == 45.0, "GetCart tickets: todos PA = pago, localizador e valor somado: %r" % ((st_, d_),))
+ok(gc(PG_([]))[0] == "pendente", "GetCart tickets: lista vazia = pendente (o resumo da página não vira pedido)")
+ok(gc(PG_([T_("PA"), T_("RE")]))[0] == "pendente", "GetCart tickets: um ainda reservado não libera")
+ok(gc(PG_([T_("PA", ref="OUTRO")]))[0] == "pendente", "GetCart tickets: ticket de outra referência não libera")
+ok(gc(PG_([T_("CA"), T_("EX")]))[0] == "cancelado", "GetCart tickets: todos CA/EX = cancelado")
+ok(gc(PG_([{"idreferencia": "ON-ABC", "localizador": "L", "status": "PA"}]))[1]["valor"] is None, "GetCart tickets: sem campo de valor, valor None")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "RE"}], "itens": [it_("RE")]}])[0] == "pendente", "GetCart: reservado = pendente")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "PA"}], "itens": [it_("PA"), it_("CA")]}])[0] == "pendente", "GetCart: item cancelado no meio não libera")
 ok(gc([{"idreferencia": "ON-ABC", "pag": [{"status": "CA"}], "itens": [it_("CA"), it_("EX")]}])[0] == "cancelado", "GetCart: todos CA/EX = cancelado")
