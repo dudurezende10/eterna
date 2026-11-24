@@ -420,6 +420,9 @@ try:
     an = json.load(open(m.ZERAR_ANDA)) if os.path.exists(m.ZERAR_ANDA) else {}
     ok(an.get("tentativas") == 1 and n_sql(P("ponto", "vendas.db"), "select count(*) from evento") == 0 and len(vivos(P("inbox"))) >= 1,
        "21: parou no meio: bancos já zerados, fotos ainda na inbox: %s" % an)
+    # revisão 24/11: originais vem depois de mover_midia; parado no mover_midia, o registro do backup-originais fica intacto
+    ok(n_sql(BO, "select count(*) from feito") == 4 and n_sql(BO, "select count(*) from sqlite_master where name='arquivado'") == 0,
+       "21: parado no mover_midia, a tabela feito do backup-originais não foi esvaziada")
     ok(sobe({"ETERNA_MODO_TESTE": "1"}, seg=90), "21: a partida seguinte não terminou: " + log_txt()[-600:])
     st, j = pede("GET", "/status")
     ok(j.get("zerada") == ZID, "12: /status.zerada = id: %s" % j.get("zerada"))
@@ -494,7 +497,7 @@ try:
     ok(rj.get("prazo_dias") == 30 and rj.get("apagar_a_partir_de") and any(rj["apagar_a_partir_de"] in ln for ln in zl), "D9: prazo de 30 dias no resumo e no console")
     # 16 (passos) e 17: registro dos originais
     pz = [json.loads(x) for x in open(os.path.join(ARQ, "passos.jsonl"))]
-    ok([x["passo"] for x in pz if x["ok"]] == ["preparo", "copias", "vendas", "operacao", "nuvem", "estado", "originais", "mover_nvme", "mover_midia", "fim"]
+    ok([x["passo"] for x in pz if x["ok"]] == ["preparo", "copias", "vendas", "operacao", "nuvem", "estado", "mover_nvme", "mover_midia", "originais", "fim"]
        and any(x["passo"] == "mover_midia" and not x["ok"] and x["erro"] == "falha_teste" for x in pz), "21: passos com a parada e a retomada: %s" % pz)
     ok(n_sql(BO, "select count(*) from feito") == 0 and n_sql(BO, "select count(*) from arquivado where arquivo=?", (ZID,)) == 4, "17: feito vai para arquivado")
     # 18: segundo POST
@@ -550,6 +553,61 @@ try:
     espera_sair(5)
     ok(sobe({"ETERNA_MODO_TESTE": "1"}, seg=90) and pede("GET", "/status")[1].get("zerada") == Z2, "21: retomada pelo botão termina: " + log_txt()[-400:])
     ok(vivos(P("inbox")) == [] and n_sql(BO, "select count(*) from feito") == 0, "21: retomada com o mesmo resultado do 8")
+    para()
+
+    # ---------------------------------------- revisão 24/11: laço de reinício na partida ----------------------------------------
+    # o passos.jsonl não pode ser gravado (aqui, é uma pasta): até a 4ª partida o /status responde e o andamento não fica
+    def pedido(zid, **extra):
+        json.dump(dict({"id": zid, "por": "admin-zr", "por_nome": "Admin", "em": m._iso(), "t": time.time(), "ip": "127.0.0.1"}, **extra),
+                  open(m.ZERAR_PEDIDO, "w"))
+    for f in (m.ZERAR_FALHOU,):
+        if os.path.exists(f):
+            os.remove(f)
+    Z3 = "fase-teste-20261124-2301"
+    os.makedirs(os.path.join(P("arquivo", Z3), "passos.jsonl"))
+    pedido(Z3)
+    sobem = []
+    for i in range(4):
+        sobem.append(bool(sobe({"ETERNA_MODO_TESTE": "1"}, seg=60)))
+        ok(not os.path.exists(m.ZERAR_ANDA), "laço: partida %d com o zerar-andamento.json no lugar" % (i + 1))
+        para()
+    ok(all(sobem), "laço: passos.jsonl sem gravar, o /status responde nas 4 partidas: %s · %s" % (sobem, log_txt()[-400:]))
+    fz = json.load(open(m.ZERAR_FALHOU)) if os.path.exists(m.ZERAR_FALHOU) else {}
+    ok(fz.get("id") == Z3 and fz.get("passo") == "preparo", "laço: vira zerar-falhou.json no preparo: %s" % fz)
+    ok(m.ZERAR_FEITA and json.load(open(m.ZERAR_FEITA)).get("id") == Z2, "laço: a zerada anterior não mudou")
+    # o andamento já com 3 tentativas (a partida anterior caiu depois de somar): não tenta a 4ª, sobe normal
+    os.remove(m.ZERAR_FALHOU)
+    Z4 = "fase-teste-20261124-2302"
+    json.dump({"id": Z4, "por": "admin-zr", "tentativas": 3}, open(m.ZERAR_ANDA, "w"))
+    ok(sobe({"ETERNA_MODO_TESTE": "1"}, seg=60), "laço: andamento com 3 tentativas, o agente sobe: " + log_txt()[-400:])
+    fz = json.load(open(m.ZERAR_FALHOU)) if os.path.exists(m.ZERAR_FALHOU) else {}
+    ok(fz.get("id") == Z4 and fz.get("motivo") == "tentativas" and not os.path.exists(m.ZERAR_ANDA), "laço: 3 tentativas viram zerar-falhou.json: %s" % fz)
+    para()
+    # erro fora dos passos que escapa do zerar_partida (o zerar-falhou.json não pode ser gravado): o andamento sai e o agente sobe
+    os.remove(m.ZERAR_FALHOU)
+    os.makedirs(m.ZERAR_FALHOU)
+    pedido(Z3)
+    sobem = []
+    for i in range(4):
+        sobem.append(bool(sobe({"ETERNA_MODO_TESTE": "1"}, seg=60)))
+        ok(not os.path.exists(m.ZERAR_ANDA) and not os.path.exists(m.ZERAR_PEDIDO), "laço: partida %d com andamento ou pedido no lugar" % (i + 1))
+        para()
+    ok(all(sobem) and "a partida falhou" in log_txt(), "laço: zerar-falhou.json sem gravar, o /status responde nas 4 partidas: %s" % sobem)
+    os.rmdir(m.ZERAR_FALHOU)
+    # revisão 24/11: preparo confere escrita; cópia dos bancos apaga a .tmp que sobrou de uma tentativa que caiu
+    real = os.access
+    try:
+        os.access = lambda p, modo, **k: False if os.path.basename(p) == "thumbs" else real(p, modo, **k)
+        se = m._zerar_sem_escrita()
+    finally:
+        os.access = real
+    ok(se == ["thumbs"] and m._zerar_sem_escrita() == [], "preparo: pasta sem escrita aparece antes de mexer: %s" % se)
+    cp = os.path.join(HOME, "copia-teste")
+    os.makedirs(os.path.join(cp, "bancos"))
+    open(os.path.join(cp, "bancos", "vendas.db.tmp"), "wb").write(b"lixo de uma copia que caiu no meio" * 10)
+    n_cp = m._zp_copias({"arq": cp})
+    ok(n_cp >= 1 and n_sql(os.path.join(cp, "bancos", "vendas.db"), "select count(*) from sqlite_master") > 0
+       and not os.path.exists(os.path.join(cp, "bancos", "vendas.db.tmp")), "copias: a .tmp que sobrou é apagada antes de copiar: %s" % n_cp)
 except Exception:
     import traceback
     falhas.append("exceção: " + traceback.format_exc()[-1500:])
@@ -557,5 +615,5 @@ finally:
     para()
 
 print(("OK" if not falhas else "FALHA") + " zerar_fase_teste_agente: prévia, recusas, sem supervisor, vencido, espaço, parada e retomada, arquivo, o que fica,"
-      " cartões, série diária, telas vazias, permissões, desfazer e 3 tentativas" + ("" if not falhas else " · " + " | ".join(falhas)))
+      " cartões, série diária, telas vazias, permissões, desfazer, 3 tentativas e partida sem laço" + ("" if not falhas else " · " + " | ".join(falhas)))
 sys.exit(1 if falhas else 0)

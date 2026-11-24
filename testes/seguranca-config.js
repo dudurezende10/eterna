@@ -17,4 +17,4 @@ try{const ctx=await b.newContext({viewport:{width:1440,height:900}});await ctx.r
   const r2=await pg.evaluate(()=>({img:document.querySelectorAll('#main img[src="x"], #main [onerror]').length,txt:(document.querySelector('#main')||{}).textContent||'',xss:window.__xss}));
   ok(r2.img===0&&r2.xss===0&&/<img src=x/i.test(r2.txt),'o nome aparece como texto em Fotógrafos: '+JSON.stringify({img:r2.img,xss:r2.xss,tem:(r2.txt.match(/.{0,40}Mal/)||[""])[0]}));
 }catch(e){fails.push('exceção: '+e.message.split('\n')[0]);}
-await b.close();const okA=!fails.length&&!errs.length;console.log(`${okA?'OK':'FALHA'} seguranca-config: nome da Roverpix como texto no Upload${fails.length?' · '+fails.join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okA?0:1);})();
+await b.close();const okA=!fails.length&&!errs.length;console.log(`${okA?'OK':'FALHA'} seguranca-config: nome da Roverpix como texto no Upload e em Fotógrafos (Índice)${fails.length?' · '+fails.join(' | '):''}${errs.length?' · erros: '+errs.slice(0,3).join(' | '):''}`);process.exit(okA?0:1);})();

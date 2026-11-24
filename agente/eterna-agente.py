@@ -13138,10 +13138,34 @@ def _zerar_imp_arqs():
     return out
 
 
+def _zerar_sem_escrita():
+    """24/11 (revisão): as pastas cujo conteúdo vai ser movido (e as que guardam os arquivos soltos), sem permissão de escrita.
+    Um EACCES aparece no preparo, antes de mexer em qualquer coisa. Subpasta de primeiro nível também: mover pasta para outro
+    lugar muda o ".." dela."""
+    pastas = [_zh(r) for r in ZERAR_NVME_PASTAS + tuple(zerar_midia_pastas())]
+    pastas += sorted({os.path.dirname(_zh(r)) for r in ZERAR_NVME_ARQS + tuple(_zerar_imp_arqs())})
+    ruins = []
+    for d in pastas:
+        if not os.path.isdir(d):
+            continue
+        if not os.access(d, os.W_OK | os.X_OK):
+            ruins.append(d)
+            continue
+        for n in _zerar_ls(d):
+            sub = os.path.join(d, n)
+            if os.path.isdir(sub) and not os.path.islink(sub) and not os.access(sub, os.W_OK):
+                ruins.append(sub)
+    return list(dict.fromkeys(os.path.relpath(x, HOME) for x in ruins))
+
+
 def _zp_preparo(ctx):
     bq = [x for x in zerar_bloqueios() if x not in ("ja_zerado", "em_andamento")]
     if bq:
         raise ZerarErro(",".join(bq))
+    se = _zerar_sem_escrita()
+    if se:
+        print("  zerar: sem permissão de escrita em %d pasta(s): %s" % (len(se), ", ".join(se[:5])))
+        raise ZerarErro("sem_escrita")
     for p in (ARQUIVO_DIR, ARQUIVO_MIDIA, ctx["arq"], ctx["midia"]):
         _zerar_dir(p)
     _grava_privado(os.path.join(ctx["arq"], "antes.json"), json.dumps(zerar_inventario()))
@@ -13157,6 +13181,9 @@ def _zp_copias(ctx):
         dst = os.path.join(pasta, os.path.basename(src))
         if not os.path.exists(src) or os.path.exists(dst):     # cópia feita numa tentativa anterior fica (o banco já pode ter mudado)
             continue
+        for sobra in (dst + ".tmp", dst + ".tmp-journal", dst + ".tmp-wal", dst + ".tmp-shm"):   # tentativa anterior que caiu no meio
+            if os.path.exists(sobra):
+                os.remove(sobra)
         a, b = sqlite3.connect(src, timeout=30), sqlite3.connect(dst + ".tmp")
         try:
             a.backup(b)
@@ -13305,10 +13332,12 @@ def _zp_fim(ctx):
 
 
 def zerar_passos():
-    """Ordem da execução (a mesma lista guia o desfazer, ao contrário)."""
+    """Ordem da execução (o desfazer não depende dela: cada parte volta pelo que está no arquivo)."""
     return [("preparo", _zp_preparo), ("copias", _zp_copias), ("vendas", _zp_vendas), ("operacao", _zp_operacao), ("nuvem", _zp_nuvem),
-            ("estado", _zp_estado), ("originais", _zp_originais), ("mover_nvme", _zp_mover_nvme), ("mover_midia", _zp_mover_midia),
+            ("estado", _zp_estado), ("mover_nvme", _zp_mover_nvme), ("mover_midia", _zp_mover_midia), ("originais", _zp_originais),
             ("fim", _zp_fim)]
+    # 24/11 (revisão): originais só depois de mover_midia. Se mover_midia parar, a tabela feito do backup-originais.db fica
+    # como estava; esvaziada antes, com as fotos de teste ainda na inbox, a rodada seguinte reenviaria todos os originais.
 
 
 def _zerar_log(acao, por, ip=""):
@@ -13387,7 +13416,14 @@ def zerar_partida():
     if not isinstance(zid, str) or not _re_zerada.match(zid):
         _zerar_falhou(None, "preparo", "pedido", por)
         return None
-    j["tentativas"] = int(j.get("tentativas") or 0) + 1
+    try:
+        tent = int(j.get("tentativas") or 0)
+    except (TypeError, ValueError):
+        tent = ZERAR_TENTATIVAS
+    if tent >= ZERAR_TENTATIVAS:                  # 24/11 (revisão): já tentou 3 vezes (mesmo que o registro do passo tenha falhado)
+        _zerar_falhou(zid, _zerar_ultima_falha(os.path.join(ARQUIVO_DIR, zid)) or "partida", "tentativas", por)
+        return None
+    j["tentativas"] = tent + 1
     _grava_privado(ZERAR_ANDA, json.dumps(j))
     ctx = {"id": zid, "arq": os.path.join(ARQUIVO_DIR, zid), "midia": os.path.join(ARQUIVO_MIDIA, zid), "por": por,
            "por_nome": j.get("por_nome") if isinstance(j.get("por_nome"), str) else por}
@@ -13401,19 +13437,69 @@ def zerar_partida():
             if falha_teste == nome:
                 raise ZerarErro("falha_teste")
             n = fn(ctx)
+            _zerar_passo_log(ctx, nome, True, n)      # sem o registro, o passo conta como não feito (a próxima tentativa refaz)
         except Exception as ex:
             codigo = ex.codigo if isinstance(ex, ZerarErro) else type(ex).__name__
             if nome == "preparo":                     # nada foi tocado: recusa e o agente sobe normal
                 _zerar_falhou(zid, nome, codigo, por)
                 return None
-            _zerar_passo_log(ctx, nome, False, 0, codigo)
+            try:
+                _zerar_passo_log(ctx, nome, False, 0, codigo)
+            except Exception as ex2:                  # disco cheio, por exemplo: a tentativa já foi contada no andamento
+                print("  zerar: registro do passo não gravado (%s)" % type(ex2).__name__)
             if j["tentativas"] >= ZERAR_TENTATIVAS:
                 _zerar_falhou(zid, nome, codigo, por)
                 return None
             print("  zerar: parou em %s (%s); o agente sai e o systemd religa para continuar" % (nome, codigo))
             return "sair"
-        _zerar_passo_log(ctx, nome, True, n)
     return "execv"
+
+
+def _zerar_ultima_falha(arq):
+    """O último passo que falhou no passos.jsonl (None se não há ou não dá para ler)."""
+    ult = None
+    try:
+        with open(os.path.join(arq, "passos.jsonl"), encoding="utf8") as f:
+            for ln in f:
+                try:
+                    x = json.loads(ln)
+                except ValueError:
+                    continue
+                if isinstance(x, dict) and not x.get("ok") and isinstance(x.get("passo"), str):
+                    ult = x["passo"]
+    except OSError:
+        pass
+    return ult
+
+
+def zerar_partida_segura():
+    """24/11 (revisão): o __main__ chama esta. Qualquer erro fora dos passos (gravar o andamento, o registro dos passos, o
+    zerar-falhou.json, com o disco cheio por exemplo) não pode derrubar a partida: senão o systemd religa, cai de novo e o
+    limite de tentativas nunca dispara. No erro: o andamento (ou o pedido) vira zerar-falhou.json e o agente sobe normal.
+    O agente nunca chega ao main() com o zerar-andamento.json no lugar, e sempre chega ao main()."""
+    try:
+        return zerar_partida()
+    except Exception as ex:
+        print("  zerar: a partida falhou (%s); o agente sobe normal" % type(ex).__name__)
+    for src in (ZERAR_ANDA, ZERAR_PEDIDO):
+        try:
+            if not os.path.exists(src):
+                continue
+            j = _zerar_ler(src) or {}
+            os.replace(src, ZERAR_FALHOU)          # não precisa de espaço em disco
+            try:                                   # com espaço, deixa o passo e o motivo para a tela
+                zid = j.get("id") if isinstance(j.get("id"), str) and _re_zerada.match(j["id"]) else None
+                _grava_privado(ZERAR_FALHOU, json.dumps({"id": zid, "em": _iso(), "passo": (zid and _zerar_ultima_falha(os.path.join(ARQUIVO_DIR, zid))) or "partida",
+                                                         "motivo": "partida"}))
+            except Exception:
+                pass
+        except Exception as ex:
+            print("  zerar: %s não saiu do lugar (%s)" % (os.path.basename(src), type(ex).__name__))
+            try:
+                os.remove(src)
+            except Exception:
+                pass
+    return None
 
 
 def _zerar_volta(src_dir, dst_dir, pos):
@@ -22223,7 +22309,7 @@ if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--desfazer-zeragem":
         sys.exit(zerar_desfazer(sys.argv[2], "--sobrescrever" in sys.argv[3:]))
     # 24/11: zeragem da fase de teste pedida pelo botão (zerar_partida): aqui, antes do main(), sem thread, filho nem HTTP
-    _zr = zerar_partida()
+    _zr = zerar_partida_segura()
     if _zr == "sair":
         sys.exit(1)                                  # parou no meio: o systemd religa e a próxima partida continua de onde parou
     if _zr == "execv":

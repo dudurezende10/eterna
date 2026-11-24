@@ -59,6 +59,17 @@ function usuario(pg,email,nome,preset){return pg.evaluate(([e,n,p])=>{const U0=J
     for(const v of ['zerar',' ZERAR ','ZERAR.','']){await pg.fill('#zr-txt',v);await pg.click('#zr-painel [data-act="zerar-ir"]');await pg.waitForTimeout(200);
       ok(/Digite ZERAR, em letras maiúsculas/.test(await painel(pg)),'4: aviso para "'+v+'"');}
     ok(posts.length===0,'4: saiu POST sem ZERAR exato: '+posts.length);
+    // revisão 24/11: o texto digitado no #zr-txt (id + data-keep) e o foco sobrevivem a um redesenho da tela
+    await pg.fill('#zr-txt','');await pg.click('#zr-txt');await pg.keyboard.type('ZER');await pg.evaluate(()=>ETERNA.render());await pg.keyboard.type('AR');
+    {const k=await pg.evaluate(()=>{const a=document.activeElement;return {foco:a&&a.id,v:(document.getElementById('zr-txt')||{}).value};});ok(k.foco==='zr-txt'&&k.v==='ZERAR','zr-txt guarda texto e foco no render(): '+J(k));}
+    // revisão 24/11: 403, 400 e 429 com aviso próprio (o servidor de verdade não é chamado aqui: a resposta vem do page.route)
+    {const ROTA=`http://127.0.0.1:${porta}/zerar/fase-teste`;
+      for(const [st,re] of [[403,/Só o Admin, no computador do servidor do ponto, pode zerar/],[400,/O servidor não aceitou a confirmação/],[429,/Muitas tentativas seguidas/],[500,/Não consegui falar com o servidor do ponto/]]){
+        await pg.route(ROTA,r=>r.fulfill({status:st,contentType:'application/json',body:'{"error":"x"}'}));
+        await pg.fill('#zr-txt','ZERAR');await pg.click('#zr-painel [data-act="zerar-ir"]');await espera(pg,()=>!ETERNA.state.zerar.enviando&&!!ETERNA.state.zerar.erro,5000);
+        const x=await painel(pg);ok(re.test(x),'zerarIr '+st+': aviso próprio: '+x);await pg.unroute(ROTA);}
+      for(const l of ['en','es','fr','de'])ok(await pg.evaluate(l=>{const i=ETERNA.LANGS.findIndex(x=>x[0]===l);return ['zr_erro_403','zr_erro_400','zr_erro_429'].every(k=>{const v=ETERNA.EQ[k]&&ETERNA.EQ[k][i];return typeof v==='string'&&v.length>10&&!/—/.test(v);});},l),'avisos do zerarIr em '+l);
+      posts.length=0;await pg.evaluate(()=>{ETERNA.state.zerar.erro=null;ETERNA.render();});await pg.fill('#zr-txt','');}
     // 1: "ver como" e Supervisor não veem
     await pg.evaluate(()=>{ETERNA.state.assumido={usuario:'x',nome:'X'};ETERNA.render();});ok((await painel(pg))===null,'1: em "ver como" o cartão some');
     await pg.evaluate(()=>{ETERNA.state.assumido=null;ETERNA.render();});ok((await painel(pg))!==null,'o cartão volta fora do "ver como"');

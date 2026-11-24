@@ -1,5 +1,5 @@
 // v96-ux (Eduardo, 11/11): Minhas fotos do fotógrafo. Nome e ponto como texto (sem seletor) para o Fotógrafo; Admin e
-// Supervisora com os seletores. Agente falso por page.route na própria origem; nada de foto de cliente.
+// Supervisora com os seletores (24/11, Eduardo: Minhas fotos sem o seletor Fotógrafo e sem o Ponto para todos). Agente falso por page.route na própria origem; nada de foto de cliente.
 const {chromium}=require('playwright');const entrarTeste=require('./_entrar');/* v93: usuário e senha */
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const fails=[];const ok=(c,m)=>{if(!c)fails.push(m);return c;};const J=JSON.stringify;
@@ -73,5 +73,5 @@ try{
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}
 if(fails.length){console.log('FALHA minhas-fotos-fotografo: '+fails.join(' || '));process.exit(1);}
-console.log('OK minhas-fotos-fotografo: nome e ponto do fotógrafo como texto, Minhas fotos de hoje por sessão; Admin e Supervisora com seletores e filtros');process.exit(0);
+console.log('OK minhas-fotos-fotografo: nome e ponto do fotógrafo como texto, Minhas fotos de hoje por sessão, sem o seletor Fotógrafo e sem o Ponto para ninguém; Admin com os 4 filtros da Biblioteca');process.exit(0);
 })();
