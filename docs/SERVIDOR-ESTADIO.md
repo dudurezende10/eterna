@@ -95,7 +95,7 @@ Cadastro da equipe por comando (`vendedores.sh`, senha digitada pelo Ronaldo, se
 
 ## Zerar a fase de teste (24/11, para o Ronaldo)
 
-O Admin aperta **Zerar fase de teste** no fim de Sistema › Repositório. O servidor reinicia e leva vendas, sessões, fotos, rostos, galerias e números do teste para duas pastas de arquivo, no próprio servidor. Nada vai para a nuvem e nada é apagado de vez. Plano: `docs/planos/2026-11-24-zerar-fase-teste.md`. Detalhe técnico: `docs/DOCUMENTACAO-TECNICA.md`, seção v99.44.0, item 8.
+O Admin aperta **Zerar fase de teste** no fim de Sistema › Repositório. O servidor reinicia e leva vendas, sessões, fotos, rostos, galerias e números do teste para duas pastas de arquivo, no próprio servidor. Nada vai para a nuvem e nada é apagado de vez. Plano: `docs/planos/2026-11-24-zerar-fase-teste.md`. Detalhe técnico: `docs/DOCUMENTACAO-TECNICA.md`, seção v99.45.0, item 8.
 
 O nome da zeragem (`<id>`) tem o formato `fase-teste-AAAAMMDD-HHMM`. Ele aparece no cartão do Repositório e no `zerada.json`. As duas pastas:
 
@@ -105,7 +105,7 @@ O nome da zeragem (`<id>`) tem o formato `fase-teste-AAAAMMDD-HHMM`. Ele aparece
 ### (a) Zerar às 23h
 
 **Antes (até 22h55)**
-1. Conferir que o commit da v99.44.0 está no ar: `ssh srv-viva-maracana 'curl -s http://127.0.0.1:8797/'`.
+1. Conferir que o commit da v99.45.0 está no ar: `ssh srv-viva-maracana 'curl -s http://127.0.0.1:8797/'`.
 2. Em cada tablet das ativações (Venda e Entrega), abrir **Minhas vendas** e conferir que nenhuma venda está esperando para subir ao servidor. Só então fechar.
 3. Fechar todos os Postos de venda, Checkouts e tablets. Aberto, um aparelho com fila antiga pode mandar dados do teste antes de limpar a própria cópia.
 4. O Admin abre Repositório › **Ver o que vai ser guardado** e confere que não há bloqueio. Guardar um print das contagens.

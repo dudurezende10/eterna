@@ -1330,7 +1330,7 @@ Aparecem em **Configurações › IA automática** e no **Resultado** do Treino.
 
 No celular (tela estreita), com o reconhecimento ligado, o texto "Versão ligada" no Resultado sai do cartão e a página rola para o lado. Use o Resultado no computador ou no tablet.
 
-## Novidades da v99.44 (24/11/2026): Treino da IA, IA automática, Lixeira da IA, alertas do fotógrafo e troca de pessoa
+## Novidades da v99.45 (24/11/2026): Treino da IA, IA automática, Lixeira da IA, alertas do fotógrafo e troca de pessoa
 
 ### Treino da IA: três perguntas por foto
 

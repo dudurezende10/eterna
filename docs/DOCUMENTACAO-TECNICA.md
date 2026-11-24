@@ -2525,9 +2525,9 @@ Plano: `docs/planos/2026-11-23-poses-estatistica.md` (fatia P1). À noite, o ser
 
 Testes: `testes/poses_agente.py`, com o `llama-server` trocado por `testes/_poses_filho_falso.py` e o `eterna-poses.py` real, e as rotas em `testes/seguranca_rotas_agente.py`. A medição no servidor (`agente/medir-poses.py`) é manual. Ela se recusa a rodar com o classificador do agente aberto.
 
-## v99.44.0 (24/11/2026): alertas do fotógrafo, Treino mais claro, IA automática, Zerar fase de teste e Lixeira da IA
+## v99.45.0 (24/11/2026): alertas do fotógrafo, Treino mais claro, IA automática, Zerar fase de teste e Lixeira da IA
 
-Publicação única sobre a v99.42.1 do Ronaldo (que já estava no ar). Entram a entrega que estava como v99.43.0 (os alertas do fotógrafo, a classificação de poses P1 da seção acima e as correções do Treino, da sessão e do backup) e três entregas do dia 24/11: o Treino mais claro com a tela IA automática, o botão Zerar fase de teste e a Lixeira da IA (parte A). Planos: `docs/planos/2026-11-23-alertas-fotografo.md`, `docs/planos/2026-11-23-poses-estatistica.md`, `docs/planos/2026-11-24-treino-mais-claro.md`, `docs/planos/2026-11-24-zerar-fase-teste.md` e `docs/planos/2026-11-24-lixeira-ia.md`. Nomes de código em `docs/CONTEXTO-ETERNA.md`, seções 3 e 4.
+Publicação única sobre a v99.44.0 do Ronaldo. Entram a entrega de 23/11 (os alertas do fotógrafo, a classificação de poses P1 da seção acima e as correções do Treino, da sessão e do backup) e três entregas do dia 24/11: o Treino mais claro com a tela IA automática, o botão Zerar fase de teste e a Lixeira da IA (parte A). Planos: `docs/planos/2026-11-23-alertas-fotografo.md`, `docs/planos/2026-11-23-poses-estatistica.md`, `docs/planos/2026-11-24-treino-mais-claro.md`, `docs/planos/2026-11-24-zerar-fase-teste.md` e `docs/planos/2026-11-24-lixeira-ia.md`. Nomes de código em `docs/CONTEXTO-ETERNA.md`, seções 3 e 4.
 
 **Nomes na tela desde esta versão:** a aba Medição do Treino se chama **Resultado**. Na tela, as chaves da análise do servidor têm duas posições: **Ligado** (`ligada` no servidor) e **Desligado** (`medir` no servidor, que antes aparecia como "Só medir"). O `desligada` do servidor aparece como "Parado no servidor".
 

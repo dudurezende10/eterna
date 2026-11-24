@@ -4,7 +4,7 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
 (galeria-qr-fase1.md), para o app não mudar de tela:
   GET  /g/codigo/<XXXX-XXXX[-XXXX]> código curto -> token (12 no cartão)
   GET  /g/<token>/info            tipo, validade, estado
-  GET  /g/<token>/livres          na venda (sessao): compradas e cortesias só pelo QR, sem selfie (v96.1)
+  GET  /g/<token>/livres          fechada (24/11): responde 403; nenhuma foto sai sem a selfie
   POST /g/<token>/rosto           selfie com consentimento -> acesso de 1 h + galeria
   POST /g/<token>/galeria         renova os links com o acesso
   POST /g/<token>/pedido          compra online pela Imply: cria o pedido e devolve o endereço do checkout (v99)
@@ -1092,6 +1092,9 @@ def publicar(ev, corpo):
     return resp({"ok": True, "token": novo["token"], "estado": estado(novo)})
 
 
+EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", re.I)
+
+
 def rosto(token, m, corpo, ip, ctx):
     if not contar("ROS#" + ip_hash(ip), 60, 10):
         return resp({"motivo": "bloqueado", "ate": iso(time.time() + 60)}, 429)
@@ -1109,9 +1112,13 @@ def rosto(token, m, corpo, ip, ctx):
     except Exception:
         return resp({"error": "imagem inválida"}, 400)
     kid = m["tipo"] == "evento" or bool(m.get("menor"))
-    TABELA.put_item(Item={"pk": "CON#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "tipo": "responsavel" if kid else "titular",
-                          "versao": str(corpo.get("versao") or "")[:20], "idioma": str(corpo.get("idioma") or "pt")[:2],
-                          "ttl": int(time.time() + 400 * 86400)})
+    con = {"pk": "CON#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "tipo": "responsavel" if kid else "titular",
+           "versao": str(corpo.get("versao") or "")[:20], "idioma": str(corpo.get("idioma") or "pt")[:2],
+           "ttl": int(time.time() + 400 * 86400)}
+    em = str(corpo.get("email") or "").strip().lower()[:190]
+    if EMAIL_RE.match(em):                               # 24/11 (Ronaldo): o e-mail do cliente, junto do consentimento
+        con["email"] = em
+    TABELA.put_item(Item=con)
     TABELA.update_item(Key={"pk": "IDX#" + token, "sk": "M"}, UpdateExpression="SET cons = :um, #t = :ttl",
                        ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":um": 1, ":ttl": ttl_de(m)})
     if m.get("voucher"):                                # escola: até 10 mil fotos, lidas em lotes paralelos em segundo plano
@@ -1288,13 +1295,8 @@ def handler(ev, ctx):
             evento(token, "video_play", ip, v=v)
             return resp({"ok": True})
         return resp({"error": "not found"}, 404)
-    if acao == "livres" and metodo == "GET":              # v96.1: compradas e cortesias da venda só pelo QR
-        if not contar("LIV#" + ip_hash(ip), 60, 30):
-            return resp({"motivo": "bloqueado"}, 429)
-        g = galeria_obj(token, m)
-        if g["fotos"]:
-            evento(token, "livres_vistas", ip, livres=len(g["fotos"]))
-        return resp({"galeria": g})
+    if acao == "livres" and metodo == "GET":              # 24/11 (Ronaldo): o QR sozinho não abre mais nada (quem tinha o
+        return resp({"error": "selfie"}, 403)             # código de um amigo baixava as compradas dele); só pela selfie
     if acao == "rosto" and metodo == "POST":
         return rosto(token, m, corpo, ip, ctx)
     if acao in ("galeria", "pagamento", "pedido", "cortesia", "evento") and metodo == "POST":
