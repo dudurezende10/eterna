@@ -216,6 +216,13 @@ svg text{font-family:var(--body);fill:var(--muted);font-size:12px}
 .scard .meta{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
 .photos.small{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+/* 24/11: Lixeira da IA (Curadoria): a grade igual à da Qualidade; em 390 px duas colunas e botões de 44 px */
+.lx-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}.lx-item{display:flex;flex-direction:column;gap:6px;min-width:0}
+.lx-info{font-size:13px;line-height:1.4;min-width:0;overflow-wrap:anywhere}.lx-info .pill,.lx-item>.pill,.lx-modo .pill{white-space:normal;line-height:1.35;margin-top:2px}
+.lx-item .ph .tag{max-width:calc(100% - 46px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.02em}.lx-rec-btn{min-height:44px;width:100%;justify-content:center}.lx-feita .ph{opacity:.6}.lx-modo{margin:0 0 10px}
+.lx-filtros{gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px}.lx-dia select{min-height:44px;max-width:100%}.lx-mot .chip{min-height:44px}
+.lx-regua summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600}.lx-regua-l{margin:8px 0;padding-left:18px;line-height:1.5}
+@media (max-width:700px){.lx-grade{grid-template-columns:repeat(2,minmax(0,1fr))}.lx-dia{flex:1 1 100%}.lx-dia select{width:100%}}
 .bd-thumb{width:60px;height:40px;max-width:none;min-width:60px;object-fit:contain;border-radius:3px;background:var(--surface2);display:block;box-shadow:0 0 0 1px var(--line)}
 .ph{position:relative;aspect-ratio:3/2;max-width:100%;border-radius:4px;overflow:hidden;background:#1a1917;border:2px solid transparent;cursor:pointer;display:block;width:100%;padding:0}
 .ph::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
@@ -1548,7 +1555,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.43.0 · 24/11 13:37"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.44.0 · 24/11 14:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1782,6 +1789,7 @@ const VIEWS=[
  ['treino','Treino da IA','ensinar e conferir','Curadoria'],
  ['fotografos','Fotógrafos','índice e métricas','Curadoria'], // Eduardo (23/11): saiu do Dashboard; permissões, rota e conteúdo iguais (módulo desempenho)
  ['alertas','Alertas','o que precisa de olho','Curadoria'],
+ ['lixeira','Lixeira da IA','fotos sem salvação','Curadoria'], // 24/11: Lixeira da IA (plano docs/planos/2026-11-24-lixeira-ia.md), módulo qualidade
  ['diario','Diário do set','equipamento e ocorrências','Fotógrafo'],
  ['importar','Minhas fotos','fotos do cartão e da câmera','Fotógrafo'],
  ['fotofila','Fila do fotógrafo','clicando, chegando e no Checkout','Fotógrafo'],
@@ -5281,6 +5289,7 @@ async function agentPoll(){const a=state.agent;await a.sonda;if(!AGENT_VIEWS.inc
   if(!a.on&&a.tried&&a.url!==location.origin&&Date.now()<(a.proxima||0))return;
   try{const st=await (await agFetch(a.url+'/status',{cache:'no-store',signal:agLimite(8000)})).json();if(!st.ok)throw new Error('x');
     if(a.url===location.origin&&zeradaConfere(st))return; // 24/11: o servidor foi zerado: limpa a cópia local deste navegador e recarrega uma vez
+    lxStatus(st); // 24/11: Lixeira da IA (contagem do menu e lista aberta)
     // agente em outro endereço (página aberta pelo site ou por outro endereço): sem sessão nem posto lá, fica indisponível
     if(a.url!==location.origin){const era=a.on||!a.outra;a.on=false;a.outra=true;a.tried=true;if(!a.outraAviso&&!state.pub&&!state.lojaRota){a.outraAviso=1;toast('Servidor do ponto encontrado: abra o Eterna pelo endereço do servidor do ponto');}if(era)render();return;}
     a.outra=false;const mtgAntes=mtgSrv();const was=a.on;a.on=true;a.lastOk=Date.now();a.err=null;a.card=st.card;a.copied=st.copied;a.dups=st.dups;a.ftp=st.ftp||null;a.rostos=st.rostos||null;a.recorte=st.recorte||null;a.montagem=st.montagem||null;a.galPublica=st.galeria_publica||null;a.impressora=st.impressora||null;a.impLocais=st.impressora_locais||[];a.sessoes=st.sessoes||null;a.fuso=st.fuso||null;const trAnt=JSON.stringify((a.treino&&a.treino.analise)||null);a.treino=st.treino&&typeof st.treino==='object'?st.treino:null;/* 16/11: Treino da IA (contagem e interruptor da análise) */if((state.view==='treino'||state.view==='ia-auto')&&trAnt!==JSON.stringify((a.treino&&a.treino.analise)||null))render();/* 24/11: a análise mudou no servidor (outra pessoa, outra aba): o aviso do Treino e as chaves de Configurações › IA automática redesenham */a.poses=st.poses&&typeof st.poses==='object'?st.poses:null;/* 23/11: classificação de poses (P1) */a.compraOn=st.nuvem&&st.nuvem.compra&&typeof st.nuvem.compra==='object'?st.nuvem.compra:null;/* 24/11: chave da compra online */a.envio=st.envio&&typeof st.envio==='object'?st.envio:null;mtgVisto(st);if(mtgAntes!==mtgSrv())mtgTroca(); /* montagem no servidor: depois de todas as atribuições do /status */if(!was||a.boot!==st.boot){const first=!was;a.boot=st.boot;postoCarregar();let sv=null;try{sv=JSON.parse(localStorage.getItem('eterna.agcur')||'null')}catch(e){}if(sv&&sv.boot===st.boot&&sv.url===a.url)a.cursor=sv.cursor;else a.cursor=0;if(ESCALA_ON&&can('escala','u')&&ffBootNovo(st.boot))ffFuncaoEnviar();await libLoad();if(first&&!state.pub&&!state.lojaRota)toast('Agente do ponto conectado');render();} // telas do cliente (#g, #loja) não mostram aviso da equipe
@@ -8220,7 +8229,7 @@ function trCfgPanel(){if(!canView('ia-auto'))return '';const t=state.train;
   const aj=SIM.autoAj!==false?'ligada':'medir';const ap=SIM.autoAjPor;
   const ajuste=bloco('ajuste',pode?seg('ajuste',aj,false):trCfgPilula(aj),TE('mf_aj_nota'),ap&&ap.nome?`<div class="note" id="aj-auto-por"><b>${TE('mf_aj_por',ap.on,esc(ap.nome),hhmm(new Date(ap.em)))}</b></div>`:'');
   return `<div class="panel tr-an" id="tr-cfg">${srv}${ajuste}</div>`;}
-function vIaAuto(){return `<div class="head"><div><div class="eyebrow">${TE('g_configuracoes')}</div><h1>${esc(viewLabel('ia-auto'))}</h1><div class="note">${TE('ia_auto_nota')}</div></div></div>${trCfgPanel()}`;}
+function vIaAuto(){return `<div class="head"><div><div class="eyebrow">${TE('g_configuracoes')}</div><h1>${esc(viewLabel('ia-auto'))}</h1><div class="note">${TE('ia_auto_nota')}</div></div></div>${trCfgPanel()}${lxCfgPanel()}`;}
 function vTreinoMarcar(){const t=state.train;const ag=trAg();
   if(!ag)return `<div class="panel"><div class="note">${TE('tr_sem_servidor')}</div></div>`;
   if(!t.diasPedido&&t.dias===null)setTimeout(trDias,0);
@@ -8417,6 +8426,110 @@ function alerts(){
   const best=veFot&&!fotJ?humans.map(k=>stats[k]).sort((a,b)=>b.index-a.index)[0]:null;if(best)out.push({sev:'good',t:TE('al_lidera_t',best.name,best.index),d:TE('al_lidera_d',fmtR(best.revenue),best.days,fmtR(best.ticket))});
   const order={bad:0,warn:1,good:2};return out.sort((a,b)=>order[a.sev]-order[b.sev]);
 }
+// ---------- 24/11: Lixeira da IA (Curadoria; plano docs/planos/2026-11-24-lixeira-ia.md, Parte A) ----------
+// O servidor do ponto separa as fotos sem salvação (muito escura, muito estourada, tremida ou desfocada, sem ninguém). Aqui Admin e
+// Supervisora conferem e devolvem com "Não é ruim". Tudo vem do servidor (GET /lixeira) e só fica na memória da tela (state.lx; o Sair
+// zera): nada vai para o SIM nem para o localStorage. Em Teste (Parte A) nenhuma foto sai do Checkout, das sessões nem das galerias.
+// Decisões do Eduardo (24/11): a contagem do menu é dos últimos 7 dias, sem as recuperadas (o servidor manda /status.lixeira.n7; o
+// número de dias é LX_MENU_DIAS no agente); a tela fica no menu do Admin e da Supervisora (PRESETS e migraLixeira24), não no do
+// Validador; o "Ruim mesmo" fica para a Parte B; o Ligado só destrava pela meta (sem "ligar mesmo assim"), também na Parte B.
+const LX_MOTIVOS=['escura','estourada','desfocada','sem_ninguem'];
+const LX_RELER_MS=15000; // com a tela aberta e o /status mudando (foto nova ou recuperada em outro aparelho), relê a lista no máximo a cada 15 s
+function lxZera(){state.lx={dia:null,mot:'todos',j:null,busy:false,err:null,pedido:false,med:null,medBusy:false,medErr:null,regua:false,voo:{},t:0,rev:null,cfgVoo:false};}
+lxZera();
+const lxMotTxt=ms=>(ms||[]).map(m=>TEk('lx_mot_'+m,m)).join(', ');
+const lxHora=iso=>{const d=new Date(iso||'');return isNaN(d)?'':d.toLocaleTimeString(localeEq(),{hour:'2-digit',minute:'2-digit'});};
+const lxDiaBR=d=>/^\d{4}-\d{2}-\d{2}$/.test(d||'')?d.slice(8,10)+'/'+d.slice(5,7)+'/'+d.slice(0,4):String(d||'');
+function lxNomeFot(k){if(!k)return TE('lx_sem_fot');const p=P[k]||P[keyByName(k)];return p&&p.name?p.name:String(k);}
+// as fotos da lista com o filtro de motivo (a lupa percorre esta mesma lista)
+function lxFiltrados(){const L=state.lx;const it=(L.j&&L.j.itens)||[];return L.mot==='todos'?it:it.filter(x=>(x.mot||[]).includes(L.mot));}
+// revisão 24/11: a resposta de um dia que já não é o escolhido (a pessoa trocou de dia no meio) é descartada; a tela pede de novo
+async function lxPull(o){o=o||{};const L=state.lx,u=trAg();if(!u||L.busy)return;L.busy=true;L.err=null;if(!o.quieto)render();const pedido=L.dia;
+  try{const r=await agFetch(u+'/lixeira'+(pedido?'?dia='+encodeURIComponent(pedido):''),{cache:'no-store'});const j=r.ok?await r.json().catch(()=>null):null;
+    if(!j||!Array.isArray(j.itens))L.err='lx_erro';
+    else if(L.dia!==pedido||(pedido&&j.dia!==pedido)){if(L.j&&L.j.dia!==L.dia)L.j=null;}
+    else{j.itens=j.itens.filter(x=>x&&/^[0-9a-f]{6,40}$/.test(x.pid));j.itens.forEach(x=>{const id='ag_'+x.pid;if(!UP[id])UP[id]={src:u+'/thumb/'+x.pid,name:x.pid};});
+      L.j=j;if(!L.dia)L.dia=j.dia;L.t=Date.now();}}
+  catch(e){L.err='lx_erro';}finally{L.busy=false;if(state.view==='lixeira')render();}}
+async function lxMedida(){const L=state.lx,u=trAg();if(!u||L.medBusy)return;L.medBusy=true;L.medErr=null;render();
+  try{const r=await agFetch(u+'/lixeira/medida',{cache:'no-store'});const j=r.ok?await r.json().catch(()=>null):null;if(j&&j.motivos)L.med=j;else L.medErr='lx_erro';}
+  catch(e){L.medErr='lx_erro';}finally{L.medBusy=false;if(state.view==='lixeira')render();}}
+// /status.lixeira: guarda, acerta a contagem do menu e, com a tela aberta, relê a lista quando algo mudou no servidor
+function lxStatus(st){const a=state.agent;const x=st&&st.lixeira&&typeof st.lixeira==='object'?st.lixeira:null;const rev=x?x.rev:null;a.lixeira=x;lxPillUpd();
+  const L=state.lx;if(state.view==='lixeira'&&L.j&&rev!=null&&L.rev!=null&&rev!==L.rev&&!L.busy&&Date.now()-L.t>LX_RELER_MS)lxPull({quieto:true});if(rev!=null)L.rev=rev;}
+function lxPill(){const x=state.agent&&state.agent.lixeira;const n=x&&x.on!==false?Math.max(0,+(x.n7!=null?x.n7:x.hoje)||0):0;
+  return n&&canView('lixeira')?`<span class="pill neutral" id="rail-lx" aria-label="${esc(TE('lx_pill',n,(x&&+x.dias)||7))}">${n}</span>`:'';}
+function lxPillUpd(){const it=document.querySelector('#nav [data-v="lixeira"]');if(!it)return;const old=it.querySelector('#rail-lx'),h=lxPill();if((old?old.outerHTML:'')!==h){if(old)old.remove();if(h)it.insertAdjacentHTML('beforeend',h);}}
+// "Não é ruim": grava quem e quando no servidor (lixeira e lixeira_log); a foto fica como recuperada e sai da contagem
+async function lxRec(pid){const L=state.lx,u=trAg();if(!u||!/^[0-9a-f]{6,40}$/.test(pid||'')||L.voo[pid])return;
+  if(state.assumido){toast(TE('vc_so_ver'));return;}if(!can('qualidade','u'))return;L.voo[pid]=1;render();
+  try{const r=await agFetch(u+'/lixeira/recuperar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid})});const j=await r.json().catch(()=>null);
+    if(r.ok&&j&&j.ok){const J=L.j;const it=J&&J.itens.find(x=>x.pid===pid);
+      if(it&&!it.rec){it.rec=j.rec||{em:new Date().toISOString()};J.itens=J.itens.filter(x=>x!==it).concat([it]);J.n=Math.max(0,(J.n||1)-1);J.recuperadas=(J.recuperadas||0)+1;
+        const dd=(J.dias||[]).find(x=>x.dia===J.dia);if(dd)dd.n=Math.max(0,dd.n-1);
+        const s=state.agent.lixeira;if(s&&!j.igual){const hj=venueToday();if(J.dia===hj)s.hoje=Math.max(0,(+s.hoje||0)-1);if(s.n7!=null&&J.dia>addDays(hj,-((+s.dias||7))))s.n7=Math.max(0,(+s.n7||0)-1);}}
+      if(!j.igual)toast(TE(((J&&J.modo)||'medir')==='ligada'?'lx_rec_ok':'lx_rec_ok_teste'));L.med=null;}
+    else if(r.status===404){toast(TE('lx_sumiu'));L.j=null;delete L.voo[pid];lxPull({quieto:true});return;}
+    else if(r.status===403&&j&&j.erro==='so_ver')toast(TE('vc_so_ver'));
+    else toast(TE('lx_erro'));}
+  catch(e){toast(TE('lx_erro'));}finally{delete L.voo[pid];if(state.view==='lixeira')render();lxPillUpd();}}
+function lxReguaHtml(){const L=state.lx;const M=L.med;
+  const corpo=L.medBusy?`<div class="note">${TE('lx_calculando')}</div>`:L.medErr?`<div class="note">${TE(L.medErr)}</div>`:!M?'':
+    `<ul class="lx-regua-l">${LX_MOTIVOS.map(m=>{const x=(M.motivos||{})[m]||{};const n=+x.n||0;const pct=x.precisao==null?0:Math.round(x.precisao*100);const crit=(M.crit&&+M.crit.n)||20;
+      return `<li><b>${esc(TEk('lx_mot_'+m,m))}</b>: ${n?esc(TE('lx_regua_linha',n,pct)):''}${n&&n<crit?'. ':''}${n<crit?esc(TE('lx_regua_falta',crit-n)):''}</li>`;}).join('')}</ul><div class="note">${TE('lx_regua_nota')}</div>`;
+  return `<details class="panel lx-regua"${L.regua?' open':''}><summary data-act="lx-regua">${TE('lx_regua_h')}</summary>${L.regua?corpo:''}</details>`;}
+function vLixeira(){const L=state.lx,u=trAg();const st=state.agent.lixeira||null;
+  if(u&&!L.j&&!L.busy&&!L.err&&!L.pedido){L.pedido=true;setTimeout(()=>{L.pedido=false;lxPull({quieto:true});},0);}
+  const J=L.j;const modo=(J&&J.modo)||(st&&st.modo)||'medir';
+  const modoPill=modo==='ligada'?`<span class="pill warn">${esc(TE('lx_modo_ligado',lxMotTxt(J&&J.valendo)))}</span>`:`<span class="pill neutral">${TE('lx_modo_teste')}</span>`;
+  const head=`<div class="head"><div><div class="eyebrow">${TE('g_curadoria')}</div><h1>${esc(viewLabel('lixeira'))}</h1><div class="note">${TE('lx_nota')}</div></div></div><div class="row lx-modo">${modoPill}</div>`;
+  if(!u)return head+`<div class="panel"><div class="note">${TE('lx_sem_servidor')}</div></div>`;
+  if(!J)return head+`<div class="panel">${L.err?`<div class="note">${TE(L.err)}</div><div class="row"><button class="btn" data-act="lx-reler">${TE('lx_tentar')}</button></div>`:`<div class="note">${TE('lx_carregando')}</div>`}</div>`;
+  const hoje=venueToday();const cont={};(J.dias||[]).forEach(x=>{cont[x.dia]=+x.n||0;});
+  const dias=[];for(let i=0;i<30;i++)dias.push(addDays(hoje,-i));if(J.dia&&!dias.includes(J.dia))dias.push(J.dia);
+  const sel=`<label class="lx-dia">${TE('lx_dia')} <select data-act="lx-dia">${dias.map(d=>`<option value="${esc(d)}"${d===J.dia?' selected':''}>${esc(lxDiaBR(d))} · ${cont[d]||0}</option>`).join('')}</select></label>`;
+  const chips=`<div class="chips lx-mot" role="group" aria-label="${esc(TE('lx_mot_todos'))}">${['todos',...LX_MOTIVOS].map(m=>`<button class="chip" data-act="lx-mot" data-m="${m}" aria-pressed="${L.mot===m}">${esc(TEk('lx_mot_'+m,m))}</button>`).join('')}</div>`;
+  const pode=can('qualidade','u');const lista=lxFiltrados();
+  const card=(x,i)=>{const id='ag_'+x.pid;const m0=(x.mot||[])[0];const rec=x.rec;
+    const tr=x.treino==='boa'||x.treino==='ajustar'?`<span class="pill good">${TE('lx_treino_pode')}</span>`:x.treino==='fraca'||x.treino==='nao_vai'?`<span class="pill bad">${TE('lx_treino_nao')}</span>`:'';
+    const acao=rec?`<span class="pill neutral lx-feita-p">${esc(TE('lx_recuperada',rec.nome||trMedQuem(rec.por),lxHora(rec.em)))}</span>`
+      :pode?`<button class="btn lx-rec-btn" data-act="lx-rec" data-pid="${esc(x.pid)}"${L.voo[x.pid]?' disabled':''}>${TE('lx_rec')}</button>`:'';
+    return `<div class="lx-item${rec?' lx-feita':''}">${photoBtn({id},{tag:m0?TEk('lx_mot_'+m0,m0):'',label:TE('rv_foto_n',i+1)})}
+      <div class="lx-info"><b>${esc(lxNomeFot(x.fotografo))}</b> · ${esc(lxHora(x.em))}<br><span class="note">${esc(lxMotTxt(x.mot))}</span>${tr?`<br>${tr}`:''}</div>${acao}</div>`;};
+  const grade=!J.itens.length?`<div class="note">${TE('lx_vazio')}</div>`:!lista.length?`<div class="note">${TE('lx_vazio_mot')}</div>`
+    :`<div class="lx-grade">${lista.map(card).join('')}</div>${J.mais?`<div class="note">${TE('lx_mais')}</div>`:''}`;
+  return head+`<div class="panel"><div class="row lx-filtros">${sel}${chips}</div>${grade}</div>${lxReguaHtml()}`;}
+// filtro de dia (select): busca o dia no servidor
+document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset||t.dataset.act!=='lx-dia'||state.view!=='lixeira')return;
+  const v=String(t.value||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return;const L=state.lx;L.dia=v;L.j=null;L.err=null;lxPull();});
+// 24/11: a chave da Lixeira da IA em Configurações › IA automática (plano D2). Só o Admin muda (o servidor confere de novo pela sessão:
+// 403 so_admin); os outros veem a situação. Parte A: Teste valendo e Ligado visível mas travado ("chega na próxima versão"; o servidor
+// responde 409 em_breve). Estado do servidor: /status.lixeira.modo.
+const LX_LIGADO_PRONTO=false; // Parte B: destrava só para os motivos que passam na meta (Eduardo, 24/11: sem "ligar mesmo assim")
+function lxCfgPanel(){if(!canView('ia-auto'))return '';const s=state.agent.lixeira;const ag=trAg();const L=state.lx;
+  const modo=s&&s.modo==='ligada'?'ligada':'medir';const pode=isAdminUser(state.user)&&!state.assumido;
+  const pil=`<span class="pill ${modo==='ligada'?'good':'neutral'}">${TE(modo==='ligada'?'lx_cfg_ligado':'lx_cfg_teste')}</span>`;
+  const ctl=!ag||!s?`<span class="note">${TE('lx_sem_servidor')}</span>`:pode?`<span class="seg" role="group" aria-label="${esc(TE('lx_cfg_k'))}"><button class="chip" data-act="lx-cfg" data-v="medir" aria-pressed="${modo==='medir'}" ${L.cfgVoo?'disabled':''}>${TE('lx_cfg_teste')}</button><button class="chip" data-act="lx-cfg" data-v="ligada" aria-pressed="${modo==='ligada'}" ${L.cfgVoo||!LX_LIGADO_PRONTO?'disabled':''}>${TE('lx_cfg_ligado')}</button></span>`:pil;
+  const ex=(!LX_LIGADO_PRONTO?`<div class="note lx-cfg-breve">${TE('lx_cfg_em_breve')}</div>`:'')+(!pode&&ag&&s?`<div class="note">${TE('lx_cfg_so_admin')}</div>`:'')+(s&&s.on===false?`<div class="note">${TE('lx_cfg_desligada')}</div>`:'');
+  return `<div class="panel tr-an" id="lx-cfg"><div class="tr-an-b" data-k="lixeira"><div class="tr-an-l"><span class="tr-an-k">${TE('lx_cfg_k')}</span>${ctl}</div><div class="note">${TE('lx_cfg_nota')}</div>${ex}</div></div>`;}
+async function lxCfg(v){if(state.assumido){toast(TE('vc_so_ver'));return;}if(!isAdminUser(state.user)){toast(TE('lx_cfg_so_admin'));return;}
+  if(!['medir','ligada'].includes(v))return;if(v==='ligada'&&!LX_LIGADO_PRONTO){toast(TE('lx_cfg_em_breve'));return;}
+  const L=state.lx,u=trAg(),s=state.agent.lixeira;if(!u||L.cfgVoo)return;const de=(s&&s.modo)||null;L.cfgVoo=true;render();
+  try{const r=await agFetch(u+'/lixeira/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:v})});const j=await r.json().catch(()=>null);
+    if(r.ok&&j&&j.ok){if(s)s.modo=(j.cfg&&j.cfg.modo)||v;if(j.igual)toast(TE('tr_med_cfg_igual'));else auditLog('lixeira_modo','config/lixeira',[{campo:'modo',de,para:v}]);}
+    else if(r.status===409&&j&&j.error==='em_breve')toast(TE('lx_cfg_em_breve'));
+    else if(r.status===403&&j&&j.error==='so_admin')toast(TE('lx_cfg_so_admin'));
+    else if(r.status===403&&j&&j.erro==='so_ver')toast(TE('vc_so_ver'));
+    else toast(TE('lx_erro'));}
+  catch(e){toast(TE('lx_erro'));}finally{L.cfgVoo=false;render();}}
+// 24/11 (D1): a Supervisora (perfil pronto) já gravada ganha a tela Lixeira da IA no menu, logo depois de Alertas. Só põe a tela;
+// personalizado não muda. Registra migracao_lixeira24 e grava a marca de volta (como migraTreino16).
+function migraLixeira24(x){x.mlx24=1;if(x.preset!=='supervisor'||!Array.isArray(x.menu)||x.menu.includes('lixeira'))return;
+  const antes=JSON.parse(JSON.stringify({perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));const i=x.menu.indexOf('alertas');
+  if(i>=0)x.menu.splice(i+1,0,'lixeira');else x.menu.push('lixeira');
+  if(typeof auditLog==='function'&&typeof state!=='undefined'){const e=auditLog('migracao_lixeira24',x.email,permDiff(antes,{perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));
+    if(e&&state.db)setTimeout(()=>{if(USERS[x.email]&&USERS[x.email].mlx24)saveUsers(x.email);},0);}}
+
 function vAlertas(){const ve=can('desempenho','r');if(ve)fotPull();const a=alerts();const srv=ve&&esOn(); // revisão 23/11: com os dados do servidor, o período escolhido nos chips
   return `<div class="head"><div><div class="eyebrow">${srv?`${TE('periodo')} · ${esc(TEk('fot_per_'+state.fot.per,state.fot.per))}`:`${TE('al_semana')} · ${DATA.period.label}`}</div><h1>${esc(viewLabel('alertas'))}</h1></div></div>
   ${srv?fotBarra():''}
@@ -8501,7 +8614,7 @@ const MODULES=[
  ['financeiro','Números de vendas',['painel','vendas','vendas-lista','ativ-resumo']],
  ['estatisticas','Estatísticas',['estatisticas']],
  ['galerias','Galerias online',['galerias']],
- ['qualidade','Qualidade e IA',['revisao','treino']],
+ ['qualidade','Qualidade e IA',['revisao','treino','lixeira']],
  ['diario','Diário do set',['diario']],
  ['set','Upload, câmeras e ajustes',['importar','ajustes']],
  ['escala','Escala e calendário',['escala','calendario']],
@@ -8526,7 +8639,7 @@ const MODULE_INFO={
  desempenho:{desc:'Fotógrafos: índice e métricas de cada um',r:'ver o índice (o fotógrafo vinculado vê só o dele)'},
  financeiro:{desc:'Painel, Vendedores, Lista de vendas',r:'ver faturamento, vendas, valores e volume',d:'cancelar venda'},
  galerias:{desc:'Galerias online: QR, cortesias e grupos de escola',c:'criar galeria e grupo de escola',r:'ver as galerias',u:'dar ou retirar cortesia, reenviar, editar grupo',d:'encerrar grupo'},
- qualidade:{desc:'Qualidade e Treino da IA',c:'importar rótulos de treino',r:'ver as revisões',u:'avaliar, marcar, descartar e rotular fotos'},
+ qualidade:{desc:'Qualidade e Treino da IA',c:'importar rótulos de treino',r:'ver as revisões',u:'avaliar, marcar, descartar e rotular fotos e tirar foto da Lixeira da IA'},
  diario:{desc:'Diário do set',c:'registrar ocorrência',r:'ver o diário',u:'marcar como resolvida',d:'ver e tratar as ocorrências da equipe toda (sem isso, só as próprias)'},
  set:{desc:'Minhas fotos (fotógrafo pelo usuário do FTP e pelo nome gravado na câmera) e Ajuste automático (o item do Ajuste fica no menu Configurações)',c:'receber fotos (leva e arquivos)',r:'ver o upload, as câmeras, as fotos e os ajustes',u:'parar o recebimento, ligar e desligar o ajuste automático, ajustar fotos',d:'limpar a leva'},
  estatisticas:{desc:'Estatísticas: vendas e produtos, produção dos fotógrafos, rapidez, dias e eventos, visitantes e movimento da bilheteria',c:'importar entradas da bilheteria (bip ou catraca) por CSV',r:'ver as estatísticas'},
@@ -8637,6 +8750,7 @@ function migrateUser(x){if(!x||typeof x!=='object')return x;nomeTelaCerto(x);con
     if(!x.msis94)migraSis94(x); // v94-ux: Supervisora sem as telas do grupo Sistema (uma vez)
     if(!x.menv96)migraEnvio96(x); // v96-ux: Supervisora com set.c para enviar as fotos do cartão pela tela (uma vez)
     if(!x.mtr16)migraTreino16(x); // 16/11: Supervisora marca no Treino da IA (qualidade.u, uma vez)
+    if(!x.mlx24)migraLixeira24(x); // 24/11: Supervisora com a Lixeira da IA no menu, depois de Alertas (uma vez)
     if(!x.msup98){if(x.preset==='supervisor')x.menu=x.menu.filter(v=>v!=='chute-a-gol');x.msup98=1;} // junção v97+ondas: Chute a gol fora do menu da Supervisora que já tinha migrado (uma vez)
     x.menu=x.menu.filter(v=>MODULE_OF[v]);}
   x.mv=83;
@@ -9136,7 +9250,7 @@ const EQ={
   modi_qualidade_desc:["Qualidade e Treino da IA","Quality and AI Training","Calidad y Entrenamiento de la IA","Qualité et Entraînement de l'IA","Qualität und KI-Training"],
   modi_qualidade_c:["importar rótulos de treino","import training labels","importar etiquetas de entrenamiento","importer des étiquettes d'entraînement","Trainingslabels importieren"],
   modi_qualidade_r:["ver as revisões","see the reviews","ver las revisiones","voir les revues","Prüfungen ansehen"],
-  modi_qualidade_u:["avaliar, marcar, descartar e rotular fotos","rate, mark, discard and label photos","evaluar, marcar, descartar y etiquetar fotos","évaluer, marquer, écarter et étiqueter des photos","Fotos bewerten, markieren, verwerfen und labeln"],
+  modi_qualidade_u:["avaliar, marcar, descartar e rotular fotos e tirar foto da Lixeira da IA","rate, mark, discard and label photos and take photos out of the AI bin","evaluar, marcar, descartar y etiquetar fotos y sacar fotos de la Papelera de la IA","évaluer, marquer, écarter et étiqueter des photos et sortir des photos de la corbeille de l'IA","Fotos bewerten, markieren, verwerfen und labeln und Fotos aus dem KI-Papierkorb holen"],
   modi_diario_desc:["Diário do set","Set log","Diario del set","Journal du set","Set-Tagebuch"],
   modi_diario_c:["registrar ocorrência","log an incident","registrar incidencia","enregistrer un incident","Vorfall erfassen"],
   modi_diario_r:["ver o diário","see the log","ver el diario","voir le journal","Tagebuch ansehen"],
@@ -12005,6 +12119,46 @@ const EQ={
   rel_texto_xls:["Texto longo cortado nesta tabela: o texto completo está no XLS.","Long text was cut in this table: the full text is in the XLS.","Texto largo cortado en esta tabla: el texto completo está en el XLS.","Texte long coupé dans ce tableau : le texte complet est dans le XLS.","Langer Text in dieser Tabelle gekürzt: Der vollständige Text steht in der XLS-Datei."],
   rel_media_vendas:["Média por dia (vendas)","Daily average (sales)","Promedio por día (ventas)","Moyenne par jour (ventes)","Tagesdurchschnitt (Verkäufe)"],
   rel_valor:["Valor","Value","Valor","Valeur","Wert"],
+  // 24/11: Lixeira da IA (Curadoria; plano docs/planos/2026-11-24-lixeira-ia.md)
+  v_lixeira:["Lixeira da IA","AI bin","Papelera de la IA","Corbeille de l'IA","KI-Papierkorb"],
+  vd_lixeira:["fotos sem salvação","photos beyond saving","fotos sin arreglo","photos irrécupérables","nicht zu rettende Fotos"],
+  lx_nota:["Fotos que a IA achou sem salvação. Nada é apagado: a foto fica 30 dias na biblioteca, como as outras.","Photos the AI found beyond saving. Nothing is deleted: the photo stays in the library for 30 days, like the others.","Fotos que la IA consideró sin arreglo. No se borra nada: la foto queda 30 días en la biblioteca, como las demás.","Photos que l'IA juge irrécupérables. Rien n'est supprimé : la photo reste 30 jours dans la bibliothèque, comme les autres.","Fotos, die die KI für nicht zu retten hält. Nichts wird gelöscht: Das Foto bleibt wie die anderen 30 Tage in der Bibliothek."],
+  lx_modo_teste:["Em teste: estas fotos continuam à venda","In test: these photos are still on sale","En prueba: estas fotos siguen a la venta","En test : ces photos restent en vente","Im Test: Diese Fotos bleiben im Verkauf"],
+  lx_modo_ligado:[(m)=>`Ligado: estas fotos não aparecem no Checkout (${m})`,(m)=>`On: these photos do not show in the Checkout (${m})`,(m)=>`Activado: estas fotos no aparecen en el Checkout (${m})`,(m)=>`Activé : ces photos n'apparaissent pas dans le Checkout (${m})`,(m)=>`Ein: Diese Fotos erscheinen nicht im Checkout (${m})`],
+  lx_dia:["Dia","Day","Día","Jour","Tag"],
+  lx_mot_todos:["Todos os motivos","All reasons","Todos los motivos","Tous les motifs","Alle Gründe"],
+  lx_mot_escura:["Muito escura","Too dark","Muy oscura","Trop sombre","Zu dunkel"],
+  lx_mot_estourada:["Muito estourada","Blown out","Muy sobreexpuesta","Trop surexposée","Stark überbelichtet"],
+  lx_mot_desfocada:["Tremida ou desfocada","Shaky or out of focus","Movida o desenfocada","Bougée ou floue","Verwackelt oder unscharf"],
+  lx_mot_sem_ninguem:["Sem ninguém na foto","Nobody in the photo","Nadie en la foto","Personne sur la photo","Niemand auf dem Foto"],
+  lx_rec:["Não é ruim","Not bad","No está mal","Pas mauvaise","Nicht schlecht"],
+  lx_rec_ok_teste:["Anotado. A foto já estava à venda.","Noted. The photo was already on sale.","Anotado. La foto ya estaba a la venta.","C'est noté. La photo était déjà en vente.","Notiert. Das Foto war schon im Verkauf."],
+  lx_rec_ok:["A foto voltou para a venda.","The photo is back on sale.","La foto volvió a la venta.","La photo est de nouveau en vente.","Das Foto ist wieder im Verkauf."],
+  lx_recuperada:[(n,h)=>`Recuperada por ${n} às ${h}`,(n,h)=>`Recovered by ${n} at ${h}`,(n,h)=>`Recuperada por ${n} a las ${h}`,(n,h)=>`Récupérée par ${n} à ${h}`,(n,h)=>`Zurückgeholt von ${n} um ${h}`],
+  lx_sem_fot:["Sem fotógrafo","No photographer","Sin fotógrafo","Sans photographe","Ohne Fotograf"],
+  lx_treino_pode:["Treino: pode","Training: allowed","Entrenamiento: se puede","Entraînement : autorisé","Training: erlaubt"],
+  lx_treino_nao:["Treino: não pode","Training: not allowed","Entrenamiento: no se puede","Entraînement : interdit","Training: nicht erlaubt"],
+  lx_vazio:["Nenhuma foto na lixeira neste dia.","No photos in the bin on this day.","Ninguna foto en la papelera este día.","Aucune photo dans la corbeille ce jour-là.","An diesem Tag ist kein Foto im Papierkorb."],
+  lx_vazio_mot:["Nenhuma foto com este motivo neste dia.","No photos with this reason on this day.","Ninguna foto con este motivo este día.","Aucune photo avec ce motif ce jour-là.","An diesem Tag gibt es kein Foto mit diesem Grund."],
+  lx_mais:["Mostrando as 3.000 fotos mais recentes do dia.","Showing the 3,000 most recent photos of the day.","Se muestran las 3.000 fotos más recientes del día.","Affichage des 3 000 photos les plus récentes du jour.","Angezeigt werden die 3.000 neuesten Fotos des Tages."],
+  lx_sem_servidor:["A lixeira fica no servidor do ponto. Abra o Eterna pelo servidor para ver.","The bin lives on the on-site server. Open Eterna through the server to see it.","La papelera está en el servidor del punto. Abra Eterna desde el servidor para verla.","La corbeille se trouve sur le serveur du point. Ouvrez Eterna par le serveur pour la voir.","Der Papierkorb liegt auf dem Server vor Ort. Öffnen Sie Eterna über den Server, um ihn zu sehen."],
+  lx_erro:["Não deu para falar com o servidor. Tente de novo.","Could not reach the server. Try again.","No se pudo conectar con el servidor. Inténtelo de nuevo.","Impossible de joindre le serveur. Réessayez.","Der Server ist nicht erreichbar. Versuchen Sie es noch einmal."],
+  lx_carregando:["Carregando as fotos da lixeira...","Loading the photos in the bin...","Cargando las fotos de la papelera...","Chargement des photos de la corbeille...","Fotos im Papierkorb werden geladen..."],
+  lx_calculando:["Fazendo a conta...","Working it out...","Haciendo la cuenta...","Calcul en cours...","Wird berechnet..."],
+  lx_tentar:["Tentar de novo","Try again","Intentar de nuevo","Réessayer","Noch einmal versuchen"],
+  lx_sumiu:["Esta foto já saiu da lixeira.","This photo has already left the bin.","Esta foto ya salió de la papelera.","Cette photo a déjà quitté la corbeille.","Dieses Foto ist schon nicht mehr im Papierkorb."],
+  lx_regua_h:["Quanto a IA acerta","How often the AI is right","Cuánto acierta la IA","À quel point l'IA a raison","Wie oft die KI richtig liegt"],
+  lx_regua_linha:[(n,p)=>`${n} fotos marcadas no Treino, ${p}% eram mesmo ruins`,(n,p)=>`${n} photos marked in Training, ${p}% were really bad`,(n,p)=>`${n} fotos marcadas en el Entrenamiento, ${p}% eran realmente malas`,(n,p)=>`${n} photos marquées dans l'Entraînement, ${p} % étaient vraiment mauvaises`,(n,p)=>`${n} im Training markierte Fotos, ${p} % waren wirklich schlecht`],
+  lx_regua_falta:[(n)=>`Faltam ${n} fotos marcadas no Treino para medir`,(n)=>`${n} more photos marked in Training are needed to measure`,(n)=>`Faltan ${n} fotos marcadas en el Entrenamiento para medir`,(n)=>`Il manque ${n} photos marquées dans l'Entraînement pour mesurer`,(n)=>`Zum Messen fehlen noch ${n} im Training markierte Fotos`],
+  lx_regua_nota:["A conta usa as marcações do Treino e cada \"Não é ruim\".","The count uses the Training marks and every \"Not bad\".","La cuenta usa las marcas del Entrenamiento y cada \"No está mal\".","Le calcul utilise les marquages de l'Entraînement et chaque « Pas mauvaise ».","Die Rechnung nutzt die Markierungen aus dem Training und jedes „Nicht schlecht“."],
+  lx_pill:[(n,d)=>`${n} fotos na lixeira nos últimos ${d} dias`,(n,d)=>`${n} photos in the bin in the last ${d} days`,(n,d)=>`${n} fotos en la papelera en los últimos ${d} días`,(n,d)=>`${n} photos dans la corbeille ces ${d} derniers jours`,(n,d)=>`${n} Fotos im Papierkorb in den letzten ${d} Tagen`],
+  lx_cfg_k:["Lixeira da IA","AI bin","Papelera de la IA","Corbeille de l'IA","KI-Papierkorb"],
+  lx_cfg_nota:["Em Teste, a IA só separa as fotos para conferir. Ligado, elas saem do Checkout.","In Test, the AI only sets the photos aside for checking. When On, they leave the Checkout.","En Prueba, la IA solo separa las fotos para revisar. Activado, salen del Checkout.","En Test, l'IA met seulement les photos de côté pour vérification. Activé, elles quittent le Checkout.","Im Test legt die KI die Fotos nur zur Prüfung beiseite. Eingeschaltet verschwinden sie aus dem Checkout."],
+  lx_cfg_teste:["Teste","Test","Prueba","Test","Test"],
+  lx_cfg_ligado:["Ligado","On","Activado","Activé","Ein"],
+  lx_cfg_em_breve:["O Ligado chega na próxima versão.","On arrives in the next version.","Activado llega en la próxima versión.","Activé arrive dans la prochaine version.","Ein kommt mit der nächsten Version."],
+  lx_cfg_desligada:["A Lixeira da IA está desligada neste servidor.","The AI bin is turned off on this server.","La Papelera de la IA está desactivada en este servidor.","La corbeille de l'IA est désactivée sur ce serveur.","Der KI-Papierkorb ist auf diesem Server ausgeschaltet."],
+  lx_cfg_so_admin:["Só o Admin muda a Lixeira da IA.","Only the Admin changes the AI bin.","Solo el Admin cambia la Papelera de la IA.","Seul l'Admin modifie la corbeille de l'IA.","Nur der Admin ändert den KI-Papierkorb."],
 };
 // chave montada na hora (prefixo + código): o texto do dicionário ou, sem chave, o de antes
 const TEk=(k,alt)=>EQ[k]?TE(k):alt;
@@ -12039,7 +12193,7 @@ function logout(){const tv=state.train.vendo,tem=state.user&&state.user.email;co
     authSairPend(true);const p=Promise.all([logout.sair,ag]).then(()=>authApi('/auth/sair',{},{signal:agLimite(4000)})).then(r=>{if(r&&(r.status===200||r.status===401))authSairPend(false);return r;});
     logout.sair=p;p.finally(()=>{if(logout.sair===p)logout.sair=null;});}camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   demoDesliga(); // revisão (segurança): o modo demonstração não passa para a próxima pessoa
-  state.sessN++;state.user=null;state.assumido=null;trZera();
+  state.sessN++;state.user=null;state.assumido=null;trZera();lxZera();
   // revisão 23/11 (AF): números por fotógrafo, rascunho dos limites e calibração não ficam para a próxima pessoa
   Object.assign(state.fot,{j:null,chave:null,em:0,erro:null,rasc:{},recusa:null});Object.assign(state.fg.est,{chave:null,dias:null,em:0,erro:null});Object.assign(state.train.luz,{j:null,esc:{},recusa:null});state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
@@ -12072,11 +12226,11 @@ async function authConferir(){if(authSite()||!state.user)return;const dono=state
   if(r.status===200&&r.ok){const a=r.assumido_por?{por:r.assumido_por,nome:r.assumido_nome||r.assumido_por}:null;if(JSON.stringify(a)!==JSON.stringify(state.assumido)){state.assumido=a;render();}}}
 // 16/11 (Ronaldo): "ver como". Só Admin, só de quem não é Admin. O servidor guarda a sessão do Admin e devolve no "Voltar".
 async function authAssumir(usuario){const me=state.user;if(!me||state.assumido)return;const r=await authApi('/auth/assumir',{usuario});
-  if(r.status===200&&r.ok){trZera(); // a escolha (e a fila mostrada) de uma pessoa não vai para a tela nem para a gravação da outra
+  if(r.status===200&&r.ok){trZera();lxZera(); // a escolha (e a fila mostrada) de uma pessoa não vai para a tela nem para a gravação da outra
     state.assumido={por:r.assumido_por,nome:r.assumido_nome||me.name||me.email};state.users.draft=null;authEntrou(r);toast(TE('vc_entrou',(USERS[usuario]||{}).name||usuario));return;}
   toast(TE(r.erro==='alvo_maior'?'vc_e_maior':r.erro==='sem_cadastro'?'vc_e_cadastro':r.status===403?'vc_e_perm':'vc_e_conexao'));}
 async function authVoltar(){const r=await authApi('/auth/voltar',{});
-  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;trZera(); // o que foi visto e escolhido no "ver como" não aparece nem vira gravação do Admin
+  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;trZera();lxZera(); // o que foi visto e escolhido no "ver como" não aparece nem vira gravação do Admin
     state.assumido=null;state.auth_next='usuarios';authEntrou(r);if(quem)toast(TE('vc_voltou'));return;}
   if(r.status===401){logout();return;}toast(TE('vc_e_conexao'));}
 function assumidoFaixa(){const a=state.assumido,u=state.user;if(!a||!u)return '';
@@ -12936,7 +13090,7 @@ function render(){
     const cur=(VIEWS.find(v=>v[0]===state.view)||[])[3]||'';if(state.navCur!==cur){state.navCur=cur;state.navOpen={};}
     const grps=[];const rv=roleViews();rv.forEach(v=>{let g=grps.find(x=>x[0]===v[3]);if(!g)grps.push(g=[v[3],[]]);g[1].push(v);});
     // v94-ux (parte H): item só com o nome (o que era <small> vai para o title); até 5 telas, sem grupos (decisão 8)
-    const item=v=>`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}" title="${esc(viewDesc(v[0]))}"><span>${esc(viewLabel(v[0]))}</span>${v[0]==='posto'?postoPill():''}</button>`;
+    const item=v=>`<button data-act="view" data-v="${v[0]}" aria-current="${state.view===v[0]?'page':'false'}" title="${esc(viewDesc(v[0]))}"><span>${esc(viewLabel(v[0]))}</span>${v[0]==='posto'?postoPill():''}${v[0]==='lixeira'?lxPill():''}</button>`;
     const navCk=false&&canView('quiosque')?'<button class="nav-ck" data-act="loja-abrir" title="Abre a tela do cliente em outra janela"><span>Abrir Checkout</span></button>':''; // decisão 9
     $('#nav').innerHTML=(rv.length<=5?`<div class="navg navplano"><div class="navitems" id="navg0">${rv.map(item).join('')}</div></div>`:grps.map(([g,vs],i)=>{const open=state.navOpen[g]!=null?state.navOpen[g]:g===cur;return `<div class="navg"><button class="grp" data-act="nav-grp" data-g="${esc(g)}" aria-expanded="${open}" aria-controls="navg${i}"><span>${esc(grpLabel(g))}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button><div class="navitems" id="navg${i}"${open?'':' hidden'}>${navSub(g,vs,i,item)}</div></div>`;}).join(''))+navCk;
     $('#rail-idiomas').innerHTML=$('#topo-idiomas').innerHTML=idiomaSel();railCk();{const mb=document.querySelector('#menu-btn span');if(mb)mb.textContent=TE('menu');$('#railgav').setAttribute('aria-label',TE('menu'));$('#nav').setAttribute('aria-label',TE('secoes'));$('#rail-brand').setAttribute('aria-label',TE('v_perfis'));}const m=MODULE_OF[state.view];const wr=m?['c','u','d'].filter(k=>opOk(m,k)):[];const ro=wr.length>0&&!wr.some(k=>can(m,k));/* somente leitura: o módulo tem letra de escrita e a pessoa não tem nenhuma */$('#venue-sub').innerHTML=`<label class="av-troca" title="${esc(u.foto?TE('us_foto_trocar'):TE('us_foto_por'))}">${avatar(u,30)}<input type="file" accept="image/*" data-act="minha-foto" hidden></label>${esc(u.name)}${ro?` · <span class="pill neutral">${TE('somente_leitura')}</span>`:''}<br><span class="note">${esc(u.email)}</span> · <button class="chip" data-act="minha-senha" style="min-height:26px;padding:2px 9px">${TE('menu_trocar')}</button> <button class="chip" data-act="role-exit" style="min-height:26px;padding:2px 9px">${TE('menu_sair')}</button>`;}
@@ -12956,6 +13110,10 @@ function render(){
   compHydrate();
   entrarFoco();
 }
+// 24/11: Lixeira da IA: a tela, as ações que gravam e o módulo de cada uma, em linhas próprias (o merge com outras branches não briga)
+VIEWFN.lixeira=vLixeira;
+Object.assign(WRITE_OPS,{'lx-rec':'u','lx-cfg':'u'});
+Object.assign(ACT_MOD,{'lx-rec':'qualidade','lx-cfg':'configuracao'});
 // v84: na tela de entrada, o campo (e-mail ou código) já vem focado. O autofocus não dispara em HTML injetado depois do
 // carregamento; o foco só é dado quando a tela passa a ser a de entrada ou muda a etapa (os outros renders não roubam o foco).
 function entrarFoco(){const k=state.view==='entrar'&&!state.user?'entrar|'+state.auth.step:null;
@@ -13163,6 +13321,7 @@ document.addEventListener('click',e=>{
       if(state.view==='importar'){const lb=el.closest('#lib-painel,#lib-minhas');
         if(lb){const ids=libOrdem();if(ids.includes(id)){openGallery(ids.map(i=>({id:i})),id,TE(lb.id==='lib-minhas'?'lb_minhas':'lb_biblioteca'),{});break;}}
         const sx=upSessDe(id);if(sx&&state.agent.sessoes){openGallery(upSessIds(sx).map(i=>({id:i})),id,`${upNome(sx)} · ${sx.card}`,{});break;}const all=[...(state.ing.cur?state.ing.cur.photos:[]),...state.ing.done.flatMap(x=>x.photos)];openGallery(all,id,`${impName()} · ingestão`,{});break;}
+      if(state.view==='lixeira'){openGallery(lxFiltrados().map(x=>({id:'ag_'+x.pid})),id,viewLabel('lixeira'),{});break;} // 24/11: a lupa percorre a lista filtrada
       if(state.view==='treino'){const md=state.train.aba==='medida'&&state.train.med.j;openGallery(md?(md.erros||[]).slice(0,60).map(x=>({id:'ag_'+x.pid})):trainLista().map(x=>({id:x.id})),id,viewLabel('treino'),{});break;} // 18/11: na Medição, a lista dos erros
       if(state.view==='revisao'&&state.session){const ss=revSessions().find(x=>x.card===state.session);openGallery(ss.photos.filter(p=>hasImg(p.id)),id,`${P[ss.key].name} · ${ss.card}`,{review:true});break;}
       const s=demoSessions().find(x=>x.photos.find(p=>p.id===id));if(s)openGallery(s.photos.filter(p=>hasImg(p.id)),id,`${P[s.key]?P[s.key].name:''} · ${s.card}`,(state.posto.manual&&(state.view==='posto'||state.view==='caixa'))?{edit:true,quick:true}:{});else openGallery([{id}],id,'',{});break;}
@@ -13499,6 +13658,12 @@ document.addEventListener('click',e=>{
       if(pontoModo()!=='posto'){toast('A troca de rolo pelo selo só vale num aparelho configurado como posto. Registre em Estoque.');render();break;}
       if(d.posto!==pn){toast(`A troca de rolo daqui vale só para ${pn}. Registre a de ${d.posto||'outro posto'} no próprio posto ou em Estoque.`);render();break;}
       roloTrocar(pn);render();break;}
+    // 24/11: Lixeira da IA
+    case 'lx-mot':if(['todos',...LX_MOTIVOS].includes(d.m)){state.lx.mot=d.m;render();}break;
+    case 'lx-rec':lxRec(d.pid);break;
+    case 'lx-cfg':lxCfg(d.v);break;
+    case 'lx-reler':state.lx.err=null;lxPull();break;
+    case 'lx-regua':{e.preventDefault();const L=state.lx;L.regua=!L.regua;if(L.regua&&!L.med&&!L.medBusy)lxMedida();else render();break;}
   }
 });
 document.addEventListener('input',e=>{const a=e.target.dataset.act;if(a==='fot-lim'){const k=e.target.dataset.k;if(FOT_LIM_CAMPOS.includes(k))state.fot.rasc[k]=String(e.target.value).slice(0,12);return;}if(a==='pf-nome'){const f=state.perm.pf;if(f)f.name=e.target.value;return;}if(a==='tr-obs'){const p=trAtual();if(p)trRasc(p.pid).obs=e.target.value.slice(0,200);return;}if(a==='posto-nome'){state.posto.nomeTxt=e.target.value;return;}if(a==='leitor-nome'){state.leitores.nomeTxt=e.target.value;return;}/* o nome digitado sobrevive a um redesenho da tela */if(a==='login-usuario'){state.auth.usuario=e.target.value;return;}if(a==='login-senha'){state.auth.senha=e.target.value;return;}if(a==='login-nova'){state.auth.nova=e.target.value;return;}if(a==='login-nova2'){state.auth.nova2=e.target.value;return;}if(a==='user-field'){if(state.users.draft)state.users.draft[e.target.dataset.k]=e.target.value;return;}if(a==='di-text'){state.diario.text=e.target.value;return;}if(a==='rv-field'&&e.target.dataset.k==='base_url'){state.rvForm=state.rvForm||{};state.rvForm.base_url=e.target.value;return;}if(a==='fe-field'){if(state.flagEd)state.flagEd[e.target.dataset.k]=e.target.value;return;}if(a==='venue-field'){VENUE_CFG[e.target.dataset.k]=e.target.value||null;saveVenue();return;}if(a==='venue-color'){VENUE_CFG[e.target.dataset.k]=e.target.value;saveVenue();const b=e.target.parentElement.querySelector('b');if(b)b.textContent=e.target.value;return;}if(a==='aj-range'){if(can('set','u'))ajSet(state.ajustes.photo,e.target.dataset.k,+e.target.value);return;}if(a==='perm-q'||a==='perm-logq'){state.perm[a==='perm-q'?'q':'logQ']=e.target.value;const pos=e.target.selectionStart;render();const n=$(`[data-act="${a}"]`);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='user-q'){state.users.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="user-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}return;}if(a==='checkout-code'){state.checkout.code=e.target.value;const el=e.target;const pos=el.selectionStart;render();const n=$('[data-act="checkout-code"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='av-minhas-q'){state.av.minhasQ=e.target.value;const pos=e.target.selectionStart;render();const n=$('#av-minhas-q');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(_){}}return;}if(a==='din-q'){state.caixa.dinQ=e.target.value;const pos=e.target.selectionStart;render();const n=$('#din-q');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='sales-q'){state.sales.q=e.target.value;state.sales.page=0;const pos=e.target.selectionStart;render();const n=$('[data-act="sales-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='note')draft().note=e.target.value;else if(a==='gal-q'){state.gal.q=e.target.value;const pos=e.target.selectionStart;render();const n=$('[data-act="gal-q"]');if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(x){}}}else if(a==='price'){if(!guardAct('price')){render();return;} /* v94-ux: preço só com catalogo.u */SIM.prices[e.target.dataset.id]=+e.target.value||0;saveSim();}});
@@ -13712,6 +13877,7 @@ window.ETERNA={trCfgMuda,TR_IA_MOTIVOS,fgFotoAgrega,fgEstTela,esSecBVai,fotAlert
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 Object.assign(window.ETERNA,{FIA_PADRAO,IMP_PX,FIA_ROSTOS,BG_DEF,mtgPanel,mtgModoSalva,MTG_MODOS,posesPanel,psModoSalva,PS_MODOS,mtgSrv,mtgFundo,mtgPedir,MTG,mtgCanvasOk,mtgConhecido,mtgGer:()=>MTG_GER,fiaMontagens:FIA_CONTA,mtgTempos:(e,p,d,h,t,n)=>{if(e!=null)MTG_ESPERA_MS=e;if(p!=null)MTG_PASSO_MS=p;if(d!=null)MTG_DE_NOVO_MS=d;if(h!=null)MTG_HI_ESPERA_MS=h;if(t!=null)MTG_PASSO_TETO_MS=t;if(n!=null)MTG_FALHAS_MAX=n;}}); // montagem no servidor (E1): tabelas para o teste de paridade com o agente/eterna-montagem.py e a chave do modo
 Object.assign(window.ETERNA,{ljEscolhidas,ljEscUpd,ljFsUpd,ljDesfMs:v=>{LJ_DESF_MS=v;}}); // 17/11: barra das escolhidas (testes/checkout-barra-escolhidas.js)
+Object.assign(window.ETERNA,{lxFiltrados,lxStatus,lxPill,lxCfgPanel,lxCfg,migraLixeira24,migrateUser,LX_MOTIVOS,lxModalN:()=>MODAL.list.length}); // 24/11: Lixeira da IA (testes/lixeira.js)
 })();
 </script>
 

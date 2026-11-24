@@ -956,10 +956,12 @@ def varias_pessoas(fs):
     return len(fs) >= 2 and fs[1][0] >= VARIAS_RAZAO * fs[0][0]
 
 
-def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
+def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False, brutos=None):
     """img BGR -> [(largura, vetor 128 normalizado)] do maior para o menor rosto. detalhe=True (v91, sessões):
     [(largura, vetor, score, frontal, caixa)]; frontal = nariz a até SESS_Q_FRONTAL x a distância entre os olhos do meio deles;
-    caixa (23/11, medida de luz) = (x, y, l, a) do rosto nas coordenadas da img recebida (antes da redução para LADO)."""
+    caixa (23/11, medida de luz) = (x, y, l, a) do rosto nas coordenadas da img recebida (antes da redução para LADO).
+    brutos (24/11, Lixeira da IA): lista opcional que recebe quantos rostos o detector achou em qualquer tamanho, antes do
+    filtro de minimo. Sem o parâmetro, nada muda."""
     np = _cv["np"]; cv2 = _cv["cv2"]
     h, w = img.shape[:2]
     k = min(1.0, LADO / max(h, w))
@@ -967,6 +969,8 @@ def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False):
         img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
     det.setInputSize((img.shape[1], img.shape[0]))
     _, f = det.detect(img)
+    if brutos is not None:
+        brutos.append(len(f) if f is not None else 0)
     out = []
     for r in (f if f is not None else []):
         if r[2] < minimo:
@@ -1043,12 +1047,13 @@ def leitor_loop(det, rec, db):
         t_ini = time.time()
         lidos = None
         img_l = fs_l = None
+        nb = []                         # 24/11 (Lixeira da IA): rostos achados em qualquer tamanho, antes do filtro ROSTO_MIN
         _leitor_lendo(1)
         try:
             img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)
             if img is None:
                 continue
-            fs = ler_rostos(img, det, rec, detalhe=True)
+            fs = ler_rostos(img, det, rec, detalhe=True, brutos=nb)
             dia = os.path.basename(os.path.dirname(path))
             db.execute("insert or replace into foto values (?,?,?,?)", (pid, dia, len(fs), time.time()))
             db.execute("delete from rosto where pid=?", (pid,))
@@ -1079,6 +1084,7 @@ def leitor_loop(det, rec, db):
             _leitor_lendo(-1)
         # 23/11 (AF-D4, revisão): luz da foto como saiu da câmera, na imagem já decodificada, só DEPOIS de a foto entrar na matriz
         # da selfie (mat_acrescenta), na fila do fotógrafo (ff_rosto_lido) e na sessão (sess_rostos_lidos): a selfie não espera
+        v_l = None
         if img_l is not None and luz_ligada():
             try:
                 t_l = time.time()
@@ -1086,6 +1092,14 @@ def leitor_loop(det, rec, db):
                 luz_acrescenta(pid, v_l, round((time.time() - t_l) * 1000, 1))
             except Exception as ex:
                 print("  luz: %s" % type(ex).__name__)
+        # 24/11 (Lixeira da IA): o veredito sai aqui, na mesma imagem e com as mesmas caixas, depois da selfie e da luz
+        if img_l is not None and LX_ON:
+            try:
+                t_x = time.time()
+                d_x = lx_medir(img_l, [f[4] for f in fs_l if len(f) > 4], len(fs_l), nb[0] if nb else None, v_l)
+                lx_acrescenta(pid, os.path.basename(os.path.dirname(path)), d_x, round((time.time() - t_x) * 1000, 1))
+            except Exception as ex:
+                print("  lixeira: %s" % type(ex).__name__)
         img = img_l = fs_l = None
 
 
@@ -12059,6 +12073,9 @@ def estado_gravar(body, quem=""):
                 if d["col"] == "config" and d["id"] == "poses":     # 23/11: a chave das poses só pela rota /poses/config
                     print("  config/poses recusada pela sincronização (só POST /poses/config) · de %s" % (quem or "?"))
                     continue
+                if d["col"] == "config" and d["id"] == "lixeira":      # 24/11: a chave da Lixeira da IA só pela rota /lixeira/config
+                    print("  config/lixeira recusada pela sincronização (só POST /lixeira/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "fotografos":   # 23/11 (AF): limites só pela rota /fotografos/config
                     print("  config/fotografos recusada pela sincronização (só POST /fotografos/config) · de %s" % (quem or "?"))
                     continue
@@ -14444,6 +14461,10 @@ def treino_db():
     c.execute("create table if not exists medida (pid text, tipo text, valor text, em text, primary key (pid, tipo))")
     # 18/11 (ligar já): auditoria de cada Ligada do reconhecimento do ponto (só acrescenta; números, nenhuma foto)
     c.execute("create table if not exists liga_log (em text, por text, abaixo integer, versao text, dados text)")
+    # 24/11: Lixeira da IA (veredito na chegada, só números; quem recuperou) e o registro de cada recuperação e mudança da chave
+    c.execute("create table if not exists lixeira (pid text primary key, dia text, v integer, mot text, dados text, em text, rec_por text, rec_em text)")
+    c.execute("create index if not exists lixeira_dia on lixeira(dia)")
+    c.execute("create table if not exists lixeira_log (pid text, acao text, por text, em text)")
     return c
 
 
@@ -14819,11 +14840,12 @@ def treino_lgpd(pids):
             db = treino_db()
             try:
                 for p in pids:
-                    for tab in ("rotulo", "rotulo_hist", "medida"):
+                    for tab in ("rotulo", "rotulo_hist", "medida", "lixeira", "lixeira_log"):
                         db.execute("delete from %s where pid = ?" % tab, (p,))
                 db.commit()
             finally:
                 db.close()
+        lx_lgpd_mem(pids)                  # 24/11: Lixeira da IA (memória e fila)
         _treino_n["t"] = 0.0
         cena_lgpd(pids)                    # 18/11: vetor e classificação da foto (cena.db, memória e fila)
         with treino_lock:
@@ -15653,6 +15675,627 @@ def luz_medida(forcar=False, lim=None):
     if not candidato:
         _luz_med.update(t=time.time(), r=r, lim=lim)
     return r
+
+
+# ---------- Lixeira da IA (24/11, plano docs/planos/2026-11-24-lixeira-ia.md, Parte A) ----------
+# O servidor separa as fotos sem salvação (muito escura, muito estourada, tremida ou desfocada demais, sem ninguém) numa
+# "Lixeira da IA", como a pasta de spam do e-mail. Nada é apagado: Admin e Supervisora conferem em Curadoria › Lixeira da IA e
+# devolvem com "Não é ruim". A medida é feita no leitor de rostos (lx_medir), na imagem já decodificada e com as caixas dos
+# rostos, depois da selfie e da luz; o veredito é dado UMA vez, na chegada, com os limites daquele momento (D3).
+# Dado: treino.db lixeira (só números por pid; vai para o backup; a LGPD apaga pelo treino_lgpd) e lixeira_log (quem recuperou
+# e cada mudança da chave). Chave: estado.db config/lixeira, só pela rota POST /lixeira/config (só o Admin; o estado_gravar
+# recusa). Parte A: só "medir" (Teste); "ligada" responde 409 em_breve. Falha aberta (D4): sem OpenCV, sem medida ou com erro,
+# a foto fica fora da lixeira. ETERNA_LIXEIRA=0 desliga a medida e qualquer efeito. Nada sai do servidor.
+LX_V = 1
+LX_MOTIVOS = ("escura", "estourada", "desfocada", "sem_ninguem")      # ordem fixa: a tela mostra o primeiro
+LX_LIM_PADRAO = {"esc_rosto_med": 22, "esc_quadro_med": 18, "esc_quadro_baixo": 60,
+                 "est_rosto_p95": 254, "est_rosto_alto": 40, "est_quadro_med": 235, "est_quadro_alto": 50,
+                 "nit_rosto": 25, "nit_quadro_com_rosto": 25, "nit_quadro": 20, "sem_brutos": 0}
+LX_FAIXAS = {"esc_rosto_med": (1, 80), "esc_quadro_med": (1, 80), "esc_quadro_baixo": (1, 100),
+             "est_rosto_p95": (200, 255), "est_rosto_alto": (1, 100), "est_quadro_med": (150, 255), "est_quadro_alto": (1, 100),
+             "nit_rosto": (1, 1000), "nit_quadro_com_rosto": (1, 1000), "nit_quadro": (1, 1000), "sem_brutos": (0, 1)}
+LX_CRIT = {"n": 20, "precisao": 0.95}
+LX_CFG_PADRAO = {"v": 1, "modo": "medir", "valendo": [], "desde": None, "por": None, "lim": LX_LIM_PADRAO}
+LX_MODOS = ("medir", "ligada")
+LX_LIGADO_PRONTO = False     # Parte A: o Ligado chega na próxima versão (POST com modo "ligada" = 409 em_breve)
+LX_FILA_MAX = 20000
+LX_GRAVA_SEG = 5
+LX_ITENS_MAX = 3000
+LX_MENU_DIAS = 7             # Eduardo (24/11): a contagem do menu é dos últimos 7 dias (hoje incluído), sem as recuperadas
+LX_ON = os.environ.get("ETERNA_LIXEIRA") != "0"
+LX_QUADRO_LADO = 1024        # o quadro central (60%) é medido com o lado maior reduzido a este tamanho; o rosto, na MESMA escala
+#                              (revisão 24/11: resize INTER_LINEAR, 7 vezes mais barato que o INTER_AREA e com os mesmos números nos
+#                              fundos do repositório: nítida 444 ou mais, sigma 4 de 20 a 43, sigma 8 de 9 a 13)
+#                              (24/11: reduzido a 160 px, como no plano, o valor do rosto borrado ia de 11 a 88 conforme o tamanho
+#                              dele; na escala do quadro, sigma 8 dá 10 a 23 e o rosto nítido dá 430 ou mais; por isso nit_rosto 25)
+LX_TREINO_MOTIVO = {"escura": "escura", "estourada": "estourada", "desfocada": "desfocada", "sem_ninguem": "semrosto"}
+lx_lock = threading.Lock()
+lx_novas = collections.OrderedDict()        # pid -> (dia, dados, mot, em) esperando o lx_grava_loop
+lx_mem = {}                                 # pid -> {"dia", "mot", "em", "rec"}: só as fotos COM motivo dos últimos LX_MENU_DIAS dias
+#                                             (contagem do menu; Parte B); o lx_status percorre só estas
+lx_vistos = {}                              # pid -> dia: as fotos já medidas nos últimos LX_MENU_DIAS dias (o veredito não muda)
+lx_st = {"rev": 0, "limpa_dia": "", "limpa_tent": 0.0, "ms_total": 0.0, "ms_n": 0}
+lx_parar = threading.Event()                # só os testes ligam: os laços terminam
+_lx_med = {"t": 0.0, "r": None}
+_lx_cfg = {"t": 0.0, "v": None}
+
+
+def _lx_r1(x):
+    return None if x is None else round(float(x), 1)
+
+
+def _lx_nitidez(cinza):
+    """Variância do Laplaciano (ksize 3, float32) de uma imagem cinza."""
+    cv2 = _cv["cv2"]
+    return float(cv2.Laplacian(cinza, cv2.CV_32F, ksize=3).var())
+
+
+def lx_medir(img, caixas, n, nb, luz=None):
+    """img BGR (numpy, a do leitor), caixas dos rostos (x, y, l, a) nas coordenadas dela, n = rostos de tamanho normal, nb =
+    rostos achados em qualquer tamanho (None = não se sabe), luz = medida do luz_medir (sem ela, mede aqui). -> dados (só
+    números): {v, nq, nr, n, nb, luz:{q:{med,alto,baixo,p95}, r:{med,p95,alto}|None}}. nq/nr = variância do Laplaciano do
+    quadro central (60%, lado maior a LX_QUADRO_LADO) e do maior rosto (caixa 10% maior, na mesma escala do quadro); None sem
+    OpenCV (falha aberta: sem veredito de desfoque)."""
+    luz = luz if isinstance(luz, dict) else luz_medir(img, caixas)
+    q, r = luz.get("q") or None, luz.get("r") or None
+    lz = {"q": {k: q.get(k) for k in ("med", "alto", "baixo", "p95")} if isinstance(q, dict) else None,
+          "r": {k: r.get(k) for k in ("med", "p95", "alto")} if isinstance(r, dict) else None}
+    nq = nr = None
+    cv2 = _cv.get("cv2")
+    if cv2 is not None:
+        h, w = img.shape[:2]
+        y0, y1 = int(h * 0.2), max(int(h * 0.2) + 1, int(h * 0.8))
+        x0, x1 = int(w * 0.2), max(int(w * 0.2) + 1, int(w * 0.8))
+        c = img[y0:y1, x0:x1]
+        k = min(1.0, LX_QUADRO_LADO / max(c.shape[:2]))
+        if k < 1:
+            c = cv2.resize(c, (max(1, int(c.shape[1] * k)), max(1, int(c.shape[0] * k))), interpolation=cv2.INTER_LINEAR)
+        nq = _lx_nitidez(cv2.cvtColor(c, cv2.COLOR_BGR2GRAY) if c.ndim == 3 else c)
+        cs = [b for b in (caixas or []) if b and len(b) >= 4 and b[2] > 0 and b[3] > 0]
+        if cs:
+            x, y, l, a = max(cs, key=lambda b: b[2] * b[3])[:4]
+            fx0, fy0 = max(0, int(x - l * 0.05)), max(0, int(y - a * 0.05))
+            fx1, fy1 = min(w, int(x + l * 1.05) + 1), min(h, int(y + a * 1.05) + 1)
+            if (fx1 - fx0) * k >= 8 and (fy1 - fy0) * k >= 8:
+                f = img[fy0:fy1, fx0:fx1]
+                if k < 1:
+                    f = cv2.resize(f, (max(1, int(f.shape[1] * k)), max(1, int(f.shape[0] * k))), interpolation=cv2.INTER_LINEAR)
+                nr = _lx_nitidez(cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) if f.ndim == 3 else f)
+    return {"v": LX_V, "nq": _lx_r1(nq), "nr": _lx_r1(nr), "n": int(n or 0), "nb": None if nb is None else int(nb), "luz": lz}
+
+
+def lx_classe(dados, lim=None):
+    """dados (lx_medir, ou só {luz} para as fotos medidas antes) -> lista de motivos na ordem de LX_MOTIVOS (vazia = ok).
+    Campo que falta não dá motivo (falha aberta)."""
+    lim = lim or LX_LIM_PADRAO
+    if not isinstance(dados, dict):
+        return []
+    out = set()
+    lz = dados.get("luz") if isinstance(dados.get("luz"), dict) else {}
+    r, q = lz.get("r"), lz.get("q")
+    try:
+        if isinstance(r, dict) and r.get("med") is not None:
+            if r["med"] < lim["esc_rosto_med"]:
+                out.add("escura")
+            if r["p95"] >= lim["est_rosto_p95"] and r["alto"] >= lim["est_rosto_alto"]:
+                out.add("estourada")
+        elif isinstance(q, dict) and q.get("med") is not None:
+            if q["med"] < lim["esc_quadro_med"] and q["baixo"] >= lim["esc_quadro_baixo"]:
+                out.add("escura")
+            if q["med"] >= lim["est_quadro_med"] and q["alto"] >= lim["est_quadro_alto"]:
+                out.add("estourada")
+    except (KeyError, TypeError):
+        pass
+    nq, nr = dados.get("nq"), dados.get("nr")
+    if isinstance(nq, (int, float)):
+        if isinstance(nr, (int, float)):
+            if nr < lim["nit_rosto"] and nq < lim["nit_quadro_com_rosto"]:
+                out.add("desfocada")
+        elif nq < lim["nit_quadro"]:
+            out.add("desfocada")
+    nb = dados.get("nb")
+    if isinstance(nb, int) and not isinstance(nb, bool) and nb <= lim["sem_brutos"]:
+        out.add("sem_ninguem")
+    return [m for m in LX_MOTIVOS if m in out]
+
+
+def lx_cfg_valida(j, base=None):
+    """config/lixeira: formato fechado. -> documento normalizado ou None. lim parcial completa com base (ou o padrão); cada
+    limite só dentro de LX_FAIXAS."""
+    if not isinstance(j, dict) or j.get("modo") not in LX_MODOS:
+        return None
+    lim = dict((base or {}).get("lim") or LX_LIM_PADRAO)
+    lj = j.get("lim")
+    if lj is not None:
+        if not isinstance(lj, dict) or set(lj) - set(LX_LIM_PADRAO):
+            return None
+        for k, v in lj.items():
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or not LX_FAIXAS[k][0] <= v <= LX_FAIXAS[k][1]:
+                return None
+            lim[k] = v
+    val = j.get("valendo") or []
+    if not isinstance(val, list) or any(m not in LX_MOTIVOS for m in val):
+        return None
+    desde = j.get("desde")
+    if desde is not None and not (isinstance(desde, str) and len(desde) <= 40):
+        return None
+    por = j.get("por")
+    return {"v": 1, "modo": j["modo"], "valendo": [m for m in LX_MOTIVOS if m in val] if j["modo"] == "ligada" else [],
+            "desde": desde if j["modo"] == "ligada" else None, "por": por[:100] if isinstance(por, str) else None,
+            "em": j.get("em")[:40] if isinstance(j.get("em"), str) else None, "lim": lim}
+
+
+def lx_cfg():
+    """A chave da lixeira (estado.db config/lixeira), relida a cada 3 s. Sem documento ou ilegível: o padrão (Teste)."""
+    agora = time.time()
+    if agora - _lx_cfg["t"] < 3 and _lx_cfg["v"] is not None:
+        return _lx_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'lixeira' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                v = lx_cfg_valida(json.loads(r[0]))
+    except Exception:
+        v = _lx_cfg["v"]
+    if v and v["modo"] == "ligada" and not LX_LIGADO_PRONTO:
+        v = dict(v, modo="medir", valendo=[], desde=None)      # Parte A: nada esconde, mesmo com um documento de fora
+    v = v or dict(LX_CFG_PADRAO, lim=dict(LX_LIM_PADRAO), em=None)
+    _lx_cfg.update(t=agora, v=v)
+    return v
+
+
+def lx_cfg_mem():
+    """A chave e os limites SÓ da memória (revisão 24/11): o leitor de rostos e o /status nunca abrem o estado.db nem esperam o
+    estado_lock. Quem relê o banco é o lx_grava_loop (lx_cfg, a cada LX_GRAVA_SEG); antes da primeira leitura, o padrão."""
+    return _lx_cfg["v"] or dict(LX_CFG_PADRAO, lim=dict(LX_LIM_PADRAO), em=None)
+
+
+def lx_cfg_gravar(corpo, quem):
+    """POST /lixeira/config {modo?, lim?}: só o Admin (conferido na rota). -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"modo", "lim"}:
+        return 400, {"ok": False, "error": "campo"}
+    de = lx_cfg()
+    modo = corpo.get("modo", de["modo"])
+    if modo not in LX_MODOS:
+        return 400, {"ok": False, "error": "modo"}
+    novo = lx_cfg_valida({"modo": modo, "lim": corpo.get("lim"), "valendo": [], "desde": None}, de)
+    if novo is None:
+        return 400, {"ok": False, "error": "lim"}
+    if modo == "ligada" and not LX_LIGADO_PRONTO:
+        return 409, {"ok": False, "error": "em_breve"}
+    if novo["modo"] == de["modo"] and novo["lim"] == de["lim"]:
+        return 200, {"ok": True, "igual": True, "cfg": de}
+    v = dict(novo, por=str(quem or "")[:100] or None, em=_iso())
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "lixeira", json.dumps(v, ensure_ascii=False), rev, v["em"]))
+            db.commit()
+        finally:
+            db.close()
+    with treino_lock:
+        db = treino_db()
+        try:
+            db.execute("insert into lixeira_log values (?,?,?,?)", ("", "cfg_" + v["modo"], v["por"], v["em"]))
+            db.commit()
+        finally:
+            db.close()
+    _lx_cfg.update(t=time.time(), v=dict(v))
+    _lx_med["t"] = 0.0
+    mud = [k for k in LX_LIM_PADRAO if v["lim"].get(k) != de["lim"].get(k)]
+    print("  lixeira: modo %s -> %s%s · por %s" % (de["modo"], v["modo"], " · limites: %s" % ", ".join(mud) if mud else "", v["por"] or "?"))
+    return 200, {"ok": True, "cfg": v}
+
+
+def lx_acrescenta(pid, dia, dados, ms=None):
+    """Veredito na chegada (D3): os limites de agora decidem (da memória, lx_cfg_mem: roda no leitor de rostos). Vai para a fila
+    de gravação; com motivo, também para a memória da contagem. ms = o tempo da medida (média no /status.lixeira)."""
+    if not LX_ON or not isinstance(dados, dict):
+        return []
+    mot = lx_classe(dados, lx_cfg_mem()["lim"])
+    em = _iso()
+    with lx_lock:
+        if ms is not None:
+            lx_st["ms_total"] += ms
+            lx_st["ms_n"] += 1
+        if pid in lx_vistos:             # já tem veredito (o leitor leu de novo a mesma foto): não muda
+            x = lx_mem.get(pid)
+            return (x or {}).get("mot") or []
+        lx_novas.pop(pid, None)
+        lx_novas[pid] = (dia, dados, ",".join(mot) or None, em)
+        while len(lx_novas) > LX_FILA_MAX:
+            lx_novas.popitem(last=False)
+        lx_vistos[pid] = dia
+        if mot:
+            lx_mem[pid] = {"dia": dia, "mot": mot, "em": em, "rec": None}
+            lx_st["rev"] += 1
+    return mot
+
+
+def lx_grava():
+    """Grava a fila em lote no treino.db. O veredito que já existe não muda (on conflict do nothing). Foto que saiu da
+    biblioteca no meio (LGPD) não fica com a linha."""
+    with lx_lock:
+        if not lx_novas:
+            return 0
+        itens = list(lx_novas.items())
+        lx_novas.clear()
+    with lock:
+        itens = [(p, x) for p, x in itens if p in lib]
+    if not itens:
+        return 0
+    with treino_lock:
+        db = treino_db()
+        try:
+            db.executemany("insert into lixeira (pid, dia, v, mot, dados, em) values (?,?,?,?,?,?) on conflict(pid) do nothing",
+                           [(p, d, LX_V, mot, json.dumps(dd, separators=(",", ":")), em) for p, (d, dd, mot, em) in itens])
+            db.commit()
+        finally:
+            db.close()
+    with lock:
+        sairam = [p for p, _ in itens if p not in lib]
+    if sairam:
+        with treino_lock:
+            db = treino_db()
+            try:
+                db.executemany("delete from lixeira where pid = ?", [(p,) for p in sairam])
+                db.commit()
+            finally:
+                db.close()
+    return len(itens) - len(sairam)
+
+
+def lx_grava_loop():
+    """Grava a fila e relê a chave do estado.db (lx_cfg), para o leitor de rostos só ler a memória (lx_cfg_mem)."""
+    while not lx_parar.is_set():
+        lx_parar.wait(LX_GRAVA_SEG)
+        try:
+            lx_cfg()
+        except Exception as ex:
+            print("  lixeira: chave %s" % type(ex).__name__)
+        try:
+            lx_grava()
+        except Exception as ex:
+            print("  lixeira: gravação %s" % type(ex).__name__)
+
+
+def _lx_dias_mem(t=None):
+    """Os dias que ficam na memória: hoje e os LX_MENU_DIAS - 1 anteriores (a contagem do menu; hoje e ontem bastam à Parte B)."""
+    t = time.time() if t is None else t
+    return tuple(_ff_hoje(t - i * 86400) for i in range(LX_MENU_DIAS))
+
+
+def lx_mem_carregar():
+    """Na partida: as linhas dos últimos LX_MENU_DIAS dias com a foto ainda na biblioteca."""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    with treino_lock:
+        db = treino_db()
+        try:
+            ds = _lx_dias_mem()
+            rs = db.execute("select pid, dia, mot, em, rec_em from lixeira where dia in (%s)" % ",".join("?" * len(ds)), ds).fetchall()
+        finally:
+            db.close()
+    with lock:
+        rs = [r for r in rs if r[0] in lib]
+    with lx_lock:
+        for p, d, mot, em, rec in rs:
+            lx_vistos[p] = d
+            ms = [m for m in (mot or "").split(",") if m in LX_MOTIVOS]
+            if ms:
+                lx_mem[p] = {"dia": d, "mot": ms, "em": em, "rec": rec}
+    return len(rs)
+
+
+def lx_lgpd_mem(pids):
+    """LGPD: a foto sai da memória e da fila (as linhas saem pelo treino_lgpd)."""
+    with lx_lock:
+        for p in pids:
+            lx_novas.pop(p, None)
+            lx_vistos.pop(p, None)
+            if lx_mem.pop(p, None) is not None:
+                lx_st["rev"] += 1
+
+
+def _lx_dia_fotos(dia):
+    """{pid: {fotografo, card, ordem}} das sessões do dia: as fechadas pelo índice do Treino, as abertas pelo arquivo do dia."""
+    idx = dict(treino_fotos_dia(dia).get("idx") or {})
+    try:
+        ss = json.load(open(os.path.join(SESS_DIR, dia + ".json"), encoding="utf8")).get("sessoes") or []
+    except Exception:
+        ss = []
+    for x in ss:
+        if not isinstance(x, dict) or x.get("removida") or not isinstance(x.get("card"), str):
+            continue
+        fs = [p for p in (x.get("fotos") or []) if isinstance(p, str)]
+        quem = x.get("fotografo") if isinstance(x.get("fotografo"), str) else None
+        for i, p in enumerate(fs):
+            if p not in idx:
+                idx[p] = {"fotografo": quem, "card": x["card"], "ordem": i + 1}
+    return idx
+
+
+def _lx_nomes(emails):
+    """{email: nome} do cadastro da equipe (para "Recuperada por")."""
+    out = {}
+    if not emails or not os.path.exists(ESTADO_DB):
+        return out
+    try:
+        with estado_lock:
+            db = estado_db()
+            try:
+                for e in emails:
+                    cad = auth_cadastro(db, e)
+                    if isinstance(cad, dict) and isinstance(cad.get("name"), str):
+                        out[e] = cad["name"][:80]
+            finally:
+                db.close()
+    except Exception:
+        pass
+    return out
+
+
+def _lx_treino_niveis(pids):
+    """{pid: nível do Treino} (boa, ajustar, fraca, nao_vai ou duvida)."""
+    out = {}
+    ps = list(pids)
+    if not ps or not os.path.exists(TREINO_DB):
+        return out
+    with treino_lock:
+        db = treino_db()
+        try:
+            rs = []
+            for i in range(0, len(ps), 500):
+                bl = ps[i:i + 500]
+                rs += db.execute("select pid, dados from rotulo where pid in (%s)" % ",".join("?" * len(bl)), bl).fetchall()
+        finally:
+            db.close()
+    for p, d in rs:
+        try:
+            d = json.loads(d) or {}
+        except ValueError:
+            continue
+        nv = (d.get("qual") or {}).get("nivel")
+        if d.get("duvida"):
+            out[p] = "duvida"
+        elif nv in TREINO_NIVEIS:
+            out[p] = nv
+    return out
+
+
+def lx_lista(dia):
+    """GET /lixeira?dia=: as fotos do dia na lixeira (com motivo e ainda na biblioteca), das não recuperadas para as
+    recuperadas, da mais nova para a mais antiga, até LX_ITENS_MAX; e os últimos RETENCAO_DIAS dias com a contagem."""
+    lx_grava()
+    hoje = _ff_hoje()
+    d0 = _ff_hoje(time.time() - (RETENCAO_DIAS - 1) * 86400)
+    with treino_lock:
+        db = treino_db()
+        try:
+            rs = db.execute("select pid, mot, dados, em, rec_por, rec_em from lixeira where dia = ? and mot is not null", (dia,)).fetchall()
+            cont = db.execute("select dia, pid from lixeira where dia >= ? and dia <= ? and mot is not null and rec_em is null", (d0, hoje)).fetchall()
+        finally:
+            db.close()
+    with lock:
+        rs = [r for r in rs if r[0] in lib]
+        cont = [r for r in cont if r[1] in lib]
+    por_dia = collections.Counter(d for d, _ in cont)
+    dias = [{"dia": d, "n": por_dia[d]} for d in sorted(por_dia, reverse=True)]
+    abertas = sorted([r for r in rs if r[5] is None], key=lambda r: r[3] or "", reverse=True)
+    recs = sorted([r for r in rs if r[5] is not None], key=lambda r: r[5] or "", reverse=True)
+    rs = abertas + recs
+    mais = len(rs) > LX_ITENS_MAX
+    rs = rs[:LX_ITENS_MAX]
+    idx = _lx_dia_fotos(dia) if rs else {}
+    niv = _lx_treino_niveis([r[0] for r in rs])
+    nomes = _lx_nomes({r[4] for r in rs if r[4]})
+    itens = []
+    for p, mot, dados, em, rp, re_ in rs:
+        try:
+            dd = json.loads(dados) or {}
+        except ValueError:
+            dd = {}
+        f = idx.get(p) or {}
+        itens.append({"pid": p, "mot": [m for m in (mot or "").split(",") if m in LX_MOTIVOS], "em": em,
+                      "fotografo": f.get("fotografo"), "card": f.get("card"), "ordem": f.get("ordem"), "treino": niv.get(p),
+                      "rec": {"por": rp, "nome": nomes.get(rp), "em": re_} if re_ else None,
+                      "m": {k: dd.get(k) for k in ("nq", "nr", "n", "nb")}})
+    c = lx_cfg()
+    return {"v": 1, "dia": dia, "on": LX_ON, "modo": c["modo"], "valendo": c["valendo"], "n": len(abertas),
+            "recuperadas": len(recs), "itens": itens, "dias": dias, "mais": mais}
+
+
+def lx_recuperar(pid, quem):
+    """POST /lixeira/recuperar: "Não é ruim". -> (status, resposta). Não grava marcação no Treino (D8)."""
+    lx_grava()
+    with lock:
+        viva = pid in lib
+    with treino_lock:
+        db = treino_db()
+        try:
+            r = db.execute("select mot, rec_por, rec_em from lixeira where pid = ?", (pid,)).fetchone()
+            if not viva or not r or not r[0]:
+                return 404, {"ok": False, "error": "pid"}
+            if r[2]:
+                return 200, {"ok": True, "igual": True, "rec": {"por": r[1], "em": r[2]}}
+            em = _iso()
+            por = str(quem or "")[:100] or None
+            db.execute("update lixeira set rec_por = ?, rec_em = ? where pid = ? and rec_em is null", (por, em, pid))
+            db.execute("insert into lixeira_log values (?,?,?,?)", (pid, "recuperar", por, em))
+            db.commit()
+        finally:
+            db.close()
+    with lx_lock:
+        x = lx_mem.get(pid)
+        if x is not None:
+            x["rec"] = em
+        lx_st["rev"] += 1
+    _lx_med["t"] = 0.0
+    return 200, {"ok": True, "rec": {"por": por, "nome": _lx_nomes({por} if por else set()).get(por), "em": em}}
+
+
+def lx_medida(lim=None):
+    """A régua contra o Treino. Verdade = nível da marcação: certa = fraca ou nao_vai; errada = boa ou ajustar, ou foto
+    recuperada com "Não é ruim"; duvida e sem nível ficam fora. Medida: a linha da lixeira; sem ela, para escura e estourada, a
+    medida de luz do original (treino.db medida tipo luz). Por motivo: n (marcadas que a regra mandaria), certas, erradas,
+    precisão, passa (LX_CRIT), falta, mesmo_motivo. Cache de 10 min; com lim (candidato), sem cache."""
+    candidato = lim is not None
+    lim = dict(lim) if candidato else dict(lx_cfg()["lim"])
+    if not candidato and _lx_med["r"] is not None and time.time() - _lx_med["t"] < 600 and _lx_med["r"]["lim"] == lim:
+        return _lx_med["r"]
+    rot, lx = [], []
+    if os.path.exists(TREINO_DB):
+        with treino_lock:
+            db = treino_db()
+            try:
+                rot = db.execute("select pid, dados from rotulo").fetchall()
+                lx = db.execute("select pid, dados, rec_em from lixeira").fetchall()
+            finally:
+                db.close()
+    verdade, mot_treino = {}, {}
+    for p, d in rot:
+        try:
+            d = json.loads(d) or {}
+        except ValueError:
+            continue
+        q = d.get("qual") or {}
+        nv = q.get("nivel")
+        if d.get("duvida") or nv not in TREINO_NIVEIS:
+            continue
+        verdade[p] = nv in ("fraca", "nao_vai")
+        mot_treino[p] = set(q.get("motivos") or [])
+    meds, recs = {}, set()
+    for p, d, rec in lx:
+        if rec:
+            recs.add(p)
+            verdade[p] = False                # "Não é ruim" conta como erro da lixeira
+        elif p not in verdade:
+            continue                          # revisão 24/11: só decodifica a linha que entra na conta (marcada ou recuperada)
+        try:
+            meds[p] = json.loads(d) or {}
+        except ValueError:
+            pass
+    falta_luz = [p for p in verdade if p not in meds]
+    for p, v in luz_ler(falta_luz).items():
+        if isinstance(v, dict) and v.get("src") == "original":
+            meds[p] = {"luz": {"q": v.get("q"), "r": v.get("r")}}   # só escura e estourada (sem nq e nb)
+    motivos = {}
+    for m in LX_MOTIVOS:
+        motivos[m] = {"n": 0, "certas": 0, "erradas": 0, "mesmo_motivo": 0}
+    sem = 0
+    for p, certa in verdade.items():
+        dd = meds.get(p)
+        if dd is None:
+            sem += 1
+            continue
+        for m in lx_classe(dd, lim):
+            x = motivos[m]
+            x["n"] += 1
+            if certa:
+                x["certas"] += 1
+                if LX_TREINO_MOTIVO[m] in mot_treino.get(p, ()):
+                    x["mesmo_motivo"] += 1
+            else:
+                x["erradas"] += 1
+    for m, x in motivos.items():
+        x["precisao"] = round(x["certas"] / x["n"], 4) if x["n"] else None
+        falta = []
+        if x["n"] < LX_CRIT["n"]:
+            falta.append({"k": "n", "tem": x["n"], "precisa": LX_CRIT["n"]})
+        if (x["precisao"] or 0) < LX_CRIT["precisao"]:
+            falta.append({"k": "precisao", "tem": x["precisao"] or 0, "precisa": LX_CRIT["precisao"]})
+        x["falta"] = falta
+        x["passa"] = not falta
+    r = {"v": 1, "lim": lim, "crit": dict(LX_CRIT), "motivos": motivos, "sem_medida": sem, "recuperadas": len(recs)}
+    if not candidato:
+        _lx_med.update(t=time.time(), r=r)
+    return r
+
+
+def lx_status():
+    """/status.lixeira: só números e códigos. hoje = fotos de hoje na lixeira, sem recuperar, ainda na biblioteca; n7 = o mesmo
+    dos últimos LX_MENU_DIAS dias (a contagem do menu, decisão do Eduardo de 24/11); dias = LX_MENU_DIAS."""
+    hoje = _ff_hoje()
+    dias = set(_lx_dias_mem())
+    with lx_lock:                        # lx_mem só tem as fotos com motivo (revisão 24/11): a trava fica pouco tempo
+        ps = [(p, x["dia"] == hoje) for p, x in lx_mem.items() if x["dia"] in dias and not x["rec"]]
+        rev = lx_st["rev"]
+        ms = round(lx_st["ms_total"] / lx_st["ms_n"], 1) if lx_st["ms_n"] else None
+    with lock:
+        vivas = [h for p, h in ps if p in lib]
+    c = lx_cfg_mem()
+    return {"v": 1, "on": LX_ON, "modo": c["modo"], "rev": rev, "hoje": sum(vivas) if LX_ON else 0, "n7": len(vivas) if LX_ON else 0,
+            "dias": LX_MENU_DIAS, "valendo": c["valendo"], "hoje_fora": 0, "ms_med": ms}
+
+
+def lx_limpa(agora=None):
+    """Apaga a linha da foto que já não está na biblioteca e foi medida há mais de 24 h (pela hora da medida, em), menos as
+    recuperadas e as marcadas no Treino (são a régua). O lixeira_log fica. -> linhas apagadas"""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    agora = agora or time.time()
+    recente = _iso(agora - 86400)
+    with lock:
+        vivas = set(lib)
+    with treino_lock:
+        db = treino_db()
+        try:
+            rot = {r[0] for r in db.execute("select pid from rotulo")}
+            fora = [p for p, em, rec in db.execute("select pid, em, rec_em from lixeira")
+                    if p not in vivas and p not in rot and not rec and (em or "") < recente]
+            for i in range(0, len(fora), 500):
+                bl = fora[i:i + 500]
+                db.execute("delete from lixeira where pid in (%s)" % ",".join("?" * len(bl)), bl)
+            db.commit()
+        finally:
+            db.close()
+    with lx_lock:
+        for p in fora:
+            lx_mem.pop(p, None)
+            lx_vistos.pop(p, None)
+    return len(fora)
+
+
+def lx_limpa_noite(t=None):
+    """Uma vez por madrugada (LUZ_NOITE), cedendo ao leitor, à selfie, ao recorte, à montagem e às poses."""
+    t = time.time() if t is None else t
+    hoje = _ff_hoje(t)
+    if not _luz_noite(t) or lx_st["limpa_dia"] == hoje or _luz_ocupado() or 0 <= t - lx_st["limpa_tent"] < 600:
+        return None
+    lx_st["limpa_tent"] = t
+    try:
+        n = lx_limpa(t)
+    except Exception as ex:
+        print("  lixeira: limpeza falhou (%s); nova tentativa em 10 min" % type(ex).__name__)
+        return None
+    lx_st["limpa_dia"] = hoje
+    if n:
+        print("  lixeira: %d linha(s) de fotos que saíram da biblioteca apagada(s)" % n)
+    return n
+
+
+def lx_loop():
+    """A limpeza da madrugada e a memória dos últimos LX_MENU_DIAS dias (sai o que ficou para trás na virada do dia)."""
+    while not lx_parar.is_set():
+        try:
+            lx_limpa_noite()
+            dias = set(_lx_dias_mem())
+            with lx_lock:
+                for p in [p for p, x in lx_mem.items() if x["dia"] not in dias]:
+                    lx_mem.pop(p, None)
+                for p in [p for p, d in lx_vistos.items() if d not in dias]:
+                    lx_vistos.pop(p, None)
+        except Exception as ex:
+            print("  lixeira: %s" % type(ex).__name__)
+        lx_parar.wait(60)
 
 
 # ---------- Alertas do fotógrafo (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md) ----------
@@ -18629,6 +19272,11 @@ ROTAS = (
     ("GET", "/zerar/previa", "sessao", ("configuracao.u",)), ("POST", "/zerar/fase-teste", "sessao", ("configuracao.u",)),
     ("POST", "/compra-online/config", "sessao", ("configuracao.u",)),   # 24/11: liga e desliga a compra online (vai para a Nuvem)
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
+    # 24/11: Lixeira da IA (Curadoria). Ver e "Não é ruim" pelo módulo qualidade; a chave só o Admin (conferido no lixeira_post)
+    ("GET", "/lixeira", "sessao", ("qualidade.r",)),
+    ("GET", "/lixeira/medida", "sessao", ("qualidade.r",)),
+    ("POST", "/lixeira/recuperar", "sessao", ("qualidade.u",)),
+    ("POST", "/lixeira/config", "sessao", ("configuracao.u",)),
 )
 
 
@@ -20425,6 +21073,58 @@ class H(BaseHTTPRequestHandler):
         threading.Thread(target=_zerar_sair, daemon=True).start()
         return None
 
+    def lixeira_get(self, u):
+        """24/11: GET /lixeira?dia= (qualidade.r, 30 por minuto por pessoa) e /lixeira/medida (qualidade.r, 10 por minuto).
+        Origem local; dia só aaaa-mm-dd (padrão hoje). Só pids, números e quem recuperou; o console nunca imprime pid."""
+        if not self.origem_local():
+            return self.js({"error": "origem"}, 403, nostore=True)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        try:
+            if u.path == "/lixeira/medida":
+                if not limite_ok("u:" + quem, "lixeira_medida", 10):
+                    return self.js({"error": "limite"}, 429, nostore=True)
+                return self.js(lx_medida(), nostore=True)
+            dia = (parse_qs(u.query).get("dia") or [_ff_hoje()])[0]
+            if not _re_dia_iso.match(dia):
+                return self.js({"error": "dia"}, 400, nostore=True)
+            if not limite_ok("u:" + quem, "lixeira", 30):
+                return self.js({"error": "limite"}, 429, nostore=True)
+            return self.js(lx_lista(dia), nostore=True)
+        except Exception as ex:
+            print("  lixeira: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500, nostore=True)
+
+    def lixeira_post(self, path):
+        """24/11: POST /lixeira/recuperar {pid} (qualidade.u, 120 por minuto por pessoa) e /lixeira/config {modo?, lim?}
+        (configuracao.u e só o perfil Admin da sessão, sem "ver como": 403 so_admin; 6 por minuto). Origem local, X-Eterna
+        (conferido no autoriza), corpo até 1 KB. O "ver como" já parou no do_POST (403 so_ver). O console nunca imprime o corpo."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403, nostore=True)
+        eu = self.sessao() or {}
+        quem = eu.get("usuario") or ""
+        if path == "/lixeira/config":
+            if (eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por"):
+                return self.js({"ok": False, "error": "so_admin"}, 403, nostore=True)
+            if not limite_ok("u:" + quem, "lixeira_cfg", 6):
+                return self.js({"ok": False, "error": "limite"}, 429, nostore=True)
+        elif not limite_ok("u:" + quem, "lixeira_rec", 120):
+            return self.js({"ok": False, "error": "limite"}, 429, nostore=True)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, 413 if err == 413 else 400, nostore=True)
+        try:
+            if path == "/lixeira/config":
+                st, r = lx_cfg_gravar(body, quem)
+            else:
+                pid = body.get("pid")
+                if set(body) - {"pid"} or not isinstance(pid, str) or not pid_ok(pid):
+                    return self.js({"ok": False, "error": "pid"}, 400, nostore=True)
+                st, r = lx_recuperar(pid[3:] if pid.startswith("ag_") else pid, quem)
+        except Exception as ex:
+            print("  lixeira: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500, nostore=True)
+        return self.js(r, st, nostore=True)
+
     def compra_online_post(self):
         """24/11: POST /compra-online/config {ligada} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna, 6 por minuto
         por pessoa, corpo até 1 KB. Repassa à Nuvem com o segredo do ponto e responde a chave como a Nuvem gravou."""
@@ -21649,6 +22349,10 @@ class H(BaseHTTPRequestHandler):
                 lz_ = luz_status()                     # 23/11 (AF): medida de luz, só contagens
             except Exception:
                 lz_ = None
+            try:
+                lx_ = lx_status()                      # 24/11: Lixeira da IA (só números e códigos), fora do lock
+            except Exception:
+                lx_ = None
             with lock:
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
@@ -21661,6 +22365,7 @@ class H(BaseHTTPRequestHandler):
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
                            pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_, luz=lz_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
+            st_["lixeira"] = lx_
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
             return self.js(st_, nostore=True)
@@ -21850,6 +22555,8 @@ class H(BaseHTTPRequestHandler):
             return self.treino_get(u)
         if u.path in ("/fotografos/alertas", "/fotografos/dias", "/fotografos/luz/medida"):
             return self.fotografos_get(u)
+        if u.path in ("/lixeira", "/lixeira/medida"):
+            return self.lixeira_get(u)
         if u.path == "/pessoas/rostos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -22025,6 +22732,8 @@ class H(BaseHTTPRequestHandler):
             return self.fotografos_post()
         if u.path == "/zerar/fase-teste":
             return self.zerar_post()
+        if u.path in ("/lixeira/recuperar", "/lixeira/config"):
+            return self.lixeira_post(u.path)
         if u.path == "/compra-online/config":
             return self.compra_online_post()
         if u.path == "/ponto/entradas":
@@ -22253,6 +22962,13 @@ def main():
     threading.Thread(target=cena_loop, daemon=True).start()        # 18/11 (regra 19): reconhecer o ponto pela imagem
     threading.Thread(target=luz_grava_loop, daemon=True).start()   # 23/11 (AF): medidas de luz em lote no treino.db
     threading.Thread(target=luz_loop, daemon=True).start()         # 23/11 (AF): varredura de 30 dias, prioridade baixa
+    try:
+        lx_cfg()                                                  # 24/11: Lixeira da IA: a chave na memória antes do leitor
+        lx_mem_carregar()                                         # e as fotos dos últimos 7 dias (LX_MENU_DIAS), para a contagem do menu
+    except Exception as ex:
+        print("  lixeira: memória não carregada (%s)" % type(ex).__name__)
+    threading.Thread(target=lx_grava_loop, daemon=True).start()    # 24/11: vereditos da Lixeira da IA em lote no treino.db
+    threading.Thread(target=lx_loop, daemon=True).start()          # 24/11: limpeza da madrugada da Lixeira da IA
     # 23/11: classificador de poses de uma partida anterior não segura a placa. Roda aqui, na thread do main e ANTES do
     # poses_loop: ele apaga as pastas ponto/poses-* e o poses-filho.json e mata o llama-server com a chave ali; com o laço
     # já no ar, o filho que o laço acabou de abrir seria tomado por órfão (chave apagada, llama-server morto, pids perdidos).
