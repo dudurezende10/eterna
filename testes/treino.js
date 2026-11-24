@@ -1,7 +1,7 @@
 // 16/11 (plano "Curadoria › Treino da IA", F1): a tela de treino marca fotos reais do servidor. Abas Marcar e Outubro (exemplo);
 // dia, fotógrafo e modo; foto inteira com lupa; eixo Ponto com botões grandes e teclas G A T C O; P, N, 1 a 9, D, Enter, setas e Z;
 // gravação otimista com fila só de texto (eterna.treino.fila.v1); nenhuma foto guardada no aparelho; o interruptor da análise
-// (/treino/config, só com Painel de controle em Alterar, auditLog; desde 24/11 em Configurações › Preços e Checkout › Fundos de IA, #tr-cfg); a Supervisora marca (preset e migração única); a coleção
+// (/treino/config, só com Painel de controle em Alterar, auditLog; desde 24/11 em Configurações › IA automática, #tr-cfg, só o Admin); a Supervisora marca (preset e migração única); a coleção
 // treino só é lida por quem tem Qualidade e IA em Ver. Agente falso por page.route na própria origem; fotos = 1 pixel.
 const {chromium}=require('playwright');const entrarTeste=require('./_entrar');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
@@ -46,13 +46,13 @@ try{
     const abas=await pg.$$eval('[data-act="tr-aba"]',x=>x.map(b=>b.dataset.a));
     ok(J(abas)===J(['marcar','medida','outubro']),'abas Marcar, Resultado (data-a medida) e Outubro (sem abas vazias): '+J(abas));
     ok(await pg.textContent('[data-act="tr-aba"][data-a="medida"]')==='Resultado','24/11: a aba que era Medição se chama Resultado');
-    // 24/11: o interruptor saiu do Treino e foi para Configurações › Preços e Checkout › Fundos de IA (#tr-cfg)
+    // 24/11: o interruptor saiu do Treino e foi para Configurações › IA automática (#tr-cfg, só o Admin muda)
     ok(!await pg.$('.tr-an')&&!await pg.$('[data-act="tr-analise"]')&&!await pg.$('[data-act="tr-cfg"]'),'o Treino não tem mais o interruptor');
     ok(/Fundos de IA automáticos desligados/.test(await pg.textContent('.tr-aviso-desl').catch(()=>''))&&await pg.$('.tr-aviso-desl [data-act="tr-cfg-abrir"]'),'Treino: aviso dos Fundos de IA desligados com Abrir em Configurações');
-    await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await espera(pg,()=>document.querySelector('#tr-cfg'));
-    const an=await pg.evaluate(()=>[...document.querySelectorAll('#tr-cfg [data-act="tr-cfg"]')].map(b=>b.dataset.k+':'+b.dataset.v+':'+b.getAttribute('aria-pressed')));
-    ok(an.length===4&&an.every(x=>x.endsWith(':false')),'Configurações: 2 botões por linha, nenhum marcado com o servidor em desligada: '+J(an));
-    ok(/Parado no servidor/.test(await pg.textContent('#tr-cfg'))&&/Desligado, o servidor continua analisando em silêncio/.test(await pg.textContent('#tr-cfg')),'texto claro do quadro e a pílula Parado no servidor');
+    await pg.evaluate(()=>ETERNA.go('ia-auto'));await espera(pg,()=>document.querySelector('#tr-cfg'));
+    const an=await pg.evaluate(()=>[...document.querySelectorAll('#tr-cfg [data-act="tr-cfg"]:not([data-k="ajuste"])')].map(b=>b.dataset.k+':'+b.dataset.v+':'+b.getAttribute('aria-pressed')));
+    ok(an.length===4&&an.every(x=>x.endsWith(':false')),'IA automática: 2 botões por linha, nenhum marcado com o servidor em desligada: '+J(an));
+    ok(/Parado no servidor/.test(await pg.textContent('#tr-cfg'))&&/o servidor continua analisando em silêncio/.test(await pg.textContent('#tr-cfg')),'texto claro do quadro e a pílula Parado no servidor');
     await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="off"]');await espera(pg,()=>ETERNA.state.agent.treino.analise.exposicao==='medir');
     const aud=await pg.evaluate(()=>{const l=JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]');return l.find(e=>e.acao==='treino_analise');});
     ok(J(R.cfg)===J([{exposicao:'medir'}])&&aud&&aud.mudancas[0].campo==='analise.exposicao'&&aud.mudancas[0].para==='medir','Admin põe a exposição em Desligado ({exposicao:"medir"}) com auditLog: '+J(R.cfg)+' '+J(aud));
@@ -373,8 +373,8 @@ try{
     await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12);
     await pg.evaluate(()=>document.activeElement&&document.activeElement.blur());await pg.keyboard.press('c');await pg.keyboard.press('Enter');await pg.waitForTimeout(400);
     ok(R.posts.length===1&&R.posts[0].b.ponto==='chute','Supervisora marca: '+J(R.posts));
-    await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await espera(pg,()=>document.querySelector('#tr-cfg'));
-    ok((await pg.$$('#tr-cfg [data-act="tr-cfg"]')).length===4,'Supervisora (Painel de controle em Alterar) vê os 4 botões em Configurações › Fundos de IA');
+    await pg.evaluate(()=>ETERNA.go('ia-auto'));await espera(pg,()=>document.querySelector('#tr-cfg'));
+    ok((await pg.$$('#tr-cfg [data-act="tr-cfg"]')).length===0&&(await pg.$$('#tr-cfg .pill')).length>=3,'24/11: Supervisora vê a IA automática só com as pílulas (só o Admin muda)');
     await ctx.close();}
   // ---------- Validador: marca, mas não muda o interruptor ----------
   {const {ctx,pg,R}=await nova();await entrar(pg,'qualidade@eterna.photo');

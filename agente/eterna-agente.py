@@ -19461,10 +19461,14 @@ class H(BaseHTTPRequestHandler):
 
     def treino_post(self, path):
         """16/11: POST /treino/rotulo (qualidade.u) e /treino/config (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
-        (conferido no autoriza), 120 por minuto por pessoa nas marcações e 6 no interruptor, corpo até 4 KB. O console nunca imprime o corpo."""
+        (conferido no autoriza), 120 por minuto por pessoa nas marcações e 6 no interruptor, corpo até 4 KB. O console nunca imprime o corpo.
+        24/11 (Eduardo): só o Admin muda o /treino/config (Configurações › IA automática); o perfil vem do cadastro da sessão, nunca do
+        pedido (a Supervisora pode ter configuracao.u e recebe 403 so_admin), como no /poses/config."""
         if not self.origem_local():
             return self.js({"ok": False, "erro": "origem"}, 403)
         eu = self.sessao() or {}
+        if path == "/treino/config" and ((eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por")):
+            return self.js({"ok": False, "error": "so_admin"}, 403)
         quem = eu.get("usuario") or ""
         # 18/11 (revisão de segurança): o interruptor tem limite próprio (6 por minuto por pessoa), separado das marcações
         if not (limite_ok("u:" + quem, "treino", 120) if path == "/treino/rotulo" else limite_ok("u:" + quem, "treino_cfg", 6)):

@@ -3,7 +3,9 @@
 // motivos do Não); a aba Medição vira Resultado e só mostra números; o liga e desliga da análise sai do Treino e vai para
 // Configurações › Preços e Checkout › Fundos de IA (#tr-cfg), com duas posições (Ligado = ligada, Desligado = medir).
 // Critérios 1 a 28 do plano, em 1280×900 e 390×844. Agente falso por page.route (como no treino-medida.js); fotos de 1 pixel.
-// ETERNA_PRINT=<pasta> grava as capturas da aba Marcar com Gramado e do quadro de Configurações nos dois tamanhos.
+// 24/11 (Eduardo, 11:04): o quadro fica em Configurações › IA automática (view ia-auto), com as três chaves (Fundos de IA automáticos,
+// Alerta de foto escura ou estourada e Ajuste automático das fotos), e só o Admin muda; Minhas fotos sem o seletor Fotógrafo.
+// ETERNA_PRINT=<pasta> grava as capturas da aba Marcar com Gramado, da IA automática e de Minhas fotos nos dois tamanhos.
 const {chromium}=require('playwright');const entrarTeste=require('./_entrar');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
 const fails=[],errs=[];let VP='';const ok=(c,m)=>{if(!c)fails.push(VP+' '+m);return !!c;};const J=JSON.stringify;
@@ -55,7 +57,7 @@ const semToast=pg=>pg.evaluate(()=>{const t=document.getElementById('toast');if(
 const rasc=(pg,i)=>pg.evaluate(p=>{const r=ETERNA.state.train.rasc[p];return r?{ponto:r.ponto,serve:r.serve,iaMot:(r.iaMot||[]).slice()}:null;},PIDS[i]);
 const semRolar=pg=>pg.evaluate(()=>document.documentElement.scrollWidth<=innerWidth);
 const audN=pg=>pg.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='treino_analise').length);
-const irCfg=async pg=>{await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await espera(pg,()=>!!document.querySelector('#tr-cfg'));};
+const irCfg=async pg=>{await pg.evaluate(()=>ETERNA.go('ia-auto'));await espera(pg,()=>!!document.querySelector('#tr-cfg'));};
 const irTreino=async(pg,aba)=>{await pg.evaluate(a=>{ETERNA.state.train.aba=a||'marcar';ETERNA.go('treino');},aba);await espera(pg,()=>!!document.querySelector('[data-act="tr-aba"]'));};
 // muda a situação do servidor (o /status falso e a cópia da tela) e redesenha
 const situa=async(pg,R,an,extra)=>{Object.assign(R.analise,an);Object.assign(R,extra||{});
@@ -132,14 +134,30 @@ async function rodada(vp,nome){VP='['+nome+']';const P390=vp.width<=400;
     await pg.click('[data-act="tr-aba"][data-a="medida"]');await espera(pg,()=>!!document.querySelector('.tr-med-tiles'));
     {const t=await pg.evaluate(()=>({aba:document.querySelector('[data-act="tr-aba"][data-a="medida"]').textContent,pil:(document.querySelector('.tr-med .head .pill')||{}).textContent,
       nota:(document.querySelector('.tr-res-onde .note')||{}).textContent,abrir:!!document.querySelector('.tr-res-onde [data-act="tr-cfg-abrir"]')}));
-      ok(t.aba==='Resultado'&&t.pil==='Desligado'&&t.nota==='Aqui você só confere. Ligar e desligar fica em Configurações › Preços e Checkout › Fundos de IA.'&&t.abrir,'12: Resultado com a pílula Desligado, a nota e Abrir em Configurações: '+J(t));}
+      ok(t.aba==='Resultado'&&t.pil==='Desligado'&&t.nota==='Aqui você só confere. Ligar e desligar fica em Configurações › IA automática.'&&t.abrir,'12: Resultado com a pílula Desligado, a nota e Abrir em Configurações: '+J(t));}
     await pg.click('.tr-res-onde [data-act="tr-cfg-abrir"]');await espera(pg,()=>!!document.querySelector('#tr-cfg'));await pg.waitForTimeout(200);
-    {const t=await pg.evaluate(()=>{const r=document.getElementById('tr-cfg').getBoundingClientRect();return {v:ETERNA.state.view,tab:ETERNA.state.catTab,vis:r.top<innerHeight&&r.bottom>0};});
-      ok(t.v==='catalogo'&&t.tab==='fundos'&&t.vis,'12: Abrir em Configurações abre Preços e Checkout › Fundos de IA com o #tr-cfg visível: '+J(t));}
-    // 13: as duas linhas, cada uma com Ligado e Desligado, acima do #ia-cfg
-    {const t=await pg.evaluate(()=>{const c=document.getElementById('tr-cfg'),ia=document.getElementById('ia-cfg');return {nomes:[...c.querySelectorAll('.tr-an-k')].map(x=>x.textContent),
-      bt:[...c.querySelectorAll('[data-act="tr-cfg"]')].map(x=>x.dataset.k+':'+x.dataset.v+':'+x.textContent),antes:!!ia&&!!(c.compareDocumentPosition(ia)&Node.DOCUMENT_POSITION_FOLLOWING),h:(c.querySelector('h2')||{}).textContent};});
-      ok(J(t.nomes)===J(['Fundos de IA automáticos','Alerta de foto escura ou estourada'])&&J(t.bt)===J(['ponto:on:Ligado','ponto:off:Desligado','exposicao:on:Ligado','exposicao:off:Desligado'])&&t.antes&&t.h==='Análise automática das fotos','13: quadro com as duas linhas acima do #ia-cfg: '+J(t));}
+    {const t=await pg.evaluate(()=>{const r=document.getElementById('tr-cfg').getBoundingClientRect();return {v:ETERNA.state.view,h:location.hash,vis:r.top<innerHeight&&r.bottom>0};});
+      ok(t.v==='ia-auto'&&t.vis,'12: Abrir em Configurações abre Configurações › IA automática com o #tr-cfg visível: '+J(t));}
+    // 13 (24/11, 11:04): Configurações › IA automática, com as três chaves, cada uma com Ligado e Desligado; o quadro saiu de Preços e Checkout
+    {const t=await pg.evaluate(()=>{const c=document.getElementById('tr-cfg');return {nomes:[...c.querySelectorAll('.tr-an-k')].map(x=>x.textContent),
+      bt:[...c.querySelectorAll('[data-act="tr-cfg"]')].map(x=>x.dataset.k+':'+x.dataset.v+':'+x.textContent),h:(document.querySelector('#main h1')||{}).textContent};});
+      ok(J(t.nomes)===J(['Fundos de IA automáticos','Alerta de foto escura ou estourada','Ajuste automático das fotos'])&&J(t.bt)===J(['ponto:on:Ligado','ponto:off:Desligado','exposicao:on:Ligado','exposicao:off:Desligado','ajuste:on:Ligado','ajuste:off:Desligado'])&&/IA automática/i.test(t.h),'13: IA automática com as três chaves: '+J(t));
+      await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await pg.waitForTimeout(200);
+      ok(!(await pg.$('#tr-cfg'))&&!!(await pg.$('#ia-cfg')),'13: Preços e Checkout › Fundos de IA sem o quadro (fica só o dos primeiros cliques)');
+      await irCfg(pg);}
+    // Ajuste automático das fotos: o Admin desliga e liga (SIM.autoAj, quem mexeu); Minhas fotos sem o painel e sem o seletor Fotógrafo
+    {await semToast(pg);await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ajuste"][data-v="off"]');await pg.waitForTimeout(200);
+      const a=await pg.evaluate(()=>({aj:ETERNA.SIM.autoAj,por:(ETERNA.SIM.autoAjPor||{}).por,p:[...document.querySelectorAll('#tr-cfg [data-k="ajuste"][data-act="tr-cfg"]')].map(x=>x.getAttribute('aria-pressed'))}));
+      ok(a.aj===false&&a.por===R.email&&J(a.p)===J(['false','true'])&&/Ajuste automático desligado/.test(await toast(pg)),'ajuste automático: o Admin desliga em IA automática: '+J(a));
+      await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ajuste"][data-v="on"]');await pg.waitForTimeout(200);
+      ok(await pg.evaluate(()=>ETERNA.SIM.autoAj)===true,'ajuste automático: o Admin liga de novo');
+      await pg.evaluate(()=>ETERNA.go('importar'));await pg.waitForTimeout(300);
+      const mf=await pg.evaluate(()=>({sel:!!document.querySelector('#main select[data-act="imp-key"]'),aj:!!document.querySelector('#main #aj-auto'),key:ETERNA.state.imp.key}));
+      ok(!mf.sel&&!mf.aj&&mf.key==='todos','Minhas fotos: sem o seletor Fotógrafo e sem o ajuste automático; o Admin vê todos: '+J(mf));
+      if(P390)ok(await semRolar(pg),'27: Minhas fotos sem rolar para o lado');
+      if(process.env.ETERNA_PRINT){await pg.evaluate(()=>{const t=document.getElementById('toast');if(t)t.removeAttribute('data-on');window.scrollTo(0,0);});await pg.waitForTimeout(200);
+        await pg.screenshot({path:path.join(process.env.ETERNA_PRINT,`treino-claro-minhas-fotos-${vp.width}.png`),fullPage:true});}
+      await irCfg(pg);}
     // 14: ligações entre botão e servidor
     ok(J(await prs(pg,'ponto'))===J(['false','true']),'14: medir = só Desligado marcado');
     ok(/Desligado: o Checkout está sem fundos de IA\./.test(await pg.textContent('#tr-cfg .tr-cfg-ponto-off').catch(()=>'')),'21: pílula vermelha com o ponto Desligado');
@@ -157,7 +175,7 @@ async function rodada(vp,nome){VP='['+nome+']';const P390=vp.width<=400;
     // 16: exposição com 409 criterio: aviso, lista no quadro, fica em Configurações, sem auditLog
     {R.expoCrit=true;const a0=await audN(pg);await semToast(pg);await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="on"]');await espera(pg,()=>!!document.querySelector('#tr-cfg .tr-cfg-falta'));
       const t=await pg.evaluate(()=>({li:[...document.querySelectorAll('#tr-cfg .tr-cfg-falta li')].map(x=>x.textContent),v:ETERNA.state.view,ex:ETERNA.state.agent.treino.analise.exposicao}));
-      ok(/^O alerta só liga quando o servidor acerta o bastante\./.test(await toast(pg))&&t.li.length===2&&/Escura: 3 de 30/.test(t.li[0])&&t.v==='catalogo'&&t.ex==='medir'&&await audN(pg)===a0,'16: 409 da exposição: aviso, o que falta no quadro, sem trocar de tela e sem auditLog: '+J(t)+' '+await toast(pg));
+      ok(/^O alerta só liga quando o servidor acerta o bastante\./.test(await toast(pg))&&t.li.length===2&&/Escura: 3 de 30/.test(t.li[0])&&t.v==='ia-auto'&&t.ex==='medir'&&await audN(pg)===a0,'16: 409 da exposição: aviso, o que falta no quadro, sem trocar de tela e sem auditLog: '+J(t)+' '+await toast(pg));
       R.expoCrit=false;}
     // 17: ponto em medir com o critério passando: Ligado sem confirmação
     {R.dlgs.length=0;const c0=R.cfg.length;await situa(pg,R,{ponto:'medir'},{passa:true});await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]');await espera(pg,()=>ETERNA.state.agent.treino.analise.ponto==='ligada');
@@ -187,14 +205,14 @@ async function rodada(vp,nome){VP='['+nome+']';const P390=vp.width<=400;
     // 27: o quadro a 390 px não faz a página rolar para o lado
     ok(await semRolar(pg),'27: Configurações › Fundos de IA sem rolar para o lado');
     if(process.env.ETERNA_PRINT){await pg.evaluate(()=>{const t=document.getElementById('toast');if(t)t.removeAttribute('data-on');window.scrollTo(0,0);});await pg.waitForTimeout(200);
-      await pg.screenshot({path:path.join(process.env.ETERNA_PRINT,`treino-claro-fundos-ia-${vp.width}.png`),fullPage:true});}
+      await pg.screenshot({path:path.join(process.env.ETERNA_PRINT,`treino-claro-ia-automatica-${vp.width}.png`),fullPage:true});}
     // 26: sem servidor
-    {const t=await pg.evaluate(()=>{const a=ETERNA.state.agent;const on=a.on;a.on=false;ETERNA.render();const c=document.getElementById('tr-cfg');const r={txt:c?c.textContent:'',bt:c?c.querySelectorAll('button').length:-1};a.on=on;ETERNA.render();return r;});
-      ok(/A marcação usa as fotos do servidor do ponto/.test(t.txt)&&t.bt===0,'26: sem servidor, o quadro mostra tr_sem_servidor e nenhum botão: '+J(t));}
+    {const t=await pg.evaluate(()=>{const a=ETERNA.state.agent;const on=a.on;a.on=false;ETERNA.render();const c=document.getElementById('tr-cfg');const r={txt:c?c.textContent:'',bt:c?c.querySelectorAll('button:not([data-k="ajuste"])').length:-1,aj:c?c.querySelectorAll('button[data-k="ajuste"]').length:-1};a.on=on;ETERNA.render();return r;});
+      ok(/A marcação usa as fotos do servidor do ponto/.test(t.txt)&&t.bt===0&&t.aj===2,'26: sem servidor, o quadro mostra tr_sem_servidor, sem os botões do servidor (o ajuste, que é do navegador, fica): '+J(t));}
     // 10: 5 línguas no Treino (Marcar com Gramado e Resultado) e em Configurações › Fundos de IA
     {const ruim=[];const RES={pt:'Resultado',en:'Results',es:'Resultado',fr:'Résultat',de:'Ergebnis'};await situa(pg,R,{ponto:'medir',exposicao:'medir'},{abaixo:null,cong:null,lv:null,passa:false});
       for(const l of ['pt','en','es','fr','de']){await pg.evaluate(l=>{ETERNA.state.user.idioma=l;},l);
-        for(const [v,a] of [['treino','marcar'],['treino','medida'],['catalogo','fundos']]){
+        for(const [v,a] of [['treino','marcar'],['treino','medida'],['ia-auto','']]){
           await pg.evaluate(([v,a,p])=>{if(v==='treino'){ETERNA.state.train.aba=a;ETERNA.state.train.j=0;ETERNA.state.train.rasc[p]={ponto:'gramado',nivel:'fraca',motivos:['olhos'],duvida:false,obs:'',base:null,serve:false,iaMot:['chao']};}else ETERNA.state.catTab=a;ETERNA.state.view=v;ETERNA.render();},[v,a,PIDS[0]]);await pg.waitForTimeout(150);
           const tx=await pg.textContent('#main');const m=tx.match(new RegExp(PROIBIDO.source,'g'));if(m)ruim.push(l+'/'+v+'/'+a+': '+[...new Set(m)].join(','));
           if(v==='treino'&&a==='medida'){const ab=await pg.textContent('[data-act="tr-aba"][data-a="medida"]');const eq=l!=='de';/* IDIOMAS_EQ: pt, en, es, fr */if(ab!==(eq?RES[l]:RES.pt))ruim.push(l+': aba '+ab);}}}
@@ -224,22 +242,26 @@ async function rodada(vp,nome){VP='['+nome+']';const P390=vp.width<=400;
       ok(R.posts.length===p0&&!(await pg.evaluate(()=>ETERNA.trFila())).length,'9: "ver como": nada é gravado nem posto na fila: '+J(R.posts.slice(p0)));
       await pg.evaluate(()=>{const b=document.querySelector('[data-act="assumir-voltar"]');if(b)b.click();});await espera(pg,()=>!ETERNA.state.assumido);}
     await ctx.close();}
-  // ================= Supervisora: usa os 4 botões; com configuracao.r sem u, só pílulas =================
+  // ================= Supervisora (24/11, 11:04: só o Admin muda): vê as três chaves só como pílulas =================
   {const {ctx,pg,R}=await nova(vp);await entrar(pg,'supervisor@eterna.photo');await irCfg(pg);
-    ok((await pg.$$('#tr-cfg [data-act="tr-cfg"]')).length===4,'23: Supervisora vê os 4 botões');
-    await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="on"]');await espera(pg,()=>ETERNA.state.agent.treino.analise.exposicao==='ligada');
-    ok(J(R.cfg)===J([{exposicao:'ligada'}]),'23: Supervisora usa o botão: '+J(R.cfg));
+    {const t=await pg.evaluate(()=>({bt:document.querySelectorAll('#tr-cfg button').length,pil:[...document.querySelectorAll('#tr-cfg .pill')].map(x=>x.textContent),menu:ETERNA.canView('ia-auto')}));
+      ok(t.menu&&t.bt===0&&t.pil.length>=3,'23: Supervisora vê a IA automática só com as pílulas: '+J(t));}
+    await semToast(pg);const aj0=await pg.evaluate(()=>ETERNA.SIM.autoAj);await pg.evaluate(()=>{ETERNA.trCfgMuda('exposicao',true);ETERNA.trCfgMuda('ajuste',false);ETERNA.ajAutoSet(false);});await pg.waitForTimeout(300);
+    ok(R.cfg.length===0&&await pg.evaluate(()=>ETERNA.SIM.autoAj)===aj0&&/Só o Admin muda a IA automática/.test(await toast(pg)),'23: Supervisora não muda pelo console (nem o ajuste): '+J(R.cfg)+' '+await toast(pg));
+    await pg.evaluate(()=>ETERNA.go('importar'));await pg.waitForTimeout(300);
+    ok(!(await pg.$('#main select[data-act="imp-key"]'))&&await pg.evaluate(()=>ETERNA.state.imp.key)==='todos','Supervisora: Minhas fotos sem o seletor, com todos');
+    await irCfg(pg);
     const t=await pg.evaluate(()=>{const u=ETERNA.state.user;u.perms.configuracao={c:false,r:true,u:false,d:false};ETERNA.render();const c=document.getElementById('tr-cfg');
       const r={tem:!!c,bt:c?c.querySelectorAll('button').length:-1,pil:c?[...c.querySelectorAll('.pill')].map(x=>x.textContent):[]};
       const b=document.createElement('button');b.dataset.act='tr-cfg';b.dataset.k='ponto';b.dataset.v='on';document.querySelector('#main').appendChild(b);b.click();return r;});
     await pg.waitForTimeout(300);
-    ok(t.tem&&t.bt===0&&t.pil.includes('Ligado')&&t.pil.includes('Desligado')&&R.cfg.length===1,'23: configuracao.r sem u: só as pílulas, e o tr-cfg injetado não gera POST: '+J(t)+' '+J(R.cfg));
+    ok(t.tem&&t.bt===0&&t.pil.includes('Ligado')&&t.pil.includes('Desligado')&&R.cfg.length===0,'23: configuracao.r sem u: só as pílulas, e o tr-cfg injetado não gera POST: '+J(t)+' '+J(R.cfg));
     await ctx.close();}
   // ================= Validador: sem #tr-cfg; no Treino o aviso sem o botão =================
   {const {ctx,pg,R}=await nova(vp);await entrar(pg,'qualidade@eterna.photo');await irTreino(pg,'marcar');
     const t=await pg.evaluate(()=>({av:(document.querySelector('.tr-aviso-desl')||{}).textContent||'',abrir:!!document.querySelector('[data-act="tr-cfg-abrir"]'),cfg:!!document.querySelector('#tr-cfg')}));
     ok(/Fundos de IA automáticos desligados/.test(t.av)&&!t.abrir&&!t.cfg,'24: Validador vê o aviso sem Abrir em Configurações: '+J(t));
-    await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await pg.waitForTimeout(300);ok(!(await pg.$('#tr-cfg')),'24: Validador não vê o #tr-cfg');
+    await pg.evaluate(()=>ETERNA.go('ia-auto'));await pg.waitForTimeout(300);ok(!(await pg.$('#tr-cfg'))&&!(await pg.evaluate(()=>ETERNA.canView('ia-auto'))),'24: Validador não vê a IA automática');
     await ctx.close();}
 }
 try{
@@ -248,15 +270,15 @@ try{
   VP='';
   // 28: chaves novas e mudadas com 5 textos, sem vazio e sem travessão
   {const ctx=await b.newContext();const pg=await ctx.newPage();await pg.goto(U);await pg.waitForTimeout(300);
-    const r=await pg.evaluate(()=>{const E=ETERNA.EQ;const ks=['tr_ponto_h','tr_qual_h','tr_aba_medida','tr_pode_nao','vd_treino','tr_med_h','tr_med_criterio_ok','tr_med_criterio_falta','tr_med_forcar_nao','tr_med_forcar_nota','tr_med_abaixo_nota','tr_an_criterio','tr_an_expo_sem','tr_an_h','tr_an_nota','tr_an_ponto','tr_an_exposicao','tr_analise_ok','tr_analise_erro','pm_a_treino_analise','cf_ia_sem_escala','tr_teclas',
+    const r=await pg.evaluate(()=>{const E=ETERNA.EQ;const ks=['tr_ponto_h','tr_qual_h','tr_aba_medida','tr_pode_nao','vd_treino','tr_med_h','tr_med_criterio_ok','tr_med_criterio_falta','tr_med_forcar_nao','tr_med_forcar_nota','tr_med_abaixo_nota','tr_an_criterio','tr_an_expo_sem','tr_an_nota','v_ia_auto','vd_ia_auto','ia_auto_nota','tr_cfg_so_admin','tr_an_ajuste','mf_aj_onde','tr_med_forcar_sem_perm','tr_an_ponto','tr_an_exposicao','tr_analise_ok','tr_analise_erro','pm_a_treino_analise','cf_ia_sem_escala','tr_teclas',
       'tr_ponto_nota','tr_qual_nota','tr_ia_h','tr_ia_nota','tr_ia_sim','tr_ia_nao','tr_ia_porque','tr_ia_m_cortada','tr_ia_m_chao','tr_ia_m_luz','tr_ia_m_gente_atras','tr_ia_m_outro','tr_cfg_on','tr_cfg_off','tr_cfg_parado','tr_cfg_parado_nota','tr_cfg_ponto_nota','tr_cfg_expo_nota','tr_cfg_ponto_off','tr_cfg_abaixo_nota','tr_cfg_desl_conf','tr_cfg_ia_caixa','tr_cfg_abrir','tr_aviso_desl','tr_res_onde'];
       const ruins=ks.filter(k=>!Array.isArray(E[k])||E[k].length!==5||E[k].some(v=>{const t=typeof v==='function'?v('a','b','c'):v;return !t||/—/.test(t);}));
-      const saiu=['tr_an_o_que','tr_an_medir','tr_an_desligada','tr_an_ligada','tr_med_forcar'].filter(k=>E[k]);
+      const saiu=['tr_an_o_que','tr_an_medir','tr_an_desligada','tr_an_ligada','tr_med_forcar','tr_an_h','mf_aj_sem_perm'].filter(k=>E[k]);
       return {n:ks.length,ruins,saiu,motivos:ETERNA.TR_IA_MOTIVOS.every(m=>/^[a-z][a-z0-9_]{0,23}$/.test(m))&&ETERNA.TR_IA_MOTIVOS.length<=8};});
     ok(!r.ruins.length&&!r.saiu.length&&r.motivos,'28: chaves com 5 textos, sem vazio e sem travessão; as antigas saíram; motivos na regra do agente: '+J(r));
     await ctx.close();}
   ok(!errs.length,'sem erro de página: '+errs.slice(0,3).join(' | '));
 }catch(e){fails.push(VP+' exceção: '+(e&&e.stack||e).toString().slice(0,600));}
 await b.close();
-console.log((fails.length?'FALHA':'OK')+' treino-claro: perguntas 1 a 3 do Marcar (S, X, motivos, troca de ponto, Z, ver como), aba Resultado, interruptor em Configurações › Fundos de IA (duas posições, confirmações, 409, permissões, sem servidor), 5 línguas, 390 e 1280 px'+(fails.length?' · '+fails.join(' | '):''));
+console.log((fails.length?'FALHA':'OK')+' treino-claro: perguntas 1 a 3 do Marcar (S, X, motivos, troca de ponto, Z, ver como), aba Resultado, chaves em Configurações › IA automática, só o Admin (duas posições, confirmações, 409, permissões, sem servidor), 5 línguas, 390 e 1280 px'+(fails.length?' · '+fails.join(' | '):''));
 process.exit(fails.length?1:0);})();

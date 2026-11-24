@@ -360,3 +360,9 @@ Valem em 1280×900 e em 390×844, salvo quando o critério diz outra coisa. O ag
 2. **Motivos do "Não serve para recorte":** Pessoa cortada na borda, Corpo inteiro com chão, Luz ruim para recorte, Gente atrás, Outro. Falta algum?
 3. **Teclas S (sim) e X (não)** para a pergunta 3.
 4. **"Parado no servidor"** só aparece em servidor recém-instalado. Ele aceita mudar o padrão do servidor para "Desligado (mede em silêncio)" numa próxima entrega?
+
+## Mudanças pedidas depois do plano (24/11)
+
+- **10:44, Enter sem escolha.** Na aba Marcar, o Enter numa foto sem nenhuma escolha (sem ponto, sem qualidade e sem resposta 3) só passa para a próxima, como Próxima. Nada é gravado nem vai para a fila, também no "ver como". Com escolha, o Enter grava e vai para a próxima sem marcação, como antes. `tr_teclas` diz isso nas 5 línguas.
+- **11:04, IA automática.** O quadro saiu de Preços e Checkout › Fundos de IA e virou a tela Configurações › IA automática (view `ia-auto`, módulo `configuracao`), com três chaves Ligado/Desligado: Fundos de IA automáticos, Alerta de foto escura ou estourada e Ajuste automático das fotos (o antigo cartão de Minhas fotos). Só o Admin muda (`isAdminUser`, fora do "ver como"); quem tem a tela no menu vê as pílulas; o Fotógrafo não vê a tela. No servidor, o `POST /treino/config` passou a exigir o perfil admin pela sessão (403 `so_admin`), como o `/poses/config`. O Ajuste automático continua no SIM (`sim/autoAj`, sincronizado pelo servidor do ponto); o ajuste em si roda no navegador que tem a Biblioteca aberta. Em Ajuste automático fica só a situação.
+- **11:04, Minhas fotos sem o seletor Fotógrafo.** Admin e Supervisora veem as Sessões de hoje de todos; o Fotógrafo preso continua só com as dele. Os chips de fotógrafo da Biblioteca ficam.

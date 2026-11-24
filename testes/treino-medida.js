@@ -1,5 +1,5 @@
 // 18/11 (plano "bases dos fundos de IA só com foto do gramado", fatia B, critérios 22 a 24): Treino da IA › Resultado (a antiga
-// Medição; desde 24/11 o interruptor e o "ligar mesmo assim" ficam em Configurações › Preços e Checkout › Fundos de IA, #tr-cfg). A aba abre
+// Medição; desde 24/11 o interruptor e o "ligar mesmo assim" ficam em Configurações › IA automática, #tr-cfg, só o Admin). A aba abre
 // sem erro com a situação, o critério (quanto falta por classe), o gramado como base, o acerto por classe, a matriz marcado ×
 // reconhecido, as pistas da imagem e a lista dos erros; a miniatura de um erro abre a lupa e "Abrir no Marcar" leva à foto na
 // aba Marcar; abaixo do critério o botão Ligada do ponto fica desativado com a explicação, e o 409 do servidor mostra o aviso
@@ -65,7 +65,7 @@ try{
   ok(J(await pg.$$eval('[data-act="tr-aba"]',x=>x.map(b=>b.dataset.a)))===J(['marcar','medida','outubro']),'abas com o Resultado');
   ok(await pg.textContent('[data-act="tr-aba"][data-a="medida"]')==='Resultado','24/11: a aba se chama Resultado');
   // 24 (24/11): o interruptor está em Configurações › Fundos de IA; abaixo do critério, Ligado abre a confirmação (sem travar)
-  const irCfg=async()=>{await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await espera(pg,()=>document.querySelector('#tr-cfg [data-act="tr-cfg"]'));};
+  const irCfg=async()=>{await pg.evaluate(()=>ETERNA.go('ia-auto'));await espera(pg,()=>document.querySelector('#tr-cfg [data-act="tr-cfg"]'));};
   await irCfg();
   const lig=await pg.$eval('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]',x=>({dis:x.disabled,p:x.getAttribute('aria-pressed')}));
   ok(!lig.dis&&lig.p==='false','24: Ligado do ponto não fica travado: '+J(lig));
@@ -98,14 +98,14 @@ try{
   await irCfg();await pg.evaluate(()=>{ETERNA.state.agent.treino.modelo_ponto.criterio_passa=true;ETERNA.render();});
   await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]');await pg.waitForTimeout(500);
   const t409=await pg.evaluate(()=>({toast:document.getElementById('toast').textContent,view:ETERNA.state.view,aba:ETERNA.state.train.aba,ponto:ETERNA.state.agent.treino.analise.ponto,cp:ETERNA.state.agent.treino.modelo_ponto.criterio_passa}));
-  ok(/abaixo da meta\. Toque em Ligado de novo/.test(t409.toast)&&t409.view==='catalogo'&&t409.aba==='marcar'&&t409.ponto==='medir'&&t409.cp===false&&J(R.cfg[R.cfg.length-1])===J({ponto:'ligada'}),'24: 409 criterio vira o aviso e não troca de tela nem de aba: '+J(t409));
+  ok(/abaixo da meta\. Toque em Ligado de novo/.test(t409.toast)&&t409.view==='ia-auto'&&t409.aba==='marcar'&&t409.ponto==='medir'&&t409.cp===false&&J(R.cfg[R.cfg.length-1])===J({ponto:'ligada'}),'24: 409 criterio vira o aviso e não troca de tela nem de aba: '+J(t409));
   // 18/11 (Eduardo, ligar já): "Ligar mesmo assim" só para quem tem configuracao.u, com confirmação; ligado assim, o selo
   // "Ligado abaixo da meta por <nome> em <data>" e o que falta continuam na Medição
   const LIGA='#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]';
   ok(await pg.$(LIGA)&&/O acerto ainda não chegou à meta/.test(await pg.textContent('#tr-cfg')),'abaixo do critério, Ligado aparece com a nota para quem tem configuracao.u');
-  const semPerm=await pg.evaluate(()=>{const u=ETERNA.state.user;const p0=u.perms.configuracao;u.perms.configuracao={c:false,r:true,u:false,d:false};ETERNA.render();
-    const tem=!!document.querySelector('#tr-cfg [data-act="tr-cfg"]')||!!document.querySelector('[data-act="tr-forcar"]');const pil=(document.querySelector('#tr-cfg')||{}).textContent||'';u.perms.configuracao=p0;ETERNA.render();return tem||!/Desligado/.test(pil);});
-  ok(!semPerm,'sem configuracao.u os botões não aparecem (só a pílula)');
+  const semPerm=await pg.evaluate(()=>{const u=ETERNA.state.user;const p0=u.perms.configuracao,pr0=u.preset,m0=u.menu;u.preset='supervisor';delete u.menu;ETERNA.render(); // 24/11: só o Admin muda
+    const tem=!!document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="ponto"]')||!!document.querySelector('[data-act="tr-forcar"]');const pil=(document.querySelector('#tr-cfg')||{}).textContent||'';u.perms.configuracao=p0;u.preset=pr0;if(m0!==undefined)u.menu=m0;ETERNA.render();return tem||!/Desligado/.test(pil);});
+  ok(!semPerm,'quem não é Admin não vê os botões (só a pílula)');
   let dlg=null;pg.once('dialog',d=>{dlg=d.message();d.dismiss();});const n0=R.cfg.length;
   await pg.click(LIGA);await pg.waitForTimeout(300);
   ok(dlg==='O acerto ainda está abaixo da meta. Algumas fotos fora do gramado podem virar fundo de IA. Ligar mesmo assim?'&&R.cfg.length===n0,'a confirmação diz o risco e Cancelar não liga: '+J(dlg));
@@ -114,7 +114,7 @@ try{
   const tRot=await pg.evaluate(()=>{const a=document.querySelector('#tr-cfg .tr-med-forcar-aviso');return {toast:document.getElementById('toast').textContent,ponto:ETERNA.state.agent.treino.analise.ponto,view:ETERNA.state.view,
     aviso:a?a.textContent:'',itens:a?a.querySelectorAll('li').length:0,html:a?a.innerHTML:''};});
   ok(/gramado e de pelo menos um outro ponto/.test(tRot.aviso)&&/outro ponto marcadas e já lidas pelo reconhecimento: 0 \(precisa 1\)/.test(tRot.aviso)&&tRot.itens===1&&!/&amp;|&lt;/.test(tRot.html)
-    &&tRot.toast==='Não ligou. O que falta está logo abaixo.'&&tRot.ponto==='medir'&&tRot.view==='catalogo','409 rotulos: o que falta fica em Configurações, em texto puro: '+J(tRot));
+    &&tRot.toast==='Não ligou. O que falta está logo abaixo.'&&tRot.ponto==='medir'&&tRot.view==='ia-auto','409 rotulos: o que falta fica em Configurações, em texto puro: '+J(tRot));
   R.semRot=false;R.atraso=900;pg.once('dialog',d=>d.accept());await pg.click(LIGA);await pg.waitForTimeout(250);
   const voo=await pg.evaluate(()=>{const b=document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]');if(b)b.click();return {dis:b&&b.disabled};}); // 2º clique no meio do pedido
   ok(voo.dis===true,'o botão fica travado enquanto o pedido está em voo: '+J(voo));

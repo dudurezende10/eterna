@@ -476,6 +476,7 @@ try:
     adm = S.cookie_sessao(m, "admin-af")
     R, RU = {"r": True}, {"r": True, "u": True}
     sup = S.cookie_sessao(m, "supervisora-af", {"desempenho": R, "estatisticas": R, "financeiro": R, "configuracao": RU, "qualidade": RU})
+    chefe = S.cookie_sessao(m, "chefe-af")                  # 24/11: o /treino/config é só do Admin
     so_est = S.cookie_sessao(m, "so-estatisticas", {"estatisticas": R, "financeiro": R})
     so_des = S.cookie_sessao(m, "so-desempenho", {"desempenho": R})
     fot = S.cookie_sessao(m, "fotografo-af", {"set": {"r": True, "c": True}})
@@ -509,14 +510,16 @@ try:
         db.commit()
         db.close()
     st, r = pede("POST", "/treino/config", {"exposicao": "ligada"}, cookie=sup)
+    ok(st == 403 and r.get("error") == "so_admin", "24/11: a Supervisora (configuracao.u) não liga a exposição: %s %r" % (st, r))
+    st, r = pede("POST", "/treino/config", {"exposicao": "ligada"}, cookie=chefe)
     ok(st == 409 and r.get("error") == "criterio" and any(x["k"] == "boas" and x["tem"] == 130 for x in r.get("falta") or []), "6: ligada sem o critério: 409 com falta: %s %r" % (st, r))
     for p in boas[:20]:
         rotulo(p, "boa", [])
-    st, r = pede("POST", "/treino/config", {"exposicao": "ligada"}, cookie=sup)
+    st, r = pede("POST", "/treino/config", {"exposicao": "ligada"}, cookie=chefe)
     ok(st == 200 and r["analise"]["exposicao"] == "ligada", "6: com o critério, liga: %s %r" % (st, r))
     m._treino_cfg["t"] = 0.0
     ok(m.treino_cfg()["exposicao"] == "ligada", "6: a migração não rebaixa a Ligada que passou no critério")
-    st, r = pede("POST", "/treino/config", {"ponto": "medir"}, cookie=sup)
+    st, r = pede("POST", "/treino/config", {"ponto": "medir"}, cookie=chefe)
     m._treino_cfg["t"] = 0.0
     ok(st == 200 and m.treino_cfg()["exposicao"] == "ligada", "6: mudar o ponto não derruba a exposição Ligada")
     m.estado_gravar({"docs": [{"col": "config", "id": "treino", "valor": {"ponto": "desligada", "exposicao": "ligada", "exposicao_ok": True}}]})
@@ -609,7 +612,7 @@ try:
     ok(st == 200 and r.get("igual") is True and r["mudou"] == [] and rev_cfg() == rv0, "R: sem mudança não regrava nem sobe o rev: %r" % r)
     # R4: com a exposição Ligada, limite de luz novo confere o critério com os limites novos; sem passar, 409 e nada gravado
     m._treino_cfg.update(t=0.0, v=None)
-    st, r = pede("POST", "/treino/config", {"exposicao": "ligada"}, cookie=sup)
+    st, r = pede("POST", "/treino/config", {"exposicao": "ligada"}, cookie=chefe)
     ok(st == 200 and r["analise"]["exposicao"] == "ligada", "R4: a exposição liga (critério ok): %s %r" % (st, r))
     st, r = pede("POST", "/fotografos/config", {"luz": {"quadro_med_baixo": 1, "quadro_baixo_pct": 100}}, cookie=sup)
     m._fot_cfg["t"] = 0.0
@@ -620,7 +623,7 @@ try:
     ok(st == 200 and m.luz_limites()["quadro_med_baixo"] == 40, "R4: limite que passa no critério grava: %s %r" % (st, r))
     st, r = pede("POST", "/fotografos/config", {"cliques_min": 19}, cookie=sup)
     ok(st == 200, "R4: com a exposição Ligada, mudar só os outros limites não confere a luz")
-    pede("POST", "/treino/config", {"exposicao": "desligada"}, cookie=sup)
+    pede("POST", "/treino/config", {"exposicao": "desligada"}, cookie=chefe)
     m._janelas.clear()
     cods = [pede("POST", "/fotografos/config", {"cliques_min": 20}, cookie=sup, limpa=False)[0] for _ in range(7)]
     ok(cods[:6] == [200] * 6 and cods[6] == 429, "11: 6 por minuto por pessoa: %r" % cods)
