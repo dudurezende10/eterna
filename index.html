@@ -1517,7 +1517,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.40.3 · 24/11 03:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.40.4 · 24/11 03:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3965,7 +3965,7 @@ const I18N={
  gq_offer:[(n,a,b,c)=>`${n} fotos por ${a}${b?` · cada foto a mais ${b}`:''}${c?` · todas por ${c}`:''}.`,(n,a,b,c)=>`${n} photos for ${a}${b?` · each extra photo ${b}`:''}${c?` · all for ${c}`:''}.`,(n,a,b,c)=>`${n} fotos por ${a}${b?` · cada foto extra ${b}`:''}${c?` · todas por ${c}`:''}.`,(n,a,b,c)=>`${n} photos pour ${a}${b?` · chaque photo en plus ${b}`:''}${c?` · toutes pour ${c}`:''}.`,(n,a,b,c)=>`${n} Fotos für ${a}${b?` · jedes weitere Foto ${b}`:''}${c?` · alle für ${c}`:''}.`],
 gq_moreFree:[n=>`Dá para escolher mais ${n} sem pagar a mais`,n=>`You can pick ${n} more at no extra cost`,n=>`Puedes elegir ${n} más sin pagar extra`,n=>`Vous pouvez en choisir ${n} de plus sans supplément`,n=>`Du kannst ${n} weitere ohne Aufpreis wählen`],
 gq_dadosH:['Seus dados para o pagamento','Your details for payment','Tus datos para el pago','Vos informations pour le paiement','Deine Daten für die Zahlung'],
-gq_dadosD:['O pagamento é feito na Imply, a bilheteria do Tour, que pede estes dados para emitir o pedido.','Payment is made on Imply, the Tour ticket office, which needs these details to issue the order.','El pago se hace en Imply, la boletería del Tour, que pide estos datos para emitir el pedido.','Le paiement se fait sur Imply, la billetterie du Tour, qui demande ces informations pour émettre la commande.','Die Zahlung erfolgt bei Imply, dem Ticketsystem der Tour, das diese Daten für die Bestellung braucht.'],
+gq_dadosD:['Usamos estes dados para emitir o seu pedido e enviar as fotos.','We use these details to issue your order and send the photos.','Usamos estos datos para emitir tu pedido y enviar las fotos.','Nous utilisons ces informations pour émettre votre commande et envoyer les photos.','Wir nutzen diese Daten, um deine Bestellung auszustellen und die Fotos zu senden.'],
 gq_nome:['Nome completo','Full name','Nombre completo','Nom complet','Vollständiger Name'],
 gq_email:['E-mail (enviamos o link das fotos)','Email (we send the photo link)','Correo (enviamos el enlace de las fotos)','E-mail (nous envoyons le lien des photos)','E-Mail (wir senden den Link zu den Fotos)'],
 gq_cpf:['CPF','CPF (Brazilian ID)','CPF (documento brasileño)','CPF (identifiant brésilien)','CPF (brasilianische Steuernummer)'],
@@ -3998,13 +3998,13 @@ gv_tour_ver:['Ver minhas fotos','See my photos','Ver mis fotos','Voir mes photos
 gv_baixar:['Baixar vídeo','Download video','Descargar video','Télécharger la vidéo','Video herunterladen'],
 gq_mkt:['Quero receber novidades e ofertas do Viva Maracanã por e-mail (opcional).','I want to receive Viva Maracanã news and offers by email (optional).','Quiero recibir novedades y ofertas de Viva Maracanã por correo (opcional).','Je veux recevoir les nouveautés et offres de Viva Maracanã par e-mail (facultatif).','Ich möchte Neuigkeiten und Angebote von Viva Maracanã per E-Mail erhalten (optional).'],
 gq_irPagar:[(n,x)=>`Ir para o pagamento · ${x}`,(n,x)=>`Go to payment · ${x}`,(n,x)=>`Ir al pago · ${x}`,(n,x)=>`Aller au paiement · ${x}`,(n,x)=>`Zur Zahlung · ${x}`],
-gq_implyFine:['Você vai para a Imply, paga com Pix ou cartão e volta para cá. As fotos são liberadas quando a Imply confirmar o pagamento.','You go to Imply, pay by Pix or card and come back here. The photos are released once Imply confirms the payment.','Vas a Imply, pagas con Pix o tarjeta y vuelves aquí. Las fotos se liberan cuando Imply confirma el pago.','Vous allez sur Imply, payez par Pix ou carte et revenez ici. Les photos sont débloquées dès qu’Imply confirme le paiement.','Du gehst zu Imply, zahlst mit Pix oder Karte und kommst hierher zurück. Die Fotos werden freigegeben, sobald Imply die Zahlung bestätigt.'],
+gq_implyFine:['Você paga com Pix ou cartão numa página segura e volta para cá. As fotos são liberadas assim que o pagamento for confirmado.','You pay by Pix or card on a secure page and come back here. The photos are released as soon as the payment is confirmed.','Pagas con Pix o tarjeta en una página segura y vuelves aquí. Las fotos se liberan en cuanto se confirma el pago.','Vous payez par Pix ou carte sur une page sécurisée et revenez ici. Les photos sont débloquées dès que le paiement est confirmé.','Du zahlst mit Pix oder Karte auf einer sicheren Seite und kommst hierher zurück. Die Fotos werden freigegeben, sobald die Zahlung bestätigt ist.'],
 gq_nomeBad:['Escreva seu nome completo.','Please type your full name.','Escribe tu nombre completo.','Indiquez votre nom complet.','Bitte gib deinen vollständigen Namen ein.'],
 gq_emailBad:['Confira o e-mail.','Please check the email.','Revisa el correo.','Vérifiez l’e-mail.','Bitte prüfe die E-Mail.'],
 gq_docBad:['Confira o documento.','Please check the document number.','Revisa el documento.','Vérifiez le numéro du document.','Bitte prüfe die Dokumentnummer.'],
 gq_impErr:['Não conseguimos abrir o pagamento agora. Tente de novo em instantes.','We couldn’t open the payment right now. Please try again shortly.','No pudimos abrir el pago ahora. Inténtalo de nuevo en unos instantes.','Impossible d’ouvrir le paiement pour le moment. Réessayez dans un instant.','Die Zahlung konnte gerade nicht geöffnet werden. Bitte versuche es gleich noch einmal.'],
 gq_conferindo:['Conferindo seu pagamento','Checking your payment','Verificando tu pago','Vérification de votre paiement','Wir prüfen deine Zahlung'],
-gq_conferindoD:['Assim que a Imply confirmar, suas fotos aparecem aqui. Pode levar alguns minutos no Pix.','As soon as Imply confirms, your photos show up here. Pix can take a few minutes.','En cuanto Imply confirme, tus fotos aparecen aquí. Con Pix puede tardar unos minutos.','Dès qu’Imply confirme, vos photos s’affichent ici. Avec Pix, cela peut prendre quelques minutes.','Sobald Imply bestätigt, erscheinen deine Fotos hier. Mit Pix kann es ein paar Minuten dauern.'],
+gq_conferindoD:['Assim que o pagamento for confirmado, suas fotos aparecem aqui. Pode levar alguns minutos no Pix.','As soon as the payment is confirmed, your photos show up here. Pix can take a few minutes.','En cuanto se confirme el pago, tus fotos aparecen aquí. Con Pix puede tardar unos minutos.','Dès que le paiement est confirmé, vos photos s’affichent ici. Avec Pix, cela peut prendre quelques minutes.','Sobald die Zahlung bestätigt ist, erscheinen deine Fotos hier. Mit Pix kann es ein paar Minuten dauern.'],
 gq_payCancel:['O pagamento não foi concluído. Suas fotos continuam aqui para comprar.','The payment was not completed. Your photos are still here to buy.','El pago no se completó. Tus fotos siguen aquí para comprar.','Le paiement n’a pas abouti. Vos photos sont toujours disponibles à l’achat.','Die Zahlung wurde nicht abgeschlossen. Deine Fotos kannst du hier weiterhin kaufen.'],
  gq_all:[x=>`Todas por ${x}`,x=>`All for ${x}`,x=>`Todas por ${x}`,x=>`Toutes pour ${x}`,x=>`Alle für ${x}`],
  gq_buy:[(n,x)=>`Comprar ${n} ${PL(n,'foto','fotos')} · ${x}`,(n,x)=>`Buy ${n} ${PL(n,'photo','photos')} · ${x}`,(n,x)=>`Comprar ${n} ${PL(n,'foto','fotos')} · ${x}`,(n,x)=>`Acheter ${n} ${PL(n,'photo','photos')} · ${x}`,(n,x)=>`${n} ${PL(n,'Foto','Fotos')} kaufen · ${x}`],
@@ -4201,7 +4201,7 @@ const I18N_ZH={
  gq_offer:(n,a,b,c)=>`${n} 张照片 ${a} · 每多一张 ${b} · 全部 ${c}。`,
  gq_moreFree:(n)=>`可再免费选择 ${n} 张`,
  gq_dadosH:"你的付款信息",
- gq_dadosD:"付款在 Imply（Tour 售票处）完成，他们需要这些信息来开具订单。",
+ gq_dadosD:"我们使用这些信息来开具订单并发送照片。",
  gq_nome:"全名",
  gq_email:"电子邮箱（我们会发送照片链接）",
  gq_cpf:"CPF",
@@ -4210,13 +4210,13 @@ const I18N_ZH={
  gq_brasileiro:"我有 CPF",
  gq_mkt:"我想通过电子邮件接收 Viva Maracanã 的新闻和优惠（可选）。",
  gq_irPagar:(n,x)=>`去付款 · ${x}`,
- gq_implyFine:"你将前往 Imply，用 Pix 或银行卡付款后返回此处。Imply 确认付款后，照片即可下载。",
+ gq_implyFine:"你将在安全页面用 Pix 或银行卡付款，然后返回此处。付款确认后，照片即可下载。",
  gq_nomeBad:"请输入你的全名。",
  gq_emailBad:"请检查电子邮箱。",
  gq_docBad:"请检查证件号码。",
  gq_impErr:"目前无法打开付款页面，请稍后再试。",
  gq_conferindo:"正在核对你的付款",
- gq_conferindoD:"Imply 确认后，你的照片会显示在这里。使用 Pix 可能需要几分钟。",
+ gq_conferindoD:"付款确认后，你的照片会显示在这里。使用 Pix 可能需要几分钟。",
  gq_payCancel:"付款未完成。你的照片仍可在此购买。",
  gq_all:(x)=>`全部 ${x}`,
  gq_buy:(n,x)=>`购买 ${n} 张照片 · ${x}`,
