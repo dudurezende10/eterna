@@ -166,11 +166,13 @@ try:
               "venda": {"venda": RW, "quiosque": RW, "catalogo": RO, "filafoto": RO},
               "supervisor": {"relatorios": RO, "desempenho": RO, "financeiro": RO, "diario": ALL, "set": RO, "venda": RW, "qualidade": {"r": True, "u": True}, "estoque": ALL,
                              "configuracao": RW, "escala": RW, "laboratorio": RO, "catalogo": RO, "galerias": RW, "filafoto": {"r": True, "u": True}}}
-    grava = {"foto": ["edits|ag_x1", "discarded|ag_x1", "invalid|ag_x1", "flagUse|br", "autoAj", "autoAjPor", "camDia|2026-11-09"],
+    grava = {"foto": ["edits|ag_x1", "discarded|ag_x1", "invalid|ag_x1", "flagUse|br", "camDia|2026-11-09"],
              "venda": ["stock|Caixa 1", "ai|ag_x1", "invalid|ag_x2", "flagUse|ar"],
              "supervisor": ["stock|Caixa 2", "flagUse|pt", "invalid|ag_x3", "bgAtivo|podio", "bgOn", "bgOn2", "bgTelaoV97", "bgTunelV2", "fundosModo", "cortesiaLog|abc"]}
     # 16/11: a lista dos fundos (bgOn2) e a marca do túnel v2 (bgTunelV2) são de quem altera Configurações; fotógrafo e vendedor não gravam
-    nao = {"foto": ["prices|zona", "lojaFimSeg", "pagProv", "bgOn2", "bgTunelV2"], "venda": ["prices|zona", "lojaFimSeg", "edits|ag_x9", "bgOn2", "bgTunelV2"], "supervisor": ["prices|zona", "lojaFimSeg", "catalogoV"]}
+    # 24/11 (Eduardo): o Ajuste automático (autoAj, autoAjPor) só o Admin grava; o fotógrafo, mesmo com set.u, e a Supervisora não
+    nao = {"foto": ["prices|zona", "lojaFimSeg", "pagProv", "bgOn2", "bgTunelV2", "autoAj", "autoAjPor"], "venda": ["prices|zona", "lojaFimSeg", "edits|ag_x9", "bgOn2", "bgTunelV2", "autoAj"],
+           "supervisor": ["prices|zona", "lojaFimSeg", "catalogoV", "autoAj", "autoAjPor"]}
     for nome, perms in perfis.items():
         ck = S.cookie_sessao(m, "perfil-" + nome, perms)
         st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "sim", "id": i, "valor": 1} for i in grava[nome]]}, cookie=ck)

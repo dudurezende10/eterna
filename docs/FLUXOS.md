@@ -571,7 +571,7 @@ flowchart TD
 | Sem rosto ou erro | Foto continua válida: "sem rosto" não barra | `validateReal` |
 | Efeito de não válida | Sai de `sessionObj` e do Checkout; continua no acervo. Compartilhado por `SIM.invalid` | `demoSessions`, `SIM_MAPA` |
 | Gravação da validação | O resultado fica em memória até a próxima gravação do navegador | `ingClose`, `saveSim` |
-| Ajuste automático ligado | Vale para o ponto inteiro; desligar exige permissão de alterar no módulo do set e registra quem mexeu. Ao religar, processa as que ficaram sem ajuste | `ajAutoSet`, `SIM.autoAj` |
+| Ajuste automático ligado | Vale para o ponto inteiro; só o Admin liga e desliga (Configurações › IA automática; o servidor recusa `sim/autoAj` de quem não é Admin) e fica registrado quem mexeu. Ao religar, processa as que ficaram sem ajuste | `ajAutoSet`, `SIM.autoAj` |
 | Lote do ajuste | Até 16 fotos a cada 3 s, sem foto já ajustada e sem as que falharam desde a última recarga da tela | `ajQueue` |
 | Pontos suficientes | Pelo menos 50 pontos com brilho de 6 ou mais, em uma cópia com 160 px de largura | `ajAuto` |
 | Valores do ajuste | Brilho de 75 a 140, contraste de 90 a 140, temperatura de −30 a +30, em passos de 5 | `ajAuto` |

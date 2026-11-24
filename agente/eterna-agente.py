@@ -9483,6 +9483,7 @@ def perfil_recusa(ed, id_doc, v):
     if not isinstance(v.get("name"), str) or not v["name"].strip() or not isinstance(v.get("perms"), dict) or not isinstance(v.get("menu"), list):
         return "invalido"
     return "sem_poder" if auth_acessos({"perms": v["perms"]}) - auth_acessos(ed) else None
+SIM_SO_ADMIN = ("autoAj", "autoAjPor")         # 24/11: só o Admin grava (doc_recusa)
 DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("stock|", ("estoque", "venda")),          # o rolo de papel do posto baixa na impressão, feita no caixa
            ("flags|", ("estoque",)), ("flagList", ("estoque",)),
@@ -11180,6 +11181,10 @@ def doc_recusa(db, quem, d):
     mods = doc_modulos(col, id_doc)
     if not mods:
         return "desconhecido"
+    # 24/11 (Eduardo): o Ajuste automático das fotos (sim/autoAj e quem mexeu, sim/autoAjPor) só o Admin muda, como o /treino/config.
+    # O perfil vem do cadastro da sessão, nunca do pedido; o "ver como" também é recusado. O resto da coleção sim segue a tabela DOC_SIM.
+    if col == "sim" and id_doc in SIM_SO_ADMIN and ((quem.get("cadastro") or {}).get("preset") != "admin" or quem.get("assumido_por")):
+        return "so_admin"
     letras = ("d", "u") if apaga else ("u",) if existe else ("c", "u")
     return None if any(auth_pode(quem["cadastro"], mo, le) for mo in mods for le in letras) else "sem_permissao"
 
@@ -12739,7 +12744,9 @@ def _backup_ok_grava(t):
         pass
 
 
-# Sobem para a nuvem estes bancos e os JSON das sessões (códigos de foto e de sessão, sem imagem nem rosto); cena.db e poses.db não.
+# Sobem para a nuvem estes bancos (cena.db e poses.db não) e, pela backup_rodada e pela backup_arquivos_lista, os JSON das sessões e
+# das métricas, index.json, metricas.jsonl, os registros da LGPD, funcao.json, fundos-modo.json, visitas-log/visitas-calibracao, a fila
+# de impressão, agenda-fonte.json e o sessao.json de cada galeria: códigos, contagens e registros, sem imagem nem rosto.
 BACKUP_BANCOS = ("VENDAS_DB", "ESTADO_DB", "OPERACAO_DB", "NUVEM_DB", "TREINO_DB")   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
 
 
@@ -14945,8 +14952,8 @@ def _treino_desfaz(de, pv, antes):
     except Exception as ex:
         falhou.append("versão congelada %s (%s)" % (pv, type(ex).__name__))
     if falhou:
-        print("  ATENÇÃO treino: o Ligada sem auditoria NÃO foi desfeito por completo: %s. Confira Treino da IA › Medição e "
-              "ponha o reconhecimento em Só medir" % "; ".join(falhou))
+        print("  ATENÇÃO treino: o Ligada sem auditoria NÃO foi desfeito por completo: %s. Confira Treino da IA › Resultado e "
+              "ponha o reconhecimento em Desligado (Configurações › IA automática)" % "; ".join(falhou))
 
 
 def treino_status():

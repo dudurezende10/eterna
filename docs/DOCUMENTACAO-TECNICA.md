@@ -1249,7 +1249,7 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 ### Ajuste automático: interruptor do fotógrafo
 
 - `ajAutoPanel()` no topo do Upload automático (`vImportarCore`) e em Configurações › Ajuste automático (`vAjustes`). Título "Ajuste automático da IA", botão Ligado/Desligado e a linha "Desligado por Carlos às 14:02".
-- `ajAutoSet(on)` grava `SIM.autoAj` e `SIM.autoAjPor={on,por,nome,em}`, registra no log e confere `can('set','u')` por dentro.
+- `ajAutoSet(on)` grava `SIM.autoAj` e `SIM.autoAjPor={on,por,nome,em}` e registra no log. Só o Admin (`isAdminUser`, fora do "ver como"); o servidor confere de novo pela sessão: `doc_recusa` recusa `sim/autoAj` e `sim/autoAjPor` (`SIM_SO_ADMIN`) de quem não é preset admin, com o motivo `so_admin` (24/11).
 - Vale para o computador do ponto inteiro (D9). Ao religar, o `ajQueue` ajusta as fotos que chegaram com ele desligado.
 - `WRITE_OPS['aj-autotoggle']='u'`, `ACT_MOD` `set`. Fecha a brecha da v78 em que o Supervisor (só leitura em `set`) mexia no ajuste.
 - O menu do Fotógrafo não muda: a tela Ajuste automático continua só em Configurações.
