@@ -1535,7 +1535,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.43.0 · 24/11 10:49"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.43.0 · 24/11 10:53"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -4905,12 +4905,15 @@ function mtgModoSalva(modo){if(!MTG_MODOS.includes(modo)||!can('configuracao','u
 // gravada SÓ pela rota POST /poses/config (configuracao.u; o servidor recusa pelo /ponto/docs) e lida do /status.poses
 // (só números e códigos). Ligada só depois da conferência no Treino da IA (P2): o servidor responde 409 criterio.
 // Sem Painel de controle em Alterar, só o texto. Agente antigo (sem `poses` no /status): nada aparece.
+// 24/11 (Eduardo): só o Admin muda a classificação (o servidor confere o perfil da sessão e responde 403 aos outros); quem não é
+// Admin vê o estado sem os botões.
+const psPode=()=>can('configuracao','u')&&!!state.user&&state.user.preset==='admin'&&!state.assumido;
 const PS_MODOS=['desligada','sombra','ligada'];
 const psMotivo=k=>TEk('ps_parou_'+k,String(k||''));
 const psModoTx=()=>({desligada:TE('ps_modo_desligada'),sombra:TE('ps_modo_sombra'),ligada:TE('ps_modo_ligada')});
 const psModoBt=()=>({desligada:TE('ps_modo_b_desligada'),sombra:TE('ps_modo_b_sombra'),ligada:TE('ps_modo_b_ligada')});
 function posesPanel(){const a=state.agent||{};const p=a.on?a.poses:null;if(!p||!can('configuracao','r'))return '';
-  const modo=PS_MODOS.includes(p.modo)?p.modo:'desligada';const mo=p.modelo||{};const n=p.noite||{};const j=p.janela||{};const pode=can('configuracao','u');
+  const modo=PS_MODOS.includes(p.modo)?p.modo:'desligada';const mo=p.modelo||{};const n=p.noite||{};const j=p.janela||{};const pode=psPode();
   const modelo=mo.pronto?TE('ps_painel_pronto'):mo.ok?TE('ps_painel_ok'):psMotivo(mo.erro||'sem_modelo');
   const noite=n.ini?TE('ps_painel_noite_linha',+n.feitas||0,+n.duvidas||0,+n.erros||0,n.ms_med?String((n.ms_med/1000).toFixed(1)).replace('.',','):'--')+(n.fim?'':' · '+TE('ps_painel_rodando')):TE('ps_painel_sem_noite');
   return `<div class="note" id="ps-srv" data-modo="${modo}"><b>${TE('ps_painel_h')}</b>: ${psModoTx()[modo]}${p.forcada?TE('ps_painel_forcada'):''}</div>
@@ -4918,13 +4921,13 @@ function posesPanel(){const a=state.agent||{};const p=a.on?a.poses:null;if(!p||!
     <div class="note" id="ps-noite">${TE('ps_painel_noite')}: ${noite}${n.parou_por?' · '+TE('ps_painel_parou')+' '+esc(psMotivo(n.parou_por)):''}</div>
     ${pode?`<div class="row" style="align-items:center;gap:10px;flex-wrap:wrap"><div class="seg" id="ps-modo" role="group" aria-label="${TE('ps_painel_h')}">${PS_MODOS.map(x=>`<button data-act="ps-modo" data-v="${x}" aria-pressed="${x===modo}" ${state.psSalvando?'disabled':''}>${psModoBt()[x]}</button>`).join('')}</div></div>`:''}`;}
 async function psModoSalva(modo){const a=state.agent||{};const p=a.on?a.poses:null;const u=a.on&&a.url?a.url:null;
-  if(!p||!u||!PS_MODOS.includes(modo)||!can('configuracao','u')||state.psSalvando)return;const de=PS_MODOS.includes(p.modo)?p.modo:'desligada';if(de===modo)return;
+  if(!p||!u||!PS_MODOS.includes(modo)||!psPode()||state.psSalvando)return;const de=PS_MODOS.includes(p.modo)?p.modo:'desligada';if(de===modo)return;
   if(!confirm(TE('ps_modo_conf',psModoBt()[modo])))return;state.psSalvando=true;render();
   try{const r=await agFetch(u+'/poses/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo})});const j=await r.json().catch(()=>null);
     if(r.ok&&j&&j.ok){p.modo=PS_MODOS.includes(j.modo)?j.modo:modo;if(j.janela)p.janela=j.janela;p.forcada=!!j.forcada;auditLog('poses_modo','config/poses',[{campo:'modo',de,para:p.modo}]);toast(TE('ps_modo_ok'));}
     else if(r.status===409&&j&&j.error==='criterio')toast(TE('ps_modo_criterio',+j.falta||0));
     else if(r.status===429)toast(TE('tr_med_cfg_limite'));
-    else if(r.status===403)toast(TE('ps_modo_sem_perm'));
+    else if(r.status===403)toast(TE('ps_modo_so_admin'));
     else toast(TE('ps_modo_erro'));}catch(e){toast(TE('ps_modo_erro'));}
   state.psSalvando=false;render();}
 // ---------- Montagem no servidor, E2 (plano docs/planos/2026-11-16-montagem-no-servidor.md) ----------
@@ -8763,6 +8766,7 @@ const EQ={
   ps_modo_ok:["Classificação de poses atualizada","Pose labeling updated","Clasificación de poses actualizada","Classement des poses mis à jour","Posen-Klassifizierung aktualisiert"],
   ps_modo_criterio:[(n)=>`Ligada só depois de conferir as fotos no Treino da IA: faltam ${n}. Use Sombra até lá.`,(n)=>`On only after checking the photos in AI training: ${n} to go. Use Shadow until then.`,(n)=>`Encendida solo después de revisar las fotos en el Entrenamiento de la IA: faltan ${n}. Use Sombra hasta entonces.`,(n)=>`Activée seulement après avoir vérifié les photos dans l'Entraînement de l'IA : il en manque ${n}. Utilisez Ombre d'ici là.`,(n)=>`An erst nach dem Prüfen der Fotos im KI-Training: es fehlen ${n}. Bis dahin Schatten verwenden.`],
   ps_modo_sem_perm:["Só quem altera o Painel de controle muda a classificação de poses","Only people who can change the Control panel can change pose labeling","Solo quien modifica el Panel de control cambia la clasificación de poses","Seuls ceux qui modifient le Panneau de contrôle changent le classement des poses","Nur wer das Kontrollzentrum ändern darf, ändert die Posen-Klassifizierung"],
+  ps_modo_so_admin:["Só o Admin muda a classificação de poses","Only the Admin can change pose labeling","Solo el Admin cambia la clasificación de poses","Seul l'Admin peut changer le classement des poses","Nur der Admin kann die Posen-Klassifizierung ändern"],
   ps_modo_erro:["Não deu para mudar a classificação de poses: tente de novo","Could not change pose labeling: try again","No se pudo cambiar la clasificación de poses: intente de nuevo","Impossible de changer le classement des poses : réessayez","Posen-Klassifizierung konnte nicht geändert werden: erneut versuchen"],
   ps_painel_forcada:[" · <b>desligada no servidor (ETERNA_POSES=0)</b>"," · <b>turned off on the server (ETERNA_POSES=0)</b>"," · <b>apagada en el servidor (ETERNA_POSES=0)</b>"," · <b>désactivée sur le serveur (ETERNA_POSES=0)</b>"," · <b>auf dem Server ausgeschaltet (ETERNA_POSES=0)</b>"],
   ps_janela:[(a,b)=>`Janela: das ${a} às ${b}`,(a,b)=>`Window: ${a} to ${b}`,(a,b)=>`Ventana: de ${a} a ${b}`,(a,b)=>`Fenêtre : de ${a} à ${b}`,(a,b)=>`Fenster: ${a} bis ${b}`],
