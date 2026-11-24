@@ -16643,8 +16643,8 @@ POSE_BIN = "/opt/eterna/visao/bin/llama-server"     # root:root 755 (servidor/li
 POSE_NVSMI = "nvidia-smi"                           # memória livre da placa; os testes trocam
 POSE_ARQ = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"        # em ~/Eterna/modelos (agente/instalar-poses-modelos.py)
 POSE_MMPROJ_ARQ = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
-# SHA-256 dos dois arquivos: o Ronaldo confere o download no servidor (instalar-poses-modelos.py --conferir) e o
-# programador fixa aqui e no instalar-poses-modelos.py, como foi com o CENA_SHA. Vazio = sem SHA fixo: o filho não abre
+# SHA-256 dos dois arquivos: o Ronaldo instala com o SHA esperado de cada um (instalar-poses-modelos.py --esperado-modelo e
+# --esperado-mmproj, copiados da página do arquivo no Hugging Face; diferente = apagado) e o programador fixa aqui e no instalar-poses-modelos.py, como foi com o CENA_SHA. Vazio = sem SHA fixo: o filho não abre
 # (motivo sem_modelo) e nada é classificado (falha fechada).
 POSE_SHA = ""
 POSE_MMPROJ_SHA = ""

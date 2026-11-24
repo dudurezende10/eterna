@@ -9,7 +9,9 @@
 #      ponto/poses-*), sem SHA fixo diz "modelo indisponível" sem abrir nada; com SHA de teste mede de ponta a ponta, chave em
 #      ponto/medir, não grava no poses.db, não imprime id de foto e não deixa processo; abertura estourada não deixa órfão
 #   E. visao-instalar.sh: bash -n e as validações de LLAMA_TAG (bNNNN) e LLAMA_COMMIT (40 hex) antes de qualquer passo. O
-#      instalador NUNCA é executado aqui: só as 4 linhas de validação, copiadas para um bash à parte
+#      instalador NUNCA é executado aqui: só as 4 linhas de validação, copiadas para um bash à parte. 24/11: as validações de
+#      POSE_SHA_MODELO e POSE_SHA_MMPROJ (64 hex) também vêm antes do passo 1; o instalar-poses-modelos.py não baixa nada sem o
+#      SHA-256 esperado de cada arquivo, e arquivo com SHA diferente é apagado e dá erro (download trocado por um falso)
 #   F. o laço de verdade: versão do filho diferente (parado, nada gravado, nenhum processo), desligar no meio da noite fecha
 #      filho e llama-server (parou_por desligada), Sombra gravada 5 vezes seguidas abre um filho só
 # Miniaturas desenhadas na hora; nenhuma foto de visitante.
@@ -241,6 +243,61 @@ try:
         ok(passou == deve, "E: LLAMA_TAG=%r LLAMA_COMMIT=%r -> %s" % (tag, com[:12], "passa" if passou else "para"))
     ok('LLAMA_TAG="${LLAMA_TAG:-}"' in txt and 'LLAMA_COMMIT="${LLAMA_COMMIT:-}"' in txt, "E: sem valor padrão (vazio = para)")
     ok("rev-parse HEAD)\" = \"$LLAMA_COMMIT\"" in txt, "E: confere o commit do código baixado")
+    # 24/11: o SHA-256 esperado do modelo é exigido antes do passo 1 (sem ele nada seria conferido)
+    ls_sha = [l.strip() for l in txt.splitlines() if l.strip().startswith('[[ "$POSE_SHA_')]
+    ok(len(ls_sha) == 2 and txt.index('[[ "$POSE_SHA_MMPROJ" =~') < txt.index('passo "1.'), "E: 2 validações do SHA do modelo antes do passo 1: %r" % ls_sha)
+    ok("--conferir" not in txt and "--esperado-modelo" in txt and "--esperado-mmproj" in txt, "E: o passo 3 passa o SHA esperado (sem --conferir)")
+    corpo = "set -u\npara(){ echo \"PAROU $*\"; exit 1; }\n" + "\n".join(ls_sha) + "\necho PASSOU\n"
+    H64 = "0123456789abcdef" * 4
+    for mod, mmp, deve in (("", "", False), (H64, "", False), ("", H64, False), (H64[:-1], H64, False), (H64 + "0", H64, False),
+                           (H64.replace("0", "g"), H64, False), (H64 + ";x", H64, False), (H64, H64, True)):
+        r = subprocess.run(["bash", "-c", corpo], env={"PATH": os.environ["PATH"], "POSE_SHA_MODELO": mod, "POSE_SHA_MMPROJ": mmp}, capture_output=True, text=True)
+        ok(("PASSOU" in r.stdout) == deve, "E: POSE_SHA_MODELO=%r POSE_SHA_MMPROJ=%r -> %s" % (mod[:8], mmp[:8], r.stdout.strip()[-40:]))
+    # o instalador: sem SHA esperado não baixa nada; SHA em formato errado ou diferente do fixado no código: erro
+    INST = os.path.join(REPO, "agente", "instalar-poses-modelos.py")
+    H_I = os.path.join(HOME, "inst")
+    os.makedirs(H_I, exist_ok=True)
+    env_i = {"PATH": os.environ["PATH"], "HOME": H_I, "http_proxy": "http://127.0.0.1:9", "https_proxy": "http://127.0.0.1:9",
+             "HTTP_PROXY": "http://127.0.0.1:9", "HTTPS_PROXY": "http://127.0.0.1:9"}     # rede de saída fechada: nada pode ser baixado
+    r = subprocess.run([sys.executable, "-I", INST], env=env_i, capture_output=True, text=True, timeout=60)
+    pasta_i = os.path.join(H_I, "Eterna", "modelos")
+    ok(r.returncode == 1 and "Nada baixado" in r.stdout and "--esperado-modelo" in r.stdout and not (os.path.isdir(pasta_i) and os.listdir(pasta_i)),
+       "E: sem SHA esperado não baixa nada e explica: %d %r" % (r.returncode, r.stdout[-300:]))
+    r = subprocess.run([sys.executable, "-I", INST, "--esperado-modelo", H64], env=env_i, capture_output=True, text=True, timeout=60)
+    ok(r.returncode == 1 and "Nada baixado" in r.stdout, "E: com o SHA de um arquivo só, nada baixado: %d %r" % (r.returncode, r.stdout[-200:]))
+    for args in (["--esperado-modelo", "abc", "--esperado-mmproj", H64], ["--conferir"], ["--esperado-modelo"]):
+        r = subprocess.run([sys.executable, "-I", INST] + args, env=env_i, capture_output=True, text=True, timeout=60)
+        ok(r.returncode == 2 and "FALHA" in r.stdout, "E: %r recusado: %d %r" % (args, r.returncode, r.stdout[-200:]))
+    # download trocado por um falso (sem rede): SHA diferente apaga e para no primeiro; igual instala; já certo não baixa de novo
+    spi = importlib.util.spec_from_file_location("inst", INST)
+    inst = importlib.util.module_from_spec(spi)
+    spi.loader.exec_module(inst)
+    inst.PASTA, inst.LIVRE_GB = os.path.join(H_I, "modelos-teste"), 0
+    conteudo = {inst.POSE_ARQ: b"modelo de teste", inst.POSE_MMPROJ_ARQ: b"mmproj de teste"}
+    baixados = []
+
+    def baixar_falso(url, destino):
+        baixados.append(os.path.basename(destino))
+        os.makedirs(os.path.dirname(destino), exist_ok=True)
+        tmp = os.path.join(os.path.dirname(destino), ".baixando-teste")
+        open(tmp, "wb").write(conteudo[os.path.basename(destino)])
+        return tmp
+    inst.baixar = baixar_falso
+
+    def quieto(f, *a):                                   # a saída do instalador não vai para a linha de resultado do teste
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()):
+            return f(*a)
+    sha_m, sha_p = (hashlib.sha256(conteudo[a]).hexdigest() for a in (inst.POSE_ARQ, inst.POSE_MMPROJ_ARQ))
+    ok(quieto(inst.main, ["x", "--esperado-modelo", H64, "--esperado-mmproj", sha_p]) == 1 and baixados == [inst.POSE_ARQ]
+       and not os.listdir(inst.PASTA), "E: SHA diferente: arquivo apagado, erro e o segundo nem é baixado: %r %r" % (baixados, os.listdir(inst.PASTA)))
+    del baixados[:]
+    ok(quieto(inst.main, ["x", "--esperado-modelo", sha_m.upper(), "--esperado-mmproj", sha_p]) == 0 and baixados == [inst.POSE_ARQ, inst.POSE_MMPROJ_ARQ]
+       and sorted(os.listdir(inst.PASTA)) == sorted(conteudo), "E: SHA igual instala os dois: %r" % os.listdir(inst.PASTA))
+    del baixados[:]
+    ok(quieto(inst.main, ["x", "--esperado-modelo", sha_m, "--esperado-mmproj", sha_p]) == 0 and baixados == [], "E: já certo não baixa de novo")
+    inst.POSE_SHA = H64
+    ok(quieto(inst.main, ["x", "--esperado-modelo", sha_m, "--esperado-mmproj", sha_p]) == 2, "E: SHA da linha de comando diferente do fixado no código: erro")
 
     # ---------- F. o laço de verdade: versão diferente, desligar no meio da noite, Sombra gravada várias vezes ----------
     controle()

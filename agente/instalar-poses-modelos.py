@@ -3,23 +3,29 @@
 # padrão do instalar-recorte-modelos.py. Uma vez por servidor; rodar de novo não baixa nada que já esteja certo.
 #   Qwen3-VL-8B-Instruct (Qwen, Apache 2.0, uso comercial permitido), conversão GGUF oficial do próprio Qwen:
 #   Qwen3VL-8B-Instruct-Q4_K_M.gguf (cerca de 5 GB) e mmproj-Qwen3VL-8B-Instruct-F16.gguf (cerca de 1,2 GB), em
-#   ~/Eterna/modelos, com o SHA-256 conferido. Diferente: o arquivo é apagado e o instalador para. Baixa num temporário e
-#   troca no fim.
-# POSE_SHA e POSE_MMPROJ_SHA (os mesmos do eterna-agente.py) ainda estão vazios: o Ronaldo roda com --conferir, que baixa e
-# MOSTRA o SHA-256 e o tamanho de cada arquivo (e compara com a página do arquivo no Hugging Face); o programador fixa os
-# dois valores aqui e no agente, como foi com o CENA_SHA. Enquanto estiverem vazios, o agente não abre o modelo (motivo
-# sem_modelo) e, sem --conferir, este instalador não baixa nada.
+#   ~/Eterna/modelos. Baixa num temporário, confere o SHA-256 e só então troca. SHA diferente: o arquivo é apagado e o
+#   instalador para com erro.
+# Nada é baixado sem saber o SHA-256 esperado de cada arquivo. Ele vem de um destes dois lugares:
+#   - POSE_SHA e POSE_MMPROJ_SHA fixados aqui (os mesmos do eterna-agente.py), depois da primeira instalação; ou
+#   - --esperado-modelo <sha256> e --esperado-mmproj <sha256> na linha de comando, copiados pelo Ronaldo da página de cada
+#     arquivo no Hugging Face (Qwen/Qwen3-VL-8B-Instruct-GGUF, aba Files and versions, clicar no arquivo: o SHA256 aparece
+#     na página, em "Git LFS Details"). São 64 letras e números.
+#   Com os dois lugares preenchidos, eles têm que ser iguais. Faltando o SHA de algum arquivo, nada é baixado.
+# Depois de instalar, mande os dois SHA-256 ao programador, que fixa POSE_SHA e POSE_MMPROJ_SHA aqui e no agente (como foi com
+# o CENA_SHA). Enquanto estiverem vazios no agente, ele não abre o modelo (motivo sem_modelo).
 # Uso, como o usuário do serviço (no servidor do estádio):
-#   sudo -u eterna env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/instalar-poses-modelos.py [--conferir]
+#   sudo -u eterna env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/instalar-poses-modelos.py \
+#     --esperado-modelo <sha256 do Q4_K_M> --esperado-mmproj <sha256 do mmproj>
 import hashlib, os, re, shutil, sys, tempfile
 
 BASE = "https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF/resolve/main/"
 POSE_ARQ = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"          # o mesmo POSE_ARQ do eterna-agente.py
 POSE_MMPROJ_ARQ = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
-POSE_SHA = ""                                         # o mesmo POSE_SHA do eterna-agente.py (Ronaldo confere, programador fixa)
+POSE_SHA = ""                                         # o mesmo POSE_SHA do eterna-agente.py (fixado depois da instalação)
 POSE_MMPROJ_SHA = ""                                  # o mesmo POSE_MMPROJ_SHA do eterna-agente.py
 PASTA = os.path.join(os.path.expanduser("~"), "Eterna", "modelos")
 LIVRE_GB = 7.0                                        # os dois arquivos mais folga
+SHA_RE = re.compile(r"[0-9a-f]{64}")
 
 
 def sha256(p):
@@ -55,48 +61,75 @@ def baixar(url, destino):
         raise
 
 
-def um(arq, sha, conferir):
-    """-> True se o arquivo ficou certo (ou, em --conferir, baixado e medido)."""
+def esperados(argv):
+    """-> ({arquivo: sha esperado}, erro). Junta o fixado no código com o da linha de comando; os dois têm que bater."""
+    args = {"--esperado-modelo": None, "--esperado-mmproj": None}
+    i = 1
+    while i < len(argv):
+        a = argv[i]
+        if a in args and i + 1 < len(argv):
+            args[a] = argv[i + 1].strip().lower()
+            i += 2
+            continue
+        if a in args:
+            return None, "faltou o SHA-256 depois de %s" % a
+        return None, "opção desconhecida: %s (use --esperado-modelo e --esperado-mmproj)" % a
+    out = {}
+    for arq, fixo, opc in ((POSE_ARQ, POSE_SHA, "--esperado-modelo"), (POSE_MMPROJ_ARQ, POSE_MMPROJ_SHA, "--esperado-mmproj")):
+        dado = args[opc]
+        if dado is not None and not SHA_RE.fullmatch(dado):
+            return None, "%s precisa de um SHA-256 com 64 letras e números (0-9, a-f): %r" % (opc, dado[:80])
+        if fixo and dado and fixo != dado:
+            return None, "%s diferente do SHA-256 fixado no código para %s: confira a página do arquivo" % (opc, arq)
+        out[arq] = fixo or dado
+    return out, None
+
+
+def um(arq, sha):
+    """Deixa o arquivo certo (já estava ou baixado e conferido). -> True / False (nada instalado)."""
     dest = os.path.join(PASTA, arq)
-    fixo = bool(re.fullmatch(r"[0-9a-f]{64}", sha or ""))
     if os.path.isfile(dest):
-        atual = sha256(dest)
-        if fixo and atual == sha:
+        if sha256(dest) == sha:
             print("ok   %s (SHA-256 confere)" % arq)
             return True
-        if not fixo:
-            print("tem  %s · %.2f GB · SHA-256 %s" % (arq, os.path.getsize(dest) / 1e9, atual))
-            return conferir
         print("SHA diferente em %s: apagado (baixa de novo)" % arq)
         os.remove(dest)
-    if not fixo and not conferir:
-        print("SEM SHA fixo para %s: nada baixado. Rode com --conferir e mande o SHA-256 ao programador." % arq)
-        return False
     print("baixando %s ..." % arq)
     tmp = baixar(BASE + arq, dest)
     atual = sha256(tmp)
-    if fixo and atual != sha:
+    if atual != sha:
         os.remove(tmp)
-        print("FALHA %s: SHA-256 %s, esperado %s. Nada instalado." % (arq, atual, sha))
+        print("FALHA %s: SHA-256 %s, esperado %s. Arquivo apagado, nada instalado." % (arq, atual, sha))
         return False
     os.replace(tmp, dest)
     os.chmod(dest, 0o644)
-    print("%s  %s · %.2f GB · SHA-256 %s" % ("ok  " if fixo else "conf", arq, os.path.getsize(dest) / 1e9, atual))
+    print("ok   %s · %.2f GB · SHA-256 %s" % (arq, os.path.getsize(dest) / 1e9, atual))
     return True
 
 
-def main():
-    conferir = "--conferir" in sys.argv
+def main(argv=None):
+    sha, erro = esperados(sys.argv if argv is None else argv)
+    if erro:
+        print("FALHA: " + erro)
+        return 2
+    falta = [a for a, s in sha.items() if not s]
+    if falta:
+        print("Nada baixado: falta o SHA-256 esperado de %s.\n"
+              "Sem ele não dá para saber se o arquivo que chegou é o certo. Abra a página de cada arquivo no Hugging Face\n"
+              "(Qwen/Qwen3-VL-8B-Instruct-GGUF, aba Files and versions, clicar no arquivo; o SHA256 fica em Git LFS Details)\n"
+              "e rode de novo com --esperado-modelo <sha256> --esperado-mmproj <sha256>." % " e ".join(falta))
+        return 1
     os.makedirs(PASTA, exist_ok=True)
     livre = shutil.disk_usage(PASTA).free / 1e9
-    if livre < LIVRE_GB and not all(os.path.isfile(os.path.join(PASTA, a)) for a in (POSE_ARQ, POSE_MMPROJ_ARQ)):
+    if livre < LIVRE_GB and not all(os.path.isfile(os.path.join(PASTA, a)) for a in sha):
         print("FALHA: %.1f GB livres em %s; precisa de %.0f GB" % (livre, PASTA, LIVRE_GB))
         return 1
-    ok = all([um(POSE_ARQ, POSE_SHA, conferir), um(POSE_MMPROJ_ARQ, POSE_MMPROJ_SHA, conferir)])
-    if conferir and not (POSE_SHA and POSE_MMPROJ_SHA):
-        print("\nConfira os dois SHA-256 acima com a página de cada arquivo no Hugging Face (Qwen/Qwen3-VL-8B-Instruct-GGUF,"
-              " aba Files, link do arquivo) e mande ao programador. Até ele fixar, o agente não abre o modelo.")
-    return 0 if ok else 1
+    for arq in (POSE_ARQ, POSE_MMPROJ_ARQ):          # para no primeiro que não bate
+        if not um(arq, sha[arq]):
+            return 1
+    if not (POSE_SHA and POSE_MMPROJ_SHA):
+        print("\nInstalado e conferido. Mande os dois SHA-256 acima ao programador: ele fixa no agente, e só então o Eterna abre o modelo.")
+    return 0
 
 
 if __name__ == "__main__":

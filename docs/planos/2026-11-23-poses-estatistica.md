@@ -345,7 +345,7 @@ O `POSE_GUIA_PADRAO` da P4 sai do roteiro dos fotógrafos por set de 22/11, item
 ## Notas da implementação da P1 (23/11)
 - `POSE_TAXO.set` é o `TREINO_PONTOS` (sem `chroma`, D4). Ganhou `chute_comemora` (pose) e a regra de coerência `chute_*` cobre ela.
 - `POSE_VERSAO` virou a função `pose_versao()` (8 hex de SHA do modelo, SHA do mmproj, `POSE_PROMPT_V` e `POSE_TAXO_V`), porque os SHA são trocados nos testes e serão fixados depois.
-- `POSE_SHA` e `POSE_MMPROJ_SHA` ficam vazios até o Ronaldo conferir o download (`instalar-poses-modelos.py --conferir`); vazio = o filho não abre (`sem_modelo`).
+- `POSE_SHA` e `POSE_MMPROJ_SHA` ficam vazios até a primeira instalação (`instalar-poses-modelos.py --esperado-modelo <sha> --esperado-mmproj <sha>`, revisão 24/11: sem o SHA esperado nada é baixado); vazio = o filho não abre (`sem_modelo`).
 - O esquema `POSE_SAIDA` mora só no agente e vai em cada pedido ao filho; o prompt mora só no filho, e o teste confere que ele define todos os valores da taxonomia. O filho responde `prompt_v`; diferente do `POSE_PROMPT_V` do agente, ele é fechado (motivo `versao`).
 - Motivos além dos três da P1: `set_diverge` (o set do modelo diverge do reconhecimento do ponto Ligado com confiança de 0,70 ou mais: dúvida, dados ficam) e `nao_classificavel` (a foto em si não serve: caminho recusado ou imagem ilegível; não volta à fila). Erro do servidor de modelo numa foto não grava linha: a foto tenta de novo na noite seguinte.
 - A memória da placa só é conferida antes de abrir o filho (aberto, o próprio modelo ocupa a placa). Recorte e montagem marcam o último trabalho de prioridade 0 ou 1 (`poses_marca_prio`), na fila ou terminando.

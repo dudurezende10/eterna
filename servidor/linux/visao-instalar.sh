@@ -13,9 +13,14 @@
 #      LLAMA_OFFLINE=1. Este roteiro confere isso no eterna-poses.py instalado e para se achar alguma dessas opções.
 #      Instala em /opt/eterna/visao/bin/llama-server, root:root 755 (o usuário eterna executa e não escreve).
 #   3. Os dois arquivos do modelo (Qwen3-VL-8B-Instruct, Apache 2.0) em ~/Eterna/modelos do usuário eterna, pelo
-#      agente/instalar-poses-modelos.py. Enquanto o POSE_SHA estiver vazio no código, roda com --conferir: baixa e MOSTRA o
-#      SHA-256 de cada arquivo, que o Ronaldo confere na página do arquivo no Hugging Face e manda ao programador (como foi
-#      com o CENA_SHA). O agente só abre o modelo com os dois SHA fixados no código.
+#      agente/instalar-poses-modelos.py. Nada é baixado sem o SHA-256 esperado de cada arquivo: enquanto o POSE_SHA estiver
+#      vazio no código, o roteiro exige POSE_SHA_MODELO e POSE_SHA_MMPROJ (veja abaixo) e para antes do passo 1 sem eles.
+#      Arquivo que chega com outro SHA-256 é apagado e o roteiro para. Depois, mande os dois SHA ao programador, que fixa no
+#      código (como foi com o CENA_SHA). O agente só abre o modelo com os dois SHA fixados no código.
+# Como pegar os dois SHA-256 (Ronaldo, antes de rodar): no navegador, abra huggingface.co, procure Qwen/Qwen3-VL-8B-Instruct-GGUF,
+#   aba "Files and versions". Clique em Qwen3VL-8B-Instruct-Q4_K_M.gguf: na página do arquivo, em "Git LFS Details", copie o
+#   SHA256 (64 letras e números). Faça o mesmo com mmproj-Qwen3VL-8B-Instruct-F16.gguf. Rode assim, tudo numa linha:
+#   sudo LLAMA_TAG=bNNNN LLAMA_COMMIT=<hash> POSE_SHA_MODELO=<sha do Q4_K_M> POSE_SHA_MMPROJ=<sha do mmproj> bash visao-instalar.sh
 # Nada aqui liga a classificação: ela continua Desligada até alguém trocar a chave em Fundos de IA (técnico).
 # Medição (critério 12), depois dos SHA fixados e publicados, à noite, com a classificação Desligada no Eterna:
 #   sudo -u eterna env HOME=/srv/eterna /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/medir-poses.py --n 50
@@ -30,6 +35,9 @@ CUDA_PACOTE="${CUDA_PACOTE:-cuda-toolkit-13-0}"   # versão fixa do toolkit (nvc
 CUDA_REPO="${CUDA_REPO:-ubuntu2404}"  # pasta do repositório apt da NVIDIA para esta versão do Ubuntu (conferir se já existe a do 26.04)
 DADOS="/srv/eterna"                   # home do usuário eterna (~/Eterna fica aqui)
 VISAO="/opt/eterna/visao"
+INSTALADOR="/opt/eterna/app/agente/instalar-poses-modelos.py"
+POSE_SHA_MODELO="${POSE_SHA_MODELO:-}"  # SHA-256 do Qwen3VL-8B-Instruct-Q4_K_M.gguf (página do arquivo no Hugging Face); vazio = para
+POSE_SHA_MMPROJ="${POSE_SHA_MMPROJ:-}"  # SHA-256 do mmproj-Qwen3VL-8B-Instruct-F16.gguf; vazio = para (se o código ainda não tem)
 # --------------------------------------------------------------------------
 
 LOGI=/var/log/eterna-visao.log
@@ -45,6 +53,15 @@ touch "$LOGI"; chmod 600 "$LOGI"
 [[ "$LLAMA_TAG" =~ ^b[0-9]{4,6}$ ]] || para "LLAMA_TAG fora do formato bNNNN: $LLAMA_TAG"
 [ -n "$LLAMA_COMMIT" ] || para "defina LLAMA_COMMIT com o hash completo do commit da tag (ex.: sudo LLAMA_TAG=bNNNN LLAMA_COMMIT=<40 hex> bash $0)"
 [[ "$LLAMA_COMMIT" =~ ^[0-9a-f]{40}$ ]] || para "LLAMA_COMMIT precisa ser o hash completo (40 caracteres hexadecimais): $LLAMA_COMMIT"
+# o SHA-256 esperado de cada arquivo do modelo, antes de qualquer passo (sem ele nada seria conferido no passo 3)
+[ -f "$INSTALADOR" ] || para "não achei $INSTALADOR (o Eterna está publicado em /opt/eterna/app?)"
+POSE_SHA_MODELO="${POSE_SHA_MODELO,,}"; POSE_SHA_MMPROJ="${POSE_SHA_MMPROJ,,}"
+SHA_NO_CODIGO=0
+if grep -qE '^POSE_SHA = "[0-9a-f]{64}"' "$INSTALADOR" && grep -qE '^POSE_MMPROJ_SHA = "[0-9a-f]{64}"' "$INSTALADOR"; then SHA_NO_CODIGO=1; fi
+if [ "$SHA_NO_CODIGO" = 0 ]; then
+  [[ "$POSE_SHA_MODELO" =~ ^[0-9a-f]{64}$ ]] || para "defina POSE_SHA_MODELO com o SHA256 do Qwen3VL-8B-Instruct-Q4_K_M.gguf copiado da página do arquivo no Hugging Face (64 letras e números; veja o começo deste script)"
+  [[ "$POSE_SHA_MMPROJ" =~ ^[0-9a-f]{64}$ ]] || para "defina POSE_SHA_MMPROJ com o SHA256 do mmproj-Qwen3VL-8B-Instruct-F16.gguf copiado da página do arquivo no Hugging Face (64 letras e números)"
+fi
 command -v nvidia-smi >/dev/null && nvidia-smi >/dev/null 2>&1 || para "placa NVIDIA sem driver no ar (nvidia-smi): rode antes o instalar.sh e reinicie"
 ok "placa: $(nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader)"
 
@@ -104,13 +121,13 @@ grep -q -- 'LLAMA_OFFLINE' "$POSES_PY" || para "$POSES_PY não abre o llama-serv
 ok "o agente abre o llama-server só no 127.0.0.1, com arquivos locais, chave por arquivo e sem -hf (nada baixado)"
 
 passo "3. Modelo (Qwen3-VL-8B-Instruct Q4_K_M + mmproj F16, cerca de 6,2 GB)"
-PY="runuser -u eterna -- env HOME=$DADOS /opt/eterna/venv/bin/python -I /opt/eterna/app/agente/instalar-poses-modelos.py"
-if grep -qE '^POSE_SHA = "[0-9a-f]{64}"' /opt/eterna/app/agente/instalar-poses-modelos.py; then
-  (cd "$DADOS" && $PY) || para "modelo não instalado (ver acima)"
-  ok "modelo em $DADOS/Eterna/modelos com o SHA-256 conferido"
-else
-  (cd "$DADOS" && $PY --conferir) || para "download para conferir falhou"
-  info "SHA ainda não fixado no código: mande os dois SHA-256 acima ao programador. Depois de publicado, rode este script de novo."
-fi
+PY="runuser -u eterna -- env HOME=$DADOS /opt/eterna/venv/bin/python -I $INSTALADOR"
+ESP=()
+if [ -n "$POSE_SHA_MODELO" ]; then ESP+=(--esperado-modelo "$POSE_SHA_MODELO"); fi
+if [ -n "$POSE_SHA_MMPROJ" ]; then ESP+=(--esperado-mmproj "$POSE_SHA_MMPROJ"); fi
+# o instalador baixa num temporário, confere o SHA-256 e, se não bater, apaga o arquivo e sai com erro (o roteiro para aqui)
+(cd "$DADOS" && $PY ${ESP[@]+"${ESP[@]}"}) || para "modelo não instalado: SHA-256 diferente do esperado ou download falhou (ver acima). Confira o SHA na página do arquivo."
+ok "modelo em $DADOS/Eterna/modelos com o SHA-256 conferido"
+[ "$SHA_NO_CODIGO" = 1 ] || info "SHA ainda não fixado no código: mande POSE_SHA_MODELO e POSE_SHA_MMPROJ ao programador. Depois de publicado, o Eterna abre o modelo."
 
 printf '\n\033[1;32mPronto.\033[0m A classificação continua Desligada. Depois dos SHA fixados e publicados: medir-poses.py (ver docs/SERVIDOR-ESTADIO.md).\n'
