@@ -528,9 +528,6 @@ body.if-tv .ff-thumbs img{width:80px;height:80px}body.if-tv .ff-onde{font-size:2
 .lj-code{width:min(420px,90vw);font-size:28px;text-align:center;letter-spacing:.12em;padding:14px;border-radius:14px;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.08);color:#fff}
 .lj-wait{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;width:min(760px,100%)}
 .lj-wait button{text-align:left;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:#fff;display:flex;flex-direction:column;gap:2px}.lj-wait span{font-size:14px;color:#c7d5ea}
-.lj-cartpill{display:inline-flex;align-items:center;gap:8px;height:50px;padding:0 16px;border-radius:999px;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.06);color:#fff;font-weight:700}
-.lj-cartpill b{min-width:24px;height:24px;border-radius:12px;background:rgba(255,255,255,.2);display:inline-flex;align-items:center;justify-content:center;font-size:14px;padding:0 6px}
-.lj-cartpill.on{background:#fff;color:#134078;border-color:#fff}.lj-cartpill.on b{background:#FFB800;color:#0C2340}.lj-cartpill svg{width:24px;height:24px}
 .lj-title{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0 8px}.lj-count{white-space:nowrap;font-family:'Big Shoulders Display',sans-serif;font-weight:700;font-size:22px;letter-spacing:.08em;color:#c7d5ea}
 .lj-stage{flex:1;min-height:0;display:grid;grid-template-columns:56px minmax(0,1fr) 56px;align-items:center;gap:10px}
 .lj-mid{height:100%;min-height:0;display:flex;align-items:center;justify-content:center}
@@ -616,12 +613,10 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-ovb:hover{opacity:1;background:rgba(255,255,255,.1)}.lj-ovb svg{width:22px;height:22px}
 .lj-ovtr .lj-lbx{width:auto;padding:0 14px 0 12px;font-weight:600;font-size:14px;white-space:nowrap}
 .lj .lj-ovtr .lj-ovb.lj-ovlg{width:auto;min-width:72px;padding:0 14px 0 12px;font-weight:700;font-size:15px;opacity:1;white-space:nowrap}.lj-ovlg span,.lj-cplg{display:inline!important;font-size:14px;font-weight:600}
-.lj-title .lj-telacheia{display:inline-flex;align-items:center;gap:8px}.lj-telacheia svg{width:20px;height:20px}
-.lj .lj-title{align-items:center;flex-wrap:nowrap}.lj-tnome{display:flex;align-items:baseline;gap:18px;min-width:0}.lj-tacts{display:flex;align-items:center;gap:12px;margin-left:auto;flex:none}
+.lj-telacheia{display:inline-flex;align-items:center;gap:8px}.lj-telacheia svg{width:20px;height:20px}
+.lj .lj-title{align-items:center;flex-wrap:nowrap}.lj-tnome{display:flex;align-items:baseline;gap:18px;min-width:0}.lj-tacts{display:flex;align-items:center;gap:10px;flex:none}.lj-grade .lj-topr{flex-wrap:nowrap;min-width:0} /* 24/11: idiomas, Adicionar pessoa, Tela cheia e Sair numa linha só */
 .lj-tacts .lj-ghost{display:inline-flex;align-items:center;gap:8px;margin:0;white-space:nowrap}.lj-tacts .lj-ghost svg{width:20px;height:20px}
 @media (max-width:900px){.lj .lj-title{flex-wrap:wrap}.lj-tacts{margin-left:0}}
-.lj-ovtr .lj-cartpill{height:44px;padding:0 12px;gap:6px;border:0;background:transparent;font-size:14px;white-space:nowrap}
-.lj-ovtr .lj-cartpill.on{background:rgba(255,255,255,.92)}.lj-ovtr .lj-cartpill svg{width:22px;height:22px}.lj-ovtr .lj-cartpill b{height:24px;min-width:24px;font-size:14px} /* v96-ux: letra mínima de 14 px no cliente (ondas, parte L) */
 .lj-ovtr .lj-langs{background:transparent;border:0;padding:0;gap:0}
 .lj-ovtr .lj-langs button{width:34px;height:44px;padding:0}.lj-ovtr .lj-langs .lj-flag{width:22px;height:22px}
 .lj-lgov{position:relative;display:flex}.lj-lgbtn{display:none}.lj-lgbtn .lj-flag{width:24px;height:24px;border-radius:50%;box-shadow:0 0 0 2px #FFB800}
@@ -634,15 +629,13 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj-lbbar .lj-no{background:rgba(10,28,51,.45);border-color:rgba(255,255,255,.7)}.lj-lbbar .lj-no.on{background:#fff}
 .lj-ovnext{position:absolute;right:max(14px,env(safe-area-inset-right,0px));bottom:max(20px,env(safe-area-inset-bottom,0px));z-index:2;display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px;border-radius:999px;border:0;background:rgba(10,28,51,.62);color:#fff;font:inherit;font-weight:700;font-size:15px;white-space:nowrap;cursor:pointer;box-shadow:inset 0 0 0 1.5px rgba(255,184,0,.85)}
 .lj-ovnext:hover{background:rgba(10,28,51,.8)}.lj-ovnext svg{width:20px;height:20px}
-@media (max-width:900px){.lj-ovtr .lj-lbx{width:44px;padding:0}.lj-ovtr .lj-lbx span{display:none}.lj-ovtr .lj-cartpill span{display:none}
+@media (max-width:900px){.lj-ovtr .lj-lbx{width:44px;padding:0}.lj-ovtr .lj-lbx span{display:none}
   .lj-ovtr .lj-langs{display:none}.lj-lgbtn{display:inline-flex}
   .lj-lgov.open .lj-langs{display:flex;flex-direction:column;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);padding:4px;border-radius:24px;background:rgba(10,28,51,.88)}}
 @media (max-width:700px){.lj-ovnext{right:auto;left:50%;transform:translateX(-50%);bottom:calc(max(14px,env(safe-area-inset-bottom,0px)) + 108px)}.lj-lbnav{font-size:40px}}
 /* v96 (P5): no Checkout (.lj) os alvos do canto têm 72 px */
 .lj .lj-ovtr .lj-langs button{width:72px;height:72px}.lj .lj-ovtr .lj-lbx{width:72px;min-width:72px;padding:0}
 /* v96 (revisão 6): canto pequeno e discreto; o contador do carrinho é só leitura (span, sem toque) e as bandeiras ficam recolhidas na atual */
-.lj span.lj-cartpill{height:44px;min-width:0;padding:0 12px;cursor:default;pointer-events:none}.lj .lj-ovtr span.lj-cartpill{height:36px;padding:0 10px;background:transparent;color:rgba(255,255,255,.85)}
-.lj .lj-ovtr span.lj-cartpill.on{background:rgba(255,255,255,.14);color:#fff}.lj .lj-ovtr span.lj-cartpill.on b{background:#FFB800;color:#0C2340}
 .lj .lj-ovtr{background:rgba(10,28,51,.28);gap:0}.lj .lj-ovtr .lj-ovb svg{width:20px;height:20px}.lj .lj-ovtr .lj-ovb{opacity:.75}
 .lj .lj-ovtr .lj-langs{display:none}.lj .lj-ovtr .lj-lgbtn{display:inline-flex}.lj .lj-ovtr .lj-lgbtn .lj-flag{width:22px;height:22px}
 .lj .lj-ovtr .lj-lgov.open .lj-langs{display:flex;flex-direction:column;position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);padding:4px;border-radius:36px;background:rgba(10,28,51,.88)}
@@ -728,7 +721,6 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj.lj-fs.esc-col .lj-ovtr .lj-ovb.lj-sairb,.lj.lj-fs.esc-col .lj-ovtr .lj-ovb.lj-maisp{flex:1 1 40%;width:auto;min-width:0;padding:0 6px;font-size:13px;gap:4px;white-space:nowrap}
 .lj.lj-fs.esc-col .lj-ovtr .lj-ovb.lj-maisp span{display:inline!important}
 .lj .lj-ovtr .lj-ladob svg{width:30px;height:21px}
-.lj.lj-fs.esc-col .lj-ovtr .lj-cartpill{display:none} /* 18/11 (Ronaldo): o carrinho já está no Continuar · N fotos; o topo fica em duas linhas */
 .lj.lj-fs.esc-col .lj-ovnext{left:calc(100% - var(--escw) + 8px);right:max(8px,env(safe-area-inset-right,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));transform:none;justify-content:center;white-space:normal;text-align:center;padding:4px 10px;line-height:1.2}
 .lj.lj-fs.esc-col .lj-lbnav{top:auto;transform:none;bottom:104px;background:rgba(255,255,255,.1)}
 .lj.lj-fs.esc-col .lj-lbnav.prev{left:auto;right:calc(var(--escw) / 2 + 6px)}.lj.lj-fs.esc-col .lj-lbnav.next{right:calc(var(--escw) / 2 - 78px)}
@@ -837,7 +829,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .lj .lj-heroin input.lj-code::placeholder{color:rgba(255,255,255,.7);opacity:1}
 /* v96-ux: pacotes, espera, tela final e "Cancelar o pedido?" das ondas (parte G) saíram: no Checkout vale a v96 (ljPronto, valor no Posto) */
 @media (max-width:900px){.lj-co{grid-template-columns:1fr}.lj-order{position:static}}
-@media (max-width:640px){.lj-stage{grid-template-columns:minmax(0,1fr)}.lj-nav{display:none}.lj-print{width:100%}.lj-foot{flex-direction:column;align-items:stretch}.lj-next{width:100%}.lj-strip{order:2}.lj-cartpill span{display:none}.lj-pkg{grid-template-columns:20px 44px minmax(0,1fr) auto;}.lj-pkg .lj-badge{display:none}.lj-pkgn{font-size:26px}.lj-minis{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.lj-no{width:64px;height:64px}.lj-yes{width:84px;height:84px}.lj .lj-v{opacity:.3}}
+@media (max-width:640px){.lj-stage{grid-template-columns:minmax(0,1fr)}.lj-nav{display:none}.lj-print{width:100%}.lj-foot{flex-direction:column;align-items:stretch}.lj-next{width:100%}.lj-strip{order:2}.lj-pkg{grid-template-columns:20px 44px minmax(0,1fr) auto;}.lj-pkg .lj-badge{display:none}.lj-pkgn{font-size:26px}.lj-minis{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.lj-no{width:64px;height:64px}.lj-yes{width:84px;height:84px}.lj .lj-v{opacity:.3}}
 @media (max-height:720px){.lj-heroin:has(.lj-cam){gap:6px;padding:4px 0}.lj-cam{padding:8px}}
 /* v96: janela do Windows não maximizada (ex.: 1366×657): a câmera cabe sem rolar */
 @media (max-height:700px){.lj-heroin{gap:10px}}
@@ -869,12 +861,14 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
   .lj .lj-top .lj-lgov.open .lj-langs{display:flex;flex-direction:column;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:5;padding:4px;border-radius:36px;background:rgba(10,28,51,.92)}}
 /* revisão (10/11): com as bandeiras abertas, o topo fica por cima do conteúdo (.lj>* tem z-index 1 e o .lj-heroin, depois, cobria a última bandeira) */
 .lj>.lj-top:has(.lj-lgov.open){z-index:6}
+@media (max-width:1300px){.lj.lj-grade .lj-top .lj-lgov .lj-langs{display:none}.lj.lj-grade .lj-top .lj-lgov .lj-lgbtn{display:inline-flex;width:72px;height:72px;align-items:center;justify-content:center;border-radius:50%;border:1.5px solid rgba(255,255,255,.35);background:rgba(255,255,255,.06)}.lj.lj-grade .lj-top .lj-lgbtn .lj-flag{width:30px;height:30px}
+  .lj.lj-grade .lj-top .lj-lgov.open .lj-langs{display:flex;flex-direction:column;position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:5;padding:4px;border-radius:36px;background:rgba(10,28,51,.92)}} /* 24/11: com os botões na mesma linha, os idiomas viram a bandeira que abre a lista */
 /* v96-ux (ondas, parte K): na galeria, até 480 px, as bandeiras ganham uma linha própria */
 @media (max-width:480px){.gq-top{flex-wrap:wrap;row-gap:8px}.gq-top .lj-langs{order:3;width:100%;justify-content:center}}
-.lj .lj-ghost{min-width:72px;justify-content:center}.lj .lj-cartpill{min-width:72px;justify-content:center}
+.lj .lj-ghost{min-width:72px;justify-content:center}
 /* v96 (P5): no Checkout todo alvo de toque tem pelo menos 72 px (o desenho pode ser menor; a área do toque não) */
 .lj .lj-langs button{width:72px;height:72px;padding:0}.lj .lj-langs .lj-flag{width:32px;height:32px}
-.lj .lj-ic{width:72px;height:72px}.lj .lj-ghost,.lj .lj-ghost.sm{min-height:72px}.lj .lj-cta{min-height:72px}.lj .lj-cartpill{height:72px}
+.lj .lj-ic{width:72px;height:72px}.lj .lj-ghost,.lj .lj-ghost.sm{min-height:72px}.lj .lj-cta{min-height:72px}
 .lj .lj-gok{width:72px;height:72px;right:0;top:0;background:transparent!important;box-shadow:none;opacity:1}
 .lj .lj-gok::before{content:'';position:absolute;inset:14px;border-radius:50%;background:rgba(255,255,255,.85);box-shadow:0 6px 16px -6px rgba(0,0,0,.5);opacity:.6;z-index:-1}.lj .lj-gcard.ok .lj-gok::before{background:#FFB800;opacity:1}
 .lj .lj-ovb{width:72px;height:72px}
@@ -1523,7 +1517,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.39.3 · 24/11 00:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.39.4 · 24/11 01:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -4314,7 +4308,6 @@ function vQuiosque(){
         <div class="lj-row"><button class="lj-cta" data-act="kiosk-tv-sim">${ICO.ok} ${T('tvSim')}</button><button class="lj-ghost" data-act="kiosk-tv-nao">${ICO.no} ${T('tvNao')}</button></div></div></div>`;}
   const s=sessionObj(k.code);if(!s)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${ljLangOv()}<span></span></div><div class="lj-heroin"><h1 class="lj-h1">${T('notFound')}<br>${esc(k.code)}</h1><button class="lj-cta" data-act="kiosk-back">${ICO.back} ${T('back')}</button></div></div>`;
   const items=lojaItems(k.code);const pk=lojaPick(k.code);const c=lojaCart(k.code);const nSel=c.ch.length;
-  const cartPill=ljCartPill(nSel);
   const topR=x=>`<div class="lj-topr">${ljLangOv()}${x}</div>`;
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v96: sem etapa de pacote e pagamento no Checkout
   if(k.prep&&k.prep===k.code&&k.step==='review')return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2">${T('foundYou')}</h1><p class="lj-sub" aria-live="polite">${T('ljSeparando')}</p></div></div>`;
@@ -4335,7 +4328,7 @@ function vQuiosque(){
     const caixa=vq?`<div class="lj-lb lj-lbfs" id="lj-lb" role="region" aria-label="${v+1} / ${n}">
         <div class="lj-lbmid">${img(vq,vs,'lj-lbimg',vq.lb)}</div>
         <div class="lj-ovtl"><div class="lj-logo lj-ovlogo" data-act="loja-logo">${logo}</div></div>
-        <div class="lj-ovtr">${ljLangOv()}${postoDisp()?`<button class="lj-ovb lj-ladob" data-act="posto-lado-troca" aria-label="${esc(TE('cf_lado_barra'))}: ${esc(TE(postoLado()==='esq'?'cf_lado_esq':'cf_lado_dir'))}" title="${esc(TE('cf_lado_barra'))}: ${esc(TE(postoLado()==='esq'?'cf_lado_esq':'cf_lado_dir'))}">${ladoIco(postoLado())}</button>`:''}${ljSairBtn('lj-ovb')}${cartPill}${k.so&&!k.so.visita?`<button class="lj-ovb lj-maisp lj-ovlg" data-act="kiosk-mais" aria-label="${T('addPerson')}" title="${T('addPerson')}">${ICO.face}<span>${T('ljOutraP')}</span></button>`:''}<button class="lj-ovb lj-lbx lj-ovlg" data-act="kiosk-fechar" aria-label="${T('ljVerTodas')}" title="${T('ljVerTodas')}">${ICO.grid}<span>${T('ljVerTodas')}</span></button></div>
+        <div class="lj-ovtr">${ljLangOv()}${postoDisp()?`<button class="lj-ovb lj-ladob" data-act="posto-lado-troca" aria-label="${esc(TE('cf_lado_barra'))}: ${esc(TE(postoLado()==='esq'?'cf_lado_esq':'cf_lado_dir'))}" title="${esc(TE('cf_lado_barra'))}: ${esc(TE(postoLado()==='esq'?'cf_lado_esq':'cf_lado_dir'))}">${ladoIco(postoLado())}</button>`:''}${ljSairBtn('lj-ovb')}${k.so&&!k.so.visita?`<button class="lj-ovb lj-maisp lj-ovlg" data-act="kiosk-mais" aria-label="${T('addPerson')}" title="${T('addPerson')}">${ICO.face}<span>${T('ljOutraP')}</span></button>`:''}<button class="lj-ovb lj-lbx lj-ovlg" data-act="kiosk-fechar" aria-label="${T('ljVerTodas')}" title="${T('ljVerTodas')}">${ICO.grid}<span>${T('ljVerTodas')}</span></button></div>
         <button class="lj-lbnav prev" data-act="kiosk-ver" data-i="${v-1}" ${v===0?'disabled':''} aria-label="${T('ljPrev')}">‹</button>
         <button class="lj-lbnav next" data-act="kiosk-ver" data-i="${v+1}" ${v>=n-1?'disabled':''} aria-label="${T('ljNext')}">›</button>
         <span class="lj-lbcnt">${v+1} / ${n}</span>
@@ -4343,8 +4336,8 @@ function vQuiosque(){
         ${ljOvNext(nSel)}</div>`:'';
     // 17/11: barra das escolhidas ao lado (tela larga) ou embaixo da foto; aqui só a casca: quem preenche é o ljEscUpd, e o render reaproveita o nó do mesmo atendimento
     if(vq){const md=ljEscModo(vq);return `<div class="lj lj-full lj-review lj-fs ${ljEscModoCls(md)}" style="${ljEscModoSt(md)}">${caixa}<aside class="lj-esc" id="lj-esc" data-card="${esc(k.code)}" data-t0="${esc(String(k.t0||''))}" aria-label="${T('ljEscLista')}"><div class="lj-esc-h"><div class="lj-esc-n" role="status" aria-live="polite"></div><div class="lj-esc-dz"></div></div><p class="lj-esc-vz"></p><div class="lj-esc-l" role="list"></div></aside>${ljSairAsk(k)}</div>`;}
-    return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR(`${ljSairBtn('lj-ghost sm')}${cartPill}`)}</div>
-      <div class="lj-title"><div class="lj-tnome"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${T('nPhotos',n)}</span></div><div class="lj-tacts">${k.so&&!k.so.visita?`<button class="lj-ghost sm lj-maisp" data-act="kiosk-mais">${ICO.face} ${T('addPerson')}</button>`:''}${n?`<button class="lj-ghost sm lj-telacheia" data-act="kiosk-ver" data-i="${Math.min(k.verUlt||0,n-1)}">${ICO.full} ${T('ljTelaCheia')}</button>`:''}</div></div>
+    return `<div class="lj lj-full lj-review lj-grade">${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR(`<div class="lj-tacts">${k.so&&!k.so.visita?`<button class="lj-ghost sm lj-maisp" data-act="kiosk-mais">${ICO.face} ${T('addPerson')}</button>`:''}${n?`<button class="lj-ghost sm lj-telacheia" data-act="kiosk-ver" data-i="${Math.min(k.verUlt||0,n-1)}">${ICO.full} ${T('ljTelaCheia')}</button>`:''}</div>${ljSairBtn('lj-ghost sm')}`)}</div>
+      <div class="lj-title"><div class="lj-tnome"><h2 class="lj-h2">${T('choose')}</h2><span class="lj-count">${T('nPhotos',n)}</span></div></div>
       <div class="lj-grid">${items.map((q,i)=>(q.edIni?`<div class="lj-edh"><span class="lj-edeb">${esc(edSeloTxt())}</span><h3>${T('edTitulo')}</h3></div>`:'')+(q.edFotos?`<div class="lj-blk lj-edfotos">${T('edFotos')}</div>`:'')+card(q,i)).join('')}</div>
       <div class="lj-foot"><span class="lj-hint">${nSel?T('tapCheck'):''}</span>
         <button class="lj-cta lj-next" data-act="loja-cart" ${nSel?'':'disabled'}>${nSel?`${T('cont')} <small>${T('nPhotos',nSel)}</small>`:T('tapCheck')} ${nSel?ICO.arrow:''}</button></div>${ljSairAsk(k)}</div>`;}
@@ -4390,7 +4383,6 @@ function lojaMark(v){const k=state.kiosk;const items=lojaItems(k.code);const x=i
   if(nv&&(k.i||0)<items.length-1)k.i++;if(k.ver!=null){const antes=k.ver;k.ver=k.i||0;if(k.ver===antes&&document.getElementById('lj-lb')){ljFsUpd();return;}}render();}
 // "Continuar · N fotos" e o contador do canto da tela cheia: o mesmo HTML no desenho (vQuiosque) e na atualização parcial (ljFsUpd)
 function ljOvNext(n){return n?`<button class="lj-next lj-ovnext" data-act="loja-cart">${T('cont')} · ${T('nPhotos',n)} ${ICO.arrow}</button>`:'';}
-function ljCartPill(n){return `<span class="lj-cartpill ${n?'on':''}" role="status" aria-label="${T('nPhotos',n)}">${ICO.cart}<b>${n}</b><span class="lj-cplg">${T('ljEscolhidas')}</span></span>`;} // v96: só o contador (sem preço e sem ação); quem faz o pedido é o Continuar
 // ---------- Barra das escolhidas (17/11, plano da barra das escolhidas; Eduardo: monitor de toque 16:9) ----------
 // Fonte única: as escolhidas válidas (lojaCart, regra B2) na ordem em que entraram no pick. A ordem vem de Object.keys, que só segue a inserção
 // porque nenhuma chave parece número inteiro (fotos com prefixo ag_ ou uuid, montagens com ai:); uma chave só de dígitos iria para o começo. Nunca s.selected direto
@@ -4467,7 +4459,6 @@ addEventListener('resize',()=>{if(state.lojaRota&&document.getElementById('lj-es
 // atualização parcial da tela cheia, sem render(): barra, contador do topo, Continuar e ✓/✗ da foto em exibição (a foto grande e a marca d'água não mudam)
 function ljFsUpd(){const lb=document.getElementById('lj-lb');if(!lb){render();return;}const k=state.kiosk;
   const items=lojaItems(k.code);const n=lojaCart(k.code).ch.length;const x=items[k.ver];const vs=x?lojaPick(k.code)[x.k]||'':'';
-  const pill=lb.querySelector('.lj-cartpill');if(pill){const t=document.createElement('template');t.innerHTML=ljCartPill(n);const np=t.content.firstElementChild;if(pill.outerHTML!==np.outerHTML)pill.replaceWith(np);}
   const nx=lb.querySelector('.lj-ovnext');const h=ljOvNext(n);if(!h){if(nx)nx.remove();}else if(!nx)lb.insertAdjacentHTML('beforeend',h);else{const t=document.createElement('template');t.innerHTML=h;const c=t.content.firstElementChild.innerHTML;if(nx.innerHTML!==c)nx.innerHTML=c;}
   const y=lb.querySelector('.lj-lbbar .lj-yes'),no=lb.querySelector('.lj-lbbar .lj-no');if(y)y.classList.toggle('on',vs==='ok');if(no)no.classList.toggle('on',vs==='no');
   ljEscUpd();lojaEco();}
