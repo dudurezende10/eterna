@@ -115,7 +115,9 @@ tr.click{cursor:pointer} tr.click:hover td{background:var(--surface2)}
 details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;padding:10px 14px;background:var(--surface)}details.tec>summary{cursor:pointer;font-weight:600;min-height:32px;display:flex;align-items:center}details.tec[open]>summary{margin-bottom:10px}
 .pend-acts{display:flex;flex-direction:column;gap:0}
 .pend-main{min-height:56px;width:100%;font-size:18px}
-.pend-cancel{display:flex;justify-content:flex-end;margin-top:24px}
+.pend-cancel{display:flex;justify-content:flex-end;margin-top:16px}
+.pend-cancel .link-danger{display:inline-flex;align-items:center;gap:8px;margin:0;min-height:48px;padding:0 18px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--bad);text-decoration:none;font-weight:600}
+.pend-cancel .link-danger:hover{border-color:var(--bad)}
 .link-danger{background:none;border:0;color:var(--bad);text-decoration:underline;min-height:44px;margin-left:auto;padding:0 4px;font-weight:600}
 .link-quiet{background:none;border:0;color:var(--muted);text-decoration:underline;min-height:44px;padding:0 4px}
 .posto-rodape{display:flex;justify-content:flex-start;margin-top:14px}
@@ -1524,7 +1526,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.42.0 · 24/11 05:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.42.1 · 24/11 06:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2041,7 +2043,7 @@ const pvCancelEv=(r,motivo)=>{if(r&&r.meio&&(!r.escolha||r.pvCriado))pvEvento('c
 // v96-ux: pedido do Checkout (escolha:true) sem pacote ou sem meio não chega aqui pelas ações: pendEscolhaItem usa estas só pronto ou no 2º toque do Cancelar, e ecoPendR o exclui
 function pendAcoes(r){const rw=can('venda','c');if(!rw)return `<div class="note">${TE('po_so_quem_reg')}</div>`;const meio=meioDe(r);const conf=state.caixa.dinCancel===r.id;
   const err=state.pend.err&&state.pend.err.id===r.id?state.pend.err.msg:'';
-  const canc=`<div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">${TE('po_cancelar_compra')}</button></div>`;
+  const canc=`<div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">${CROSS} ${TE('po_cancelar_compra')}</button></div>`;
   return conf?`<div class="din-conf"><span>${TE('po_cancelar_q')}</span><div class="row"><button class="btn ghost" data-act="din-cancel-ok" data-id="${esc(r.id)}">${TE('sim_cancelar')}</button><button class="btn ghost" data-act="din-cancel-no">${TE('nao')}</button></div></div>`
     :meio==='dinheiro'?`<div class="pend-acts"><button class="btn primary big pend-main" data-act="din-confirm" data-id="${esc(r.id)}">${TE('po_recebi',fmtR(r.total))}</button>${canc}</div>`
     :`<div class="pend-acts"><button class="btn primary big pend-main" data-act="pend-pos-ok" data-id="${esc(r.id)}">${TE('po_pago_maq')}</button>${canc}</div>`;}
@@ -2187,7 +2189,7 @@ function pendEscolhaItem(r,o){const n=r.n||0;const nc=n-(r.cortFoto?1:0)-portasD
   const resumo=[pkgOk?`<div class="pend-res"><span>${TE('pacote')}</span><b>${pkgNome}</b></div>`:'',pkgOk&&r.cortFoto?`<div class="pend-res"><span>${TE('po_cortesia')}</span><b>${TE('po_cort_foto')}</b></div>`:'',pkgOk&&portasDe(r).length?`<div class="pend-res"><span>${TE('po_porta')}</span><b>${esc(portaResumo(r))}</b></div>`:'',meioOk&&passo===3?`<div class="pend-res"><span>${TE('pagamento')}</span><b>${esc(meioNome(r.meio))}</b></div>`:''].join('');
   const corpo=passo===1?(mais?`<div class="note">${TE('po_comprar_mais',TE('n_adicionais',n))}</div>`:`<div class="pend-pkgs">${pkgs}</div>${pendMontAviso(r)}`)+pendPortaHtml(r,o)+pendCortHtml(r,o)
     :passo===2?`${resumo}<div class="pend-meios">${meios}</div>`:resumo;
-  const cancel=`<div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">${TE('po_cancelar_compra')}</button></div>`;
+  const cancel=`<div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">${CROSS} ${TE('po_cancelar_compra')}</button></div>`;
   const acts=!o.rw?o.acts:o.conf||(passo===3&&pronto)?o.acts:cancel;
   return `<div class="din-item pend-esc${o.alvo===r.id?' alvo':''}" data-pend="${esc(r.id)}">
     <div class="pend-cab"><div><span class="eyebrow">Checkout${r.saleNo?' · '+esc(TE('venda_x',r.saleNo)):''}</span><b class="din-cod">${esc(r.codigo)}</b></div><span class="din-val">${r.total!=null?fmtR(r.total):TE('sem_valor')}</span></div>${pendFerr(r)}
@@ -5147,12 +5149,6 @@ state.agent.sonda=(async()=>{const a=state.agent;if(window.ETERNA_AGENTE||/^(www
 // O cookie fica só no aparelho (HttpOnly); daqui dá para ver o último uso e revogar.
 function postosPoll(force){if(!state.agent.on||state.agent.url!==location.origin)return;if(!force&&postosPoll.t&&Date.now()-postosPoll.t<10000)return;postosPoll.t=Date.now();
   agFetch(state.agent.url+'/postos',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{const l=j&&Array.isArray(j.postos)?j.postos:null;const ch=JSON.stringify(l)!==JSON.stringify(state.posto.lista);state.posto.lista=l;if(ch&&state.view==='catalogo')render();}).catch(()=>{});}
-function postosPanel(){if(!can('configuracao','r')||!state.agent.on||state.agent.url!==location.origin)return '';postosPoll();
-  const L=state.posto.lista||[];const ro=!can('configuracao','u');const eu=postoDisp();const qd=t=>t?new Date(t*1000).toLocaleString(localeEq(),{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):TE('cf_nunca');
-  return `<div class="panel" id="postos-painel" style="gap:10px"><div class="head"><div><div class="eyebrow">${TE('cf_postos_eb')}</div><h2>${TE('cf_postos_h')}</h2></div><span class="pill ${eu?'good':'warn'}">${eu?TE('cf_este_ap',esc(eu.nome),eu.num):TE('cf_nao_pareado')}</span></div>
-    <div class="note">${TE('cf_postos_nota')}</div>
-    ${L.length?`<div class="tablewrap"><table><thead><tr><th>${TE('cf_posto')}</th><th>${TE('cf_num')}</th><th>${TE('cf_pareado_por')}</th><th>${TE('cf_ult_uso')}</th><th>${TE('cf_situacao')}</th><th></th></tr></thead><tbody>${L.map(p=>`<tr><td class="name">${esc(p.nome)}${eu&&eu.id===p.id?` <span class="pill neutral">${TE('cf_este')}</span>`:''}</td><td>P${+p.num||0}</td><td>${esc(p.criado_por||'')}</td><td>${qd(p.ultimo_uso)}${p.ip_ultimo?' · '+esc(p.ip_ultimo):''}</td><td>${p.revogado_em?`<span class="pill bad">${TE('cf_revogado')}</span>`:`<span class="pill good">${TE('cf_ativo_min')}</span>`}</td><td>${!p.revogado_em&&!ro?`<button class="btn ghost" data-act="posto-revogar" data-id="${esc(p.id)}">${TE('cf_revogar')}</button>`:''}</td></tr>`).join('')}</tbody></table></div>`:`<div class="note">${TE('cf_nenhum_pareado')}</div>`}
-    ${ro?'':`<div class="row" style="align-items:end"><label><span class="eyebrow">${TE('cf_nome_aparelho')}</span><input type="text" id="posto-nome" data-act="posto-nome" maxlength="40" placeholder="${esc(TE('cf_nome_ph'))}" style="width:200px" value="${esc(state.posto.nomeTxt||'')}"></label><button class="btn" data-act="posto-parear" ${state.posto.pareando?'disabled':''}>${state.posto.pareando?TE('cf_pareando'):TE('cf_parear')}</button></div>`}</div>`;}
 // ---------- 18/11: leitores de cartão do gramado (plano docs/planos/2026-11-18-leitor-cartao-gramado.md) ----------
 // Cada computador do gramado roda agente/eterna-leitor.py: o fotógrafo põe o cartão e as fotos que faltam sobem sozinhas. Aqui o
 // Painel de controle (Alterar) cadastra o computador e recebe um código de ativação de uso único (10 min), que só fica na memória
@@ -7360,7 +7356,7 @@ function vCatalogo(){if(esOn()&&isAdminUser(state.user))agStatusPull();const aba
   if(tab==='porta')return head+catPortas();
   if(tab==='cortesia'){const pode=can('configuracao','u');return head+`<div class="panel"><h2>${TE('cf_cort_motivos')}</h2><textarea id="cort-motivos" rows="8" maxlength="2000" style="width:100%;max-width:480px;font:inherit;padding:10px" ${pode?'':'disabled'}>${esc(cortMotivos().map(m=>m.nome).join('\n'))}</textarea>${pode?`<div class="row" style="margin-top:10px"><button class="btn primary" data-act="cort-motivos-salvar">${TE('salvar')}</button></div>`:''}</div>`;}
   if(tab==='fundos')return head+catFundos();
-  if(tab==='avancado')return head+`${postosPanel()}${leitoresPanel()}${catCartoes()}`;
+  if(tab==='avancado')return head+`${leitoresPanel()}${catCartoes()}`; // 24/11 (Ronaldo): sem a tabela de postos; o posto se identifica na própria tela e no Checkout
   return head+`<div class="panel"><div class="tablewrap"><table><thead><tr><th>${TE('cf_produto')}</th><th>${TE('cf_tipo')}</th><th>${TE('cf_conteudo')}</th><th class="num">${TE('cf_preco')}</th><th class="num" style="white-space:nowrap">${TE('cf_na_semana')}</th></tr></thead><tbody>
   ${DATA.catalog.filter(c=>c.kind!=='porta').map(c=>{const real=DATA.products.find(p=>p.name.toLowerCase().startsWith(c.name.toLowerCase().slice(0,10)));return `<tr><td class="name">${esc(c.name)}</td><td>${esc(c.kind)}${c.id==='fundo'?' · '+TE('cf_so_manual'):''}</td><td class="note">${esc(c.desc)}</td><td class="num"><input type="number" style="width:110px;text-align:right" value="${priceOf(c.id)}" data-act="price" data-id="${c.id}" aria-label="${esc(TE('cf_preco_de',c.name))}" ${rw?'':'disabled'}></td><td class="num" style="white-space:nowrap">${real?real.units:TE('cf_novo')}</td></tr>`}).join('')}
   </tbody></table></div>${rw?`<div class="row"><button class="btn ghost" data-act="price-reset">${TE('cf_voltar_precos')}</button><span class="note">${TE('cf_proximo')}</span></div>`:''}</div>`;
