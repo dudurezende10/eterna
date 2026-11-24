@@ -12,6 +12,7 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   POST /g/<token>/pagamento       rota antiga (compra direta): responde compra_indisponivel
   POST /ponto/galerias            o agente do estádio publica o manifesto (segredo do ponto)
   GET  /ponto/vendas-online       o agente busca as vendas online pagas (segredo do ponto) (v99)
+  GET|POST /ponto/compra          chave da compra online pelo painel do ponto (segredo do ponto) (24/11)
   Vídeo das ativações (Drone, Chute a Gol, Snap Pop; v99.20): galeria tipo "video", o cartão com QR é a chave, sem selfie
   POST /g/<token>/video           aceite de uso de imagem + e-mail -> acesso e o link do vídeo (ou "chegando")
   POST /g/<token>/evento          o cliente deu play (registro com data e hora)
@@ -550,8 +551,36 @@ def senha_email(ev, corpo):
 _ALFA_REF = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
+# 24/11 (Ronaldo): a compra online liga e desliga pelo painel do ponto (Configurações › Checkout). Registro CFG/compra
+# {ligada, por, em}; sem registro, ligada. CompraOnline=1 no CloudFormation e a chave da Imply continuam valendo por cima.
+_cfg_compra = {"v": None, "em": 0.0}
+
+
+def compra_cfg(fresco=False):
+    if fresco or time.time() - _cfg_compra["em"] > 30:
+        _cfg_compra.update(v=item("CFG", "compra") or {}, em=time.time())
+    return _cfg_compra["v"] or {}
+
+
+def compra_painel():
+    return compra_cfg().get("ligada", True) is not False
+
+
 def compra_ligada(m=None):
-    return COMPRA_ONLINE and imply.ligada() and (m is None or bool(m.get("catalogo")))
+    return COMPRA_ONLINE and imply.ligada() and compra_painel() and (m is None or bool(m.get("catalogo")))
+
+
+def compra_ponto(ev, corpo, metodo):
+    """GET|POST /ponto/compra {ligada, por}: a chave do painel. Responde a chave e se a nuvem pode vender (pode)."""
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    if metodo == "POST":
+        if not isinstance(corpo.get("ligada"), bool):
+            return resp({"error": "ligada"}, 400)
+        TABELA.put_item(Item={"pk": "CFG", "sk": "compra", "ligada": corpo["ligada"], "por": str(corpo.get("por") or "")[:120], "em": iso()})
+        print("compra online %s pelo painel (%s)" % ("ligada" if corpo["ligada"] else "desligada", str(corpo.get("por") or "?")[:120]))
+    c = compra_cfg(fresco=True)
+    return resp({"ligada": compra_painel(), "pode": bool(COMPRA_ONLINE and imply.ligada()), "por": c.get("por") or None, "em": c.get("em") or None})
 
 
 def catalogo_ok(cat):
@@ -603,7 +632,7 @@ def _ref():
 
 def pedido(token, m, corpo, ip, pids_acesso):
     if not compra_ligada(m):
-        print("pedido recusado %s: compra desligada (COMPRA_ONLINE=%s, chave=%s, catálogo=%d)" % (token[-6:], COMPRA_ONLINE, imply.ligada(), len(m.get("catalogo") or [])))
+        print("pedido recusado %s: compra desligada (COMPRA_ONLINE=%s, chave=%s, painel=%s, catálogo=%d)" % (token[-6:], COMPRA_ONLINE, imply.ligada(), compra_painel(), len(m.get("catalogo") or [])))
         evento(token, "compra_tentada", ip)
         return resp({"ok": False, "motivo": "compra_indisponivel"}, 503)
     if not contar("PED#" + ip_hash(ip), 3600, 20):
@@ -1203,6 +1232,8 @@ def handler(ev, ctx):
         return senha_email(ev, corpo)
     if caminho == "/ponto/vendas-online" and metodo == "GET":
         return vendas_online(ev)
+    if caminho == "/ponto/compra" and metodo in ("GET", "POST"):
+        return compra_ponto(ev, corpo, metodo)
     if caminho == "/ponto/eventos" and metodo == "GET":
         return eventos_ponto(ev)
     if caminho == "/ponto/escolas" and metodo == "GET":

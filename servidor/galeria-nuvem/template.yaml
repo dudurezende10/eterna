@@ -208,6 +208,18 @@ Resources:
             ApiId: !Ref Api
             Path: /ponto/vendas-online
             Method: GET
+        CompraLer:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/compra
+            Method: GET
+        CompraGravar:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/compra
+            Method: POST
         Codigo:
           Type: HttpApi
           Properties:

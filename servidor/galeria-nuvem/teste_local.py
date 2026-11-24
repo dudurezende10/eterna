@@ -320,6 +320,16 @@ ok(st == 200 and len(r["vendas"]) == 1 and r["vendas"][0]["id"] == ref and r["ve
 ev_v = {"rawPath": "/ponto/vendas-online", "headers": {"x-eterna-ponto": seg}, "queryStringParameters": {"desde": r["next"]}, "requestContext": {"http": {"method": "GET", "sourceIp": "1.1.1.1"}}}
 ok(json.loads(app.handler(ev_v, ctx)["body"])["vendas"] == [], "com o 'desde', nada repetido")
 ok(chama("GET", "/ponto/vendas-online")[0] == 401, "vendas online sem o segredo do ponto: 401")
+# 24/11: chave da compra online pelo painel do ponto (GET|POST /ponto/compra)
+ok(chama("GET", "/ponto/compra")[0] == 401, "chave da compra sem o segredo do ponto: 401")
+st, r = chama("GET", "/ponto/compra", cab={"x-eterna-ponto": seg})
+ok(st == 200 and r["ligada"] is True and r["pode"] is True, "sem registro, a compra fica ligada: %r" % (r,))
+ok(chama("POST", "/ponto/compra", {"ligada": "nao"}, {"x-eterna-ponto": seg})[0] == 400, "ligada que não é sim/não: 400")
+st, r = chama("POST", "/ponto/compra", {"ligada": False, "por": "admin"}, {"x-eterna-ponto": seg})
+ok(st == 200 and r["ligada"] is False and r["por"] == "admin" and r["em"], "painel desliga a compra")
+ok(chama("GET", "/g/%s/info" % tokP)[1]["compra"] is False and not app.compra_ligada(app.manifesto(tokP)), "desligada no painel: a galeria não vende")
+st, r = chama("POST", "/ponto/compra", {"ligada": True, "por": "admin"}, {"x-eterna-ponto": seg})
+ok(r["ligada"] is True and chama("GET", "/g/%s/info" % tokP)[1]["compra"] is True, "painel liga de novo e a galeria volta a vender")
 # 23/11: pagou menos que o pedido (carrinho mexido no checkout da Imply): não libera, fica em erro para a TI
 st, r = ped({"pids": venda[4:5], "itens": [{"id": "zona", "qtd": 1}], "cliente": cli}, ip="5.0.0.7")
 ref3 = r["ref"]

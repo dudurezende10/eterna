@@ -1914,6 +1914,10 @@ def nuvem_galerias_loop():
                 nuvem_vendas_online(seg)
             except Exception as ex:
                 nuvem["vendas_online_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+            try:
+                nuvem_compra(seg)
+            except Exception as ex:
+                nuvem["compra_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         if time.time() - nuvem.get("video_eventos_em", 0) > 120:
             nuvem["video_eventos_em"] = time.time()
             try:
@@ -1922,6 +1926,18 @@ def nuvem_galerias_loop():
                 nuvem["video_eventos_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         nuvem_gal_acorda.wait(5)
         nuvem_gal_acorda.clear()
+
+
+def nuvem_compra(seg, ligada=None, por=""):
+    """24/11: chave da compra online, guardada na Nuvem (GET|POST /ponto/compra). Fica em nuvem["compra"] (no /status, sem
+    quem trocou): ligada (a chave do painel), pode (a Nuvem tem CompraOnline=1 e a chave da Imply) e quando mudou."""
+    corpo = None if ligada is None else json.dumps({"ligada": bool(ligada), "por": por}).encode()
+    rq = urllib.request.Request(NUVEM_API + "/ponto/compra", data=corpo, method="POST" if corpo else "GET",
+                                headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente", "Content-Type": "application/json"})
+    with urllib.request.urlopen(rq, timeout=15) as resp_:
+        j = json.loads(resp_.read().decode("utf8"))
+    nuvem["compra"] = {"ligada": bool(j.get("ligada")), "pode": bool(j.get("pode")), "em": str(j.get("em") or "")[:40] or None}
+    return dict(nuvem["compra"], por=str(j.get("por") or "")[:120] or None)
 
 
 def nuvem_vendas_online(seg):
@@ -16386,6 +16402,7 @@ ROTAS = (
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
     ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa)
+    ("POST", "/compra-online/config", "sessao", ("configuracao.u",)),   # 24/11: liga e desliga a compra online (vai para a Nuvem)
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -18038,6 +18055,29 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": False, "error": "erro no servidor"}, 500)
         return self.js(r, st, nostore=True)
 
+    def compra_online_post(self):
+        """24/11: POST /compra-online/config {ligada} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna, 6 por minuto
+        por pessoa, corpo até 1 KB. Repassa à Nuvem com o segredo do ponto e responde a chave como a Nuvem gravou."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "compra_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        if not isinstance(body.get("ligada"), bool):
+            return self.js({"ok": False, "error": "ligada"}, 400)
+        if not NUVEM_API:
+            return self.js({"ok": False, "error": "sem_nuvem"}, 409)
+        try:
+            r = nuvem_compra(nuvem_segredo(), body["ligada"], quem)
+        except Exception as ex:
+            print("  compra online: a Nuvem não respondeu (%s)" % type(ex).__name__)
+            return self.js({"ok": False, "error": "nuvem"}, 502)
+        print("  compra online %s por %s" % ("ligada" if r["ligada"] else "desligada", quem or "?"))
+        return self.js(dict(r, ok=True), nostore=True)
+
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
         Mesma guarda do /ponto/entradas (posto + origem + X-Eterna + 30 por minuto), corpo até 1 KB. O console nunca imprime o corpo."""
@@ -19599,6 +19639,8 @@ class H(BaseHTTPRequestHandler):
             return self.treino_post(u.path)
         if u.path == "/poses/config":
             return self.poses_post()
+        if u.path == "/compra-online/config":
+            return self.compra_online_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
