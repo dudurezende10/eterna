@@ -35,6 +35,11 @@ for t in testes/lixeira_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   conta "$(basename $t)" $RC "$OUT"
 done
+# 24/11 (testador v99.44.0): zeragem com falhas de verdade (tmpfs e usuário nobody; sem root, avisa e passa)
+for t in testes/v9944_zerar_falhas_root.py; do
+  H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
+  conta "$(basename $t)" $RC "$OUT"
+done
 OUT=$(python3 -I testes/backup_originais_envio.py servidor/linux/backup-originais.py 2>&1); conta backup_originais_envio $? "$OUT"
 for t in testes/*.js; do
   case "$(basename $t)" in _*) continue;; esac
