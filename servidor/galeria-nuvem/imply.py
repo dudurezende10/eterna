@@ -112,9 +112,18 @@ def situacao(ref):
         if j.get("error"):
             raise ImplyErro("GetCart: %s" % json.dumps(j["error"])[:160])
         j = j.get("result")
-    peds = [p for p in (j or []) if isinstance(p, dict) and str(p.get("idreferencia") or "") == ref] if isinstance(j, list) else []
+    lista = [p for p in j if isinstance(p, dict)] if isinstance(j, list) else []
+    # 24/11 (1º teste real, "sem pedido" com o PIX pago): a referência é procurada em idreferencia e, se não vier aí, em qualquer
+    # campo do pedido com o valor exato do nosso código (o nome do campo na resposta não estava na seção 7)
+    peds = [p for p in lista if str(p.get("idreferencia") or "") == ref] or [p for p in lista if any(str(v) == ref for v in p.values())
+            or any(isinstance(i, dict) and any(str(v) == ref for v in i.values()) for i in (p.get("itens") or []))]
     if not peds:
-        return "pendente", {"bruto": "sem pedido"}
+        # sem dado de pessoa no log: só o formato da resposta (tipo, quantos pedidos e os nomes dos campos do primeiro)
+        forma = "%s, %d pedidos, campos: %s" % (type(j).__name__, len(lista), ",".join(sorted(lista[0].keys()))[:300] if lista else "-")
+        if lista and isinstance(lista[0].get("itens"), list) and lista[0]["itens"] and isinstance(lista[0]["itens"][0], dict):
+            forma += "; campos do item: " + ",".join(sorted(lista[0]["itens"][0].keys()))[:300]
+        print("GetCart %s: sem pedido com a referência (%s)" % (ref, forma))
+        return "pendente", {"bruto": ("sem pedido (%d na resposta)" % len(lista))[:60]}
     for p in peds:
         itens = [i for i in (p.get("itens") or []) if isinstance(i, dict)]
         pags = [_st(x) for x in (p.get("pag") or []) if isinstance(x, dict)]
