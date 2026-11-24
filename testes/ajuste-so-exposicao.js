@@ -13,7 +13,9 @@ const {chromium}=require('playwright');
     poe('chute','chute',img(50));out.chute={...(await ajAuto('ag_chute'))};
     // ajuste antigo com contraste é refeito pela fila; chute que já tinha ajuste volta ao neutro
     SIM.edits['ag_escura']={b:130,c:125,t:10,auto:true};SIM.edits['ag_chute']={b:130,c:100,t:0,auto:true};SIM.edits['ag_clara']={b:120,c:130,t:0,auto:false};
+    SIM.edits['ag_antiga']={b:130,c:125,t:10,auto:true};SIM.edits['ag_antigamao']={b:130,c:125,t:10,auto:false};ajQueue.migrou=0;
     SIM.autoAj=true;state.lojaRota=null;ajQueue.busy=0;ajQueue();await new Promise(r=>setTimeout(r,1500));
+    out.antiga={...SIM.edits['ag_antiga']};out.antigamao={...SIM.edits['ag_antigamao']};
     out.fila={escura:{...SIM.edits['ag_escura']},chute:{...SIM.edits['ag_chute']},mao:{...SIM.edits['ag_clara']}};
     // foto nova sem ponto espera; depois do prazo é ajustada
     poe('nova','',img(50));state.lib.find(f=>f.id==='nova').t=Date.now()/1000;ajQueue.busy=0;ajQueue();await new Promise(r=>setTimeout(r,800));out.espera=!SIM.edits['ag_nova'];
@@ -28,5 +30,6 @@ const {chromium}=require('playwright');
   ok(r.fila.escura.c===100&&r.fila.escura.t===0,'ajuste antigo refeito '+JSON.stringify(r.fila.escura));
   ok(r.fila.chute.b===100,'chute já ajustado volta ao neutro '+JSON.stringify(r.fila.chute));
   ok(r.fila.mao.c===130&&r.fila.mao.auto===false,'ajuste à mão não muda '+JSON.stringify(r.fila.mao));
+  ok(r.antiga.b===100&&r.antiga.c===100&&r.antiga.t===0,'automático antigo fora da biblioteca volta ao original '+JSON.stringify(r.antiga));ok(r.antigamao.b===130,'à mão fora da biblioteca não muda');
   ok(r.espera===true,'foto nova sem ponto espera');ok(r.depois.b>100,'sem ponto depois do prazo: ajusta '+JSON.stringify(r.depois));
   await b.close();if(falhas.length){console.log('FALHA ajuste-so-exposicao: '+falhas.join(' | '));process.exit(1);}console.log('OK ajuste-so-exposicao: só exposição, sem estourar, chute a gol sem ajuste, fila refaz o antigo e respeita o à mão, espera o ponto');})().catch(e=>{console.log('FALHA ajuste-so-exposicao: '+e.message);process.exit(1);});
