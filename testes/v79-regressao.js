@@ -370,43 +370,33 @@ try{
   await ctx.close();}
 
   // =================== Item 2: interruptor do ajuste automático ===================
+  // 24/11 (Eduardo, 11:04): o interruptor saiu de Minhas fotos e foi para Configurações › IA automática; só o Admin muda. O resto do
+  // comportamento (SIM.autoAj, quem mexeu, registro, religar ajusta o que chegou desligado) é o mesmo.
   fase='2.1';
-  if(SO.includes('2')){const cx=await nova(b,1280,1000);const pg=await pagina(cx,'2 carlos');ok(await login(pg,'carlos@eterna.photo'),'2: Carlos não entrou');
-    ok(await pg.evaluate(()=>ETERNA.state.view)==='importar','2.1: Carlos deveria começar no Upload');
-    let t=await txt(pg,'#aj-auto');ok(t&&/Ajuste automático da IA/i.test(t)&&/Vale para o ponto inteiro/.test(t)&&/Ligado$/.test(t),'2.1: painel no Upload: '+t);
-    ok(await pg.evaluate(()=>{const a=document.querySelector('#aj-auto'),c=document.querySelector('#main .panel:not(#aj-auto)');return !!a&&(!c||a.compareDocumentPosition(c)&Node.DOCUMENT_POSITION_FOLLOWING);}),'2.1: painel deveria vir antes do check-in da câmera');
-    // foto nova do agente simulada: imagem escura numa biblioteca de teste
+  if(SO.includes('2')){const cx=await nova(b,1280,1000);const pg=await pagina(cx,'2 admin');ok(await login(pg,'eduardo@eduardorezende.com'),'2: admin não entrou');
+    await verView(pg,'importar');ok(!(await pg.$('#aj-auto'))&&!(await pg.$('[data-act="aj-autotoggle"]')),'2.1: Minhas fotos sem o painel do ajuste automático');
     const foto=async id=>pg.evaluate(id=>{const c=document.createElement('canvas');c.width=300;c.height=200;const x=c.getContext('2d');x.fillStyle='#2a2622';x.fillRect(0,0,300,200);x.fillStyle='#4a4038';x.fillRect(60,40,180,120);
       ETERNA.UP['ag_'+id]={src:c.toDataURL('image/jpeg',.9),name:id+'.jpg'};ETERNA.state.lib=(ETERNA.state.lib||[]).concat([{id,day:'2000-01-01',t:0}]);},id);
-    await pg.click('[data-act="aj-autotoggle"]');await pg.waitForTimeout(200);
-    t=await txt(pg,'#aj-auto');const s2=await sim(pg);
-    ok(s2.autoAj===false&&/Desligado por Carlos às \d\d:\d\d/.test(t)&&/Ajuste automático desligado/.test(await toastTxt(pg)),'2.2: desligar: '+t);
-    ok(s2.autoAjPor&&s2.autoAjPor.por==='carlos@eterna.photo'&&s2.autoAjPor.on===false,'2.2: quem mexeu: '+J(s2.autoAjPor));
-    ok(/^Ajuste automático desligado por Carlos$/.test(s2.log[0].t),'2.4: registro: '+s2.log[0].t);
+    await verView(pg,'ia-auto');await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ajuste"][data-v="off"]');await pg.waitForTimeout(200);
+    let t=await txt(pg,'#tr-cfg .tr-an-b[data-k="ajuste"]');const s2=await sim(pg);const nome=await pg.evaluate(()=>ETERNA.state.user.name);
+    ok(s2.autoAj===false&&/Desligado por .+ às \d\d:\d\d/.test(t)&&/Ajuste automático desligado/.test(await toastTxt(pg)),'2.2: desligar em IA automática: '+t);
+    ok(s2.autoAjPor&&s2.autoAjPor.por==='eduardo@eduardorezende.com'&&s2.autoAjPor.on===false,'2.2: quem mexeu: '+J(s2.autoAjPor));
+    ok(s2.log[0].t==='Ajuste automático desligado por '+nome,'2.4: registro: '+s2.log[0].t);
     await foto('v79t1');await pg.evaluate(()=>ETERNA.ajQueue());await pg.waitForTimeout(3500);
     ok(!(await pg.evaluate(()=>!!(ETERNA.SIM.edits||{})['ag_v79t1'])),'2.2: com o ajuste desligado a foto nova não pode ganhar ajuste');
-    await pg.screenshot({path:`${P}/v79-upload-ajuste-desligado.png`});
-    // 2.5: trocar de fotógrafo mantém desligado
-    await pg.click('[data-act="set-switch"]');await pg.waitForTimeout(200);
-    await entrarTeste(pg,'marinara@eterna.photo');
-    t=await txt(pg,'#aj-auto');ok(/Desligado por Carlos/.test(t)&&/Desligado$/.test(t),'2.5: trocar de fotógrafo deveria manter desligado: '+t);
-    ok(!(await pg.$('#nav [data-v="ajustes"]'))&&!(await pg.evaluate(()=>ETERNA.canView('ajustes'))),'2.6: Fotógrafo com Ajuste automático no menu');
-    await pg.evaluate(()=>{location.hash='#ajustes';});await pg.waitForTimeout(250);ok(await pg.evaluate(()=>ETERNA.state.view)!=='ajustes','2.6: #ajustes abriu para o Fotógrafo');
-    // 2.3: religar ajusta as fotos que chegaram desligado
-    await verView(pg,'importar');await pg.click('[data-act="aj-autotoggle"]');await pg.waitForTimeout(200);let ed=null;
+    await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ajuste"][data-v="on"]');await pg.waitForTimeout(200);let ed=null;
     for(let i=0;i<20&&!ed;i++){await pg.waitForTimeout(500);ed=await pg.evaluate(()=>(ETERNA.SIM.edits||{})['ag_v79t1']||null);}
     ok(ed&&ed.auto===true,'2.3: religar deveria ajustar a foto que chegou desligado: '+J(ed));
-    ok(/Ligado por Marinara/.test(await txt(pg,'#aj-auto')),'2.3: "Ligado por Marinara"');
-    await pg.click('[data-act="aj-autotoggle"]');await pg.waitForTimeout(150); // deixa desligado para o admin conferir
-    // 2.5: admin em Configurações › Ajuste automático vê o mesmo estado
-    await pg.click('[data-act="set-logout"]');await pg.waitForTimeout(200);ok(await login(pg,'eduardo@eduardorezende.com'),'2.5: admin não entrou');await verView(pg,'ajustes');
-    t=await txt(pg,'#aj-auto');ok(/Desligado por Marinara/.test(t),'2.5: admin em Ajuste automático: '+t);
-    // 2.7: supervisor só leitura
-    await pg.evaluate(()=>localStorage.removeItem('eterna.session'));ok(await login(pg,'supervisor@eterna.photo'),'2.7: supervisor não entrou');await verView(pg,'importar');
-    ok(await pg.evaluate(()=>document.querySelector('[data-act="aj-autotoggle"]').disabled),'2.7: botão deveria estar desabilitado para o supervisor');
-    await pg.evaluate(()=>document.querySelector('[data-act="aj-autotoggle"]').removeAttribute('disabled'));await pg.click('[data-act="aj-autotoggle"]');await pg.waitForTimeout(150);
-    ok((await toastTxt(pg))==='Sem permissão para alterar em Upload, câmeras e ajustes'&&(await sim(pg)).autoAj===false,'2.7: clique forçado do supervisor: '+await toastTxt(pg));
-    ok(await pg.evaluate(()=>{ETERNA.ajAutoSet(true);return ETERNA.SIM.autoAj;})===false,'N1: ajAutoSet pelo console sem set.u ligou o ajuste');
+    await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ajuste"][data-v="off"]');await pg.waitForTimeout(150); // deixa desligado para os outros conferirem
+    await verView(pg,'ajustes');t=await txt(pg,'#aj-auto');ok(/Desligado por /.test(t)&&/Desligado/.test(t)&&!(await pg.$('#aj-auto [data-act="aj-autotoggle"]')),'2.5: Ajuste automático mostra a situação, sem botão: '+t);
+    // 2.6: o Fotógrafo não vê a IA automática e não muda pelo console
+    await pg.evaluate(()=>localStorage.removeItem('eterna.session'));ok(await login(pg,'carlos@eterna.photo'),'2.6: Carlos não entrou');
+    ok(!(await pg.evaluate(()=>ETERNA.canView('ia-auto')))&&!(await pg.$('#aj-auto')),'2.6: Fotógrafo sem a IA automática e sem o painel em Minhas fotos');
+    ok(await pg.evaluate(()=>{ETERNA.ajAutoSet(true);return ETERNA.SIM.autoAj;})===false,'N1: ajAutoSet pelo console do Fotógrafo ligou o ajuste');
+    // 2.7: supervisor só vê a situação
+    await pg.evaluate(()=>localStorage.removeItem('eterna.session'));ok(await login(pg,'supervisor@eterna.photo'),'2.7: supervisor não entrou');await verView(pg,'ia-auto');
+    ok(!(await pg.$('#tr-cfg [data-act="tr-cfg"][data-k="ajuste"]'))&&/Desligado/.test(await txt(pg,'#tr-cfg .tr-an-b[data-k="ajuste"]')),'2.7: supervisor vê só a pílula');
+    ok(await pg.evaluate(()=>{ETERNA.ajAutoSet(true);return ETERNA.SIM.autoAj;})===false&&/Só o Admin/.test(await toastTxt(pg)),'2.7: ajAutoSet pelo console do supervisor: '+await toastTxt(pg));
     await cx.close();}
 
   // =================== Item 3: botão da equipe no Checkout (B1: só na câmera, antes de qualquer toque de cliente) ===================

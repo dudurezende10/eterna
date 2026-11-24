@@ -106,6 +106,7 @@ try:
     RO, RU = {"r": True}, {"r": True, "u": True}
     adm = S.cookie_sessao(m, "admin-treino")
     sup = S.cookie_sessao(m, "supervisora-treino", {"qualidade": RU, "configuracao": {"c": True, "r": True, "u": True}})
+    cfa = S.cookie_sessao(m, "chefe-treino")             # 24/11: o /treino/config é só do Admin
     val = S.cookie_sessao(m, "validador-treino", {"qualidade": {"c": True, "r": True, "u": True, "d": True}})
     so_ver = S.cookie_sessao(m, "so-ver-treino", {"qualidade": RO})
     nada = S.cookie_sessao(m, "nada-treino", {"set": RU})
@@ -206,7 +207,9 @@ try:
        (s0.get("treino") or {}).get("analise") == {"ponto": "desligada", "exposicao": "desligada"}, "/status.treino padrão desligado: %r" % s0.get("treino"))
     ok(pede("POST", "/treino/config", {"exposicao": "medir"}, cookie=val)[0] == 403, "Validador (só qualidade) não muda o interruptor")
     st, r = pede("POST", "/treino/config", {"exposicao": "medir"}, cookie=sup)
-    ok(st == 200 and r["analise"] == {"ponto": "desligada", "exposicao": "medir"} and r["por"] == "supervisora-treino", "configuracao.u liga a medida da exposição: %s %r" % (st, r))
+    ok(st == 403 and r.get("error") == "so_admin", "24/11: só o Admin muda o interruptor (Supervisora com configuracao.u: 403 so_admin): %s %r" % (st, r))
+    st, r = pede("POST", "/treino/config", {"exposicao": "medir"}, cookie=cfa)
+    ok(st == 200 and r["analise"] == {"ponto": "desligada", "exposicao": "medir"} and r["por"] == "chefe-treino", "o Admin liga a medida da exposição: %s %r" % (st, r))
     for c in ({"exposicao": "aplicar"}, {"x": 1}, {}, {"ponto": True}):
         ok(pede("POST", "/treino/config", c, cookie=adm)[0] == 400, "interruptor recusa %r" % c)
     m.estado_gravar({"docs": [{"col": "config", "id": "treino", "valor": {"ponto": "ligada", "exposicao": "ligada"}}]})
@@ -229,44 +232,44 @@ try:
     # 18/11 (Eduardo, ligar já): forcar liga abaixo do critério. Aqui sem o modelo instalado e sem vetor: contam as marcações.
     # Revisão de segurança: o interruptor tem limite próprio de 6 por minuto por pessoa (o 7º é 429, antes de olhar o corpo)
     m._janelas.clear()
-    lim = [pede("POST", "/treino/config", {"ponto": "medir", "forcar": True}, cookie=sup)[0] for _ in range(7)]
+    lim = [pede("POST", "/treino/config", {"ponto": "medir", "forcar": True}, cookie=cfa)[0] for _ in range(7)]
     ok(lim == [400] * 6 + [429], "interruptor: 6 por minuto por pessoa: %r" % lim)
-    ok(pede("POST", "/treino/rotulo", dict(bom, pid="ag_" + "f" * 12), cookie=sup)[0] == 404, "o limite do interruptor não trava as marcações")
+    ok(pede("POST", "/treino/rotulo", dict(bom, pid="ag_" + "f" * 12), cookie=cfa)[0] == 404, "o limite do interruptor não trava as marcações")
     m._janelas.clear()
     for c in ({"ponto": "medir", "forcar": True}, {"ponto": "ligada", "forcar": "sim"}, {"exposicao": "medir", "forcar": True}, {"forcar": True}):
-        ok(pede("POST", "/treino/config", c, cookie=sup)[0] == 400, "forcar recusa %r" % c)
+        ok(pede("POST", "/treino/config", c, cookie=cfa)[0] == 400, "forcar recusa %r" % c)
     ok(pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=val)[0] == 403
        and pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=so_ver)[0] == 403, "forcar sem configuracao.u: 403")
     m._janelas.clear()
     real_rot = m.cena_rotulos
     m.cena_rotulos = lambda: [x for x in real_rot() if x[1] != "gramado"]
     m._cena_base_t[0] = time.time()
-    st, r = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup)
+    st, r = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfa)
     m.cena_rotulos = real_rot
     m._cena_base_t[0] = time.time()
     m._treino_cfg["t"] = 0.0
     ok(st == 409 and r.get("error") == "rotulos" and [f["k"] for f in r.get("falta") or []] == ["rot_gramado"] and m.treino_cfg()["ponto"] == "medir",
        "forcar sem foto de gramado marcada: 409 rotulos: %s %r" % (st, r))
-    st, r = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup)
+    st, r = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfa)
     m._treino_cfg["t"] = 0.0
     cf = m.treino_cfg()
-    ok(st == 200 and r.get("abaixo", {}).get("por") == "supervisora-treino" and r.get("aviso") == "sem_modelo" and r.get("ponto_versao")
-       and cf["ponto"] == "ligada" and cf["ponto_versao"] == r["ponto_versao"] and cf["abaixo"]["por"] == "supervisora-treino",
+    ok(st == 200 and r.get("abaixo", {}).get("por") == "chefe-treino" and r.get("aviso") == "sem_modelo" and r.get("ponto_versao")
+       and cf["ponto"] == "ligada" and cf["ponto_versao"] == r["ponto_versao"] and cf["abaixo"]["por"] == "chefe-treino",
        "forcar sem modelo grava Ligada (nada é reconhecido): %s %r %r" % (st, r, cf))
     st, s3 = pede("GET", "/status", cookie=adm)
     mp3 = (s3.get("treino") or {}).get("modelo_ponto") or {}
-    ok(mp3.get("erro") == "sem_modelo" and mp3.get("aviso") == "sem_modelo" and mp3.get("congelados") == 0 and (mp3.get("abaixo") or {}).get("por") == "supervisora-treino"
+    ok(mp3.get("erro") == "sem_modelo" and mp3.get("aviso") == "sem_modelo" and mp3.get("congelados") == 0 and (mp3.get("abaixo") or {}).get("por") == "chefe-treino"
        and mp3.get("ligada_versao") == r.get("ponto_versao"), "/status: modelo não instalado, nada é reconhecido, e quem ligou abaixo da meta: %r" % mp3)
     tdb = sqlite3.connect(m.TREINO_DB)
     ll = tdb.execute("select por, abaixo, versao, dados from liga_log").fetchall()
     tdb.close()
     d0 = json.loads(ll[0][3]) if ll else {}
-    ok(len(ll) == 1 and ll[0][:3] == ("supervisora-treino", 1, r.get("ponto_versao")) and d0.get("modelo_ok") is False and d0.get("congelados") == 0
+    ok(len(ll) == 1 and ll[0][:3] == ("chefe-treino", 1, r.get("ponto_versao")) and d0.get("modelo_ok") is False and d0.get("congelados") == 0
        and d0.get("faltam", {}).get("gramado") == 150 and d0.get("criterio_passa") is False, "liga_log com quem, quando e quanto faltava: %r" % (ll,))
     m._treino_cfg["t"] = 0.0
     ok(m.treino_cfg()["ponto"] == "ligada", "Ligada forçado com a versão congelada (vazia) não é rebaixado pela migração")
     # revisão de segurança: Ligada de novo com a mesma versão e a mesma situação não muda nada nem grava no liga_log
-    st, rg = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=sup)
+    st, rg = pede("POST", "/treino/config", {"ponto": "ligada", "forcar": True}, cookie=cfa)
     tdb = sqlite3.connect(m.TREINO_DB)
     n_ll = tdb.execute("select count(*) from liga_log").fetchone()[0]
     tdb.close()
