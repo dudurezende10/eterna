@@ -47,7 +47,7 @@ const cartoes=pg=>pg.$$eval('#main .alert',x=>x.map(e=>({sev:[...e.classList].fi
 try{
   // ---------- 7: Admin vê o cartão exato; período; rodapé com a fonte; os alertas antigos por fotógrafo somem ----------
   {const {ctx,pg,R}=await nova();await pg.goto(U);await pg.waitForTimeout(300);const email=await entrarTeste.adminFicticio(pg);await entrarTeste(pg,email);
-    await espera(pg,()=>ETERNA.state.agent.on);
+    await espera(pg,()=>!!ETERNA.state.user,15000);await espera(pg,()=>ETERNA.state.agent.on,20000); // 24/11: máquina carregada
     const antigos=await pg.evaluate(()=>ETERNA.alerts().map(a=>a.t));
     await pg.evaluate(()=>ETERNA.go('alertas'));ok(await espera(pg,()=>!!ETERNA.state.fot.j),'7: os dados do servidor não chegaram');await pg.waitForTimeout(150);
     let cs=await cartoes(pg);const luz=cs.find(c=>/fora da exposição/.test(c.t));
@@ -103,7 +103,10 @@ try{
     await pg.fill('#fot-lim input[data-k="cliques_min"]','18');
     // ---------- Medição › Exposição: critério, grade e "Usar estes limites" ----------
     await pg.evaluate(()=>{ETERNA.state.train.aba='medida';ETERNA.go('treino');});await espera(pg,()=>document.querySelector('.tr-luz-cls'));
-    ok(await espera(pg,()=>{const x=document.querySelector('[data-act="tr-analise"][data-k="exposicao"][data-v="ligada"]');return !!x&&(x.disabled===false||x.getAttribute('aria-pressed')==='true');}),'exposição Ligada (do /status) não fica travada');
+    // 24/11: o /status (de 2,5 em 2,5 s) é que traz a exposição de volta para Ligada depois do medir e do desligada acima. Se o Treino
+    // abriu entre um /status com desligada e o seguinte, o interruptor precisa redesenhar sozinho (agentPoll); com a máquina carregada
+    // o poll atrasa, então espera até 20 s
+    ok(await espera(pg,()=>{const x=document.querySelector('[data-act="tr-analise"][data-k="exposicao"][data-v="ligada"]');return !!x&&(x.disabled===false||x.getAttribute('aria-pressed')==='true');},20000),'exposição Ligada (do /status) não fica travada');
     const lz=await pg.evaluate(()=>({cls:[...document.querySelectorAll('.tr-luz-cls tbody tr')].map(tr=>tr.textContent),falta:[...document.querySelectorAll('.tr-luz-faltas li')].map(x=>x.textContent)}));
     ok(lz.cls.length===2&&/Escura31/.test(lz.cls[0].replace(/\s/g,''))&&lz.falta.some(x=>/Precisão de Escura: 60%/.test(x))&&lz.falta.some(x=>/Boas: 120 de 150/.test(x)),'Medição › Exposição: classes e o que falta: '+J(lz));
     ok(await pg.$eval('[data-act="tr-luz-usar"]',x=>x.disabled),'Usar estes limites travado sem escolha');

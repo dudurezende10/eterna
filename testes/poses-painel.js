@@ -6,7 +6,7 @@
 //  3. Ligada sem a medida: 409 criterio vira o aviso "faltam N" e o modo não muda nem vai para o histórico; 403 e 429 avisam
 //  4. cliques repetidos enquanto o servidor responde: um pedido só
 //  5. ETERNA_POSES=0 (forcada) aparece no cartão; motivo de cada parou_por em palavras, sem chave crua
-//  6. sem Painel de controle em Alterar: só o texto (sem botões); sem configuracao.r, agente antigo (sem poses) ou agente fora:
+//  6. sem Painel de controle em Alterar, ou sem ser Admin (24/11: Supervisora com Alterar), só o texto (sem botões); sem configuracao.r, agente antigo (sem poses) ou agente fora:
 //     nenhum cartão
 //  7. 4 línguas da equipe (a 5ª coluna do dicionário também preenchida) sem chave faltando, e o registro poses_modo traduzido no histórico
 //  8. 390 px e 768 px sem rolagem lateral (prints em testes/prints/)
@@ -61,7 +61,7 @@ try{
   await pg.click('[data-act="ps-modo"][data-v="ligada"]');await pg.waitForTimeout(500);
   ok(/faltam 150/.test(await pg.textContent('#toast'))&&await pg.evaluate(()=>document.querySelector('#ps-srv').dataset.modo)==='sombra','3: 409 criterio avisa "faltam 150" e o modo fica: '+await pg.textContent('#toast'));
   ok(await pg.evaluate(()=>ETERNA.auditRead().length)===a1,'3: 409 não vai para o histórico');
-  for(const [st,re] of [[403,/Painel de controle/],[429,/./],[500,/Não deu/]]){SRV.resp={status:st,body:{ok:false,error:'x'}};
+  for(const [st,re] of [[403,/Só o Admin muda/],[429,/./],[500,/Não deu/]]){SRV.resp={status:st,body:{ok:false,error:'x'}};
     await pg.click('[data-act="ps-modo"][data-v="desligada"]');await pg.waitForTimeout(400);
     ok(re.test(await pg.textContent('#toast'))&&await pg.evaluate(()=>document.querySelector('#ps-srv').dataset.modo)==='sombra','3: '+st+' avisa e não muda: '+await pg.textContent('#toast'));}
   ok(await pg.evaluate(()=>ETERNA.auditRead().length)===a1,'3: erros não vão para o histórico');
@@ -118,10 +118,15 @@ try{
   const r6=await pg.evaluate(()=>{const u=ETERNA.state.user;const p0=JSON.parse(JSON.stringify(u.perms));const out={};
     u.perms.configuracao={r:true,u:false};ETERNA.render();out.soVer={card:!!document.querySelector('#ps-srv'),bt:document.querySelectorAll('[data-act="ps-modo"]').length};
     ETERNA.psModoSalva('ligada');out.salvou=ETERNA.state.psSalvando;
+    // 24/11 (Eduardo): só o Admin muda; a Supervisora com Painel de controle em Alterar vê o estado sem os botões
+    const pr0=u.preset;u.perms=JSON.parse(JSON.stringify(p0));u.perms.configuracao={r:true,u:true};u.preset='supervisor';ETERNA.render();
+    out.sup={card:!!document.querySelector('#ps-srv'),bt:document.querySelectorAll('[data-act="ps-modo"]').length,u:ETERNA.can('configuracao','u')};
+    ETERNA.psModoSalva('ligada');out.supSalvou=ETERNA.state.psSalvando;u.preset=pr0;u.perms=JSON.parse(JSON.stringify(p0));
     u.perms.configuracao={r:false,u:false};ETERNA.render();out.semR=!!document.querySelector('#ps-srv');
     u.perms=p0;ETERNA.go('chroma');out.de_novo=!!document.querySelector('#ps-srv');const a=ETERNA.state.agent;const ps=a.poses;a.poses=null;ETERNA.render();out.antigo=!!document.querySelector('#ps-srv');a.poses=ps;
     ETERNA.render();out.volta1=!!document.querySelector('#ps-srv');a.on=false;ETERNA.render();out.fora=!!document.querySelector('#ps-srv');a.on=true;ETERNA.render();out.volta=!!document.querySelector('#ps-srv');out.view=ETERNA.state.view;return out;});
   ok(r6.soVer.card&&r6.soVer.bt===0&&!r6.salvou,'6: só ver: texto sem botões e psModoSalva não salva: '+J(r6));
+  ok(r6.sup.card&&r6.sup.u&&r6.sup.bt===0&&!r6.supSalvou,'6 (24/11): Supervisora com Alterar vê o estado sem os botões e não salva: '+J(r6.sup));
   ok(!r6.semR&&r6.de_novo&&!r6.antigo&&r6.volta1&&!r6.fora&&r6.volta,'6: sem configuracao.r, agente antigo ou fora: sem cartão: '+J(r6));
   // 9: Fotógrafos na Curadoria
   const m9=await pg.evaluate(()=>{const V=ETERNA.VIEWS||[];const f=V.find(v=>v[0]==='fotografos');const nav=[...document.querySelectorAll('#nav [data-v="fotografos"], #nav [data-view="fotografos"]')].length;

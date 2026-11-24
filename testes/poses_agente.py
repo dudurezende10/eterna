@@ -369,6 +369,21 @@ try:
 
     ok(pede("POST", "/poses/config", {"modo": "desligada"})[0] == 401, "7: sem sessão 401")
     ok(pede("POST", "/poses/config", {"modo": "desligada"}, cookie=cfgr)[0] == 403, "7: sem configuracao.u 403")
+    # 24/11 (Eduardo): só o Admin muda a classificação de poses. A Supervisora, mesmo com configuracao.u, recebe 403 e nada muda;
+    # o perfil vem do cadastro da sessão (um "preset" no pedido não vale). "Ver como": 403 so_ver
+    m.estado_gravar({"docs": [{"col": "usuarios", "id": "sup-poses", "valor": {"v": 2, "email": "sup-poses", "name": "sup-poses", "active": True, "preset": "supervisor",
+                                                                              "perms": {"configuracao": {"r": True, "u": True}, "qualidade": {"r": True, "u": True}}}}]})
+    sup = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("sup-poses"))
+    m._poses_cfg["t"] = 0.0
+    modo0 = m.poses_cfg()["modo"]
+    st, r = pede("POST", "/poses/config", {"modo": "desligada" if modo0 != "desligada" else "sombra"}, cookie=sup)
+    m._poses_cfg["t"] = 0.0
+    ok(st == 403 and r.get("error") == "so_admin" and m.poses_cfg()["modo"] == modo0, "7: Supervisora com configuracao.u recusada: %s %r" % (st, r))
+    st, r = pede("POST", "/poses/config", {"modo": "sombra", "preset": "admin"}, cookie=sup)
+    ok(st == 403, "7: preset no pedido não vale: %s %r" % (st, r))
+    vc = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("sup-poses", por="admin-poses"))
+    st, r = pede("POST", "/poses/config", {"modo": "sombra"}, cookie=vc)
+    ok(st == 403 and r.get("erro") == "so_ver", "7: ver como: 403 so_ver: %s %r" % (st, r))
     st, r = pede("POST", "/poses/config", {"modo": "ligada"}, cookie=adm)
     ok(st == 409 and r.get("error") == "criterio" and r.get("falta") == m.POSE_MEDIDA_MIN, "7: ligada sem medida: 409 criterio: %s %r" % (st, r))
     for c_ in ({"modo": "x"}, {"x": 1}, {}, {"janela": {"ini": "25:00", "fim": "07:00"}}, {"janela": {"ini": "07:00", "fim": "07:00"}},

@@ -12739,8 +12739,7 @@ def _backup_ok_grava(t):
         pass
 
 
-# Bancos que vão para o backup na nuvem. Dado de visitante não sai do servidor: o cena.db (vetores das fotos) e o poses.db (pid e
-# card de cada foto) ficam de fora.
+# Sobem para a nuvem estes bancos e os JSON das sessões (códigos de foto e de sessão, sem imagem nem rosto); cena.db e poses.db não.
 BACKUP_BANCOS = ("VENDAS_DB", "ESTADO_DB", "OPERACAO_DB", "NUVEM_DB", "TREINO_DB")   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
 
 
@@ -18527,7 +18526,7 @@ ROTAS = (
     ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
-    ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa)
+    ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa); 24/11: só o Admin (poses_post)
     # 23/11 (AF): números por fotógrafo só com desempenho.r (Admin e Supervisora), conferido aqui pela sessão; a calibração da luz
     # é da Medição (qualidade.r); os limites, de configuracao.u E desempenho.r (o segundo conferido no fotografos_post)
     ("GET", "/fotografos/alertas", "sessao", ("desempenho.r",)), ("GET", "/fotografos/dias", "sessao", ("desempenho.r",)),
@@ -20183,10 +20182,15 @@ class H(BaseHTTPRequestHandler):
 
     def poses_post(self):
         """23/11 (P1 de poses): POST /poses/config {modo?, janela?} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
-        (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo."""
+        (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo.
+        24/11 (Eduardo): só o Admin muda a classificação de poses; o perfil vem do cadastro da sessão, nunca do pedido (a
+        Supervisora pode ter configuracao.u e recebe 403). O "ver como" já parou antes, no do_POST (403 so_ver)."""
         if not self.origem_local():
             return self.js({"ok": False, "erro": "origem"}, 403)
-        quem = (self.sessao() or {}).get("usuario") or ""
+        eu = self.sessao() or {}
+        if (eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por"):
+            return self.js({"ok": False, "error": "so_admin"}, 403)
+        quem = eu.get("usuario") or ""
         if not limite_ok("u:" + quem, "poses_cfg", 6):
             return self.js({"ok": False, "error": "limite"}, 429)
         body, err = self.corpo(1024)
