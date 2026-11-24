@@ -1513,7 +1513,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.40.1 · 24/11 03:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.40.2 · 24/11 03:15"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2089,7 +2089,7 @@ function pendPainel(o){o=o||{};const {din,L,vis}=pendListaDe(o);
       <span class="pend-row-meta">${r.saleNo?esc(TE('venda_x',r.saleNo))+' · ':''}${esc(meio)}</span><span class="pill ${r.saiu?'warn':min>CAIXA_ALERTA_MIN?'warn':'neutral'}">${r.saiu?TE('po_saiu_curto'):TE('ha_min',min)}</span></button>`;};
   const av=pendAntigaHtml()+pendAvisosHtml(); // v96: alerta da janela antiga e avisos de 5 min
   // v97-ux: no Posto não há chips (o botão amarelo Caixa é o filtro); no Caixa, um só: "Dinheiro ✕", que volta ao Posto completo
-  if(!din&&L.length<=1&&!av)return '';
+  if(!av&&(din?!L.length:L.length<=1))return ''; // 24/11: no Caixa, sem dinheiro esperando o painel some
   const chips=din?`<div class="chips pend-filtro"><button class="chip pend-filtro-on" data-act="posto-filtro" data-f="todos" aria-pressed="true" title="${esc(TE('po_ver_tudo'))}" aria-label="${esc(TE('po_tirar_filtro'))}">${TE('meio_dinheiro')} ${CROSS}</button></div>`:'';
   return `<div class="panel" id="pend-painel"><div class="head"><h2>${TE('po_aguardando')}</h2><div class="row">${chips}${L.length?`<span class="pill ${(din?caixaAtrasada():dinAtrasada())?'warn':'neutral'}">${L.length}</span>`:''}</div></div>${av}
     ${L.length?`${L.length<4&&!state.caixa.dinQ?'':`<input type="text" id="din-q" data-keep="1" data-act="din-q" value="${esc(state.caixa.dinQ||'')}" placeholder="${esc(TE('po_busca_ph'))}" aria-label="${esc(TE('po_busca_aria'))}" autocomplete="off">`}${vis.length?`<div class="pend-rows">${vis.map(linha).join('')}</div>`:`<div class="note">${TE('po_nenhum_cod')}</div>`}`:`<div class="note">${din?TE('po_nenhum_din'):TE('po_nenhum_pag')}</div>`}</div>`;}
