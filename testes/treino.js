@@ -257,6 +257,12 @@ try{
     {const f=await pg.evaluate(()=>ETERNA.trFila());ok(J(f)===J(FV)&&!/recusou/.test(await toastTxt())&&R.posts.length===nC,'"ver como": Carregar não mexe na fila pendente da pessoa nem avisa recusa: '+J(f)+' '+await toastTxt());}
     await pg.click('[data-act="tr-go"][data-i="9"]');await blur();await pg.keyboard.press('c');await pg.click('[data-act="tr-next"]');await blur();await pg.keyboard.press('ArrowLeft');await pg.waitForTimeout(400);
     ok(R.posts.length===nC&&J(await pg.evaluate(()=>ETERNA.trFila()))===J(FV)&&!/recusou/.test(await toastTxt())&&!/good|warn/.test(await borda(9)),'"ver como": sair da foto não grava, não avisa e não pinta de verde: '+await toastTxt()+' '+await borda(9));
+    // 24/11 (testador): Enter e Z no "ver como" não gravam (o atalho chamava trConfirmar/trDesfazer direto, sem o guardAct)
+    await pg.evaluate(p=>ETERNA.state.train.desfaz.push({pid:p,j:3,ant:null}),PIDS[3]);await semToast();
+    await blur();await pg.keyboard.press('Enter');await pg.waitForTimeout(200);const tE=await toastTxt();const jE=await pg.evaluate(()=>ETERNA.state.train.j);
+    await semToast();await blur();await pg.keyboard.press('z');await pg.waitForTimeout(400);const tZ=await toastTxt();
+    ok(R.posts.length===nC&&J(await pg.evaluate(()=>ETERNA.trFila()))===J(FV)&&jE===9&&/Só visualização/.test(tE)&&/Só visualização/.test(tZ),'"ver como": Enter e Z não gravam nem mexem na fila, avisam que é só visualização: '+J([tE,tZ,jE,R.posts.length-nC]));
+    await pg.evaluate(()=>{ETERNA.state.train.desfaz.length=0;});
     // a foto 9 segue aberta com a escolha (C) feita no "ver como": Voltar para o Admin não a grava no nome dele
     await pg.click('[data-act="assumir-voltar"]');await espera(pg,()=>!ETERNA.state.assumido&&ETERNA.state.user.email==='admin.teste@exemplo.com');await pg.waitForTimeout(500);
     await pg.evaluate(()=>ETERNA.go('treino'));await pg.waitForTimeout(300);await pg.evaluate(()=>ETERNA.go('painel'));await pg.waitForTimeout(300);
@@ -278,6 +284,28 @@ try{
     ok(g1.length===1&&g1[0].pid===PIDS[10]&&g1[0].corpo.ponto==='outro','aba escondida: a escolha vai para a fila local: '+J(g1));
     ok(g2.length===1&&g2[0].t===g1[0].t&&R.posts.length===nD+1,'esconder de novo e o pagehide não gravam em duplicidade: '+J(g2)+' posts '+(R.posts.length-nD));
     R.rotuloStatus=200;await pg.evaluate(()=>ETERNA.trEnviar());await espera(pg,()=>ETERNA.trFila().length===0,5000);
+    await ctx.close();}
+  // ---------- 24/11 (testador): Enter e Z no "ver como"; Voltar, Sair e a pessoa vista entra de verdade: nada sobe no nome dela ----------
+  {const {ctx,pg,R}=await nova();await entrar(pg,null,true);const adm=await pg.evaluate(()=>ETERNA.state.user.email);
+    const blur=()=>pg.evaluate(()=>document.activeElement&&document.activeElement.blur());
+    await pg.route('**/auth/assumir',r=>{const c=r.request().postDataJSON();r.fulfill({status:200,contentType:'application/json',body:J({ok:true,usuario:c.usuario,cadastro:null,assumido_por:adm,assumido_nome:'Admin de teste'})});});
+    await pg.route('**/auth/voltar',r=>r.fulfill({status:200,contentType:'application/json',body:J({ok:true,usuario:adm,cadastro:null})}));
+    await pg.evaluate(()=>ETERNA.go('usuarios'));await pg.click('[data-act="user-sel"][data-e="qualidade@eterna.photo"]');await pg.click('[data-act="user-assumir"]');
+    ok(await espera(pg,()=>!!ETERNA.state.assumido&&ETERNA.state.user.email==='qualidade@eterna.photo'),'"ver como" (Enter/Z): entrou como o Validador');
+    await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
+    await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12&&!ETERNA.state.train.carregando);await pg.waitForTimeout(200);
+    // G e Enter na foto 0; um Desfazer pendente e Z; G, P, N, D, 1 e setas na foto 1
+    await blur();await pg.keyboard.press('g');await pg.keyboard.press('Enter');await pg.waitForTimeout(200);
+    await pg.evaluate(p=>ETERNA.state.train.desfaz.push({pid:p,j:0,ant:null}),PIDS[0]);await blur();await pg.keyboard.press('z');await pg.waitForTimeout(200);
+    for(const k of ['ArrowRight','a','p','n','1','d','ArrowRight','ArrowLeft','ArrowLeft'])await pg.keyboard.press(k);await pg.waitForTimeout(400);
+    ok(R.posts.length===0&&(await pg.evaluate(()=>ETERNA.trFila())).length===0,'"ver como": Enter, Z, letras e setas não gravam nem põem na fila: '+J(await pg.evaluate(()=>ETERNA.trFila())));
+    ok(await pg.evaluate(()=>ETERNA.state.train.j)===0,'"ver como": as setas navegam, Enter não avança');
+    await pg.click('[data-act="assumir-voltar"]');await espera(pg,()=>!ETERNA.state.assumido&&ETERNA.state.user.email===adm);await pg.waitForTimeout(400);
+    await pg.evaluate(()=>ETERNA.logout());await pg.waitForTimeout(1200);
+    await pg.goto(U);await pg.waitForTimeout(300);await entrarTeste(pg,'qualidade@eterna.photo');await espera(pg,()=>ETERNA.state.agent.on,8000);
+    await pg.evaluate(()=>ETERNA.go('treino'));await pg.waitForTimeout(2000);
+    ok(await pg.evaluate(()=>ETERNA.state.user&&ETERNA.state.user.email)==='qualidade@eterna.photo'&&(await pg.evaluate(()=>ETERNA.trFila())).length===0&&R.posts.length===0,
+      'Voltar, Sair e o Validador entra de verdade: a fila está vazia e nenhum POST /treino/rotulo sobe com a escolha do Admin: '+J(R.posts.map(x=>x.b)));
     await ctx.close();}
   // ---------- revisão 23/11: Z com escolha na foto atual; Sair espera o POST ----------
   {const {ctx,pg,R}=await nova();await entrar(pg,null,true);

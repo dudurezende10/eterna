@@ -7768,7 +7768,7 @@ function trRasc(pid){const t=state.train;if(!t.rasc[pid]){const d=t.docs[pid],q=
 function trCorpo(pid,r){const d=state.train.docs[pid]||{},q=d.qual||{};
   return {pid,v:1,ponto:r.ponto||null,ia:d.ia&&typeof d.ia==='object'?{serve:d.ia.serve==null?null:!!d.ia.serve,motivos:(d.ia.motivos||[]).slice(0,8),frente:d.ia.frente==null?null:!!d.ia.frente}:{serve:null,motivos:[],frente:null},
     qual:{nivel:r.nivel||null,motivos:r.nivel==='fraca'?(r.motivos||[]).slice(0,12):[],ajuste:(q.ajuste||[]).slice(0,8)},duvida:!!r.duvida,obs:trObs(r.obs),base_em:r.base||null};}
-function trGravar(pid,corpo){const t=state.train;const ant=t.docs[pid]||null;
+function trGravar(pid,corpo){if(state.assumido){toast(TE('vc_so_ver'));return null;} /* "ver como" só olha: nada entra na fila (ela sobe depois no nome da pessoa vista) */const t=state.train;const ant=t.docs[pid]||null;
   t.docs[pid]=Object.assign({},ant||{},{pid,ponto:corpo.ponto,ia:corpo.ia,qual:corpo.qual,duvida:corpo.duvida,obs:corpo.obs,pend:true});
   const f=trFila().filter(x=>!(x.pid===pid&&trMinha(x)));f.push({pid,u:state.user?state.user.email:'',t:Date.now(),corpo});trFilaGrava(f);trEnviar();return ant;}
 async function trEnviar(){const u=trAg();if(trEnviar.on||!u||!state.user||state.assumido)return; /* "ver como" só olha: a fila (única cópia) fica intacta, como no sobe() */trEnviar.on=true;let mudou=false;
@@ -7807,11 +7807,11 @@ function trSaiDaFoto(pid){if(!pid||!state.user||state.assumido||!can('qualidade'
 // no começo de cada render: a foto que estava na tela (t.vendo) saiu dela (outra foto, outra aba, outra tela)? grava a escolha
 function trConfere(){const t=state.train;const v=t&&t.vendo;if(!v)return;const p=state.view==='treino'&&t.aba==='marcar'?trAtual():null;if(p&&p.pid===v)return;t.vendo=null;trSaiDaFoto(v);}
 function trIr(j){const t=state.train;const p=trAtual();if(p)trSaiDaFoto(p.pid);t.j=Math.max(0,Math.min(t.itens.length-1,j));render();trPrecarga();}
-function trConfirmar(){if(!can('qualidade','u')){toast(TE('tr_sem_perm'));return;}const p=trAtual();if(!p)return;const r=trRasc(p.pid);
+function trConfirmar(){if(state.assumido){toast(TE('vc_so_ver'));return;}if(!can('qualidade','u')){toast(TE('tr_sem_perm'));return;}const p=trAtual();if(!p)return;const r=trRasc(p.pid);
   const ant=trGravar(p.pid,trCorpo(p.pid,r));trDesfazPoe(p.pid,state.train.j,ant);
   const t=state.train;let k=t.j+1;while(k<t.itens.length&&t.docs[t.itens[k].pid]&&!t.docs[t.itens[k].pid].pend&&!trVazio(t.docs[t.itens[k].pid]))k++;trIr(k<t.itens.length?k:t.j+1);}
 // Z: desfaz a última confirmação (grava de novo o que havia, ou a marcação vazia) e volta para a foto
-function trDesfazer(){if(!can('qualidade','u'))return;const t=state.train;const u=t.desfaz.pop();if(!u){toast(TE('tr_nada_desfazer'));return;}
+function trDesfazer(){if(state.assumido){toast(TE('vc_so_ver'));return;}if(!can('qualidade','u'))return;const t=state.train;const u=t.desfaz.pop();if(!u){toast(TE('tr_nada_desfazer'));return;}
   {const p=trAtual();if(p&&p.pid!==u.pid)trSaiDaFoto(p.pid);} // a escolha da foto de agora não se perde ao voltar
   const a=u.ant,q=(a&&a.qual)||{};const r={ponto:a&&a.ponto||null,nivel:q.nivel||null,motivos:(q.motivos||[]).slice(),duvida:!!(a&&a.duvida),obs:(a&&a.obs)||'',base:(t.docs[u.pid]||{}).em||null};
   trGravar(u.pid,trCorpo(u.pid,r));if(!a)t.docs[u.pid]=null;t.rasc[u.pid]=Object.assign({},r);t.j=u.j;toast(TE('tr_desfeito'));render();}
