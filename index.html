@@ -706,7 +706,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 /* coluna (esc-col e esc-fina) */
 .lj-fs.esc-col .lj-esc,.lj-fs.esc-fina .lj-esc{grid-area:1/2;flex-direction:column;border-top:0;box-shadow:inset 1px 0 rgba(255,255,255,.14);padding:max(12px,env(safe-area-inset-top,0px)) max(0px,env(safe-area-inset-right,0px)) max(12px,env(safe-area-inset-bottom,0px)) 0}
 .lj-fs.esc-col .lj-esc-h,.lj-fs.esc-fina .lj-esc-h{width:auto;align-self:stretch;padding:4px 12px 8px}
-.lj-fs.esc-col .lj-esc-dz,.lj-fs.esc-fina .lj-esc-dz{flex-wrap:wrap;gap:4px 10px}
+.lj-fs.esc-col .lj-esc-dz,.lj-fs.esc-fina .lj-esc-dz{flex-wrap:wrap;gap:4px 10px;min-height:0}
 .lj-fs.esc-col .lj-esc-desf,.lj-fs.esc-fina .lj-esc-desf{flex:1 1 auto;padding:0 12px}
 .lj-fs.esc-col .lj-esc-vz,.lj-fs.esc-fina .lj-esc-vz{flex:none;align-items:flex-start;padding:8px 12px}
 .lj-fs.esc-col .lj-esc-l,.lj-fs.esc-fina .lj-esc-l{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(80px,100%),1fr));grid-auto-rows:max-content;align-content:start;align-items:start;padding:8px 8px 16px;overflow-x:hidden;overflow-y:auto;touch-action:pan-y;
@@ -1526,7 +1526,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.42.2 · 24/11 13:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.42.3 · 24/11 18:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2660,7 +2660,7 @@ function ecoBody(){const e=state.eco;
   const duas=state.ecoOutra&&Date.now()-state.ecoOutra<20000?`<div class="pill warn" role="status" style="display:block;white-space:normal;margin-bottom:8px">${esc(TE('po_duas_ck'))}</div>`:'';
   if(!m.card)return `${duas}<div class="eco-wait"><b>${TE('po_ck_camera')}</b><span class="note">${TE('po_esperando_cli')}</span><div class="row">${fl}${idade}</div></div>`;
   const so=sessionObj(m.card);const big=m.foto&&m.step==='review'?(m.foto.t==='ph'?`<div class="eco-big" style="${bigStyle(m.foto.id)}">${m.foto.st?`<span class="pill ${m.foto.st==='no'?'neutral':'good'} eco-st">${m.foto.st==='no'?TE('po_nao_quer'):m.foto.st==='fav'?TE('po_favorita'):TE('po_escolhida')}</span>`:''}</div>`:ecoThumb(m.foto,'eco-big')):'';
-  const etapa={review:TE('po_foto_de',m.i+1,m.n),cart:TE('po_pkg_pag'),done:m.wait?TE('po_esp_pag'):TE('po_pago_t')}[m.step]||m.step;
+  const etapa={review:m.n?TE('po_foto_de',m.i+1,m.n):TE('po_sem_fotos'),cart:TE('po_pkg_pag'),done:m.wait?TE('po_esp_pag'):TE('po_pago_t')}[m.step]||m.step;
   const meio=m.meio||(m.pay?PAY_MEIO[m.pay]:null);
   const meta=`${duas}<div class="eco-meta"><div><div class="eyebrow">${TE('sessao_x',esc(m.card))}${so&&P[so.key]?' · '+esc(P[so.key].name):''}</div><b>${esc(etapa)}</b></div><div class="row">${fl}${idade}</div></div>`;
   if(m.step==='done'&&!ecoPendR())return meta;
@@ -4472,7 +4472,7 @@ function ljEscUpd(){const bar=document.getElementById('lj-esc');if(!bar)return;c
   const hn=ch.length?T('ljNChosen',ch.length):'';const n=bar.querySelector('.lj-esc-n');if(n.textContent!==hn)n.textContent=hn;
   const dd=ljEscDesfVale(k);const hd=dd?`<span class="lj-esc-tir" role="status">${T('ljEscTirada')}</span><button class="lj-esc-desf" data-act="kiosk-esc-desf">${ICO.back}<span>${T('ljEscDesfazer')}</span></button>`:'';
   const dz=bar.querySelector('.lj-esc-dz');if(dz._h!==hd){dz._h=hd;dz.innerHTML=hd;}
-  const vz=bar.querySelector('.lj-esc-vz');const tv=T('ljEscVazio');if(vz.dataset.t!==tv+lang()){vz.dataset.t=tv+lang();vz.textContent=tv;legLegenda(vz);} // 24/11: a barra é atualizada fora do render; a legenda em português entra aqui tambémif(vz.hidden!==!!ch.length)vz.hidden=!!ch.length;
+  const vz=bar.querySelector('.lj-esc-vz');const tv=T('ljEscVazio');if(vz.dataset.t!==tv+lang()){vz.dataset.t=tv+lang();vz.textContent=tv;legLegenda(vz);} /* 24/11: a barra é atualizada fora do render; a legenda em português entra aqui também */if(vz.hidden!==!!ch.length)vz.hidden=!!ch.length;
   const al=T('ljEscLista');if(bar.getAttribute('aria-label')!==al)bar.setAttribute('aria-label',al);
   if(!l.dataset.on){l.dataset.on='1';l.addEventListener('scroll',()=>ljEscSombra(l),{passive:true});}
   // esc-col: a barra começa abaixo do canto de cima e termina acima do primeiro controle de baixo (logo, "N / total", setas, Continuar), medidos aqui
@@ -10982,6 +10982,7 @@ const EQ={
   po_nao_quer:["não quer","not wanted","no la quiere","pas voulue","nicht gewünscht"],
   po_favorita:["favorita","favorite","favorita","favorite","Favorit"],
   po_escolhida:["escolhida","chosen","elegida","choisie","ausgewählt"],
+  po_sem_fotos:["Sessão sem fotos","Session with no photos","Sesión sin fotos","Session sans photos","Sitzung ohne Fotos"],
   po_foto_de:[(i,n)=>`Foto ${i} de ${n}`,(i,n)=>`Photo ${i} of ${n}`,(i,n)=>`Foto ${i} de ${n}`,(i,n)=>`Photo ${i} sur ${n}`,(i,n)=>`Foto ${i} von ${n}`],
   po_pkg_pag:["Pacote e pagamento","Package and payment","Paquete y pago","Forfait et paiement","Paket und Zahlung"],
   po_esp_pag:["Esperando o pagamento","Waiting for payment","Esperando el pago","En attente du paiement","Warten auf Zahlung"],
