@@ -36,8 +36,9 @@ async function agente(ctx,R){
 const espera=async(pg,fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||8000)){if(await pg.evaluate(fn,arg).catch(()=>false))return true;await pg.waitForTimeout(100);}return false;};
 (async()=>{const b=await chromium.launch();
 const nova=async(opts)=>{const ctx=await b.newContext(Object.assign({viewport:{width:1366,height:900},locale:'pt-BR'},opts||{}));await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());const R={};await agente(ctx,R);const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));return {ctx,pg,R};};
+// 24/11 (integração v99.43): com a máquina carregada o login e o 1º /status passam dos 350 ms do _entrar e dos 8 s; espera os dois
 const entrar=async(pg,email,admin)=>{await pg.goto(U);await pg.waitForTimeout(300);if(admin)email=await entrarTeste.adminFicticio(pg);await entrarTeste(pg,email);
-  await espera(pg,()=>ETERNA.state.agent.on,8000);};
+  await espera(pg,()=>!!ETERNA.state.user,15000);await espera(pg,()=>ETERNA.state.agent.on,20000);};
 try{
   // ---------- Admin: abas, interruptor, carregar, teclado ----------
   {const {ctx,pg,R}=await nova();await entrar(pg,null,true);
