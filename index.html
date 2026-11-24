@@ -8129,13 +8129,25 @@ async function trAnalise(k,v){if(state.assumido){toast(TE('vc_so_ver'));return;}
   t.cfgVoo=false;render();}
 // 24/11: o interruptor de duas posições (Ligado = ligada, Desligado = medir; a tela nunca manda desligada). Ligar o ponto abaixo da
 // meta passa pelo "ligar mesmo assim" (trForcar, com a confirmação); desligar o ponto ligado pede confirmação (regra do Eduardo, 23/11)
-function trCfgMuda(k,on){if(state.assumido){toast(TE('vc_so_ver'));return;}const t=state.train;
+function trCfgMuda(k,on,v){if(state.assumido){toast(TE('vc_so_ver'));return;}const t=state.train;
   if(!isAdminUser(state.user)){toast(TE('tr_cfg_so_admin'));return;} // 24/11 (Eduardo, 11:04): só o Admin; o servidor confere de novo pela sessão
   if(k==='ajuste'){if((SIM.autoAj!==false)!==!!on)ajAutoSet(!!on);return;} // fica no SIM (sim/autoAj), como antes
+  if(k==='bases'){trBases(v);return;}
   if(!['ponto','exposicao'].includes(k)||!trAg()||t.cfgVoo||t.med.forcando)return;
   const tr=state.agent.treino||{};const de=(tr.analise||{})[k]||null;const mp=tr.modelo_ponto||{};
   if(on){if(de==='ligada')return;if(k==='ponto'&&!mp.criterio_passa){trForcar();return;}trAnalise(k,'ligada');return;}
   if(de==='medir')return;if(k==='ponto'&&de==='ligada'&&!confirm(TE('tr_cfg_desl_conf')))return;trAnalise(k,'medir');}
+// 24/11 (bases melhores): "As duas melhores" | "As duas primeiras". Só manda {bases}; o servidor confere o Admin pela sessão e
+// guarda quem trocou. Vale para as próximas sessões (as fechadas não mudam).
+async function trBases(v){const u=trAg();const t=state.train;const bs=(state.agent.treino||{}).bases;
+  if(!u||!bs||typeof bs!=='object'||bs.forcada||!['melhores','primeiras'].includes(v)||t.cfgVoo||t.med.forcando)return;
+  const de=bs.modo==='primeiras'?'primeiras':'melhores';if(de===v)return;
+  t.cfgVoo=true;render();
+  try{const {r,j}=await trCfgPost(u,{bases:v});
+    if(r.ok&&j&&j.bases===v){const a=state.agent.treino;if(a)a.bases=Object.assign({},a.bases||{},{modo:v});
+      auditLog('treino_analise','config/treino',[{campo:'bases',de,para:v}]);toast(TE('tr_analise_ok'));}
+    else if(r.status!==429)toast(TE('tr_analise_erro'));}catch(e){toast(TE('tr_analise_erro'));}
+  t.cfgVoo=false;render();}
 const trPontoTxt=k=>TEk('tr_p_'+k,k);
 // 18/11 (Eduardo, ligar já): "Ligar mesmo assim" na Medição. Abaixo do critério, quem tem configuracao.u liga o reconhecimento
 // com forcar; o servidor congela as marcações de agora, grava quem ligou e o acerto daquele momento (liga_log) e responde 409
@@ -8293,7 +8305,12 @@ function trCfgPanel(){if(!canView('ia-auto'))return '';const t=state.train;
   const srv=!ag?`<div class="note tr-cfg-sem">${TE('tr_sem_servidor')}</div>`:!an?`<div class="note tr-cfg-sem">${TE('tr_an_sem')}</div>`:linha('ponto')+linha('exposicao')+`<div class="note">${TE('tr_an_nota')}</div>`;
   const aj=SIM.autoAj!==false?'ligada':'medir';const ap=SIM.autoAjPor;
   const ajuste=bloco('ajuste',pode?seg('ajuste',aj,false):trCfgPilula(aj),TE('mf_aj_nota'),ap&&ap.nome?`<div class="note" id="aj-auto-por"><b>${TE('mf_aj_por',ap.on,esc(ap.nome),hhmm(new Date(ap.em)))}</b></div>`:'');
-  return `<div class="panel tr-an" id="tr-cfg">${srv}${ajuste}</div>`;}
+  // 24/11 (bases melhores): de quais fotos do gramado saem os fundos de IA (config/treino.bases, pelo /status.treino.bases; servidor
+  // antigo não manda e a linha não aparece). Só o Admin vê os botões; ETERNA_BASES=primeiras no servidor (forcada) trava a escolha.
+  const bs=ag&&tr&&tr.bases&&typeof tr.bases==='object'?tr.bases:null;const bm=bs?(bs.modo==='primeiras'?'primeiras':'melhores'):null;
+  const segB=()=>`<span class="seg" role="group" aria-label="${esc(TE('tr_an_bases'))}">${['melhores','primeiras'].map(v=>`<button class="chip" data-act="tr-cfg" data-k="bases" data-v="${v}" aria-pressed="${bm===v}" ${voo||bs.forcada?'disabled':''}>${TE('tr_cfg_bases_'+v)}</button>`).join('')}</span>`;
+  const bases=bs?bloco('bases',pode?segB():`<span class="pill neutral">${TE('tr_cfg_bases_'+bm)}</span>`,TE('tr_cfg_bases_nota')):'';
+  return `<div class="panel tr-an" id="tr-cfg">${srv}${ajuste}${bases}</div>`;}
 function vIaAuto(){return `<div class="head"><div><div class="eyebrow">${TE('g_configuracoes')}</div><h1>${esc(viewLabel('ia-auto'))}</h1><div class="note">${TE('ia_auto_nota')}</div></div></div>${trCfgPanel()}${lxCfgPanel()}`;}
 function vTreinoMarcar(){const t=state.train;const ag=trAg();
   if(!ag)return `<div class="panel"><div class="note">${TE('tr_sem_servidor')}</div></div>`;
@@ -10500,6 +10517,10 @@ const EQ={
   ia_auto_nota:["As chaves que a IA usa sozinha, num lugar só. Só o Admin liga e desliga; os outros veem como estão.", "The switches the AI uses on its own, in one place. Only the Admin turns them on and off; everyone else sees their state.", "Las llaves que la IA usa sola, en un solo lugar. Solo el Admin las activa y apaga; los demás ven cómo están.", "Les interrupteurs que l'IA utilise seule, au même endroit. Seul l'Admin les active et les désactive ; les autres voient leur état.", "Die Schalter, die die KI selbst nutzt, an einem Ort. Nur der Admin schaltet sie ein und aus; alle anderen sehen den Zustand."],
   tr_cfg_so_admin:["Só o Admin muda a IA automática.", "Only the Admin changes Automatic AI.", "Solo el Admin cambia la IA automática.", "Seul l'Admin modifie l'IA automatique.", "Nur der Admin ändert die automatische KI."],
   tr_an_ajuste:["Ajuste automático das fotos", "Automatic photo adjustment", "Ajuste automático de las fotos", "Ajustement automatique des photos", "Automatische Fotoanpassung"],
+  tr_an_bases:["Escolha das fotos dos fundos de IA", "Choice of photos for the AI backgrounds", "Elección de las fotos de los fondos de IA", "Choix des photos des fonds IA", "Auswahl der Fotos für die KI-Hintergründe"],
+  tr_cfg_bases_melhores:["As duas melhores", "The two best", "Las dos mejores", "Les deux meilleures", "Die zwei besten"],
+  tr_cfg_bases_primeiras:["As duas primeiras", "The first two", "Las dos primeras", "Les deux premières", "Die ersten zwei"],
+  tr_cfg_bases_nota:["As duas melhores: entre as 8 primeiras fotos do gramado de cada sessão, o servidor usa as duas de maior nota (corpo, luz, nitidez e rostos). As duas primeiras: usa as duas primeiras que servem, como antes. A troca vale para as próximas sessões. As que já fecharam não mudam.", "The two best: among the first 8 pitch photos of each session, the server uses the two with the highest score (body, light, sharpness and faces). The first two: it uses the first two that qualify, as before. The change applies to the next sessions. Sessions already closed do not change.", "Las dos mejores: entre las 8 primeras fotos del césped de cada sesión, el servidor usa las dos de mayor nota (cuerpo, luz, nitidez y rostros). Las dos primeras: usa las dos primeras que sirven, como antes. El cambio vale para las próximas sesiones. Las que ya cerraron no cambian.", "Les deux meilleures : parmi les 8 premières photos de la pelouse de chaque session, le serveur utilise les deux mieux notées (corps, lumière, netteté et visages). Les deux premières : il utilise les deux premières qui conviennent, comme avant. Le changement vaut pour les prochaines sessions. Celles déjà fermées ne changent pas.", "Die zwei besten: Unter den ersten 8 Rasenfotos jeder Sitzung nutzt der Server die zwei mit der höchsten Bewertung (Körper, Licht, Schärfe und Gesichter). Die ersten zwei: Er nutzt die ersten zwei geeigneten, wie bisher. Die Änderung gilt für die nächsten Sitzungen. Bereits geschlossene ändern sich nicht."],
   mf_aj_onde:["Liga e desliga em Configurações › IA automática, só pelo Admin.", "Switched on and off in Settings › Automatic AI, by the Admin only.", "Se activa y apaga en Configuración › IA automática, solo el Admin.", "S'active et se désactive dans Paramètres › IA automatique, par l'Admin uniquement.", "Ein- und Ausschalten unter Einstellungen › Automatische KI, nur durch den Admin."],
   tr_ponto_nota:["Só as fotos do Gramado podem virar fundo de IA. Os outros pontos ensinam o servidor a reconhecer o que não é gramado.", "Only Pitch photos can become AI backgrounds. The other spots teach the server what is not the pitch.", "Solo las fotos del Césped pueden convertirse en fondo de IA. Los otros puntos le enseñan al servidor lo que no es césped.", "Seules les photos de la Pelouse peuvent devenir un fond IA. Les autres points apprennent au serveur ce qui n'est pas la pelouse.", "Nur Rasenfotos können zu KI-Hintergründen werden. Die anderen Spots zeigen dem Server, was nicht Rasen ist."],
   tr_qual_nota:["Vale para a foto como ela é: foco, luz, olhos, enquadramento. Não muda nada nos fundos de IA.", "About the photo itself: focus, light, eyes, framing. It changes nothing in the AI backgrounds.", "Se trata de la foto en sí: foco, luz, ojos, encuadre. No cambia nada en los fondos de IA.", "Concerne la photo elle-même : netteté, lumière, yeux, cadrage. Cela ne change rien aux fonds IA.", "Es geht um das Foto selbst: Schärfe, Licht, Augen, Bildausschnitt. An den KI-Hintergründen ändert das nichts."],
@@ -13499,7 +13520,7 @@ document.addEventListener('click',e=>{
     case 'tr-prev':trIr(state.train.j-1);break;
     case 'tr-next':trIr(state.train.j+1);break;
     case 'tr-go':trIr(+d.i);break;
-    case 'tr-cfg':trCfgMuda(d.k,d.v==='on');break;
+    case 'tr-cfg':trCfgMuda(d.k,d.v==='on',d.v);break;
     case 'tr-cfg-abrir':go('ia-auto');break;
     case 'tr-forcar':trForcar();break;
     case 'sales-csv':{const rows=allSales();const blob=new Blob(['\ufeff'+salesCSV(rows)],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='eterna-vendas.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},500);toast(`CSV com ${rows.length} vendas`);break;}
