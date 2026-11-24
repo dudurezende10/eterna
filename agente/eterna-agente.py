@@ -15325,9 +15325,17 @@ def _luz_cinza(img, x0=0, y0=0, x1=None, y1=None, passo=1):
     return g.astype(np.uint8)
 
 
+def _luz_centro(w, h):
+    """A região central onde fica a pessoa (24/11, Lixeira da IA): 30% a 70% da largura, 25% a 90% da altura -> (x0, y0, x1, y1)."""
+    x0, y0 = int(w * 0.3), int(h * 0.25)
+    return x0, y0, max(x0 + 1, int(w * 0.7)), max(y0 + 1, int(h * 0.9))
+
+
 def luz_medir(img, caixas=None, src="original"):
-    """img BGR (numpy) e caixas dos rostos (x, y, l, a) nas coordenadas dela -> {v, src, q:{med,p5,p95,alto,baixo},
-    r:{med,p95,alto,n}|None}. q = os 60% centrais do quadro (o céu fica de fora); r = o maior rosto com a caixa 10% maior."""
+    """img BGR (numpy) e caixas dos rostos (x, y, l, a) nas coordenadas dela -> {v, src, q:{med,p5,p95,alto,baixo,c_med},
+    r:{med,p95,alto,n}|None}. q = os 60% centrais do quadro (o céu fica de fora); r = o maior rosto com a caixa 10% maior.
+    q.c_med (24/11) = MÉDIA aritmética da luminância na região central (_luz_centro), com 1 casa; as medidas gravadas antes
+    não têm a chave (quem lê trata a falta como "não se sabe"; LUZ_V não sobe para a varredura não medir tudo de novo)."""
     np = _vis_np()
     h, w = img.shape[:2]
     y0, y1 = int(h * 0.2), max(int(h * 0.2) + 1, int(h * 0.8))
@@ -15335,6 +15343,9 @@ def luz_medir(img, caixas=None, src="original"):
     passo = 2 if (y1 - y0) * (x1 - x0) > 2_000_000 else 1     # o histograma não precisa de todos os pixels
     c = _luz_cinza(img, x0, y0, x1, y1, passo)
     q = _luz_hist(np.bincount(c.ravel(), minlength=256).tolist())
+    if q:
+        cx0, cy0, cx1, cy1 = _luz_centro(w, h)
+        q["c_med"] = round(float(_luz_cinza(img, cx0, cy0, cx1, cy1, passo).mean()), 1)
     r = None
     cs = [b for b in (caixas or []) if b and len(b) >= 4 and b[2] > 0 and b[3] > 0]
     if cs:
@@ -15359,9 +15370,20 @@ def luz_medir_pil(caminho):
         except Exception:
             pass
         g = im.convert("L")
+        try:        # 24/11: a região central (c_med) não é simétrica na altura; o Pillow não gira pelo EXIF sozinho (o cv2.imread gira)
+            giro = {3: Image.ROTATE_180, 6: Image.ROTATE_270, 8: Image.ROTATE_90}.get(im.getexif().get(0x0112))
+            if giro is not None:
+                g = g.transpose(giro)
+        except Exception:
+            pass
         w, h = g.size
-        g = g.crop((int(w * 0.2), int(h * 0.2), max(int(w * 0.2) + 1, int(w * 0.8)), max(int(h * 0.2) + 1, int(h * 0.8))))
-        return {"v": LUZ_V, "src": "original", "q": _luz_hist(g.histogram()[:256]), "r": None}
+        q = _luz_hist(g.crop((int(w * 0.2), int(h * 0.2), max(int(w * 0.2) + 1, int(w * 0.8)), max(int(h * 0.2) + 1, int(h * 0.8)))).histogram()[:256])
+        if q:
+            hc = g.crop(_luz_centro(w, h)).histogram()[:256]
+            nc = sum(hc)
+            if nc:
+                q["c_med"] = round(sum(i * x for i, x in enumerate(hc)) / nc, 1)
+        return {"v": LUZ_V, "src": "original", "q": q, "r": None}
 
 
 def luz_medir_arquivo(caminho, det=None):
@@ -15865,10 +15887,16 @@ def luz_medida(forcar=False, lim=None):
 # a foto fica fora da lixeira. ETERNA_LIXEIRA=0 desliga a medida e qualquer efeito. Nada sai do servidor.
 LX_V = 1
 LX_MOTIVOS = ("escura", "estourada", "desfocada", "sem_ninguem")      # ordem fixa: a tela mostra o primeiro
-LX_LIM_PADRAO = {"esc_rosto_med": 22, "esc_quadro_med": 18, "esc_quadro_baixo": 60,
-                 "est_rosto_p95": 254, "est_rosto_alto": 40, "est_quadro_med": 235, "est_quadro_alto": 50,
+# 24/11 (Eduardo: foto toda lavada e contraluz em silhueta ficavam fora). Nas 571 fotos medidas no servidor, a medida do
+# quadro nunca chegava a 235, então "estourada pelo quadro" não disparava: est_quadro_med 235 -> 190 e est_quadro_alto 50 -> 30
+# (med = mediana e alto = % de pixels >= 250, os dois nos 60% centrais), agora COM ou SEM rosto. "Escura pelo centro": esc_centro_med = média da região
+# central (q.c_med) abaixo de 30, quando não há rosto medido ou o rosto tem mediana abaixo de LX_ESC_CENTRO_ROSTO.
+LX_LIM_PADRAO = {"esc_rosto_med": 22, "esc_quadro_med": 18, "esc_quadro_baixo": 60, "esc_centro_med": 30,
+                 "est_rosto_p95": 254, "est_rosto_alto": 40, "est_quadro_med": 190, "est_quadro_alto": 30,
                  "nit_rosto": 25, "nit_quadro_com_rosto": 25, "nit_quadro": 20, "sem_brutos": 0}
-LX_FAIXAS = {"esc_rosto_med": (1, 80), "esc_quadro_med": (1, 80), "esc_quadro_baixo": (1, 100),
+LX_LIM_ANTIGO = {"est_quadro_med": 235, "est_quadro_alto": 50}   # o padrão até a v99.47.5: gravado assim = ninguém mexeu = vale o padrão novo
+LX_ESC_CENTRO_ROSTO = 40     # rosto com mediana a partir daqui está iluminado (flash, roupa preta): o centro escuro não conta
+LX_FAIXAS = {"esc_rosto_med": (1, 80), "esc_quadro_med": (1, 80), "esc_quadro_baixo": (1, 100), "esc_centro_med": (1, 80),
              "est_rosto_p95": (200, 255), "est_rosto_alto": (1, 100), "est_quadro_med": (150, 255), "est_quadro_alto": (1, 100),
              "nit_rosto": (1, 1000), "nit_quadro_com_rosto": (1, 1000), "nit_quadro": (1, 1000), "sem_brutos": (0, 1)}
 LX_CRIT = {"n": 20, "precisao": 0.95}
@@ -15910,12 +15938,12 @@ def _lx_nitidez(cinza):
 def lx_medir(img, caixas, n, nb, luz=None):
     """img BGR (numpy, a do leitor), caixas dos rostos (x, y, l, a) nas coordenadas dela, n = rostos de tamanho normal, nb =
     rostos achados em qualquer tamanho (None = não se sabe), luz = medida do luz_medir (sem ela, mede aqui). -> dados (só
-    números): {v, nq, nr, n, nb, luz:{q:{med,alto,baixo,p95}, r:{med,p95,alto}|None}}. nq/nr = variância do Laplaciano do
+    números): {v, nq, nr, n, nb, luz:{q:{med,alto,baixo,p95,c_med}, r:{med,p95,alto}|None}}. nq/nr = variância do Laplaciano do
     quadro central (60%, lado maior a LX_QUADRO_LADO) e do maior rosto (caixa 10% maior, na mesma escala do quadro); None sem
     OpenCV (falha aberta: sem veredito de desfoque)."""
     luz = luz if isinstance(luz, dict) else luz_medir(img, caixas)
     q, r = luz.get("q") or None, luz.get("r") or None
-    lz = {"q": {k: q.get(k) for k in ("med", "alto", "baixo", "p95")} if isinstance(q, dict) else None,
+    lz = {"q": {k: q.get(k) for k in ("med", "alto", "baixo", "p95", "c_med")} if isinstance(q, dict) else None,
           "r": {k: r.get(k) for k in ("med", "p95", "alto")} if isinstance(r, dict) else None}
     nq = nr = None
     cv2 = _cv.get("cv2")
@@ -15943,8 +15971,9 @@ def lx_medir(img, caixas, n, nb, luz=None):
 
 def lx_classe(dados, lim=None):
     """dados (lx_medir, ou só {luz} para as fotos medidas antes) -> lista de motivos na ordem de LX_MOTIVOS (vazia = ok).
-    Campo que falta não dá motivo (falha aberta)."""
-    lim = lim or LX_LIM_PADRAO
+    Campo que falta não dá motivo (falha aberta): medida antiga sem q.c_med não dispara a "escura pelo centro"; lim antigo
+    sem um limite usa o do padrão."""
+    lim = dict(LX_LIM_PADRAO, **lim) if lim else LX_LIM_PADRAO
     if not isinstance(dados, dict):
         return []
     out = set()
@@ -15959,10 +15988,20 @@ def lx_classe(dados, lim=None):
         elif isinstance(q, dict) and q.get("med") is not None:
             if q["med"] < lim["esc_quadro_med"] and q["baixo"] >= lim["esc_quadro_baixo"]:
                 out.add("escura")
-            if q["med"] >= lim["est_quadro_med"] and q["alto"] >= lim["est_quadro_alto"]:
-                out.add("estourada")
     except (KeyError, TypeError):
         pass
+    if isinstance(q, dict):
+        try:        # 24/11: quadro lavado (estourada pelo quadro), com ou sem rosto
+            if q["med"] >= lim["est_quadro_med"] and q["alto"] >= lim["est_quadro_alto"]:
+                out.add("estourada")
+        except (KeyError, TypeError):
+            pass
+        try:        # 24/11: contraluz (escura pelo centro), só sem rosto medido ou com o rosto também escuro
+            com_rosto = isinstance(r, dict) and r.get("med") is not None
+            if q.get("c_med") is not None and (not com_rosto or r["med"] < LX_ESC_CENTRO_ROSTO) and q["c_med"] < lim["esc_centro_med"]:
+                out.add("escura")
+        except (KeyError, TypeError):
+            pass
     nq, nr = dados.get("nq"), dados.get("nr")
     if isinstance(nq, (int, float)):
         if isinstance(nr, (int, float)):
@@ -16017,7 +16056,11 @@ def lx_cfg():
                 finally:
                     db.close()
             if r:
-                v = lx_cfg_valida(json.loads(r[0]))
+                j = json.loads(r[0])
+                lj = j.get("lim") if isinstance(j, dict) else None
+                if isinstance(lj, dict) and all(lj.get(k) == x for k, x in LX_LIM_ANTIGO.items()):
+                    j = dict(j, lim={k: x for k, x in lj.items() if k not in LX_LIM_ANTIGO})   # 24/11: padrão antigo gravado = padrão novo
+                v = lx_cfg_valida(j)
     except Exception:
         v = _lx_cfg["v"]
     if v and v["modo"] == "ligada" and not LX_LIGADO_PRONTO:

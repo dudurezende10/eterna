@@ -57,7 +57,7 @@ try:
         v = m.luz_medir(b, [(400, 300, 100, 120), (10, 10, 20, 20)])
         ok(v["r"] and v["r"]["med"] == 150 and cl(v) == "ok", "5 (%s): céu estourado com rosto bom = ok: %r" % (tag, v))
         # o maior rosto vale; caixa 10% maior; formato só de números
-        ok(v["r"]["n"] >= 100 * 120 and set(v) == {"v", "src", "q", "r"} and v["src"] == "original" and set(v["q"]) == {"med", "p5", "p95", "alto", "baixo"}
+        ok(v["r"]["n"] >= 100 * 120 and set(v) == {"v", "src", "q", "r"} and v["src"] == "original" and set(v["q"]) == {"med", "p5", "p95", "alto", "baixo", "c_med"}
            and all(isinstance(x, (int, float)) for x in list(v["q"].values()) + list(v["r"].values())), "formato (%s): %r" % (tag, v))
         # foto escura de verdade: o rosto escuro (med abaixo de 50) é escura mesmo com fundo claro
         c = img(200)
@@ -78,6 +78,8 @@ try:
             if c.size > 2_000_000:
                 c = c[::2, ::2]
             qref = m._luz_hist(np.bincount(c.ravel(), minlength=256).tolist())
+            cc = g[int(hh * 0.25):int(hh * 0.9), int(ww * 0.3):int(ww * 0.7)]      # 24/11: região central (média), no mesmo passo
+            qref["c_med"] = round(float((cc[::2, ::2] if (y1 - y0) * (x1 - x0) > 2_000_000 else cc).mean()), 1)
             x, y, l, a_ = cx
             fx0, fy0, fx1, fy1 = max(0, int(x - l * 0.05)), max(0, int(y - a_ * 0.05)), min(ww, int(x + l * 1.05) + 1), min(hh, int(y + a_ * 1.05) + 1)
             hr = np.bincount(g[fy0:fy1, fx0:fx1].ravel(), minlength=256).tolist()
@@ -102,6 +104,17 @@ try:
         Image.new("RGB", (300, 200), (cor, cor, cor)).save(f, "JPEG", quality=90)
         v = m.luz_medir_pil(f)
         ok(v["src"] == "original" and v["r"] is None and cl(v) == esp, "Pillow %d = %s: %r" % (cor, esp, v))
+        ok(abs(v["q"]["c_med"] - cor) <= 2, "Pillow %d: c_med (média da região central): %r" % (cor, v["q"]))
+    # 24/11: a região central não é simétrica na altura; foto deitada no arquivo com EXIF 6 (em pé) mede como a já girada
+    em_pe = Image.new("L", (200, 300), 10)
+    em_pe.paste(240, (0, 0, 200, 75))                 # céu claro nos 25% de cima, o resto escuro
+    f1, f2 = os.path.join(os.environ["HOME"], "pe.jpg"), os.path.join(os.environ["HOME"], "pe-exif.jpg")
+    em_pe.convert("RGB").save(f1, "JPEG", quality=95)
+    ex = Image.Exif()
+    ex[0x0112] = 6
+    em_pe.convert("RGB").transpose(Image.ROTATE_90).save(f2, "JPEG", quality=95, exif=ex)
+    c1, c2 = m.luz_medir_pil(f1)["q"]["c_med"], m.luz_medir_pil(f2)["q"]["c_med"]
+    ok(c1 < 20 and abs(c1 - c2) <= 2, "Pillow: c_med respeita a rotação do EXIF: %r x %r" % (c1, c2))
     # os limites da config valem: subir quadro_med_baixo põe o cinza escuro em escura
     d = img(60)
     v = m.luz_medir(d)
