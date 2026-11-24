@@ -307,6 +307,7 @@ prontas da AWS, começando só contando.
 - Para ligar: chave da Imply em `/eterna/imply-chave` (SSM, SecureString) e deploy com `CompraOnline=1 ImplyChaveParametro=/eterna/imply-chave`; desligar é o mesmo deploy com `CompraOnline=0`. Antes, os produtos da venda online no Catálogo têm de estar marcados como online e com o `idproduto` da Imply.
 - 24/11 (v99.40.0): catálogo online só com a Foto digital avulsa = produto da Imply "1 foto (adicional) digital ou impressa", R$ 35; a nuvem aceita pedido sem pacote. Precisa de novo deploy da `eterna-galeria`.
 - 24/11: nuvem atualizada de novo com a v99.40.0 e chave da Imply gravada pelo Ronaldo em `/eterna/imply-chave` (versão 1). Compra ainda desligada até o teste.
+- 24/11 ~01h30: primeiro teste real: o pedido chega à Imply e o setPessoa responde `{"code": 0, "message": "Sem permissão"}`. A chave gravada não tem permissão para criar pessoa/carrinho; falta a Imply liberar o setPessoa (e o GetCart) para essa chave ou passar a chave do usuário de serviço certo.
 - Falta: compra de teste real (paga e cancelada na Imply) para fechar.
 
 ## 10. Antes da produção
