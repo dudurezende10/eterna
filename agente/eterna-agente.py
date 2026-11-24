@@ -9332,7 +9332,7 @@ def auth_quem(token):
 # ASSUMIR_S. A sessão do admin fica guardada no cookie ASSUMIR_COOKIE e volta com /auth/voltar.
 ASSUMIR_S = 4 * 3600
 ASSUMIR_COOKIE = "eterna_sessao_adm"
-ASSUMIR_LIVRES = ("/auth/voltar", "/auth/sair")
+ASSUMIR_LIVRES = ("/auth/voltar", "/auth/sair", "/auth/entrar")   # entrar (com senha) encerra o "ver como" deste navegador
 
 
 def auth_assumir_recusa(eu, usuario):
@@ -18919,7 +18919,14 @@ class H(BaseHTTPRequestHandler):
             situacao = "ok"
         elif situacao == "provisoria":
             return self.js({"ok": False, "troca": True}, 200, True)
+        # sessão anterior encerrada ao entrar: a deste navegador (e a do Admin guardada no "ver como") não fica valendo ao lado da nova
+        auth_sessao_apaga(self.auth_token())
+        adm_tok = self.cookie_val(ASSUMIR_COOKIE)
+        if adm_tok:
+            auth_sessao_apaga(adm_tok)
         self.auth_cookie(auth_sessao_nova(usuario), AUTH_SESSAO)
+        if adm_tok:
+            self.auth_cookie("", 0, ASSUMIR_COOKIE)
         return self.js(dict(dados, ok=True), 200, True)
 
     def ativ_post(self, rota):

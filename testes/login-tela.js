@@ -5,6 +5,70 @@ const {chromium}=require('playwright');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';
 const servidorRotas=pg=>pg.route('**/auth/esqueci',r=>r.fulfill({status:200,contentType:'application/json',body:'{"ok":true}'}));
 const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};
+// Troca de pessoa no mesmo navegador (revisão 24/11): resposta 401 atrasada da pessoa anterior não encerra a sessão de quem entrou
+// depois; no Sair, a fila do Treino só sobe a foto que o Sair espera; 403 so_ver/origem deixa a marcação na fila; /auth/sair sem
+// resposta deixa a marca eterna.auth.sair e é repetido antes do próximo Entrar e ao abrir. Servidor falso com um "cookie" só.
+async function trocaDePessoa(b){const J=JSON.stringify;
+  const ctx=await b.newContext({viewport:{width:1280,height:900}});await ctx.route(/fonts\.(googleapis|gstatic)\.com/,r=>r.abort());
+  const U0=new URL(U).origin;const js=(r,x,st)=>r.fulfill({status:st||200,contentType:'application/json',body:J(x)});
+  const S={cookie:null,sair:[],entrar:[],rot:[],ord:[],sairFalha:false,rotSt:null};
+  await ctx.route(U0+'/status',r=>js(r,{ok:true,agent:'eterna-agente',version:3,boot:'bT',rostos:{ligado:true},sessoes:{v:2,pausa:60,rostos:true,rev:1,gen:'gT',hoje:0,abertas:0},treino:{v:1,rotulos:0,analise:{ponto:'desligada',exposicao:'desligada'},modelo_ponto:null,ajuste:null}}));
+  for(const p of ['/events*','/biblioteca','/sessoes*','/fila-fotografo','/ponto/docs/revs','/ponto/docs?*','/ponto/docs','/treino/dias','/postos/eu'])
+    await ctx.route(U0+p,r=>js(r,{ok:true,events:[],fotos:[],sessoes:[],grupos:[],revs:{},docs:[],dias:[]}));
+  // a sessão que vale é a do "cookie" na chegada do pedido; o servidor responde devagar
+  await ctx.route(U0+'/treino/rotulo',async r=>{const quem=S.cookie,pid=r.request().postDataJSON().pid;S.rot.push({pid,quem});S.ord.push('rotulo:'+pid);await new Promise(ok=>setTimeout(ok,700));
+    if(S.rotSt)return js(r,S.rotSt[1],S.rotSt[0]);if(!quem)return js(r,{erro:'sem_sessao'},401);js(r,{ok:true,doc:{v:1,pid,em:'x'}});});
+  await ctx.route(U0+'/treino/amostra?*',async r=>{const quem=S.cookie;await new Promise(ok=>setTimeout(ok,1500));if(!quem)return js(r,{erro:'sem_sessao'},401);js(r,{v:1,itens:[]});});
+  const pg=await ctx.newPage();pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(e.message));
+  await pg.route('**/auth/*',async r=>{const p=new URL(r.request().url()).pathname;let c={};try{c=r.request().postDataJSON()||{}}catch(e){}
+    if(p==='/auth/sair'){S.ord.push('sair');if(S.sairFalha)return r.abort();S.sair.push(S.cookie);S.cookie=null;return js(r,{ok:true});}
+    if(p==='/auth/entrar'){S.ord.push('entrar');S.cookie=String(c.usuario).toLowerCase();S.entrar.push(S.cookie);return js(r,{ok:true,usuario:S.cookie});}
+    if(p==='/auth/eu')return S.cookie?js(r,{ok:true,usuario:S.cookie}):js(r,{erro:'sem_sessao'},401);
+    return js(r,{ok:true});});
+  const A='a.teste@exemplo.com',B='b.teste@exemplo.com';
+  const espera=async(fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||8000)){if(await pg.evaluate(fn,arg).catch(()=>false))return true;await pg.waitForTimeout(80);}return false;};
+  const entrar=async e=>{await pg.fill('[data-act="login-usuario"]',e);await pg.fill('[data-act="login-senha"]','x');await pg.click('button[type=submit]');await espera(e=>ETERNA.state.user&&ETERNA.state.user.email===e,6000,e);};
+  await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(300);
+  await pg.evaluate(([a,b])=>{const U0=JSON.parse(JSON.stringify(ETERNA.USERS));const base=Object.values(U0).find(u=>u&&u.preset==='admin');
+    U0[a]={...base,email:a,name:'A',key:null};U0[b]={...base,email:b,name:'B',key:null};localStorage.setItem('eterna.users.v1',JSON.stringify(U0));},[A,B]);
+  await pg.reload();await pg.waitForTimeout(300);
+  // 1. 401 atrasado de A chega depois que B entrou
+  await entrar(A);await espera(()=>ETERNA.state.agent.on);
+  await pg.evaluate(()=>ETERNA.logout());await espera(()=>!ETERNA.logout.sair,6000);
+  await pg.evaluate(o=>{ETERNA.agFetch(o+'/treino/amostra?dia=2026-11-15&modo=misto&n=150');},U0);await pg.waitForTimeout(50);
+  await entrar(B);await pg.waitForTimeout(2500);
+  ok(await pg.evaluate(()=>ETERNA.state.user&&ETERNA.state.user.email)===B&&S.cookie===B,'1: 401 atrasado de A encerrou a sessão de B: '+J({tela:await pg.evaluate(()=>ETERNA.state.user&&ETERNA.state.user.email),cookie:S.cookie}));
+  ok(J(S.sair)===J([A]),'1: o /auth/sair saiu só uma vez, com a sessão de A: '+J(S.sair));
+  // 2. no Sair de B, a fila do Treino sobe a que estava subindo e a foto que o Sair espera; as outras ficam para B
+  const P=['abc000000101','abc000000102','abc000000103','abc000000104'];
+  await pg.evaluate(([b,P])=>{const t=Date.now();localStorage.setItem(ETERNA.TR_FILA,JSON.stringify(P.slice(0,3).map((pid,i)=>({pid,u:b,t:t+i,corpo:{pid,v:1,ponto:'gramado',ia:{serve:null,motivos:[],frente:null},qual:{nivel:null,motivos:[],ajuste:[]},duvida:false,obs:'',base_em:null}}))));
+    ETERNA.trEnviar();},[B,P]);
+  await espera(()=>ETERNA.trEnviar.on);S.ord.length=0;
+  await pg.evaluate(p=>{const t=ETERNA.state.train;t.rasc[p]={ponto:'arquibancada',nivel:null,motivos:[],duvida:false,obs:'',base:null};t.vendo=p;ETERNA.logout();},P[3]);
+  await espera(()=>!ETERNA.logout.sair,8000);
+  const fila=await pg.evaluate(()=>ETERNA.trFila().map(x=>x.pid));
+  ok(J(S.ord)===J(['rotulo:'+P[3],'sair']),'2: durante o Sair só sobe a foto esperada, antes do /auth/sair: '+J(S.ord));
+  ok(J(fila.sort())===J([P[1],P[2]]),'2: as outras ficam na fila: '+J(fila));
+  ok(S.rot.filter(x=>x.pid===P[3]).every(x=>x.quem===B),'2: a foto esperada subiu com a sessão de B');
+  // 3. 403 so_ver e origem: a marcação fica na fila (como no 401); outro 403 tira
+  await entrar(B);await espera(()=>ETERNA.state.agent.on);await pg.waitForTimeout(2200); // a fila de B sobe ao entrar
+  for(const [st,j,fica] of [[403,{erro:'so_ver'},true],[403,{erro:'origem'},true],[403,{erro:'sem_permissao'},false]]){S.rotSt=[st,j];
+    await pg.evaluate(([b,pid])=>{localStorage.setItem(ETERNA.TR_FILA,JSON.stringify([{pid,u:b,t:Date.now(),corpo:{pid,v:1,ponto:'gramado',ia:{serve:null,motivos:[],frente:null},qual:{nivel:null,motivos:[],ajuste:[]},duvida:false,obs:'',base_em:null}}]));clearTimeout(ETERNA.trEnviar.tm);ETERNA.trEnviar.tm=null;ETERNA.trEnviar();},[B,P[0]]);
+    await pg.waitForTimeout(200);await espera(()=>!ETERNA.trEnviar.on,4000);
+    const n=await pg.evaluate(()=>ETERNA.trFila().length);ok((n===1)===fica,'3: 403 '+j.erro+(fica?' deveria deixar':' deveria tirar')+' a marcação na fila: '+n);}
+  S.rotSt=null;await pg.evaluate(()=>{clearTimeout(ETERNA.trEnviar.tm);ETERNA.trEnviar.tm=null;localStorage.setItem(ETERNA.TR_FILA,'[]');});
+  // 4. /auth/sair sem resposta: a marca fica; antes do próximo Entrar o Sair é repetido (sem travar a entrada)
+  S.sairFalha=true;S.ord.length=0;await pg.evaluate(()=>ETERNA.logout());await espera(()=>!ETERNA.logout.sair,8000);
+  ok(await pg.evaluate(()=>!!localStorage.getItem('eterna.auth.sair')),'4: Sair sem resposta grava a marca');
+  await entrar(A);
+  ok(J(S.ord)===J(['sair','sair','entrar'])&&await pg.evaluate(a=>ETERNA.state.user&&ETERNA.state.user.email===a,A),'4: Sair repetido antes do Entrar, que segue mesmo sem resposta: '+J(S.ord));
+  ok(await pg.evaluate(()=>!localStorage.getItem('eterna.auth.sair')),'4: entrar apaga a marca (o servidor encerra a sessão anterior)');
+  // 5. de novo sem resposta; ao abrir a página (com o servidor respondendo) o Sair é repetido e a marca sai
+  await pg.evaluate(()=>ETERNA.logout());await espera(()=>!ETERNA.logout.sair,8000);
+  ok(await pg.evaluate(()=>!!localStorage.getItem('eterna.auth.sair')),'5: a marca volta');
+  S.sairFalha=false;S.ord.length=0;S.cookie=A;await pg.reload();await espera(()=>!localStorage.getItem('eterna.auth.sair'),6000);
+  ok(J(S.ord)===J(['sair'])&&S.cookie===null&&await pg.evaluate(()=>!localStorage.getItem('eterna.auth.sair')),'5: ao abrir, o Sair pendente é repetido e a marca sai: '+J(S.ord)+' '+S.cookie);
+  await ctx.close();}
 (async()=>{const b=await chromium.launch();
 try{
   const pg=await b.newPage({viewport:{width:1280,height:900}});pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(e.message));
@@ -62,9 +126,10 @@ try{
   ok(/E-mail inválido/.test(await pg.textContent('#toast')),'e-mail inválido é recusado');await pg.fill('[data-act="user-field"][data-k="contato"]','');await pg.click('[data-act="user-save"]');await pg.waitForTimeout(150);
   ok(await pg.evaluate(()=>!!ETERNA.USERS['rafael.melo']),'usuário sem e-mail é cadastrado');
   ok(!/Senha provisória de rafael/.test(await pg.textContent('#main')),'sem Criar em Senhas, o cadastro fica sem senha');
+  await trocaDePessoa(b);
   ok(!errs.length,'erros na página: '+errs.join(' | ').slice(0,300));
 }catch(e){fails.push('exceção: '+e.message.slice(0,300));}
 await b.close();
 if(fails.length){console.log('FALHA login-tela: '+fails.join(' | '));process.exit(1);}
-console.log('OK login-tela: entrada com senha, redesenho, trocar senha, botões por permissão e usuário sem e-mail');
+console.log('OK login-tela: entrada com senha, redesenho, trocar senha, botões por permissão, usuário sem e-mail e troca de pessoa (401 atrasado, fila no Sair, Sair pendente)');
 })();
