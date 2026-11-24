@@ -1556,7 +1556,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.46.2 · 24/11 22:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.47.1 · 24/11 22:05"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2048,7 +2048,17 @@ function pendEscolher(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(!
   auditLog('venda_escolha','venda/'+(r.saleNo||r.id),muda,{n});render();return true;}
 function dinCancelar(id){const r=dinPegar(id);if(!r)return;const antes=JSON.stringify(SIM);
   dinFechar(id,'cancelada','cancelada_no_caixa',state.user);log(pendSemMeio(r)?`Pedido do Checkout cancelado antes da escolha do pacote: ${r.card} por ${state.user.name}`:`${MEIO_NOME[meioDe(r)]} cancelado: ${r.card} ${fmtR(r.total)} por ${state.user.name}`);
-  if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return;}pvCancelEv(r,'cancelada_no_posto');toast(TE('po_cancelada_ok'));render();}
+  if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return;}pvCancelEv(r,'cancelada_no_posto');vcArquivaPendentes();toast(TE('po_cancelada_ok'));render();}
+// 24/11 (Ronaldo): a venda cancelada sai de todas as telas e contagens e a cópia inteira vai para o arquivo das canceladas no servidor
+// (POST /vendas/canceladas, estado.db), de onde a TI recupera quando pedirem. Manda as que ainda não foram (também as de antes de hoje);
+// arq marca a que o servidor já guardou. Sem servidor ou sem permissão, tenta de novo depois.
+let vcArqVai=false;
+async function vcArquivaPendentes(){const u=trAg();if(vcArqVai||!u||!state.user||!(can('venda','c')||can('venda','u')||can('quiosque','c')||can('financeiro','d')))return;vcArqVai=true;
+  const fila=[...Object.entries(SIM.sessions||{}).filter(([c,s])=>s&&s.status==='cancelada'&&!s.arq).map(([c,s])=>({o:s,tipo:'foto',id:s.vendaId||c,no:s.saleNo||c,motivo:(s.cancelada||{}).motivo,por:(s.cancelada||{}).por,em:(s.cancelada||{}).em,dados:{card:c,sessao:s}})),
+    ...(SIM.caixaDin||[]).filter(r=>r&&r.estado==='cancelada'&&!r.arq).map(r=>({o:r,tipo:'pedido',id:r.id,no:r.saleNo||r.id,motivo:r.motivo||null,por:r.por||null,em:r.fechada||r.criada,dados:{pedido:r}}))];
+  let mudou=false;try{for(const x of fila){const {o,...b}=x;try{const r=await agFetch(u+'/vendas/canceladas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});const j=await r.json().catch(()=>null);if(r.ok&&j&&j.ok){o.arq=true;mudou=true;}else if(r.status===429)break;}catch(e){break;}}}
+  finally{vcArqVai=false;}if(mudou)saveSim();}
+setInterval(()=>{if(state.user&&!state.pub)vcArquivaPendentes();},10*60000);setTimeout(()=>{if(state.user&&!state.pub)vcArquivaPendentes();},15000);
 // 18/11 (Ronaldo): cancelar venda de foto já paga. Vendedor: só as próprias vendas do dia (Minhas vendas de hoje). Admin (ou quem
 // tem Excluir no Financeiro): qualquer venda, em Vendas. A venda fica "cancelada" (não some do histórico) e sai dos totais; as compradas
 // voltam a ficar à venda na galeria; a impressão que ainda não saiu para (o servidor tira da fila pelo "cancelar"); o que já imprimiu
@@ -2066,7 +2076,7 @@ function vendaCancelar(card){if(!vendaPodeCancelar(card)){toast(TE('vc_sem'));re
   if(s.impressao&&s.impressao.estado==='pendente')s.impressao.estado='cancelada';
   const toks=galDasSessao(card);toks.forEach(t=>galAtualizar(t));
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return false;}
-  toks.forEach(t=>galPublicar(t));if(s.vendaId)pvEvento('cancelar',s.vendaId,{motivo:'venda_cancelada',obs:mot||null});
+  toks.forEach(t=>galPublicar(t));if(s.vendaId)pvEvento('cancelar',s.vendaId,{motivo:'venda_cancelada',obs:mot||null});vcArquivaPendentes();
   auditLog('venda_cancelada','venda/'+(s.saleNo||card),[{campo:'situação',de:'paga',para:'cancelada'+(mot?' ('+mot+')':'')}]);
   log(`Venda ${s.saleNo||card} cancelada por ${u.name}${mot?' · '+mot:''}`);state.vendaCanc=null;toast(TE('sl_cancelada'));render();return true;}
 const pvCancelEv=(r,motivo)=>{if(r&&r.meio&&(!r.escolha||r.pvCriado))pvEvento('cancelar',r.id,{motivo});}; // v96: pedido do Checkout ainda sem "criar" no servidor não manda cancelar
@@ -2636,8 +2646,8 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards);const rw=can('venda
 // 18/11 (Ronaldo): o pacote de cada venda; o valor só para quem vê o Financeiro (vendedor não vê valor)
 const mvPacote=cart=>(cart||[]).map(x=>DATA.catalog.find(c=>c.id===x.id)).filter(Boolean).map(c=>c.name).join(' + ');
 function minhasVendas(trava){const u=state.user;if(!u)return '';const val=can('financeiro','r');const hoje=todayISO();const rows=[];const vistos=new Set();
-  (SIM.caixaDin||[]).forEach(r=>{if(!r.vendedor||r.vendedor.email!==u.email||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;
-    rows.push({t:r.criada,card:r.card,rec:meu&&r.estado==='confirmada'&&s.status==='paga',no:r.saleNo||'',meio:pendMeioTxt(r),pac:r.pkg?catName(r.pkg):vendaMais(r.card)&&r.n?TE('po_comprar_mais',TE('n_adicionais',r.n)):mvPacote(r.cart),v:pendSemMeio(r)?null:r.total,pag:meu&&s.status==='cancelada'?TE('sl_cancelada')+(vendaCancTxt(s)?' · '+vendaCancTxt(s):''):aberta(r)?TE('mv_aguardando'):r.estado==='confirmada'?TE('st_paga'):r.estado==='nao_paga'?TE('st_nao_paga'):TEk('din_'+r.estado,r.estado),imp:meu&&s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
+  (SIM.caixaDin||[]).forEach(r=>{if(!r.vendedor||r.vendedor.email!==u.email||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;if(r.estado==='cancelada'||(meu&&s.status==='cancelada'))return;
+    rows.push({t:r.criada,card:r.card,rec:meu&&r.estado==='confirmada'&&s.status==='paga',no:r.saleNo||'',meio:pendMeioTxt(r),pac:r.pkg?catName(r.pkg):vendaMais(r.card)&&r.n?TE('po_comprar_mais',TE('n_adicionais',r.n)):mvPacote(r.cart),v:pendSemMeio(r)?null:r.total,pag:aberta(r)?TE('mv_aguardando'):r.estado==='confirmada'?TE('st_paga'):r.estado==='nao_paga'?TE('st_nao_paga'):TEk('din_'+r.estado,r.estado),imp:meu&&s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
   Object.entries(SIM.sessions).forEach(([c,s])=>{if(s.status!=='paga'||!s.vendaId||vistos.has(s.vendaId)||!s.vendedor||s.vendedor.email!==u.email||isoDia(s.paidAt||0)!==hoje)return;
     rows.push({t:s.paidAt,card:c,rec:true,no:s.saleNo||'',meio:pagNome(s.payment||''),pac:mvPacote(s.cart),v:saleTotal(s),pag:TE('st_paga'),imp:s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
   rows.sort((a,b)=>String(b.t).localeCompare(String(a.t)));
@@ -2894,12 +2904,12 @@ function roverPanel(){const r=state.rover;const ok=r&&r.configured;
     <div class="row"><button class="chip" data-act="rv-sync" ${ok?'':'disabled'}>${TE('rx_sync')}</button><span class="note">${TE('rx_dias_cache',r.days||0)}${LIVE?' · '+TE('rx_ao_vivo'):''}</span></div>`:`<div class="note">${TE('rx_abra')}</div>`}</div>`;}
 function liveSales(){const out=[];let n=0;Object.keys(LIVE.days).sort().forEach(d=>{(LIVE.days[d].orders||[]).forEach(o=>{n++;out.push({no:'R'+String(n).padStart(4,'0'),date:d,time:o.time||'',card:o.card,key:o.key||'',pdv:o.pdv||'',seller:nameCase(o.vendor),items:o.products||[],photos:o.photos,prints:o.prints,pay:(o.pay||[]).map(m=>PAY_NAMES[m]||m).join(' + '),total:o.total,status:o.status,est:false});});});return out.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));}
 function allSales(){
-  if(LIVE){const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'||s.status==='cancelada').length||(SIM.caixaDin||[]).some(r=>DIN_LINHA.includes(r.estado))?allSalesSim():[];return [...sim,...liveSales().reverse()];}
+  if(LIVE){const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga').length||(SIM.caixaDin||[]).some(r=>DIN_LINHA.includes(r.estado))?allSalesSim():[];return [...sim,...liveSales().reverse()];}
   return [...allSalesSim(),...DATA.sessions.filter(s=>s.card&&s.sold>0).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(reconSale).reverse()];
 }
 function allSalesSim(){
   const real=[];const _unused=DATA.sessions.filter(s=>s.card&&s.sold>0).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).map(reconSale);
-  const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'||s.status==='cancelada').map(([card,s],i)=>{const items=(s.cart||[]).map(c=>c.id);const pt=DATA.points.find(p=>p.id===s.point);return {no:s.saleNo||('E'+String(i+1).padStart(3,'0')),date:'hoje',time:s.paidAt?hhmm(new Date(s.paidAt)):s.time,card,key:s.key,pdv:s.pdv||(pt?pt.name:''),seller:s.seller||SELLERS[0],items,photos:s.nFotos!=null?s.nFotos:(s.selected||[]).length,prints:simPrints(s),pay:s.payment||'',total:saleTotal(s),status:s.demo&&s.status==='paga'?'teste':s.status,teste:!!s.demo,est:false,canal:'loja',caixa:s.caixaPor||'',caixa_em:s.caixaEm||'',posto:s.posto||'',ref:(s.pag&&s.pag.ref)||'',impressao:impTxt(s),canc:s.status==='cancelada'?vendaCancTxt(s):''};});
+  const sim=Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga').map(([card,s],i)=>{const items=(s.cart||[]).map(c=>c.id);const pt=DATA.points.find(p=>p.id===s.point);return {no:s.saleNo||('E'+String(i+1).padStart(3,'0')),date:'hoje',time:s.paidAt?hhmm(new Date(s.paidAt)):s.time,card,key:s.key,pdv:s.pdv||(pt?pt.name:''),seller:s.seller||SELLERS[0],items,photos:s.nFotos!=null?s.nFotos:(s.selected||[]).length,prints:simPrints(s),pay:s.payment||'',total:saleTotal(s),status:s.demo&&s.status==='paga'?'teste':s.status,teste:!!s.demo,est:false,canal:'loja',caixa:s.caixaPor||'',caixa_em:s.caixaEm||'',posto:s.posto||'',ref:(s.pag&&s.pag.ref)||'',impressao:impTxt(s),canc:s.status==='cancelada'?vendaCancTxt(s):''};});
   // v79: dinheiro do Checkout que ainda não virou venda (aguardando) ou não foi pago (cancelado no caixa, fim do dia). Confirmada e substituída aparecem pela sessão.
   const din=(SIM.caixaDin||[]).filter(r=>DIN_LINHA.includes(r.estado)).map(r=>{const d=new Date(r.criada);const dia=isoDia(d);const so=SIM.sessions[r.card]||{};const ag=aberta(r);
     return {no:r.id,date:dia===todayISO()?'hoje':dia,time:hhmm(d),card:r.card,key:so.key,pdv:so.pdv||'',seller:LOJA_VENDEDOR,items:(r.cart||[]).map(c=>c.id),photos:r.n!=null?r.n:(r.nPh||0)+(r.nAI||0),prints:r.prints||0,pay:pendSemMeio(r)?pendMeioTxt(r):MEIO_NOME[meioDe(r)]+(meioDe(r)==='dinheiro'?'':' · maquininha'),total:pendSemMeio(r)?null:r.total,status:so.demo?'teste':ag?'aguardando':'nao_paga',teste:!!so.demo,est:false,canal:'loja',din:true,dinE:dinEspera(r),posto:r.posto||'',ref:'',impressao:'',
@@ -2908,7 +2918,7 @@ function allSalesSim(){
     return {no:v.id,date:dia===todayISO()?'hoje':dia,time:hhmm(d),card:v.card,key:so.key||(SIM.sessions[v.card]||{}).key,pdv:'Galeria online',seller:'Online',items:v.todas?['mais']:Array(v.n).fill('dig'),photos:v.n,prints:0,pay:v.pay+(v.teste?' (teste)':''),total:v.total,status:v.teste?'teste':(v.status||'paga'),est:false,canal:'online',at:v.at||'',teste:!!v.teste,ref:v.imply||''};});
   return [...din,...sim.reverse(),...on.reverse()];
 }
-const DIN_LINHA=['aguardando','escolha','cancelada','nao_paga'];
+const DIN_LINHA=['aguardando','escolha','nao_paga']; // 24/11: a cancelada vai para o arquivo das canceladas, fora das listas
 function salesCSV(rows){const h=['venda','data','hora','sessao','ponto','fotografo','vendedor','itens','fotos','impressoes','pagamento','total','status','canal','caixa','caixa_em','posto','pagamento_ref','impressao'];const esc2=v=>{let t=String(v);if(/^[=+\-@]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"';};/* N4: célula que começa com = + - @ não vira fórmula */return [h.join(';'),...rows.map(r=>[r.no,r.date,r.time,r.card,r.pdv,P[r.key]?P[r.key].name:r.key,r.seller,r.items.map(catName).join(' + '),r.photos,r.prints,r.pay,r.total==null?'':String(r.total).replace('.',','),r.status,r.canal||'loja',r.caixa||'',r.caixa_em||'',r.posto||'',r.ref||'',r.impressao||''].map(esc2).join(';'))].join('\n');}
 // vendas da Lista de vendas no período e nos filtros da tela (state.sales): a tela e o relatório (relVendasLista) leem daqui
 function salesFiltradas(){
@@ -6128,12 +6138,6 @@ function srvMetSoma(ds){const T={fotos:0,fotos_com_rosto:0,rostos:0,sessoes:0,se
       // v92 (R4): só entra linha com contagem da v1 (sessões, fotos ou vendas); campo só da v2 (1ª foto, tempos) nunca cria linha fantasma nem é somado
       if(!v||typeof v!=='object'||ES_PROIBIDO.has(n)||!['vendas','sessoes','fotos'].some(k=>typeof v[k]==='number'))continue;const a=T[g][n]||(T[g][n]={});for(const [k,x] of Object.entries(v))if(typeof x==='number'&&k!=='conversao'&&k!=='primeira_foto')a[k]=(a[k]||0)+x;}}
   return T;}
-// 18/11 (Ronaldo): cancelamentos de venda paga no período (o servidor guarda quem, quando e o motivo; o valor sai do faturamento)
-const cancLinhas=L=>L.slice().sort((a,b)=>String(b.em||'').localeCompare(String(a.em||''))).map(x=>({em:x.em,no:x.no||x.venda,valor:+x.valor||0,fotos:+x.fotos||0,vendedor:x.vendedor||'',posto:x.posto||'',por:x.por||'',motivo:x.motivo||''}));
-const cancQuando=t=>{const d=t?new Date(t):null;return d&&!isNaN(d)?dlabel(isoDia(d))+' '+hhmm(d):'';};
-function cancRelHtml(L){if(!L||!L.length||!can('financeiro','r'))return '';const ls=cancLinhas(L);
-  return `<section class="panel pn-panel" id="pn-cancelamentos"><div class="pn-ph"><div><h2>${TE('pn_cancelamentos')}</h2></div></div><div class="tablewrap"><table><thead><tr><th>${TE('pn_canc_em')}</th><th>${TE('pn_venda')}</th><th class="num">${TE('pn_valor')}</th><th>${TE('vm_vendedor')}</th><th>${TE('pn_canc_por')}</th><th>${TE('pn_motivo')}</th></tr></thead>
-    <tbody>${ls.map(x=>`<tr><td>${esc(cancQuando(x.em))}</td><td>${esc(x.no)}</td><td class="num">${fmtR(x.valor)}</td><td>${esc(x.vendedor)}</td><td>${esc(x.por)}</td><td>${esc(x.motivo)}</td></tr>`).join('')}</tbody></table></div></section>`;}
 function srvMetPainel(){if(!state.agent||!state.agent.on)return '';srvMetPull();const M=state.srvMet;
   if(!M.dias)return M.erro?`<p class="pn-notas">${esc(TE('sem_conexao_srv'))}</p>`:'';const T=srvMetSoma(M.dias);const pc=(a,b)=>b?Math.round(100*a/b)+'%':'—';
   const fat=T.faturamento+T.online.faturamento;const mm={pix:'Pix',cartao:TE('meio_cartao'),dinheiro:TE('meio_dinheiro')};
@@ -6147,8 +6151,7 @@ function srvMetPainel(){if(!state.agent||!state.agent.on)return '';srvMetPull();
       <tr><td>${TE('pn_vendas_balcao')}</td><td class="num">${fmtN(T.vendas)} · ${fmtR(T.faturamento)}</td><td>${TE('pn_ticket')}</td><td class="num">${T.vendas?fmtR(T.faturamento/T.vendas):'—'}</td></tr>
       <tr><td>${TE('pn_fotos_vendidas')}</td><td class="num">${fmtN(T.fotos_vendidas)} · ${TE('pn_das_tiradas',pc(T.fotos_vendidas,T.fotos))}</td><td>${TE('pn_com_ia')}</td><td class="num">${fmtN(T.fotos_ia_vendidas)}</td></tr>
       <tr><td>${TE('pn_vendas_online')}</td><td class="num">${fmtN(T.online.vendas)} · ${fmtR(T.online.faturamento)}</td><td>${TE('pn_impressoes')}</td><td class="num">${fmtN(T.impressoes)}${T.impressoes_falhas?TE('pn_nao_sairam',fmtN(T.impressoes_falhas)):''}</td></tr>
-      ${T.canceladas?`<tr><td>${TE('pn_canceladas')}</td><td class="num">${fmtN(T.canceladas)}</td><td>${T.estornos.vendas?TE('pn_estornado'):''}</td><td class="num">${T.estornos.vendas?fmtN(T.estornos.vendas)+' · '+fmtR(T.estornos.valor):''}</td></tr>`:''}
-    </tbody></table></div></section>${cancRelHtml(T.cancelamentos)}
+    </tbody></table></div></section>
     <div class="pn-bottom">${!can('desempenho','r')?'':tab(TE('pn_por_fotografo'),T.por_fotografo,[['sessoes',TE('pn_sessoes'),v=>fmtN(v.sessoes||0)],['fotos',TE('pn_fotos'),v=>fmtN(v.fotos||0)],['conv',TE('pn_conversao'),v=>pc(v.sessoes_com_venda||0,v.sessoes||0)],...venda],TE('pn_fotografo'))/* 23/11 (AF-D9): por fotógrafo só com desempenho.r */}${tab(TE('pn_por_vendedor'),T.por_vendedor,venda,TE('vm_vendedor'))}</div>
     <div class="pn-bottom">${tab(TE('pn_por_ponto'),T.por_posto,venda,TE('pn_ponto'))}${tab(TE('pn_por_meio'),T.por_meio,venda,TE('pagamento'))}</div>`;}
 // notas do topo do Painel: a tela e o arquivo exportado (relPainel) leem a mesma lista
@@ -6882,8 +6885,8 @@ function avMinhasLista(){const A=state.av,u=state.user||{},hj=venueToday();const
   const srv=Object.values(A.srv||{}).filter(v=>v&&v.origem==='eterna'&&!ids.has(v.id)&&String(v.criado||'').slice(0,10)===hj).map(v=>({v:{...v,itens:v.itens||[]},est:'enviada',srv:true}));
   return loc.concat(srv).sort((a,b)=>a.v.criado<b.v.criado?1:-1);}
 function avMinhas(){const A=state.av,u=state.user||{};const podeCancelar=can('ativvenda','d')||can('financeiro','u');
-  const hoje=avMinhasLista();
-  const valid=hoje.filter(x=>avSituacao(x)[0]!=='cancelada'),porPag={};valid.forEach(x=>{porPag[x.v.pagamento]=(porPag[x.v.pagamento]||0)+(+x.v.valor||0);});
+  const hoje=avMinhasLista().filter(x=>avSituacao(x)[0]!=='cancelada'); // 24/11: a cancelada vai para o arquivo das canceladas
+  const valid=hoje,porPag={};valid.forEach(x=>{porPag[x.v.pagamento]=(porPag[x.v.pagamento]||0)+(+x.v.valor||0);});
   const tot=valid.reduce((s,x)=>s+(+x.v.valor||0),0);
   const nomesDe=v=>v.itens.map(i=>{const p=state.ativ.produtos[i.produto]||ATIV_PADRAO.find(q=>q.id===i.produto);return (i.qtd>1?i.qtd+'× ':'')+(p?p.nome:i.produto)+(i.op?' · '+i.op:'')+(i.pessoas?' · '+TE('av_n_pessoas',i.pessoas):'');}).join(', ');
   // v99.23.1: tabela com busca (número, cliente, produto, pagamento, situação), sem acento e sem maiúscula
@@ -13304,8 +13307,6 @@ function relPainel(){const D=state.painelUlt;const R=relNovo('painel',viewLabel(
     D.produtos.map(p=>[p.id==='outros'&&p.origem.length?p.nome+' ('+p.origem.join(', ')+')':p.nome,p.pacotes,p.adicional?null:p.fotos,p.receita,numF(p.share)/100]),[TE('total'),null,null,D.produtos.reduce((a,p)=>a+p.receita,0),null]);
   const pg=D.pagamentos;relAba(R,TE('pn_pagamentos'),TE('pn_pagamentos'),[relC(TE('pn_modalidade')),relC(TE('pn_transacoes'),'int'),relC(TE('pn_recebido'),'moeda0'),relC(TE('es_parte'),'pct')],
     pg.map(p=>[pagNome(p.nome),p.transacoes,p.recebido,numF(p.share)/100]),[TE('total'),pg.reduce((a,p)=>a+p.transacoes,0),pg.reduce((a,p)=>a+p.recebido,0),null]);
-  {const M=state.srvMet;const T=M&&M.dias?srvMetSoma(M.dias):null;if(T&&T.cancelamentos.length&&can('financeiro','r'))relAba(R,TE('pn_cancelamentos'),TE('pn_cancelamentos'),[relC(TE('pn_canc_em')),relC(TE('pn_venda')),relC(TE('pn_valor'),'moeda'),relC(TE('pn_fotos'),'int'),relC(TE('vm_vendedor')),relC(TE('pn_ponto')),relC(TE('pn_canc_por')),relC(TE('pn_motivo'))],
-    cancLinhas(T.cancelamentos).map(x=>[cancQuando(x.em),x.no,x.valor,x.fotos,x.vendedor,x.posto,x.por,x.motivo]),[TE('total'),null,T.estornos.valor,T.estornos.fotos,null,null,null,null]);}
   relAba(R,TE('pn_atendimentos'),TE('pn_atendimentos'),[relC(TE('pn_atendimentos')),relC(TE('cf_quantidade'),'int')],
     [[TE('pn_finalizadas'),S.finalizadas],[TE('pn_descartadas'),S.descartadas],[TE('pn_canceladas'),S.canceladas],[TE('di_f_abertos'),S.abertas||null],[TE('pn_brindes'),S.brindes]].filter(l=>l[1]!=null));
   if(D.vazio)R.abas.forEach(a=>{a.linhas=[];});return R;}
