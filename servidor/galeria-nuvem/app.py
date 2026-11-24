@@ -603,6 +603,7 @@ def _ref():
 
 def pedido(token, m, corpo, ip, pids_acesso):
     if not compra_ligada(m):
+        print("pedido recusado %s: compra desligada (COMPRA_ONLINE=%s, chave=%s, catálogo=%d)" % (token[-6:], COMPRA_ONLINE, imply.ligada(), len(m.get("catalogo") or [])))
         evento(token, "compra_tentada", ip)
         return resp({"ok": False, "motivo": "compra_indisponivel"}, 503)
     if not contar("PED#" + ip_hash(ip), 3600, 20):
@@ -611,9 +612,13 @@ def pedido(token, m, corpo, ip, pids_acesso):
     a_venda = [f["id"] for f in m["fotos"] if f["id"] in pids_acesso and f["direito"] == "venda"]
     pids = corpo.get("pids")
     if not isinstance(pids, list) or not pids or len(set(map(str, pids))) != len(pids) or any(x not in pids_acesso or dire.get(x) != "venda" for x in pids):
+        print("pedido recusado %s: foto fora do acesso ou não está à venda (%d pedidas, %d no acesso, %d à venda)"
+              % (token[-6:], len(pids) if isinstance(pids, list) else -1, len(pids_acesso), len(a_venda)))
         return resp({"error": "foto fora do acesso ou não está à venda"}, 400)
     c = cesta(m, corpo.get("itens"), len(pids))
     if not c:
+        print("pedido recusado %s: carrinho inválido itens=%s catálogo=%s n=%d" % (token[-6:], json.dumps(corpo.get("itens"))[:200],
+              json.dumps([(x.get("id"), x.get("digital"), x.get("kind")) for x in (m.get("catalogo") or [])])[:200], len(pids)))
         return resp({"error": "carrinho inválido"}, 400)
     itens, total, todas = c
     if todas:
@@ -623,6 +628,9 @@ def pedido(token, m, corpo, ip, pids_acesso):
     email = str(cli.get("email") or "").strip().lower()
     cpf = re.sub(r"\D", "", str(cli.get("cpf") or ""))
     passaporte = re.sub(r"[^A-Z0-9]", "", str(cli.get("passaporte") or "").upper())
+    if len(nome) < 3 or not _re_email.match(email) or (cpf and not imply.cpf_ok(cpf) or not cpf and not _re_passaporte.match(passaporte)):
+        print("pedido recusado %s: dados do cliente (nome %s, e-mail %s, documento %s)" % (token[-6:], len(nome) >= 3, bool(_re_email.match(email)),
+              "cpf" if cpf else "passaporte" if passaporte else "nenhum"))
     if len(nome) < 3 or not _re_email.match(email):
         return resp({"error": "dados", "campo": "nome" if len(nome) < 3 else "email"}, 400)
     if cpf and not imply.cpf_ok(cpf) or not cpf and not _re_passaporte.match(passaporte):
