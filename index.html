@@ -385,8 +385,8 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .eco-tag{position:absolute;left:3px;bottom:3px;font-size:12px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(12,35,64,.85);color:#fff}
 .eco-flag svg{width:24px;height:16px;border-radius:2px;vertical-align:middle}
 .eco-pend{padding:10px;border-radius:6px;background:var(--surface2);font-weight:700}
-.imp-grid{display:flex;gap:8px;flex-wrap:wrap}
-.imp-th{position:relative;width:160px;aspect-ratio:3/2;border-radius:6px;overflow:hidden;border:4px solid transparent;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);opacity:.85;cursor:pointer;padding:0;transition:opacity .12s,transform .15s}.imp-th:hover{opacity:1}@media (hover:hover){.imp-th:hover{transform:scale(2.2);z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.45)}}
+.imp-grid{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.imp-th{position:relative;width:100%;aspect-ratio:3/2;border-radius:6px;overflow:hidden;border:4px solid transparent;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);opacity:.85;cursor:pointer;padding:0;transition:opacity .12s,transform .15s}.imp-th:hover{opacity:1}@media (hover:hover){.imp-th:hover{transform:scale(1.8);z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.45)}}
 .imp-th.on{border-color:#1F8A4C;opacity:1;filter:none;box-shadow:0 0 0 2px #fff,0 0 0 4px #1F8A4C}
 /* 18/11 (Ronaldo): escolhida tem que saltar aos olhos: bolinha verde cheia com ✓; não escolhida, apagada e com o círculo vazio */
 .imp-th::after{content:'';position:absolute;top:5px;right:5px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);box-sizing:border-box}.imp-th.on::after{display:none}
@@ -948,6 +948,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .gq-sel svg{width:26px;height:26px}.gq-qrimg{display:block;margin-top:10px;color:#d6e2f3;text-decoration:underline;cursor:pointer;font-size:15px;text-align:center}
 .gq-buyoff{margin-top:14px;font-weight:600}.gq-sel.on{background:#FFB800;color:#0C2340;border-color:#FFB800}
 .gq-dlall,.gq-allbtn{align-self:flex-start}
+.gq-dlbox{display:flex;flex-direction:column;gap:8px;max-width:440px;margin:4px 0 14px}.gq-dlbar{height:8px;border-radius:4px;background:rgba(127,127,127,.25);overflow:hidden}.gq-dlbar i{display:block;height:100%;background:#FFB800;transition:width .2s}.gq-dlacts{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
 .gq-gal{padding-bottom:110px}
 .gq-bar{position:fixed;left:0;right:0;bottom:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px clamp(14px,3vw,36px) max(12px,env(safe-area-inset-bottom,0px));background:rgba(12,35,64,.96);border-top:1px solid rgba(255,255,255,.18)}
 .gq-bar .lj-cta{min-height:52px;font-size:16px}
@@ -1526,7 +1527,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.42.5 · 24/11 19:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.44.0 · 24/11 20:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3465,7 +3466,6 @@ async function pubLoad(){const p=state.pub;if(p&&p.ref&&!p.token){pubConferir(p)
   const volta=pubVoltaLe(tok);const tv=pubTourSalvo(tok);const sv=pubPedSalvo(tok)||tv;if(sv&&sv.acesso&&!p.acesso){p.acesso=sv.acesso;if(await pubRenovar(p)){if(state.pub!==p)return;
     if(tv&&tv.sel&&((p.gal||{}).fotos||[]).some(f=>f.pid===tv.sel&&f.direito==='venda')){p.sel[tv.sel]=true;try{sessionStorage.setItem(TOUR_KEY,JSON.stringify(Object.assign(tv,{sel:null})));}catch(e){}}
     p.step='galeria';render();if(volta)toast(T(volta==='pago'?'gq_paid':'gq_payCancel'));return;}p.acesso=null;}
-  if(await pubAbrirLivres(p)){if(state.pub!==p)return;p.livres=true;p.step='galeria';render();if(volta)toast(T(volta==='pago'?'gq_paid':'gq_payCancel'));return;} // v96.1: compradas e cortesias direto pelo QR
   if(volta)toast(T(volta==='pago'?'gq_paid':'gq_payCancel'));
   if(state.pub!==p)return;p.step='consent';render();}
 // ---- v99.20: vídeo das ativações (Drone, Chute a Gol, Snap Pop). O cartão é a chave: aceite de imagem + e-mail, sem selfie.
@@ -3497,10 +3497,8 @@ document.addEventListener('play',e=>{const v=e.target;if(!(v instanceof HTMLVide
   fetch(galApi()+'/g/'+p.token+'/evento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,tipo:'video_play',v:v.dataset.gvV}),keepalive:true}).catch(()=>{});},true);
 // v96.1 (decisão do Eduardo, 10/11): na galeria de uma venda (tipo sessao) o QR sozinho abre as compradas e as cortesias daquela venda, sem
 // selfie (o pai que pagou e não aparece nas fotos). A selfie só acrescenta as à venda em que a pessoa aparece (v95). Grupo (evento): só o rosto.
-async function pubAbrirLivres(p){if(!p.info||p.info.tipo!=='sessao')return false;
-  if(p.modo==='agente'){try{const r=await fetch(galApi()+'/g/'+p.token+'/livres',{cache:'no-store'});if(!r.ok)return false;const j=await r.json();
-      if(!j.galeria||!(j.galeria.fotos||[]).length)return false;if(!p.acesso){p.gal=j.galeria;p.galAt=Date.now();}return true;}catch(e){return false;}}
-  const m=(SIM.galerias||{})[p.token];return !!m&&pubLivres(m).size>0;}
+// 24/11 (Ronaldo): o QR ou o código sozinho não abre mais nenhuma foto (caía a v96.1: quem tinha o código de um amigo baixava
+// as compradas dele). As compradas e cortesias da venda aparecem só depois da selfie que bateu em pelo menos uma foto da venda.
 const pubKid=p=>!!(p.info&&(p.info.tipo==='evento'||p.info.menor));
 // tentativas por galeria neste navegador (sessionStorage): 5 erros bloqueiam por 15 min. Só contador e hora, nada de imagem.
 function pubTries(p){const k='eterna.gq.'+p.token.slice(0,8);let o={n:0,ate:0};try{o=JSON.parse(sessionStorage.getItem(k)||'null')||o;}catch(e){}return {o,save(){try{sessionStorage.setItem(k,JSON.stringify(o))}catch(e){}}};}
@@ -3512,7 +3510,7 @@ async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pu
   p.step='buscando';selfieStop();render();
   try{
     try{const im=await loadImg(src);if(im&&await selfieVarias(im)){p.step='nao';p.motivo='varias';return;}}catch(e){} // sem detector: o servidor confere
-    if(p.modo==='agente'){const body=JSON.stringify({consentimento:true,versao:GQ_VERSAO+(galNuvem()?'-nuvem3':''),idioma:lang(),imagem:src});src=null;
+    if(p.modo==='agente'){const body=JSON.stringify({consentimento:true,versao:GQ_VERSAO+(galNuvem()?'-nuvem3':''),idioma:lang(),email:(p.cli||{}).email||'',imagem:src});src=null;
       // 18/11: na escola a nuvem lê os rostos da visita só na primeira selfie (lotes em segundo plano) e responde "processando":
       // a mesma selfie vai de novo sozinha a cada 5 s, ainda na tela de busca; o "volte em alguns minutos" só depois de ~1 min
       let r,j;for(let i=0;;i++){r=await fetch(galApi()+'/g/'+p.token+'/rosto',{method:'POST',headers:{'Content-Type':'application/json'},body});j=await r.json().catch(()=>({}));
@@ -3562,6 +3560,53 @@ const cpfOk=v=>{const d=String(v||'').replace(/\D/g,'');if(d.length!==11||/^(\d)
 // pedido salvo neste navegador enquanto o cliente paga na Imply (só o código, a galeria e o acesso de 1 h; nada de dado pessoal)
 const PED_KEY='eterna.gq.ped';
 function pubPedSalvo(tok){try{const o=JSON.parse(sessionStorage.getItem(PED_KEY)||'null');return o&&o.token===tok&&Date.now()-o.em<3600000?o:null;}catch(e){return null;}}
+// 24/11 (Ronaldo): "Baixar todas" com muitas fotos (o pacote de todas). Baixar uma a uma travava o celular e pedia permissão a
+// cada foto. Agora prepara todas com barra de progresso e salva de uma vez: no celular pelo Salvar/Compartilhar do sistema, em
+// lotes de 20 (um toque por lote); sem isso, um único .zip (sem compressão: JPEG já é comprimido).
+const DL_LOTE=20;
+async function pubBlobFoto(p,f){
+  if(p.modo!=='agente'){const c=await photoCanvas(f.pid);return c?await new Promise(r=>c.toBlob(r,'image/jpeg',.92)):null;}
+  const pega=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');return r.blob();};
+  let ff=((p.gal&&p.gal.fotos)||[]).find(x=>x.pid===f.pid)||f;
+  try{return await pega(ff);}catch(e){if(!(await pubRenovar(p)))return null;ff=((p.gal&&p.gal.fotos)||[]).find(x=>x.pid===f.pid);if(!ff||!ff.original)return null;try{return await pega(ff);}catch(e2){return null;}}}
+function pubDlBarra(){const d=(state.pub||{}).dl;if(!d||d.fase!=='prep')return;const b=document.getElementById('gq-dlbar'),t=document.getElementById('gq-dlprog');
+  if(b)b.style.width=Math.round(100*d.n/d.tot)+'%';if(t)t.textContent=T('gq_dlPrep',d.n,d.tot);}
+async function pubBaixarTodas(){const p=state.pub;if(!p||(p.dl&&p.dl.fase==='prep'))return;
+  const mine=pubGaleria().fotos.filter(f=>f.direito==='comprada'||f.direito==='cortesia');if(!mine.length)return;
+  if(mine.length===1){pubBaixar(mine[0].pid,1);return;}
+  p.dl={fase:'prep',n:0,tot:mine.length};render();
+  if(p.modo==='agente'&&(!p.galAt||Date.now()-p.galAt>12*60000))await pubRenovar(p);
+  const files=[];let falhas=0;
+  for(let i=0;i<mine.length;i++){const b=await pubBlobFoto(p,mine[i]);
+    if(b){files.push(new File([b],`viva-maracana-${i+1}.jpg`,{type:'image/jpeg'}));
+      if(p.modo==='agente'&&p.acesso)fetch(galApi()+'/g/'+p.token+'/evento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,tipo:'foto_baixada',foto:mine[i].pid})}).catch(()=>{});}
+    else falhas++;
+    p.dl.n=i+1;pubDlBarra();}
+  if(!files.length){p.dl={fase:'erro'};render();return;}
+  let share=false;try{share=!!(navigator.canShare&&navigator.canShare({files:files.slice(0,1)}));}catch(e){}
+  p.dl={fase:'pronto',files,lote:0,share,falhas};render();
+  if(!share)pubZip(files);}
+async function pubDlSalvar(){const d=state.pub&&state.pub.dl;if(!d||d.fase!=='pronto')return;const lote=d.files.slice(d.lote*DL_LOTE,(d.lote+1)*DL_LOTE);if(!lote.length)return;
+  try{await navigator.share({files:lote});d.lote++;}catch(e){if(e&&e.name==='AbortError')return;d.share=false;pubZip(d.files);}
+  render();}
+const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(u){let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRC_T[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+async function pubZip(files){const partes=[],dir=[];let off=0;const enc=new TextEncoder();
+  for(const f of files){const u=new Uint8Array(await f.arrayBuffer());const nm=enc.encode(f.name);const crc=crc32(u);
+    const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(12,0x21,true);h.setUint32(14,crc,true);h.setUint32(18,u.length,true);h.setUint32(22,u.length,true);h.setUint16(26,nm.length,true);
+    partes.push(h,nm,u);
+    const c=new DataView(new ArrayBuffer(46));c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(14,0x21,true);c.setUint32(16,crc,true);c.setUint32(20,u.length,true);c.setUint32(24,u.length,true);c.setUint16(28,nm.length,true);c.setUint32(42,off,true);
+    dir.push(c,nm);off+=30+nm.length+u.length;}
+  const tam=dir.reduce((s,x)=>s+x.byteLength,0);const e=new DataView(new ArrayBuffer(22));e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,tam,true);e.setUint32(16,off,true);
+  const url=URL.createObjectURL(new Blob([...partes,...dir,e],{type:'application/zip'}));const a=document.createElement('a');a.href=url;a.download='viva-maracana-fotos.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),120000);}
+function pubDlHtml(n){const d=(state.pub||{}).dl;const tudo=`<button class="lj-cta gq-dlall" data-act="gq-dlall">${ICO.cloud} ${T('gq_dlAll')} (${n})</button>`;
+  if(n<2)return '';if(!d)return tudo;
+  if(d.fase==='prep')return `<div class="gq-dlbox"><div class="gq-dlbar"><i id="gq-dlbar" style="width:${Math.round(100*d.n/d.tot)}%"></i></div><p class="lj-sub" id="gq-dlprog" role="status">${T('gq_dlPrep',d.n,d.tot)}</p></div>`;
+  if(d.fase==='erro')return `<div class="gq-dlbox"><p class="lj-sub" role="status">${T('gq_dlErro')}</p>${tudo}</div>`;
+  const falha=d.falhas?`<p class="lj-sub">${T('gq_dlFalhas',d.falhas)}</p>`:'';const tot=d.files.length,ini=d.lote*DL_LOTE;
+  if(d.share&&ini<tot)return `<div class="gq-dlbox"><div class="gq-dlacts"><button class="lj-cta gq-dlall" data-act="gq-dlsave">${ICO.cloud} ${T('gq_dlSave',ini+1,Math.min(tot,ini+DL_LOTE),tot)}</button><button class="lj-ghost sm" data-act="gq-dlzip">${T('gq_dlZip')}</button></div>${falha}</div>`;
+  if(d.share)return `<div class="gq-dlbox"><p class="lj-sub" role="status">${T('gq_dlFeito',tot)}</p>${falha}<div class="gq-dlacts"><button class="lj-ghost sm" data-act="gq-dlzip">${T('gq_dlZip')}</button></div></div>`;
+  return `<div class="gq-dlbox"><p class="lj-sub" role="status">${T('gq_dlZipOk',tot)}</p>${falha}<div class="gq-dlacts"><button class="lj-ghost sm" data-act="gq-dlzip">${T('gq_dlZipDe')}</button></div></div>`;}
 async function pubBaixar(pid,i){const p=state.pub;const g=pubGaleria();const f=g.fotos.find(x=>x.pid===pid);if(!f||(f.direito!=='comprada'&&f.direito!=='cortesia'))return;
   if(p.modo==='agente'&&p.acesso)fetch(galApi()+'/g/'+p.token+'/evento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,tipo:'foto_baixada',foto:pid})}).catch(()=>{});
   const nome=`viva-maracana-${i||1}.jpg`;const salva=href=>{const a=document.createElement('a');a.href=href;a.download=nome;document.body.appendChild(a);a.click();a.remove();};
@@ -3601,11 +3646,10 @@ async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGa
     p.sel={};p.step='galeria';render();toast(T('gq_paid'));}
   finally{p.paying=false;}}
 // Pede links novos (POST /galeria). Acesso vencido (401): volta para a selfie, com aviso próprio.
-async function pubRenovar(p){if(!p.acesso)return pubAbrirLivres(p); // só pelo QR: links novos das compradas e cortesias
+async function pubRenovar(p){if(!p.acesso)return false;
   try{const r=await fetch(galApi()+'/g/'+p.token+'/galeria',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso})});
   if(r.status===401){pubAcessoVenceu(p);return false;}const j=await r.json();if(!j.galeria)return false;p.gal=j.galeria;p.galAt=Date.now();return true;}catch(e){return false;}}
 function pubAcessoVenceu(p){if(state.pub!==p)return;p.acesso=null;p.gal=null;p.sel={};p.aviso=T('gq_again');
-  if(p.livres){pubAbrirLivres(p).then(ok=>{if(state.pub!==p)return;if(ok){p.step='galeria';toast(T('gq_again'));}else pubSelfieAbrir(p);render();});return;} // as compradas continuam pelo QR
   pubSelfieAbrir(p);render();}
 // v99: a Nuvem pergunta à Imply; só "pago" libera. Pendente: tenta a cada 5 s por até 10 min (a conferência agendada continua depois)
 async function pubConferir(p){let j=null;try{const r=await fetch(galApi()+'/g/pedido/'+p.ref,{cache:'no-store'});if(r.ok)j=await r.json();}catch(e){}
@@ -3691,7 +3735,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
           <a class="lj-cta gq-gvdl" href="${esc(galUrl(v.baixar))}" download rel="noopener">${ICO.cloud} ${T('gv_baixar')}${vs.length>1?' '+v.n:''}</a></div>`).join('')
       +(g.tour&&g.tour.n&&/^[A-Za-z0-9_-]{22}$/.test(g.tour.token)?pubTourBloco(g.tour):'')+help);}
   const kid=pubKid(p);
-  if(p.step==='consent')return box(T('gq_consentH'),T('gq_consentD'),`<label class="gq-consent"><input type="checkbox" data-act="gq-consent" ${p.ok?'checked':''}><span>${T((kid?'gq_consentKid':'gq_consentSelf')+(galNuvem()?'Nuvem':'')).split('\n').map((x,i)=>i?`<small>${x}</small>`:`<strong>${pubEscola(p)?x.replace(/[.。]$/,'')+T('gq_escMkt'):x}</strong>`).join('')}</span></label>${pubEscola(p)?`<label class="gq-campo"><span>${T('gq_email')}</span><input id="gq-esc-email" type="email" autocomplete="email" maxlength="190" value="${esc((p.cli||{}).email||'')}"></label>${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}`:''}<button class="lj-cta" id="gq-agree" data-act="gq-agree" ${p.ok?'':'disabled'}>${T('gq_agree')} ${ICO.arrow}</button>${p.livres?`<button class="lj-ghost" data-act="gq-back" data-to="galeria">${T('gq_backMine')}</button>`:''}`);
+  if(p.step==='consent')return box(T('gq_consentH'),T('gq_consentD'),`<label class="gq-consent"><input type="checkbox" data-act="gq-consent" ${p.ok?'checked':''}><span>${T((kid?'gq_consentKid':'gq_consentSelf')+(galNuvem()?'Nuvem':'')).split('\n').map((x,i)=>i?`<small>${x}</small>`:`<strong>${pubEscola(p)?x.replace(/[.。]$/,'')+T('gq_escMkt'):x}</strong>`).join('')}</span></label>${`<label class="gq-campo"><span>${T(pubEscola(p)?'gq_email':'gq_emailFotos')}</span><input id="gq-esc-email" type="email" autocomplete="email" maxlength="190" value="${esc((p.cli||{}).email||'')}"></label>${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}`}<button class="lj-cta" id="gq-agree" data-act="gq-agree" ${p.ok?'':'disabled'}>${T('gq_agree')} ${ICO.arrow}</button>`);
   if(p.step==='selfie'){const sf=state.guest.selfie||{};const mirror=(sf.facing||'user')==='user';
     return box(T(kid?'gq_kidH':'gq_selfieH'),T(kid?'gq_kidD':'gq_selfieD'),`${p.aviso?`<p class="gq-err">${esc(p.aviso)}</p>`:''}<div class="gq-cam ${sf.err?'off':''} ${mirror?'mirror':''}">${sf.err?'':'<video id="gself-video" autoplay muted playsinline></video>'}</div><p class="gq-fine" id="gq-st" aria-live="polite">${sf.err?T('gq_camBloq'):sf.varias?T('cam_varias'):T('gq_looking')}</p>
       ${sf.err?`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`:!(sf.semDetector||sf.botao)?'':`<button class="lj-cta" data-act="gq-snap" ${sf.ready?'':'disabled'}>${ICO.face} ${T('g_snap')}</button>`}`);}
@@ -3699,7 +3743,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   if(p.step==='nao'){const bl=p.motivo==='bloqueado';const at=p.ate?hhmm(new Date(p.ate)):'';
     const msg=bl?(p.teto?T('gq_lockedDay'):T('gq_locked',at)):p.motivo==='varias'?T('gq_varias'):p.motivo==='sem_rosto'?T('gq_noFace'):p.motivo==='processando'?T('gq_arriving'):T('gq_noMatch');
     const d=bl?'':p.motivo==='varias'?T('gq_variasD'):p.motivo==='processando'?T('gq_arrivingD'):T('gq_tries',p.restam);
-    return box(msg,d,`${bl?'':`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`}${p.livres?`<button class="lj-ghost" data-act="gq-back" data-to="galeria">${T('gq_backMine')}</button>`:''}${help}`);}
+    return box(msg,d,`${bl?'':`<button class="lj-cta" data-act="gq-retry">${T('gq_tryAgain')}</button>`}${help}`);}
   const g=pubGaleria();
   if(p.step==='pagar'){const n=Object.keys(p.sel).filter(k=>p.sel[k]).length;const ces=pubCesta(n,g);const c=p.cli||{};const real=p.modo==='agente'&&galNuvem();
     return `<div class="gq">${deco}${top()}<div class="gq-mid"><h1 class="lj-h2 gq-h">${T('gq_dadosH')}</h1><p class="lj-sub">${T('gq_dadosD')}</p>
@@ -3727,9 +3771,8 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const nSel=compra?more.filter(f=>p.sel[f.pid]).length:0;const ces=pubCesta(nSel,g);const tot=ces.total;const livre=isFinite(ces.cobre)?Math.min(ces.cobre,more.length)-nSel:0;
   // 18/11 (Ronaldo): na escola o responsável sai e recomeça (outra criança, outro responsável) pelo Sair, que volta ao código
   return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`,esc0?`<button class="lj-ghost sm gq-sair" data-act="gq-back" data-to="codigo">${ICO.sair} ${T('ljSair')}</button>`:'')}
-    <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${esc0&&esc0.nome?esc(esc0.nome)+(esc0.dia?' · '+fmtD(esc0.dia+'T12:00:00'):'')+' · ':''}${T('gq_kidFound',g.fotos.length)}</div>`:''}${mine.length?`<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${T('gq_yoursD',mine.length)}</p>`:''}
-      ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>
-      ${mine.length>1?`<button class="lj-cta gq-dlall" data-act="gq-dlall">${ICO.cloud} ${T('gq_dlAll')}</button>`:''}`:''}</section>
+    <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${esc0&&esc0.nome?esc(esc0.nome)+(esc0.dia?' · '+fmtD(esc0.dia+'T12:00:00'):'')+' · ':''}${T('gq_kidFound',g.fotos.length)}</div>`:''}${mine.length?`<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${T('gq_yoursD',mine.length)}</p>${pubDlHtml(mine.length)}`:''}
+      ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>`:''}</section>
     ${more.length?`<section class="gq-sec">${podeGr?`<div class="gq-grtopo"><h2 class="lj-h2">${T('gq_gratisH')}</h2><p class="lj-sub">${T('gq_gratisD')}</p></div>`:''}<h2 class="lj-h2">${T('gq_more')}</h2>${compra?`<p class="lj-sub">${T('gq_moreD')} ${pubOferta(g)}</p>`:''}
       <div class="gq-grid">${more.map(f=>{const on=compra&&!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>${compra?`<button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button>`:''}${podeGr?`<button class="lj-ghost sm gq-grbtn" data-act="gq-gratis" data-pid="${esc(f.pid)}">${T('gq_gratisBtn')}</button>`:''}</figure>`;}).join('')}</div>
       ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(pubTotal(more.length,g)))}</button>`:`<p class="lj-sub gq-buyoff">${T('gq_buyOffEsc')} <a href="mailto:${GQ_SUPORTE}">${GQ_SUPORTE}</a></p>`}</section>`:''}
@@ -3988,6 +4031,14 @@ const I18N={
  gq_gift:['Cortesia','Complimentary','Cortesía','Offerte','Gratis'],
  gq_dl:['Baixar','Download','Descargar','Télécharger','Herunterladen'],
  gq_dlAll:['Baixar todas','Download all','Descargar todas','Tout télécharger','Alle herunterladen'],
+ gq_dlPrep:[(a,b)=>`Preparando ${a} de ${b} fotos…`,(a,b)=>`Preparing ${a} of ${b} photos…`,(a,b)=>`Preparando ${a} de ${b} fotos…`,(a,b)=>`Préparation de ${a} sur ${b} photos…`,(a,b)=>`${a} von ${b} Fotos werden vorbereitet…`],
+ gq_dlSave:[(a,b,c)=>`Salvar fotos ${a} a ${b} de ${c}`,(a,b,c)=>`Save photos ${a}–${b} of ${c}`,(a,b,c)=>`Guardar fotos ${a} a ${b} de ${c}`,(a,b,c)=>`Enregistrer les photos ${a} à ${b} sur ${c}`,(a,b,c)=>`Fotos ${a}–${b} von ${c} speichern`],
+ gq_dlZip:['Baixar tudo em .zip','Download all as .zip','Descargar todo en .zip','Tout télécharger en .zip','Alles als .zip herunterladen'],
+ gq_dlFeito:[n=>`Pronto: ${n} fotos salvas.`,n=>`Done: ${n} photos saved.`,n=>`Listo: ${n} fotos guardadas.`,n=>`Terminé : ${n} photos enregistrées.`,n=>`Fertig: ${n} Fotos gespeichert.`],
+ gq_dlZipOk:[n=>`${n} fotos baixadas em um arquivo .zip.`,n=>`${n} photos downloaded in one .zip file.`,n=>`${n} fotos descargadas en un archivo .zip.`,n=>`${n} photos téléchargées dans un fichier .zip.`,n=>`${n} Fotos als eine .zip-Datei heruntergeladen.`],
+ gq_dlZipDe:['Baixar o .zip de novo','Download the .zip again','Descargar el .zip de nuevo','Retélécharger le .zip','.zip erneut herunterladen'],
+ gq_dlErro:['Não deu para baixar agora. Tente de novo.','Could not download now. Please try again.','No se pudo descargar ahora. Inténtalo de nuevo.','Téléchargement impossible pour le moment. Réessayez.','Download gerade nicht möglich. Bitte erneut versuchen.'],
+ gq_dlFalhas:[n=>`${n} ${PL(n,'foto não baixou','fotos não baixaram')}: use o Baixar de cada uma.`,n=>`${n} ${PL(n,'photo','photos')} failed: use Download on each one.`,n=>`${n} ${PL(n,'foto no se descargó','fotos no se descargaron')}: usa Descargar en cada una.`,n=>`${n} ${PL(n,'photo non téléchargée','photos non téléchargées')} : utilisez Télécharger sur chacune.`,n=>`${n} ${PL(n,'Foto','Fotos')} fehlgeschlagen: einzeln herunterladen.`],
  gq_more:['Mais fotos da sua visita','More photos from your visit','Más fotos de tu visita','Plus de photos de votre visite','Mehr Fotos von deinem Besuch'],
  gq_moreD:['Toque em ✓ nas que quiser levar.','Tap ✓ on the ones you want.','Toca ✓ en las que quieras llevarte.','Touchez ✓ sur celles que vous voulez.','Tippe ✓ bei denen, die du möchtest.'],
  gq_offer:[(n,a,b,c)=>`${n} fotos por ${a}${b?` · cada foto a mais ${b}`:''}${c?` · todas por ${c}`:''}.`,(n,a,b,c)=>`${n} photos for ${a}${b?` · each extra photo ${b}`:''}${c?` · all for ${c}`:''}.`,(n,a,b,c)=>`${n} fotos por ${a}${b?` · cada foto extra ${b}`:''}${c?` · todas por ${c}`:''}.`,(n,a,b,c)=>`${n} photos pour ${a}${b?` · chaque photo en plus ${b}`:''}${c?` · toutes pour ${c}`:''}.`,(n,a,b,c)=>`${n} Fotos für ${a}${b?` · jedes weitere Foto ${b}`:''}${c?` · alle für ${c}`:''}.`],
@@ -3995,6 +4046,7 @@ gq_moreFree:[n=>`Dá para escolher mais ${n} sem pagar a mais`,n=>`You can pick 
 gq_dadosH:['Seus dados para o pagamento','Your details for payment','Tus datos para el pago','Vos informations pour le paiement','Deine Daten für die Zahlung'],
 gq_dadosD:['Usamos estes dados para emitir o seu pedido e enviar as fotos.','We use these details to issue your order and send the photos.','Usamos estos datos para emitir tu pedido y enviar las fotos.','Nous utilisons ces informations pour émettre votre commande et envoyer les photos.','Wir nutzen diese Daten, um deine Bestellung auszustellen und die Fotos zu senden.'],
 gq_nome:['Nome completo','Full name','Nombre completo','Nom complet','Vollständiger Name'],
+gq_emailFotos:['Seu e-mail (para falarmos com você sobre as suas fotos)','Your email (so we can contact you about your photos)','Tu correo (para contactarte sobre tus fotos)','Votre e-mail (pour vous contacter au sujet de vos photos)','Deine E-Mail (damit wir dich zu deinen Fotos kontaktieren können)'],
 gq_email:['E-mail (enviamos o link das fotos)','Email (we send the photo link)','Correo (enviamos el enlace de las fotos)','E-mail (nous envoyons le lien des photos)','E-Mail (wir senden den Link zu den Fotos)'],
 gq_cpf:['CPF','CPF (Brazilian ID)','CPF (documento brasileño)','CPF (identifiant brésilien)','CPF (brasilianische Steuernummer)'],
 gq_passaporte:['Passaporte','Passport number','Pasaporte','Passeport','Reisepass'],
@@ -4224,6 +4276,14 @@ const I18N_ZH={
  gq_gift:"赠送",
  gq_dl:"下载",
  gq_dlAll:"全部下载",
+ gq_dlPrep:(a,b)=>`正在准备 ${a}/${b} 张照片…`,
+ gq_dlSave:(a,b,c)=>`保存第 ${a}–${b} 张（共 ${c} 张）`,
+ gq_dlZip:"全部下载为 .zip",
+ gq_dlFeito:(n)=>`完成：已保存 ${n} 张照片。`,
+ gq_dlZipOk:(n)=>`已将 ${n} 张照片下载为一个 .zip 文件。`,
+ gq_dlZipDe:"重新下载 .zip",
+ gq_dlErro:"暂时无法下载，请重试。",
+ gq_dlFalhas:(n)=>`${n} 张未下载成功：请逐张点击下载。`,
  gq_more:"本次游览的更多照片",
  gq_moreD:"点击 ✓ 选择你想带走的照片。",
  gq_offer:(n,a,b,c)=>`${n} 张照片 ${a} · 每多一张 ${b} · 全部 ${c}。`,
@@ -4232,6 +4292,7 @@ const I18N_ZH={
  gq_dadosD:"我们使用这些信息来开具订单并发送照片。",
  gq_nome:"全名",
  gq_email:"电子邮箱（我们会发送照片链接）",
+ gq_emailFotos:"您的电子邮箱（用于就您的照片与您联系）",
  gq_cpf:"CPF",
  gq_passaporte:"护照号码",
  gq_estrangeiro:"我没有 CPF（使用护照）",
@@ -12789,7 +12850,7 @@ document.addEventListener('click',e=>{
     case 'gv-tour':pubTourAbre(d.pid);break;
     case 'gv-go':{const p=state.pub;if(p&&p.ok&&!p.busy)pubVideoAceite(p);break;}
     case 'gq-agree':{const p=state.pub;if(!p||!p.ok)break;
-      if(pubEscola(p)){const em=(($('#gq-esc-email')||{}).value||'').trim();p.mkt=true; /* 18/11: na escola o aceite de novidades está na frase do responsável */p.cli=Object.assign({},p.cli,{email:em});if(!GQ_EMAIL.test(em)){p.err=T('gq_emailBad');render();break;}p.err=null;}
+      {const em=(($('#gq-esc-email')||{}).value||'').trim().toLowerCase();if(pubEscola(p))p.mkt=true; /* 18/11: na escola o aceite de novidades está na frase do responsável */p.cli=Object.assign({},p.cli,{email:em});if(!GQ_EMAIL.test(em)){p.err=T('gq_emailBad');render();break;}p.err=null;} // 24/11 (Ronaldo): e-mail de todo cliente, não só da escola
       p.consentAt=now().toISOString();pubSelfieAbrir(p);render();break;}
     case 'gq-snap':{const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v||!v.videoWidth)break;const w=Math.min(960,v.videoWidth);const c=mkc(w,w*v.videoHeight/v.videoWidth);c.getContext('2d').drawImage(v,0,0,c.width,c.height);pubMatch(c.toDataURL('image/jpeg',.9));break;}
     case 'gq-retry':{const p=state.pub;if(!p)break;const t=pubTries(p);if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;}else if(p.motivo==='processando'&&p.modo==='agente'){p.step='consent';}else pubSelfieAbrir(p);render();break;}
@@ -12802,7 +12863,9 @@ document.addEventListener('click',e=>{
     case 'gq-dl':pubBaixar(d.pid,+d.i||1);break;
     case 'gq-gratis':{const p=state.pub;if(!p||!p.acesso)break;p.gratis=d.pid;p.err=null;p.step='gratis';render();scrollTo(0,0);break;}
     case 'gq-gratis-ok':{const p=state.pub;if(p&&p.gratis)pubGratis(p);break;}
-    case 'gq-dlall':{const mine=pubGaleria().fotos.filter(f=>f.direito==='comprada'||f.direito==='cortesia');(async()=>{for(let i=0;i<mine.length;i++){await pubBaixar(mine[i].pid,i+1);await new Promise(r=>setTimeout(r,700));}})();break;}
+    case 'gq-dlall':pubBaixarTodas();break;
+    case 'gq-dlsave':pubDlSalvar();break;
+    case 'gq-dlzip':{const dd=state.pub&&state.pub.dl;if(dd&&dd.files)pubZip(dd.files);break;}
     case 'gq-back':{const p=state.pub;if(!p)break;if(d.to==='codigo'){location.hash='#g';break;}p.step=d.to||'galeria';render();break;}
     // galerias online (administração)
     case 'gal-tab':state.gal.tab=d.v;state.gal.ev=null;render();break;
@@ -13141,7 +13204,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const antes=simResumo(SIM);const velhas=new Map((SIM.caixaDin||[]).map(r=>[r.id,{estado:r.estado,saiu:r.saiu||null}]));SIM=Object.assign(SIM0(),o);
   if(SIM.caixaDin.some(pendAntigaHoje)){state.janelaAntiga=Date.now();if(!state.lojaRota&&!state.pub&&SIM.caixaDin.some(r=>pendAntigaHoje(r)&&(velhas.get(r.id)||{}).estado!=='confirmada'))toast('Uma janela antiga do Eterna confirmou um pedido do Checkout sem pacote. O QR não foi mostrado ao cliente. Feche e reabra o Checkout e o Posto de venda.');} // B1 (só pedido de hoje)
   const avisou=!state.lojaRota&&!state.pub&&pendAvisos(velhas); // v96: o cliente voltou às fotos ou saiu da tela
-  if(state.pub){const p=state.pub;if(p.step==='aguarda_caixa')pubLoad();else if(p.step==='consent'&&p.modo==='sim'&&!p.livres&&!p.acesso)pubAbrirLivres(p).then(ok=>{if(ok&&state.pub===p&&p.step==='consent'&&!p.livres&&!p.acesso){p.livres=true;p.step='galeria';render();}});return;} // v96.2: reforço, as compradas chegaram numa gravação depois da sessão paga // galeria pública: sem redesenhar no meio da selfie; sai do "esperando o caixa" quando confirmar
+  if(state.pub){const p=state.pub;if(p.step==='aguarda_caixa')pubLoad();return;} // v96.2: reforço, as compradas chegaram numa gravação depois da sessão paga // galeria pública: sem redesenhar no meio da selfie; sai do "esperando o caixa" quando confirmar
   const pc=lojaPendCheck(); // v83: o vendedor confirmou ou cancelou a pendência que esta janela do Checkout mostra
   dinVirada();railCk();if(simResumo(SIM)===antes&&!pc&&!avisou)return; // I6: só redesenha quando muda algo que aparece
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});

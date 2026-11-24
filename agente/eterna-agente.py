@@ -18895,17 +18895,8 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "expirada"}, 410)
             return self.js({"ok": True, "tipo": m["tipo"], "menor": bool(m.get("menor")), "expira": m["expira"],
                             "estado": gal_estado(token, m), "venue": m.get("venue"), "compra": compra_online()})
-        if acao == "livres" and len(partes) == 4:       # v96.1: compradas e cortesias da venda só pelo QR (sem selfie)
-            if not limite_ok(ip, "livres", 30):
-                return self.js({"motivo": "bloqueado"}, 429)
-            if token in lapides:
-                return self.js({"error": "expirada"}, 410)
-            m = REPO.ler_manifesto(token)
-            if not m:
-                return self.js({"error": "not found"}, 404)
-            if gal_expirou(m):
-                return self.js({"error": "expirada"}, 410)
-            return self.js({"galeria": galeria_obj(token, m)})
+        if acao == "livres" and len(partes) == 4:       # 24/11 (Ronaldo): o QR sozinho não abre mais nada (quem tinha o
+            return self.js({"error": "selfie"}, 403)    # código de um amigo baixava as compradas dele); só pela selfie
         if acao == "foto" and len(partes) == 5:
             pid = partes[4]
             v = q.get("v", [""])[0]
@@ -19159,7 +19150,11 @@ class H(BaseHTTPRequestHandler):
             kid = m["tipo"] == "evento" or bool(m.get("menor"))
             idioma = body.get("idioma") if body.get("idioma") in ("pt", "en", "es", "fr", "de") else "pt"
             versao = str(body.get("versao") or "")[:20]
-            anexar(CONSENT, {"token": token, "tipo": "responsavel" if kid else "titular", "versao": versao, "idioma": idioma, "em": _iso()})
+            con = {"token": token, "tipo": "responsavel" if kid else "titular", "versao": versao, "idioma": idioma, "em": _iso()}
+            email = str(body.get("email") or "").strip().lower()[:190]
+            if re.match(r"^[^@\s]{1,64}@[^@\s]{1,190}\.[a-z]{2,24}$", email, re.I):   # 24/11 (Ronaldo): o e-mail do cliente
+                con["email"] = email
+            anexar(CONSENT, con)
             try:
                 r = buscar_em([img], [f["id"] for f in m["fotos"]])
             except Exception:

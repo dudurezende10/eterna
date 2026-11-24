@@ -143,12 +143,15 @@ ok(st == 200 and (next((f for f in r["galeria"]["fotos"] if f["pid"] == "b00027"
 st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True})
 ok(st == 200 and r["motivo"] == "nao_encontrado" and r["restam"] == 4, "cliente errado com leitura completa: conta erro, mesmo com comprada na venda")
 
-# v96.1 (decisão do Eduardo, 10/11): o QR sozinho abre as compradas e cortesias da venda, sem selfie; nunca as à venda
+# 24/11 (Ronaldo): o QR sozinho não abre mais nada; as compradas e cortesias só depois da selfie
 st, r = chama("GET", "/g/%s/livres" % tok)
-ps = sorted(f["pid"] for f in r["galeria"]["fotos"])
-ok(st == 200 and ps == ["a00000", "a00001", "b00026", "b00027"] and all(f["original"] for f in r["galeria"]["fotos"]), "livres: só pelo QR, compradas e cortesia com original (%s)" % ps)
-ev_l = [v for k, v in T.d.items() if k[0] == "EVT#" + tok and v["tipo"] == "livres_vistas"]
-ok(ev_l and ev_l[-1]["livres"] == "4", "livres: evento livres_vistas com a contagem")
+ok(st == 403 and "galeria" not in r, "livres: fechada, o QR sozinho não abre as compradas")
+cons = [v for k, v in T.d.items() if k[0] == "CON#" + tok]
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True, "email": " Cliente@Exemplo.com "})
+cons2 = [v for k, v in T.d.items() if k[0] == "CON#" + tok]
+ok(len(cons2) == len(cons) + 1 and any(v.get("email") == "cliente@exemplo.com" for v in cons2), "e-mail do cliente gravado com o consentimento")
+st, r = chama("POST", "/g/%s/rosto" % tok, {"imagem": base64.b64encode(b"rosto-z").decode(), "consentimento": True, "email": "nao-e-email"})
+ok(not any(v.get("email") == "nao-e-email" for k, v in T.d.items() if k[0] == "CON#" + tok), "e-mail inválido não é gravado")
 ev_ok = sorted((k[1], v) for k, v in T.d.items() if k[0] == "EVT#" + tok and v["tipo"] == "selfie_ok")
 ok(ev_ok and "livres" in ev_ok[-1][1], "selfie_ok registra quantas compradas e cortesias abriram junto")
 S3.heads = 0
@@ -157,8 +160,6 @@ ok(S3.heads == 8, "galeria_obj: um head_object por chave na chamada (%d para 4 f
 # grupo de escola: nada sem rosto
 tokE = "E" * 22
 chama("POST", "/ponto/galerias", {"manifesto": dict(manv, token=tokE, codigo=None, tipo="evento")}, {"x-eterna-ponto": seg})
-st, r = chama("GET", "/g/%s/livres" % tokE)
-ok(st == 200 and r["galeria"]["fotos"] == [], "livres: grupo de escola não abre nada sem rosto")
 
 # v96.1: sessão de menor usa o limiar de criança (95): semelhança 90 abre a de adulto e não a de menor
 tokA, tokM = "F" * 22, "G" * 22
@@ -179,7 +180,7 @@ ok(st == 429 and r["motivo"] == "bloqueado" and r.get("teto") is True and app.ep
 st, r = chama("POST", "/g/%s/rosto" % tokT, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.1.2")
 ok(st == 429, "teto: parada também para quem bate")
 ok(len([v for k, v in T.d.items() if k[0] == "EVT#" + tokT and v["tipo"] == "galeria_teto_selfie"]) == 1, "teto: um evento de alerta")
-ok(chama("GET", "/g/%s/livres" % tokT)[0] == 200, "teto: as compradas continuam pelo QR")
+ok(chama("GET", "/g/%s/livres" % tokT)[0] == 403, "teto: sem selfie nada abre")
 st, r = chama("POST", "/g/%s/rosto" % tokA, {"imagem": base64.b64encode(b"rosto-a").decode(), "consentimento": True}, ip="9.0.1.3")
 ok(st == 200 and r.get("ok"), "teto: outra galeria não é afetada")
 for t_ in (tokA, tokM, tokT):                          # tira do ar as galerias deste bloco (coleções apagadas)

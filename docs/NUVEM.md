@@ -319,3 +319,7 @@ prontas da AWS, começando só contando.
 
 ## 10. Antes da produção
 As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.
+
+## Galeria só com selfie (24/11)
+
+`GET /g/<token>/livres` responde 403: nenhuma foto sai só com o QR ou o código. As compradas e cortesias da venda aparecem depois da selfie que bate em pelo menos uma foto da venda. O `POST /g/<token>/rosto` recebe `email`; um e-mail válido fica no registro `CON#<token>` do consentimento (400 dias).
