@@ -8,13 +8,15 @@ const fails=[],errs=[];const ok=(c,m)=>{if(!c)fails.push(m);};
 try{
   // todo texto usado existe no dicionário, nos 5 idiomas
   const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
-  const usadas=[...new Set([...html.matchAll(/\bTE\('([a-z_0-9]+)'/g)].map(m=>m[1]))];
+  // TE('zr_n_'+k): chave montada no código; vale como prefixo (o dicionário precisa ter ao menos uma chave que comece com ele)
+  const usadas=[...new Set([...html.matchAll(/\bTE\('([a-z_0-9]+)'(?!\s*\+)/g)].map(m=>m[1]))];
+  const prefixos=[...new Set([...html.matchAll(/\bTE\('([a-z_0-9]+_)'\s*\+/g)].map(m=>m[1]))];
   const pg=await b.newPage({viewport:{width:1280,height:900}});pg.setDefaultTimeout(8000);pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U);await pg.evaluate(()=>{localStorage.clear();sessionStorage.clear();});await pg.reload();await pg.waitForTimeout(500);
   // bandeiras no mesmo conjunto e ordem de parceiros.vivamaracana.com.br
   ok((await pg.$$eval('[data-act="idioma-equipe"]',b=>b.map(x=>x.dataset.l).join()))==='pt,en,es,fr','bandeiras fora da ordem');
   ok(await pg.$eval('[data-act="idioma-equipe"][data-l="pt"]',b=>b.getAttribute('aria-pressed'))==='true','português não vem marcado');
-  const falta=await pg.evaluate(u=>{const {EQ,LANGS}=ETERNA;const f=u.filter(k=>!EQ[k]);Object.entries(EQ).forEach(([k,v])=>{if(v.length!==LANGS.length||v.some(x=>!x))f.push(k+' incompleto');});return f;},usadas);
+  const falta=await pg.evaluate(([u,px])=>{const {EQ,LANGS}=ETERNA;const f=u.filter(k=>!EQ[k]);px.forEach(p=>{if(!Object.keys(EQ).some(k=>k.startsWith(p)))f.push(p+'*');});Object.entries(EQ).forEach(([k,v])=>{if(v.length!==LANGS.length||v.some(x=>!x))f.push(k+' incompleto');});return f;},[usadas,prefixos]);
   ok(!falta.length,'textos faltando: '+falta.join(', '));
   // sem escolha, a equipe abre em português; o seletor muda a tela de entrada e não mexe no idioma do cliente
   ok(/Entrar/.test(await pg.textContent('#main')),'padrão da equipe é português');

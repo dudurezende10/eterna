@@ -624,6 +624,73 @@ try:
     n_cp = m._zp_copias({"arq": cp})
     ok(n_cp >= 1 and n_sql(os.path.join(cp, "bancos", "vendas.db"), "select count(*) from sqlite_master") > 0
        and not os.path.exists(os.path.join(cp, "bancos", "vendas.db.tmp")), "copias: a .tmp que sobrou é apagada antes de copiar: %s" % n_cp)
+    # ---------------------------------------- testador 24/11: mover idempotente (retomada sem destino_existe) ----------------------------------------
+    # o mover_nvme terminou mas o registro falhou; o agente subiu entre as tentativas e recriou meta.json, a métrica de hoje e uma
+    # pasta de galeria: a retomada segue, a cópia da fase de teste no arquivo fica intacta e o que nasceu depois vai ao lado (.pos-)
+    mv = os.path.join(HOME, "mover-teste")
+    src, dst = os.path.join(mv, "src"), os.path.join(mv, "dst")
+    for d in (os.path.join(src, "gal1"), os.path.join(dst, "gal1")):
+        os.makedirs(d)
+    open(os.path.join(dst, "gal1", "m.json"), "w").write("teste")
+    open(os.path.join(src, "gal1", "m.json"), "w").write("novo")
+    open(os.path.join(dst, "2026-11-24.json"), "w").write("teste")
+    open(os.path.join(src, "2026-11-24.json"), "w").write("novo")
+    open(os.path.join(src, "2026-11-25.json"), "w").write("so-origem")
+    n_mv = m._zerar_mover(src, dst)
+    pos = sorted(x for x in os.listdir(dst) if ".pos-" in x)
+    ok(n_mv == 3 and m._zerar_ls(src) == [] and open(os.path.join(dst, "2026-11-24.json")).read() == "teste"
+       and open(os.path.join(dst, "gal1", "m.json")).read() == "teste" and open(os.path.join(dst, "2026-11-25.json")).read() == "so-origem"
+       and len(pos) == 2 and all(m._re_zerar_pos.search(x) for x in pos)
+       and open(os.path.join(dst, [x for x in pos if x.startswith("gal1")][0], "m.json")).read() == "novo",
+       "mover: pasta e arquivo repetidos vão ao lado sem sobrescrever: n=%s src=%s dst=%s" % (n_mv, m._zerar_ls(src), sorted(os.listdir(dst))))
+    ok(m._zerar_mover(src, dst) == 0, "mover: origem vazia (já movido) segue")
+    a_src, a_dst = os.path.join(mv, "home", "meta.json"), os.path.join(mv, "arq", "meta.json")
+    os.makedirs(os.path.dirname(a_src))
+    os.makedirs(os.path.dirname(a_dst))
+    open(a_dst, "w").write("teste")
+    ok(m._zerar_mover_arq(a_src, a_dst) == 0 and open(a_dst).read() == "teste", "mover_arq: origem ausente e destino presente segue")
+    open(a_src, "w").write("novo")
+    for x in ("rostos.db", "rostos.db-wal"):
+        open(os.path.join(mv, "arq", x), "w").write("teste")
+        open(os.path.join(mv, "home", x), "w").write("novo")
+    ok(m._zerar_mover_arq(a_src, a_dst) == 1 and not os.path.exists(a_src) and open(a_dst).read() == "teste", "mover_arq: os dois presentes, o novo vai ao lado")
+    for x in ("rostos.db", "rostos.db-wal"):
+        m._zerar_mover_arq(os.path.join(mv, "home", x), os.path.join(mv, "arq", x))
+    la = sorted(os.listdir(os.path.join(mv, "arq")))
+    pdb = [x for x in la if x.startswith("rostos.db.pos-") and not x.endswith("-wal")]
+    ok(len(la) == 6 and len(pdb) == 1 and pdb[0] + "-wal" in la and open(os.path.join(mv, "arq", pdb[0] + "-wal")).read() == "novo",
+       "mover_arq: banco e -wal ao lado continuam um par: %s" % la)
+    # desfazer: o que foi ao lado fica no arquivo
+    volta = os.path.join(mv, "volta")
+    nv = m._zerar_volta(dst, volta, os.path.join(mv, "pos-zeragem"))
+    ok(nv == 3 and sorted(os.listdir(volta)) == ["2026-11-24.json", "2026-11-25.json", "gal1"] and sorted(os.listdir(dst)) == pos,
+       "desfazer: os .pos- ficam no arquivo: %s %s" % (sorted(os.listdir(volta)), sorted(os.listdir(dst))))
+    # testador 24/11: o zerar-falhou.json sempre com passo e motivo legíveis, mesmo sem espaço para o .tmp
+    import errno as _errno
+    ok(m._zerar_codigo(OSError(_errno.ENOSPC, "x")) == "disco_cheio" and m._zerar_codigo(PermissionError(_errno.EACCES, "x")) == "sem_escrita"
+       and m._zerar_codigo(OSError(_errno.EXDEV, "x")) == "outro_disco" and m._zerar_codigo(m.ZerarErro("sem_escrita")) == "sem_escrita",
+       "motivo: erros do disco viram códigos legíveis")
+    for f in (m.ZERAR_FALHOU, m.ZERAR_ANDA):
+        if os.path.exists(f):
+            os.remove(f)
+    json.dump({"id": "fase-teste-20261124-2303", "por": "admin-zr", "tentativas": 2, "t": 1, "ip": "127.0.0.1"}, open(m.ZERAR_ANDA, "w"))
+    real_gp = m._grava_privado
+
+    def cheio(path, data):
+        open(path + ".tmp", "w").close()
+        raise OSError(_errno.ENOSPC, "No space left on device")
+    m._grava_privado = cheio
+    try:
+        m._zerar_falhou("fase-teste-20261124-2303", "mover_nvme", "disco_cheio", "admin-zr")
+    finally:
+        m._grava_privado = real_gp
+    fz = json.load(open(m.ZERAR_FALHOU)) if os.path.exists(m.ZERAR_FALHOU) else {}
+    ok(fz.get("passo") == "mover_nvme" and fz.get("motivo") == "disco_cheio" and fz.get("id") == "fase-teste-20261124-2303" and "tentativas" not in fz
+       and not os.path.exists(m.ZERAR_ANDA) and not os.path.exists(m.ZERAR_FALHOU + ".tmp"),
+       "disco cheio: zerar-falhou.json reescrito no lugar com passo e motivo: %s" % fz)
+    pv_f = m.zerar_previa().get("falha") or {}
+    ok(pv_f.get("passo") == "mover_nvme" and pv_f.get("motivo") == "disco_cheio", "disco cheio: a prévia leva passo e motivo: %s" % pv_f)
+    os.remove(m.ZERAR_FALHOU)
 except Exception:
     import traceback
     falhas.append("exceção: " + traceback.format_exc()[-1500:])

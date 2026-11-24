@@ -28,7 +28,7 @@ Para receber de um servidor FTP que já existe na máquina, vigiando a pasta del
      ETERNA_PASTA="C:/FTP/fotos" python3 eterna-agente.py
 """
 import hashlib, json, os, shutil, subprocess, sys, threading, time, glob, socket, random, string, sqlite3, base64, queue, collections, tempfile
-import array, itertools, operator
+import array, itertools, operator, errno
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 import unicodedata, ipaddress
@@ -13037,7 +13037,12 @@ def zerar_inventario():
     fica["treino_marcacoes"] = _zerar_n(TREINO_DB, "select count(*) from rotulo")
     fica["dias_roverpix"] = sum(1 for n in _zerar_ls(os.path.join(ROVER_DIR, "agg")) if n.endswith(".json"))
     fica["dias_entradas"] = _zerar_n(OPERACAO_DB, "select count(*) from (select dia from entrada union select dia from entrada_total)")
-    fica["cartoes"] = max(0, _zerar_n(VENDAS_DB, "select count(*) from cartao") - bloq)
+    # 24/11 (testador): os cartões para usar são os da tabela fora do lote fase-teste, menos os entregues que estão na tabela
+    # (um entregue fora da tabela não desconta nada; depois da zeragem os do lote fase-teste não contam).
+    bloq_tab = 0
+    if ZERAR_ATIVACOES:
+        bloq_tab = _zerar_n(VENDAS_DB, "select count(distinct e.qr) from ativ_entrega e join cartao k on k.token = e.qr where k.lote != ?", (ZERAR_LOTE,))
+    fica["cartoes"] = max(0, _zerar_n(VENDAS_DB, "select count(*) from cartao where lote != ?", (ZERAR_LOTE,)) - bloq_tab)
     fica["ativ_vendas_antigas"] = _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='antigo'")
     if not ZERAR_ATIVACOES:
         fica["ativ_vendas_tablet"], fica["ativ_entregas"], fica["ativ_videos"] = tablet, entregas, videos
@@ -13132,27 +13137,58 @@ def _zerar_dir(p):
     os.chmod(p, 0o700)                    # o umask pode ter tirado bits; a pasta é só do usuário do agente
 
 
+_ZERAR_POS_MARCA = []
+_re_zerar_pos = re.compile(r"\.pos-\d{8}-\d{6}(-\d+)?(-wal|-shm|-journal)?$")
+
+
+def _zerar_ao_lado(dst):
+    """24/11 (testador): nome livre ao lado de dst, dentro do arquivo: <nome>.pos-AAAAMMDD-HHMMSS (-2, -3 se já existir). Para
+    -wal/-shm/-journal a marca vai antes do sufixo (rostos.db.pos-X e rostos.db.pos-X-wal continuam um par do SQLite)."""
+    if not _ZERAR_POS_MARCA:
+        _ZERAR_POS_MARCA.append(time.strftime("%Y%m%d-%H%M%S"))
+    d, n = os.path.split(dst)
+    fim = ""
+    for s in ("-wal", "-shm", "-journal"):
+        if n.endswith(s):
+            n, fim = n[:-len(s)], s
+            break
+    i = 1
+    while True:
+        p = os.path.join(d, "%s.pos-%s%s%s" % (n, _ZERAR_POS_MARCA[0], "" if i == 1 else "-%d" % i, fim))
+        if not os.path.lexists(p):
+            return p
+        i += 1
+
+
 def _zerar_mover(src_dir, dst_dir, fica=None):
-    """Move cada entrada do primeiro nível de src_dir (menos nomes com ponto e as de fica) para dst_dir. Idempotente: o que já
-    foi não está mais em src_dir. Destino que já existe = erro (nunca sobrescreve)."""
+    """Move cada entrada do primeiro nível de src_dir (menos nomes com ponto e as de fica) para dst_dir. Idempotente (24/11,
+    testador): o que já foi não está mais em src_dir e segue. Se o mesmo nome já está no arquivo, o do arquivo é a cópia da fase de
+    teste (movida numa tentativa anterior) e o da origem nasceu depois (o agente subiu entre as tentativas): o novo vai inteiro,
+    arquivo ou pasta, para o lado (_zerar_ao_lado), também dentro do arquivo. Nunca sobrescreve nem junta pastas."""
     nomes = [n for n in _zerar_ls(src_dir) if not (fica and n in fica)]
     if not nomes:
         return 0
     os.makedirs(dst_dir, mode=0o700, exist_ok=True)
+    lado = 0
     for n in nomes:
         dst = os.path.join(dst_dir, n)
         if os.path.lexists(dst):
-            raise ZerarErro("destino_existe")
+            dst = _zerar_ao_lado(dst)
+            lado += 1
         os.rename(os.path.join(src_dir, n), dst)
+    if lado:
+        print("  zerar: %d item(ns) de %s já estavam no arquivo; os novos foram ao lado (.pos-)" % (lado, os.path.relpath(src_dir, HOME)))
     return len(nomes)
 
 
 def _zerar_mover_arq(src, dst):
-    """Um arquivo solto. Origem sumiu = já feito (ou não havia)."""
+    """Um arquivo solto. Origem sumiu = já feito (ou não havia). Origem e destino presentes: o da origem nasceu depois e vai para o
+    lado, dentro do arquivo (ver _zerar_mover)."""
     if not os.path.lexists(src):
         return 0
     if os.path.lexists(dst):
-        raise ZerarErro("destino_existe")
+        dst = _zerar_ao_lado(dst)
+        print("  zerar: %s já estava no arquivo; o novo foi ao lado (.pos-)" % os.path.relpath(src, HOME))
     os.makedirs(os.path.dirname(dst), mode=0o700, exist_ok=True)
     os.rename(src, dst)
     return 1
@@ -13409,8 +13445,53 @@ def _zerar_feitos(arq):
     return feitos
 
 
+def _zerar_codigo(ex):
+    """Código curto e legível de um erro de passo (vai para o zerar-falhou.json e a tela traduz)."""
+    if isinstance(ex, ZerarErro):
+        return ex.codigo
+    if isinstance(ex, OSError):
+        if ex.errno in (errno.ENOSPC, getattr(errno, "EDQUOT", -1)):
+            return "disco_cheio"
+        if ex.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
+            return "sem_escrita"
+        if ex.errno == errno.EXDEV:
+            return "outro_disco"
+    if isinstance(ex, sqlite3.Error) and "full" in str(ex).lower():
+        return "disco_cheio"
+    return type(ex).__name__
+
+
+def _zerar_grava_falha(dados, src=None):
+    """24/11 (testador): o zerar-falhou.json sempre com passo e motivo legíveis. Normal: grava pelo .tmp. Sem espaço: src (o
+    andamento ou o pedido) vai para o lugar do zerar-falhou.json (rename não precisa de espaço) e é reescrito no próprio bloco
+    (o texto é pequeno). -> True se o texto legível ficou gravado. src nunca fica no lugar quando há erro."""
+    txt = json.dumps(dados)
+    try:
+        _grava_privado(ZERAR_FALHOU, txt)
+        if src and os.path.exists(src):
+            os.remove(src)
+        return True
+    except Exception:
+        try:
+            os.remove(ZERAR_FALHOU + ".tmp")
+        except OSError:
+            pass
+    if src and os.path.exists(src):
+        os.replace(src, ZERAR_FALHOU)
+    try:
+        with open(ZERAR_FALHOU, "r+b") as f:
+            f.write(txt.encode())
+            f.truncate()
+            f.flush()
+            os.fsync(f.fileno())
+        return True
+    except Exception:
+        return False
+
+
 def _zerar_falhou(zid, passo, motivo, por):
-    _grava_privado(ZERAR_FALHOU, json.dumps({"id": zid, "em": _iso(), "passo": passo, "motivo": motivo}))
+    if not _zerar_grava_falha({"id": zid, "em": _iso(), "passo": passo, "motivo": motivo}, ZERAR_ANDA):
+        print("  zerar: zerar-falhou.json sem o passo e o motivo (disco cheio?)")
     try:
         os.remove(ZERAR_ANDA)
     except OSError:
@@ -13468,7 +13549,7 @@ def zerar_partida():
             n = fn(ctx)
             _zerar_passo_log(ctx, nome, True, n)      # sem o registro, o passo conta como não feito (a próxima tentativa refaz)
         except Exception as ex:
-            codigo = ex.codigo if isinstance(ex, ZerarErro) else type(ex).__name__
+            codigo = _zerar_codigo(ex)
             if nome == "preparo":                     # nada foi tocado: recusa e o agente sobe normal
                 _zerar_falhou(zid, nome, codigo, por)
                 return None
@@ -13509,19 +13590,22 @@ def zerar_partida_segura():
     try:
         return zerar_partida()
     except Exception as ex:
+        motivo = _zerar_codigo(ex)
+        if motivo == type(ex).__name__:
+            motivo = "partida"
         print("  zerar: a partida falhou (%s); o agente sobe normal" % type(ex).__name__)
     for src in (ZERAR_ANDA, ZERAR_PEDIDO):
         try:
             if not os.path.exists(src):
                 continue
             j = _zerar_ler(src) or {}
-            os.replace(src, ZERAR_FALHOU)          # não precisa de espaço em disco
-            try:                                   # com espaço, deixa o passo e o motivo para a tela
-                zid = j.get("id") if isinstance(j.get("id"), str) and _re_zerada.match(j["id"]) else None
-                _grava_privado(ZERAR_FALHOU, json.dumps({"id": zid, "em": _iso(), "passo": (zid and _zerar_ultima_falha(os.path.join(ARQUIVO_DIR, zid))) or "partida",
-                                                         "motivo": "partida"}))
-            except Exception:
-                pass
+            zid = j.get("id") if isinstance(j.get("id"), str) and _re_zerada.match(j["id"]) else None
+            passo = (zid and _zerar_ultima_falha(os.path.join(ARQUIVO_DIR, zid))) or "partida"
+            # 24/11 (testador): passo e motivo legíveis; sem espaço, src é renomeado e reescrito no lugar (_zerar_grava_falha)
+            if not _zerar_grava_falha({"id": zid, "em": _iso(), "passo": passo, "motivo": motivo}, src):
+                print("  zerar: zerar-falhou.json sem o passo e o motivo (disco cheio?)")
+            if os.path.exists(src):
+                os.remove(src)
         except Exception as ex:
             print("  zerar: %s não saiu do lugar (%s)" % (os.path.basename(src), type(ex).__name__))
             try:
@@ -13531,10 +13615,16 @@ def zerar_partida_segura():
     return None
 
 
+_ZERAR_FICOU = []
+
+
 def _zerar_volta(src_dir, dst_dir, pos):
     """Desfazer: devolve cada entrada de src_dir (arquivo) a dst_dir; o que já existe no lugar vai antes para pos."""
     n = 0
     for nome in _zerar_ls(src_dir):
+        if _re_zerar_pos.search(nome):           # o que nasceu entre tentativas (_zerar_ao_lado) fica no arquivo
+            _ZERAR_FICOU.append(nome)
+            continue
         dst = os.path.join(dst_dir, nome)
         os.makedirs(dst_dir, exist_ok=True)
         if os.path.lexists(dst):
@@ -13580,6 +13670,9 @@ def zerar_desfazer(zid, sobrescrever=False):
             a = os.path.join(raiz, nome)
             rel = os.path.relpath(a, base).replace(os.sep, "/")
             if any(rel.startswith(p + "/") for p in ZERAR_NVME_PASTAS):
+                continue
+            if _re_zerar_pos.search(nome):
+                _ZERAR_FICOU.append(nome)
                 continue
             dst = _zh(rel)
             if os.path.lexists(dst):
@@ -13629,6 +13722,8 @@ def zerar_desfazer(zid, sobrescrever=False):
         os.replace(ZERAR_FEITA, os.path.join(HOME, "ponto", "zerada-desfeita-%s.json" % zid))
     _zerar_log("zerar_desfeito", "linha de comando")
     print("zeragem %s desfeita: %s" % (zid, json.dumps(voltou)))
+    if _ZERAR_FICOU:
+        print("ficaram em arquivo/%s %d item(ns) .pos- (gravados pelo agente entre uma tentativa e outra da zeragem)" % (zid, len(_ZERAR_FICOU)))
     print("abra o agente de novo (sudo systemctl start eterna eterna-vigia) e feche e abra os postos e Checkouts")
     return 0
 
@@ -13652,7 +13747,7 @@ def zerar_previa():
     f = _zerar_ler(ZERAR_FALHOU)
     if f:
         falha = {"id": f.get("id") if isinstance(f.get("id"), str) and _re_zerada.match(f.get("id")) else None, "em": f.get("em"),
-                 "passo": f.get("passo") if f.get("passo") in dict(zerar_passos()) else None,
+                 "passo": f.get("passo") if f.get("passo") in dict(zerar_passos()) or f.get("passo") == "partida" else None,
                  "motivo": ",".join(x for x in str(f.get("motivo") or "").split(",") if re.match(r"^[A-Za-z_]{1,40}$", x)) or None}
     return {"ok": True, "pode": not bq, "bloqueios": bq, "vai": inv["vai"], "fica": inv["fica"], "ultima": ultima, "falha": falha,
             "prazo_dias": ZERAR_PRAZO_DIAS, "ativacoes": ZERAR_ATIVACOES}

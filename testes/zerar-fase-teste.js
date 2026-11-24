@@ -55,6 +55,15 @@ function usuario(pg,email,nome,preset){return pg.evaluate(([e,n,p])=>{const U0=J
       const x=await painel(pg);vistos[l]=x;ok(x&&!/\bzr_[a-z_]+/.test(x),'2: chave crua em '+l+': '+x);}
     ok(new Set(Object.values(vistos)).size===LS.length,'2: o cartão muda com a língua: '+J(Object.keys(vistos)));
     const de=await pg.evaluate(()=>ETERNA.EQ.zr_titulo[ETERNA.LANGS.findIndex(x=>x[0]==='de')]);ok(de==='Testphase zurücksetzen','2: chaves com a 5ª língua (de) também');
+    // testador 24/11: o aviso de falha com a etapa e o motivo em palavras simples, nas 5 línguas; sem o passo, texto genérico
+    for(const [f,re] of [[{passo:'preparo',motivo:'sem_escrita'},/conferência antes de começar.*sem permissão de escrita numa pasta/],[{passo:'mover_nvme',motivo:'disco_cheio'},/arquivo das sessões.*disco cheio/],
+      [{passo:'mover_nvme',motivo:'destino_existe'},/pasta já existia no arquivo/],[{passo:'preparo',motivo:'outro_disco,espaco'},/outro disco.*Falta espaço/],[{passo:null,motivo:null},/não conseguiu registrar onde parou/]]){
+      const xs={};for(const l of LS){await pg.evaluate(([l,f])=>{const s=ETERNA.state;s.langEq=l;if(s.user)s.user.idioma=l;s.zerar.previa=Object.assign({},s.zerar.previa,{ultima:null,falha:f});ETERNA.render();},[l,f]);
+        xs[l]=await pg.evaluate(()=>{const a=document.querySelector('#zr-painel .zr-aviso');return a&&a.textContent;});
+        ok(xs[l]&&!/\bzr_[a-z_]+|mover_nvme|sem_escrita|disco_cheio|destino_existe|outro_disco|\?/.test(xs[l]),'falha: texto cru em '+l+': '+xs[l]);}
+      ok(re.test(xs.pt||''),'falha em português: '+xs.pt);ok(new Set(Object.values(xs)).size===LS.length,'falha: muda com a língua: '+J(xs));}
+    await pg.evaluate(p=>{const s=ETERNA.state;s.langEq='pt';if(s.user)s.user.idioma='pt';s.zerar.previa=p;ETERNA.render();},pv);
+    ok(await pg.evaluate(()=>['en','es','fr','de'].every(l=>{const i=ETERNA.LANGS.findIndex(x=>x[0]===l);return Object.keys(ETERNA.EQ).filter(k=>/^zr_(ps|mt)_/.test(k)).every(k=>ETERNA.EQ[k][i]&&!/—/.test(String(ETERNA.EQ[k][i])));})),'falha: etapas e motivos nas 5 línguas, sem travessão');
     // revisão 24/11: o bloqueio "prazo" (botão só até 25/11) tem texto nas 5 línguas, sem travessão
     const pz=await pg.evaluate(()=>ETERNA.EQ.zr_bq_prazo);ok(Array.isArray(pz)&&pz.length===5&&pz.every(x=>x&&!/—/.test(x))&&/25\/11/.test(pz[0]),'prazo: zr_bq_prazo nas 5 línguas: '+J(pz));
     // 4: sem ZERAR exato, nenhum POST
