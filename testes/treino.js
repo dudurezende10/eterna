@@ -1,7 +1,7 @@
 // 16/11 (plano "Curadoria › Treino da IA", F1): a tela de treino marca fotos reais do servidor. Abas Marcar e Outubro (exemplo);
 // dia, fotógrafo e modo; foto inteira com lupa; eixo Ponto com botões grandes e teclas G A T C O; P, N, 1 a 9, D, Enter, setas e Z;
 // gravação otimista com fila só de texto (eterna.treino.fila.v1); nenhuma foto guardada no aparelho; o interruptor da análise
-// (/treino/config, só com Painel de controle em Alterar, auditLog); a Supervisora marca (preset e migração única); a coleção
+// (/treino/config, só com Painel de controle em Alterar, auditLog; desde 24/11 em Configurações › Preços e Checkout › Fundos de IA, #tr-cfg); a Supervisora marca (preset e migração única); a coleção
 // treino só é lida por quem tem Qualidade e IA em Ver. Agente falso por page.route na própria origem; fotos = 1 pixel.
 const {chromium}=require('playwright');const entrarTeste=require('./_entrar');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;
@@ -43,13 +43,19 @@ try{
   {const {ctx,pg,R}=await nova();await entrar(pg,null,true);
     await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
     const abas=await pg.$$eval('[data-act="tr-aba"]',x=>x.map(b=>b.dataset.a));
-    ok(J(abas)===J(['marcar','medida','outubro']),'abas Marcar, Medição (18/11) e Outubro (sem abas vazias): '+J(abas));
-    const an=await pg.evaluate(()=>[...document.querySelectorAll('.tr-an [data-act="tr-analise"]')].map(b=>b.dataset.k+':'+b.dataset.v+':'+b.getAttribute('aria-pressed')));
-    ok(an.length===6&&an.includes('exposicao:desligada:true')&&an.includes('ponto:desligada:true'),'interruptor no topo, desligado, com os 3 estados para cada análise: '+J(an));
-    ok(/Desligada: o servidor não analisa nada/.test(await pg.textContent('.tr-an')),'texto claro do interruptor');
-    await pg.click('[data-act="tr-analise"][data-k="exposicao"][data-v="medir"]');await espera(pg,()=>ETERNA.state.agent.treino.analise.exposicao==='medir');
+    ok(J(abas)===J(['marcar','medida','outubro']),'abas Marcar, Resultado (data-a medida) e Outubro (sem abas vazias): '+J(abas));
+    ok(await pg.textContent('[data-act="tr-aba"][data-a="medida"]')==='Resultado','24/11: a aba que era Medição se chama Resultado');
+    // 24/11: o interruptor saiu do Treino e foi para Configurações › Preços e Checkout › Fundos de IA (#tr-cfg)
+    ok(!await pg.$('.tr-an')&&!await pg.$('[data-act="tr-analise"]')&&!await pg.$('[data-act="tr-cfg"]'),'o Treino não tem mais o interruptor');
+    ok(/Fundos de IA automáticos desligados/.test(await pg.textContent('.tr-aviso-desl').catch(()=>''))&&await pg.$('.tr-aviso-desl [data-act="tr-cfg-abrir"]'),'Treino: aviso dos Fundos de IA desligados com Abrir em Configurações');
+    await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await espera(pg,()=>document.querySelector('#tr-cfg'));
+    const an=await pg.evaluate(()=>[...document.querySelectorAll('#tr-cfg [data-act="tr-cfg"]')].map(b=>b.dataset.k+':'+b.dataset.v+':'+b.getAttribute('aria-pressed')));
+    ok(an.length===4&&an.every(x=>x.endsWith(':false')),'Configurações: 2 botões por linha, nenhum marcado com o servidor em desligada: '+J(an));
+    ok(/Parado no servidor/.test(await pg.textContent('#tr-cfg'))&&/Desligado, o servidor continua analisando em silêncio/.test(await pg.textContent('#tr-cfg')),'texto claro do quadro e a pílula Parado no servidor');
+    await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="off"]');await espera(pg,()=>ETERNA.state.agent.treino.analise.exposicao==='medir');
     const aud=await pg.evaluate(()=>{const l=JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]');return l.find(e=>e.acao==='treino_analise');});
-    ok(J(R.cfg)===J([{exposicao:'medir'}])&&aud&&aud.mudancas[0].campo==='analise.exposicao'&&aud.mudancas[0].para==='medir','Admin liga a medida da exposição com auditLog: '+J(R.cfg)+' '+J(aud));
+    ok(J(R.cfg)===J([{exposicao:'medir'}])&&aud&&aud.mudancas[0].campo==='analise.exposicao'&&aud.mudancas[0].para==='medir','Admin põe a exposição em Desligado ({exposicao:"medir"}) com auditLog: '+J(R.cfg)+' '+J(aud));
+    await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>document.querySelector('[data-act="tr-dia"]'));
     // dia, fotógrafo e modo; Carregar
     ok(await pg.$eval('[data-act="tr-dia"]',s=>s.options.length===2&&s.value==='2026-11-15'),'seletor de dias com sessão (o mais recente primeiro)');
     await pg.selectOption('[data-act="tr-modo"]','ia');await pg.selectOption('[data-act="tr-foto"]','carlos');
@@ -162,7 +168,7 @@ try{
     {const b6=await borda(6);ok(!/good|warn|bad/.test(b6),'grade: a foto desfeita não fica verde: '+b6);}
     // Carregar, outra aba e outra tela também gravam
     await pg.click('[data-act="tr-go"][data-i="8"]');await blur();await pg.keyboard.press('a');await pg.click('[data-act="tr-aba"][data-a="medida"]');await espera(pg,()=>ETERNA.trFila().length===0);await pg.waitForTimeout(300);
-    ok(R.posts.length===6&&R.posts[5].b.pid===PIDS[8]&&R.posts[5].b.ponto==='arquibancada','trocar para a aba Medição grava: '+J(R.posts.map(x=>x.b.pid)));
+    ok(R.posts.length===6&&R.posts[5].b.pid===PIDS[8]&&R.posts[5].b.ponto==='arquibancada','trocar para a aba Resultado grava: '+J(R.posts.map(x=>x.b.pid)));
     await pg.click('[data-act="tr-aba"][data-a="marcar"]');await pg.click('[data-act="tr-go"][data-i="9"]');await blur();await pg.keyboard.press('t');
     await pg.evaluate(()=>ETERNA.go('painel'));await espera(pg,()=>ETERNA.trFila().length===0);await pg.waitForTimeout(300);
     ok(R.posts.length===7&&R.posts[6].b.pid===PIDS[9]&&R.posts[6].b.ponto==='trofeu','sair da tela do Treino grava: '+J(R.posts.map(x=>x.b.pid)));
@@ -366,14 +372,15 @@ try{
     await pg.click('[data-act="tr-carregar"]');await espera(pg,()=>ETERNA.state.train.itens.length===12);
     await pg.evaluate(()=>document.activeElement&&document.activeElement.blur());await pg.keyboard.press('c');await pg.keyboard.press('Enter');await pg.waitForTimeout(400);
     ok(R.posts.length===1&&R.posts[0].b.ponto==='chute','Supervisora marca: '+J(R.posts));
-    ok((await pg.$$('.tr-an [data-act="tr-analise"]')).length===6,'Supervisora (Painel de controle em Alterar) vê o interruptor');
+    await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await espera(pg,()=>document.querySelector('#tr-cfg'));
+    ok((await pg.$$('#tr-cfg [data-act="tr-cfg"]')).length===4,'Supervisora (Painel de controle em Alterar) vê os 4 botões em Configurações › Fundos de IA');
     await ctx.close();}
   // ---------- Validador: marca, mas não muda o interruptor ----------
   {const {ctx,pg,R}=await nova();await entrar(pg,'qualidade@eterna.photo');
     await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>ETERNA.state.train.dias&&ETERNA.state.train.dias.length);
-    ok((await pg.$$('.tr-an [data-act="tr-analise"]')).length===0&&/Desligada/.test(await pg.textContent('.tr-an')),'sem Painel de controle: o interruptor aparece só como texto');
-    await pg.evaluate(()=>{const b=document.createElement('button');b.dataset.act='tr-analise';b.dataset.k='ponto';b.dataset.v='ligada';b.id='tx';document.querySelector('#main').appendChild(b);b.click();});await pg.waitForTimeout(300);
-    ok(R.cfg.length===0,'tr-analise sem configuracao.u não chega ao servidor: '+J(R.cfg));
+    ok(!await pg.$('#tr-cfg')&&!await pg.$('[data-act="tr-cfg"]')&&!await pg.$('.tr-aviso-desl [data-act="tr-cfg-abrir"]')&&/Fundos de IA automáticos desligados/.test(await pg.textContent('.tr-aviso-desl').catch(()=>'')),'sem Painel de controle: nada do interruptor, só o aviso sem o botão');
+    await pg.evaluate(()=>{const b=document.createElement('button');b.dataset.act='tr-cfg';b.dataset.k='ponto';b.dataset.v='on';b.id='tx';document.querySelector('#main').appendChild(b);b.click();});await pg.waitForTimeout(300);
+    ok(R.cfg.length===0,'tr-cfg sem configuracao.u não chega ao servidor: '+J(R.cfg));
     await ctx.close();}
   // ---------- quem não tem Qualidade e IA em Ver não lê a coleção treino ----------
   {const {ctx,pg,R}=await nova();await entrar(pg,'carlos@eterna.photo');await pg.waitForTimeout(3500);
@@ -382,8 +389,8 @@ try{
     await ctx.close();}
   // ---------- textos novos nas 5 línguas, sem travessão ----------
   {const {ctx,pg}=await nova();await pg.goto(U);await pg.waitForTimeout(200);
-    const r=await pg.evaluate(()=>{const E=ETERNA.EQ;const ks=Object.keys(E).filter(k=>/^tr_(an|aba|p_|m_|dia|fila|teclas|conflito|eyebrow2|out_nota|amostra|sem_servidor)/.test(k));
-      return {n:ks.length,ruins:ks.filter(k=>E[k].length!==5||E[k].some(v=>{const t=typeof v==='function'?v(1,2):v;return !t||/[—–]/.test(t);}))};});
+    const r=await pg.evaluate(()=>{const E=ETERNA.EQ;const ks=Object.keys(E).filter(k=>/^tr_(an|aba|p_|m_|dia|fila|teclas|conflito|eyebrow2|out_nota|amostra|sem_servidor|cfg_|ia_|ponto_nota|qual_nota|aviso_desl|res_onde)/.test(k));
+      return {n:ks.length,ruins:ks.filter(k=>E[k].length!==5||E[k].some(v=>{const t=typeof v==='function'?v(1,2,3):v;return !t||/[—–]/.test(t);}))};});
     ok(r.n>=25&&!r.ruins.length,'textos do treino nas 5 línguas, sem travessão: '+J(r));
     await ctx.close();}
   ok(!errs.length,'erros de página: '+errs.join(' | '));

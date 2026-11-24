@@ -1,4 +1,5 @@
-// 18/11 (plano "bases dos fundos de IA só com foto do gramado", fatia B, critérios 22 a 24): Treino da IA › Medição. A aba abre
+// 18/11 (plano "bases dos fundos de IA só com foto do gramado", fatia B, critérios 22 a 24): Treino da IA › Resultado (a antiga
+// Medição; desde 24/11 o interruptor e o "ligar mesmo assim" ficam em Configurações › Preços e Checkout › Fundos de IA, #tr-cfg). A aba abre
 // sem erro com a situação, o critério (quanto falta por classe), o gramado como base, o acerto por classe, a matriz marcado ×
 // reconhecido, as pistas da imagem e a lista dos erros; a miniatura de um erro abre a lupa e "Abrir no Marcar" leva à foto na
 // aba Marcar; abaixo do critério o botão Ligada do ponto fica desativado com a explicação, e o 409 do servidor mostra o aviso
@@ -61,11 +62,17 @@ try{
   const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));
   await pg.goto(U);await pg.waitForTimeout(300);const email=await entrarTeste.adminFicticio(pg);R.email=email;await entrarTeste(pg,email);await espera(pg,()=>ETERNA.state.agent.on&&ETERNA.state.agent.treino);
   await pg.evaluate(()=>ETERNA.go('treino'));await pg.waitForTimeout(300);
-  ok(J(await pg.$$eval('[data-act="tr-aba"]',x=>x.map(b=>b.dataset.a)))===J(['marcar','medida','outubro']),'abas com a Medição');
-  // 24: Ligada travado abaixo do critério, com a explicação
-  const lig=await pg.$eval('[data-act="tr-analise"][data-k="ponto"][data-v="ligada"]',x=>({dis:x.disabled,t:x.title}));
-  ok(lig.dis&&/critério/.test(lig.t),'24: Ligada do ponto desativado com a explicação: '+J(lig));
-  const ex=await pg.$eval('[data-act="tr-analise"][data-k="exposicao"][data-v="ligada"]',x=>x.disabled);ok(ex,'a exposição não liga (ainda sem medida)');
+  ok(J(await pg.$$eval('[data-act="tr-aba"]',x=>x.map(b=>b.dataset.a)))===J(['marcar','medida','outubro']),'abas com o Resultado');
+  ok(await pg.textContent('[data-act="tr-aba"][data-a="medida"]')==='Resultado','24/11: a aba se chama Resultado');
+  // 24 (24/11): o interruptor está em Configurações › Fundos de IA; abaixo do critério, Ligado abre a confirmação (sem travar)
+  const irCfg=async()=>{await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});await espera(pg,()=>document.querySelector('#tr-cfg [data-act="tr-cfg"]'));};
+  await irCfg();
+  const lig=await pg.$eval('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]',x=>({dis:x.disabled,p:x.getAttribute('aria-pressed')}));
+  ok(!lig.dis&&lig.p==='false','24: Ligado do ponto não fica travado: '+J(lig));
+  {let d0=null;pg.once('dialog',d=>{d0=d.message();d.dismiss();});const c0=R.cfg.length;await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]');await pg.waitForTimeout(300);
+    ok(/abaixo da meta/.test(d0||'')&&R.cfg.length===c0,'24: Ligado com o critério não passando abre a confirmação; Cancelar não manda nada: '+J(d0));}
+  const ex=await pg.$eval('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="on"]',x=>x.disabled);ok(!ex,'a exposição também não fica travada (o servidor confere)');
+  await pg.evaluate(()=>ETERNA.go('treino'));await espera(pg,()=>document.querySelector('[data-act="tr-aba"]'));
   // 22: a aba abre com tudo
   await pg.click('[data-act="tr-aba"][data-a="medida"]');await espera(pg,()=>document.querySelector('.tr-med-mx'));
   const t=await pg.evaluate(()=>({mx:document.querySelectorAll('.tr-med-mx tbody tr').length,cols:document.querySelectorAll('.tr-med-mx thead th').length,ok:[...document.querySelectorAll('.tr-med-mx td.ok')].length,
@@ -87,36 +94,37 @@ try{
   await pg.click('.tr-med-e:nth-child(2) [data-act="tr-med-ir"]');await espera(pg,()=>ETERNA.state.train.aba==='marcar'&&ETERNA.state.train.itens.length);
   const ir=await pg.evaluate(()=>({aba:ETERNA.state.train.aba,dia:ETERNA.state.train.dia,atual:(ETERNA.trAtual()||{}).pid,src:(document.querySelector('.tr-foto img')||{}).src}));
   ok(ir.aba==='marcar'&&ir.dia===DIA&&ir.atual===ERROS[1].pid&&R.amostra.some(q=>q.marcadas==='1'),'23: Abrir no Marcar mostra a foto na aba Marcar: '+J(ir)+' '+J(R.amostra));
-  // 24: 409 do servidor -> aviso e Medição
-  await pg.evaluate(()=>{ETERNA.state.agent.treino.modelo_ponto.criterio_passa=true;ETERNA.render();});
-  await pg.click('[data-act="tr-analise"][data-k="ponto"][data-v="ligada"]');await pg.waitForTimeout(500);
-  const t409=await pg.evaluate(()=>({toast:document.getElementById('toast').textContent,aba:ETERNA.state.train.aba,ponto:ETERNA.state.agent.treino.analise.ponto}));
-  ok(/critério/.test(t409.toast)&&t409.aba==='medida'&&t409.ponto==='medir','24: 409 criterio vira o aviso e abre a Medição: '+J(t409));
+  // 24: 409 do servidor -> aviso, e a tela fica em Configurações
+  await irCfg();await pg.evaluate(()=>{ETERNA.state.agent.treino.modelo_ponto.criterio_passa=true;ETERNA.render();});
+  await pg.click('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]');await pg.waitForTimeout(500);
+  const t409=await pg.evaluate(()=>({toast:document.getElementById('toast').textContent,view:ETERNA.state.view,aba:ETERNA.state.train.aba,ponto:ETERNA.state.agent.treino.analise.ponto,cp:ETERNA.state.agent.treino.modelo_ponto.criterio_passa}));
+  ok(/abaixo da meta\. Toque em Ligado de novo/.test(t409.toast)&&t409.view==='catalogo'&&t409.aba==='marcar'&&t409.ponto==='medir'&&t409.cp===false&&J(R.cfg[R.cfg.length-1])===J({ponto:'ligada'}),'24: 409 criterio vira o aviso e não troca de tela nem de aba: '+J(t409));
   // 18/11 (Eduardo, ligar já): "Ligar mesmo assim" só para quem tem configuracao.u, com confirmação; ligado assim, o selo
   // "Ligado abaixo da meta por <nome> em <data>" e o que falta continuam na Medição
-  await pg.evaluate(()=>{const t=ETERNA.state.train;t.aba='medida';ETERNA.render();});await espera(pg,()=>document.querySelector('.tr-med-faltas'));
-  ok(await pg.$('[data-act="tr-forcar"]'),'o botão Ligar mesmo assim aparece abaixo do critério para quem tem configuracao.u');
+  const LIGA='#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]';
+  ok(await pg.$(LIGA)&&/O acerto ainda não chegou à meta/.test(await pg.textContent('#tr-cfg')),'abaixo do critério, Ligado aparece com a nota para quem tem configuracao.u');
   const semPerm=await pg.evaluate(()=>{const u=ETERNA.state.user;const p0=u.perms.configuracao;u.perms.configuracao={c:false,r:true,u:false,d:false};ETERNA.render();
-    const tem=!!document.querySelector('[data-act="tr-forcar"]');u.perms.configuracao=p0;ETERNA.render();return tem;});
-  ok(!semPerm,'sem configuracao.u o botão não aparece');
+    const tem=!!document.querySelector('#tr-cfg [data-act="tr-cfg"]')||!!document.querySelector('[data-act="tr-forcar"]');const pil=(document.querySelector('#tr-cfg')||{}).textContent||'';u.perms.configuracao=p0;ETERNA.render();return tem||!/Desligado/.test(pil);});
+  ok(!semPerm,'sem configuracao.u os botões não aparecem (só a pílula)');
   let dlg=null;pg.once('dialog',d=>{dlg=d.message();d.dismiss();});const n0=R.cfg.length;
-  await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(300);
+  await pg.click(LIGA);await pg.waitForTimeout(300);
   ok(dlg==='O acerto ainda está abaixo da meta. Algumas fotos fora do gramado podem virar fundo de IA. Ligar mesmo assim?'&&R.cfg.length===n0,'a confirmação diz o risco e Cancelar não liga: '+J(dlg));
-  R.semRot=true;pg.once('dialog',d=>d.accept());await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(500);
-  await espera(pg,()=>document.querySelector('.tr-med-forcar-aviso'));
-  const tRot=await pg.evaluate(()=>{const a=document.querySelector('.tr-med-forcar-aviso');return {toast:document.getElementById('toast').textContent,ponto:ETERNA.state.agent.treino.analise.ponto,
+  R.semRot=true;pg.once('dialog',d=>d.accept());await pg.click(LIGA);await pg.waitForTimeout(500);
+  await espera(pg,()=>document.querySelector('#tr-cfg .tr-med-forcar-aviso'));
+  const tRot=await pg.evaluate(()=>{const a=document.querySelector('#tr-cfg .tr-med-forcar-aviso');return {toast:document.getElementById('toast').textContent,ponto:ETERNA.state.agent.treino.analise.ponto,view:ETERNA.state.view,
     aviso:a?a.textContent:'',itens:a?a.querySelectorAll('li').length:0,html:a?a.innerHTML:''};});
   ok(/gramado e de pelo menos um outro ponto/.test(tRot.aviso)&&/outro ponto marcadas e já lidas pelo reconhecimento: 0 \(precisa 1\)/.test(tRot.aviso)&&tRot.itens===1&&!/&amp;|&lt;/.test(tRot.html)
-    &&/Veja o que falta na Medição/.test(tRot.toast)&&tRot.ponto==='medir','409 rotulos: o que falta fica na Medição, em texto puro: '+J(tRot));
-  R.semRot=false;R.atraso=900;pg.once('dialog',d=>d.accept());await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(250);
-  const voo=await pg.evaluate(()=>{const b=document.querySelector('[data-act="tr-forcar"]');if(b)b.click();return {dis:b&&b.disabled};}); // 2º clique no meio do pedido
+    &&tRot.toast==='Não ligou. O que falta está logo abaixo.'&&tRot.ponto==='medir'&&tRot.view==='catalogo','409 rotulos: o que falta fica em Configurações, em texto puro: '+J(tRot));
+  R.semRot=false;R.atraso=900;pg.once('dialog',d=>d.accept());await pg.click(LIGA);await pg.waitForTimeout(250);
+  const voo=await pg.evaluate(()=>{const b=document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]');if(b)b.click();return {dis:b&&b.disabled};}); // 2º clique no meio do pedido
   ok(voo.dis===true,'o botão fica travado enquanto o pedido está em voo: '+J(voo));
-  await espera(pg,()=>document.querySelector('.tr-med-abaixo'));
-  const lg=await pg.evaluate(()=>({selo:(document.querySelector('.tr-med-abaixo')||{}).textContent||'',ponto:ETERNA.state.agent.treino.analise.ponto,nome:ETERNA.state.user.name,
-    faltas:document.querySelectorAll('.tr-med-faltas li').length,botao:(document.querySelector('[data-act="tr-forcar"]')||{}).textContent||null,toast:document.getElementById('toast').textContent}));
+  await espera(pg,()=>document.querySelector('#tr-cfg .tr-med-abaixo'));
+  const lg=await pg.evaluate(()=>({selo:(document.querySelector('#tr-cfg .tr-med-abaixo')||{}).textContent||'',ponto:ETERNA.state.agent.treino.analise.ponto,nome:ETERNA.state.user.name,
+    aviso:!!document.querySelector('#tr-cfg .tr-med-forcar-aviso'),botao:(document.querySelector('#tr-cfg [data-act="tr-forcar"]')||{}).textContent||null,toast:document.getElementById('toast').textContent,
+    on:(document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="ponto"][data-v="on"]')||{}).getAttribute?.('aria-pressed')}));
   ok(J(R.cfg[R.cfg.length-1])===J({ponto:'ligada',forcar:true}),'o POST leva forcar: '+J(R.cfg.slice(-1)));
   ok(lg.ponto==='ligada'&&lg.selo.startsWith('Ligado abaixo da meta por '+lg.nome+' em ')&&/\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/.test(lg.selo),'selo Ligado abaixo da meta por <nome> em <data>: '+J(lg));
-  ok(lg.faltas===7,'continua mostrando quanto falta: '+lg.faltas);
+  ok(!lg.aviso&&lg.on==='true','ligado: o Ligado fica marcado e o aviso do 409 sai: '+J(lg));
   ok(lg.botao==='Ligar de novo com as marcações de agora','ligado, a versão medida diferente da ligada oferece religar: '+J(lg.botao));
   ok(/abaixo da meta/.test(lg.toast),'aviso de ligado abaixo da meta: '+J(lg.toast));
   ok(R.cfg.filter(b=>b.forcar).length===2,'um clique, um pedido (o botão travado não manda outro): '+R.cfg.filter(b=>b.forcar).length);
@@ -125,10 +133,10 @@ try{
   ok(await pg.evaluate(()=>ETERNA.state.agent.treino.modelo_ponto.congelados)===312,'a resposta do POST atualiza as fotos congeladas na hora');
   // revisão: Ligada igual (nada mudou) não vai para o auditLog; 429 tem aviso próprio
   const nAud=()=>pg.evaluate(()=>JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').filter(e=>e.acao==='treino_analise').length);
-  R.atraso=0;const a0=await nAud();R.igual=true;pg.once('dialog',d=>d.accept());await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(500);
+  R.atraso=0;const a0=await nAud();R.igual=true;pg.once('dialog',d=>d.accept());await pg.click('#tr-cfg [data-act="tr-forcar"]');await pg.waitForTimeout(500);
   const ig=await pg.evaluate(()=>document.getElementById('toast').textContent);const a1=await nAud();R.igual=false;
   ok(/Nada mudou/.test(ig)&&a1===a0,'Ligada igual: aviso de que nada mudou e nada no auditLog: '+J({ig,a0,a1}));
-  R.limite=true;pg.once('dialog',d=>d.accept());await pg.click('[data-act="tr-forcar"]');await pg.waitForTimeout(500);
+  R.limite=true;pg.once('dialog',d=>d.accept());await pg.click('#tr-cfg [data-act="tr-forcar"]');await pg.waitForTimeout(500);
   const lm=await pg.evaluate(()=>document.getElementById('toast').textContent);R.limite=false;
   ok(lm==='Muitas mudanças seguidas, espere um minuto','429: muitas mudanças seguidas: '+J(lm));
   // revisão: com 0 fotos congeladas (modelo instalado), o aviso de ligar de novo
@@ -142,10 +150,10 @@ try{
   const z=await pg.evaluate(()=>({zero:!!document.querySelector('.tr-med-zero'),sm:(document.querySelector('.tr-med-sem-modelo')||{}).textContent||''}));
   ok(!z.zero&&z.sm==='Modelo não instalado: nada é reconhecido. Depois de instalar, ligue de novo','sem modelo: só a pílula de instalar e ligar de novo: '+J(z));
   // 5 línguas de cada chave nova
-  const sem=await pg.evaluate(()=>Object.keys(ETERNA.EQ).filter(k=>/^(tr_med_|tr_aba_medida|tr_an_criterio|tr_an_expo_sem|tr_m_duvidas|up_iam_cena_|up_iam_sem_gramado)/.test(k)).filter(k=>!Array.isArray(ETERNA.EQ[k])||ETERNA.EQ[k].length!==5||ETERNA.EQ[k].some(v=>v==null||v==='')));
+  const sem=await pg.evaluate(()=>Object.keys(ETERNA.EQ).filter(k=>/^(tr_med_|tr_aba_medida|tr_an_criterio|tr_an_expo_sem|tr_m_duvidas|up_iam_cena_|up_iam_sem_gramado|tr_cfg_|tr_ia_|tr_ponto_nota|tr_qual_nota|tr_aviso_desl|tr_res_onde)/.test(k)).filter(k=>!Array.isArray(ETERNA.EQ[k])||ETERNA.EQ[k].length!==5||ETERNA.EQ[k].some(v=>v==null||v===''||(typeof v==='string'&&/—/.test(v)))));
   ok(!sem.length,'cada chave nova do EQ com 5 textos: '+J(sem));
   ok(!errs.length,'sem erro de página: '+errs.slice(0,3).join(' | '));
 }catch(e){fails.push('exceção: '+(e&&e.stack||e).toString().slice(0,500));}
 await b.close();
-console.log((fails.length?'FALHA':'OK')+' treino-medida: aba Medição (situação, critério, faltam por classe, matriz, pistas, erros), lupa, Abrir no Marcar, Ligada travado e 409, Ligar mesmo assim (permissão, confirmação, selo)'+(fails.length?' · '+fails.join(' | '):''));
+console.log((fails.length?'FALHA':'OK')+' treino-medida: aba Resultado (situação, critério, faltam por classe, matriz, pistas, erros), lupa, Abrir no Marcar, Ligado com confirmação e 409 em Configurações, ligar mesmo assim (permissão, confirmação, selo)'+(fails.length?' · '+fails.join(' | '):''));
 process.exit(fails.length?1:0);})();
