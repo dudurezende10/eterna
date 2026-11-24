@@ -2,14 +2,12 @@
 
 Só a Nuvem fala com a Imply: a chave do usuário de serviço fica num parâmetro SecureString do SSM (IMPLY_CHAVE_SSM) e
 nunca vai ao navegador nem ao repositório. Contrato: documentação "Integração Eleven Tickets – setPessoa" da Imply (P&D,
-versão de 18/11/2026). Três chamadas:
+versão de 18/11/2026, com a seção 7 recebida em 23/11). Três chamadas:
   set_pessoa(...)       POST <admin>/api/OAuth2/v01/setPessoa/ com o carrinho em informacoes_extras.predefined-cart
                         (idreferencia = o nosso código do pedido) -> token de login da pessoa
   checkout(...)         <admin>/OAuth2/external?token=..&url=<Base64 de <loja>/pt/checkout?urlreturncheckout=<volta?idpedido=ref>>
-  situacao(ref)         consulta do pedido pelo nosso código -> pago | pendente | cancelado | desconhecido
-
-A consulta (seção 7 da documentação da Imply) ainda não veio: o endereço fica em IMPLY_CONSULTA, para ajustar sem mexer no
-código quando chegar. Sem ela nenhum pedido é liberado.
+  situacao(ref)         POST <admin>/api/SuperIngressoV02/v01/GetCart/ pelo idreferencia (seção 7) -> pago | pendente | cancelado
+                        A volta do checkout (urlreturncheckout) só leva o cliente de volta: nunca libera nada sozinha.
 """
 import base64, hashlib, hmac, json, os, re, urllib.parse, urllib.request
 
@@ -20,9 +18,12 @@ TIPO_PESSOA = os.environ.get("IMPLY_TIPO_PESSOA") or "100001"
 CHAVE_SSM = os.environ.get("IMPLY_CHAVE_SSM", "")              # nome do parâmetro SecureString com a chave
 # o produto vai pelo idproduto (o SKU do catálogo do Eterna) ou pelo depara de pdv_produto, se a Imply passar a lista de depara
 PRODUTO_CAMPO = os.environ.get("IMPLY_PRODUTO_CAMPO") or "idproduto"
-CONSULTA = os.environ.get("IMPLY_CONSULTA", "")                 # ex.: https://.../api/pedido?referencia={ref}
-PAGO = {x.strip().lower() for x in os.environ.get("IMPLY_PAGO", "pago,aprovado,paid,approved,confirmado,finalizado").split(",") if x.strip()}
-CANCELADO = {x.strip().lower() for x in os.environ.get("IMPLY_CANCELADO", "cancelado,estornado,recusado,expirado,canceled,cancelled,refunded,denied,expired").split(",") if x.strip()}
+# seção 7 (23/11): GetCart, mesma chave (Authorization: Server). Corpo na ordem: idpessoa, status, idpurchase, page,
+# results_per_page, date_start, date_end, idreferencia. Status: RE reservado, PA pago, CA cancelado, EX expirado,
+# PC pendente de cancelamento (AP e TP: não pagos ainda).
+CONSULTA = os.environ.get("IMPLY_CONSULTA") or ADMIN + "/api/SuperIngressoV02/v01/GetCart/"
+ST_PEDIDO = "PA;RE;CA;AP;TP;PC;EX"
+ST_FIM = {"CA", "EX", "PC"}
 TIMEOUT = 12
 _chave = {}
 
@@ -97,33 +98,32 @@ def checkout(token_pessoa, ref, volta):
     return "%s/OAuth2/external?token=%s&url=%s" % (ADMIN, urllib.parse.quote(token_pessoa, safe=""), urllib.parse.quote(url64, safe=""))
 
 
-def _acha(j, chaves):
-    if isinstance(j, dict):
-        for k, v in j.items():
-            if k.lower() in chaves and isinstance(v, (str, int, float)):
-                return v
-        for v in j.values():
-            r = _acha(v, chaves)
-            if r is not None:
-                return r
-    if isinstance(j, list):
-        for v in j:
-            r = _acha(v, chaves)
-            if r is not None:
-                return r
-    return None
+def _st(x):
+    return str((x or {}).get("status") or "").strip().upper()
 
 
 def situacao(ref):
-    """Consulta o pedido pelo nosso código. Devolve (situação, detalhes): pago | pendente | cancelado | desconhecido."""
-    if not CONSULTA:
-        return "desconhecido", {}
-    j = _http("GET", CONSULTA.replace("{ref}", urllib.parse.quote(ref)))
-    st = str(_acha(j, {"situacao", "status", "estado", "situacaopedido", "statuspedido"}) or "").strip().lower()
-    det = {"idpedido": _acha(j, {"idpedido", "pedido", "numero", "numeropedido"}), "valor": _acha(j, {"valor", "valortotal", "total"}),
-           "meio": _acha(j, {"formapagamento", "meio", "pagamento", "meiopagamento"}), "bruto": st}
-    if st in PAGO:
-        return "pago", det
-    if st in CANCELADO:
-        return "cancelado", det
-    return "pendente", det
+    """Consulta o pedido pelo nosso código no GetCart. Devolve (situação, detalhes): pago | pendente | cancelado.
+    Pago = um pedido com esta referência com o pagamento PA e todos os itens PA; o valor é a soma dos itens (o app confere
+    com o total do nosso pedido). Cancelado = todos os pedidos da referência com todos os itens em CA, EX ou PC.
+    Sem pedido ([]) = o cliente ainda não fechou: pendente (expira em 24 h sem liberar)."""
+    j = _http("POST", CONSULTA, ["", ST_PEDIDO, "", 1, 100, "-2 months", "now", ref])
+    if isinstance(j, dict):
+        if j.get("error"):
+            raise ImplyErro("GetCart: %s" % json.dumps(j["error"])[:160])
+        j = j.get("result")
+    peds = [p for p in (j or []) if isinstance(p, dict) and str(p.get("idreferencia") or "") == ref] if isinstance(j, list) else []
+    if not peds:
+        return "pendente", {"bruto": "sem pedido"}
+    for p in peds:
+        itens = [i for i in (p.get("itens") or []) if isinstance(i, dict)]
+        pags = [_st(x) for x in (p.get("pag") or []) if isinstance(x, dict)]
+        if itens and "PA" in pags and all(_st(i) == "PA" for i in itens):
+            valor = round(sum(float(i.get("valor") or 0) for i in itens), 2)
+            return "pago", {"idpedido": p.get("localizador") or p.get("idmovimentacao"), "valor": valor, "meio": None,
+                            "bruto": "PA %d itens" % len(itens)}
+    todos = [_st(i) for p in peds for i in (p.get("itens") or []) if isinstance(i, dict)]
+    bruto = ",".join(sorted(set(todos)))[:60] or "sem itens"
+    if todos and all(t in ST_FIM for t in todos):
+        return "cancelado", {"idpedido": peds[0].get("localizador") or peds[0].get("idmovimentacao"), "bruto": bruto}
+    return "pendente", {"bruto": bruto}

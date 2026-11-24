@@ -47,7 +47,7 @@ const cartoes=pg=>pg.$$eval('#main .alert',x=>x.map(e=>({sev:[...e.classList].fi
 try{
   // ---------- 7: Admin vê o cartão exato; período; rodapé com a fonte; os alertas antigos por fotógrafo somem ----------
   {const {ctx,pg,R}=await nova();await pg.goto(U);await pg.waitForTimeout(300);const email=await entrarTeste.adminFicticio(pg);await entrarTeste(pg,email);
-    await espera(pg,()=>ETERNA.state.agent.on);
+    await espera(pg,()=>!!ETERNA.state.user,15000);await espera(pg,()=>ETERNA.state.agent.on,20000); // 24/11: máquina carregada
     const antigos=await pg.evaluate(()=>ETERNA.alerts().map(a=>a.t));
     await pg.evaluate(()=>ETERNA.go('alertas'));ok(await espera(pg,()=>!!ETERNA.state.fot.j),'7: os dados do servidor não chegaram');await pg.waitForTimeout(150);
     let cs=await cartoes(pg);const luz=cs.find(c=>/fora da exposição/.test(c.t));
@@ -102,9 +102,11 @@ try{
     ok(await pg.$eval('#fot-lim input[data-k="cliques_min"]',x=>x.value==='50'),'revisão: o valor recusado continua no campo para corrigir');
     await pg.fill('#fot-lim input[data-k="cliques_min"]','18');
     // ---------- Resultado › Exposição: critério, grade e "Usar estes limites" ----------
-    // 24/11: o interruptor da exposição fica em Configurações › Preços e Checkout › Fundos de IA (#tr-cfg)
+    // 24/11: o interruptor da exposição fica em Configurações › Preços e Checkout › Fundos de IA (#tr-cfg). O /status (de 2,5 em 2,5 s) é
+    // que traz a exposição de volta para Ligada depois do medir e do desligada acima; o quadro redesenha sozinho (agentPoll) e, com a máquina
+    // carregada, o poll atrasa: espera até 20 s
     await pg.evaluate(()=>{ETERNA.state.catTab='fundos';ETERNA.go('catalogo');});
-    ok(await espera(pg,()=>{const x=document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="on"]');const y=document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="off"]');return !!x&&!!y&&x.disabled===false&&x.getAttribute('aria-pressed')==='true'&&y.getAttribute('aria-pressed')==='false';}),'exposição Ligada (do /status) aparece marcada em Ligado no #tr-cfg');
+    ok(await espera(pg,()=>{const x=document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="on"]');const y=document.querySelector('#tr-cfg [data-act="tr-cfg"][data-k="exposicao"][data-v="off"]');return !!x&&!!y&&x.disabled===false&&x.getAttribute('aria-pressed')==='true'&&y.getAttribute('aria-pressed')==='false';},20000),'exposição Ligada (do /status) aparece marcada em Ligado no #tr-cfg');
     await pg.evaluate(()=>{ETERNA.state.train.aba='medida';ETERNA.go('treino');});await espera(pg,()=>document.querySelector('.tr-luz-cls'));
     const lz=await pg.evaluate(()=>({cls:[...document.querySelectorAll('.tr-luz-cls tbody tr')].map(tr=>tr.textContent),falta:[...document.querySelectorAll('.tr-luz-faltas li')].map(x=>x.textContent)}));
     ok(lz.cls.length===2&&/Escura31/.test(lz.cls[0].replace(/\s/g,''))&&lz.falta.some(x=>/Precisão de Escura: 60%/.test(x))&&lz.falta.some(x=>/Boas: 120 de 150/.test(x)),'Medição › Exposição: classes e o que falta: '+J(lz));

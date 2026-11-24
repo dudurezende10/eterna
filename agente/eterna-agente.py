@@ -1940,6 +1940,10 @@ def nuvem_galerias_loop():
                 nuvem_vendas_online(seg)
             except Exception as ex:
                 nuvem["vendas_online_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+            try:
+                nuvem_compra(seg)
+            except Exception as ex:
+                nuvem["compra_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         if time.time() - nuvem.get("video_eventos_em", 0) > 120:
             nuvem["video_eventos_em"] = time.time()
             try:
@@ -1948,6 +1952,18 @@ def nuvem_galerias_loop():
                 nuvem["video_eventos_erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
         nuvem_gal_acorda.wait(5)
         nuvem_gal_acorda.clear()
+
+
+def nuvem_compra(seg, ligada=None, por=""):
+    """24/11: chave da compra online, guardada na Nuvem (GET|POST /ponto/compra). Fica em nuvem["compra"] (no /status, sem
+    quem trocou): ligada (a chave do painel), pode (a Nuvem tem CompraOnline=1 e a chave da Imply) e quando mudou."""
+    corpo = None if ligada is None else json.dumps({"ligada": bool(ligada), "por": por}).encode()
+    rq = urllib.request.Request(NUVEM_API + "/ponto/compra", data=corpo, method="POST" if corpo else "GET",
+                                headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente", "Content-Type": "application/json"})
+    with urllib.request.urlopen(rq, timeout=15) as resp_:
+        j = json.loads(resp_.read().decode("utf8"))
+    nuvem["compra"] = {"ligada": bool(j.get("ligada")), "pode": bool(j.get("pode")), "em": str(j.get("em") or "")[:40] or None}
+    return dict(nuvem["compra"], por=str(j.get("por") or "")[:120] or None)
 
 
 def nuvem_vendas_online(seg):
@@ -9621,15 +9637,9 @@ def ativ_venda_tablet(v):
     ing = str(v.get("ingresso") or "").strip().upper()[:20]
     ing = ing if _re_ingresso.match(ing) else ""
     foto = None
-    if v.get("cliente_foto"):
-        f = str(v["cliente_foto"])
-        if not f.startswith("data:image/jpeg;base64,") or len(f) > ATIV_FOTO_MAX * 4 // 3 + 40:
-            return None
-        try:
-            foto = base64.b64decode(f.split(",", 1)[1], validate=True)
-        except (ValueError, TypeError):
-            return None
-        if not foto.startswith(b"\xff\xd8") or len(foto) > ATIV_FOTO_MAX:
+    if v.get("cliente_foto"):                  # tablet com o app de antes de 23/11 ainda manda a foto da venda
+        foto = ativ_foto_jpeg(v["cliente_foto"])
+        if foto is None:
             return None
     return {"origem": "eterna", "id": v["id"], "tipo": v["tipo"], "dia": v["criado"][:10], "criado": v["criado"], "itens": itens,
             "valor": v["valor"], "pagamento": v["pagamento"], "vendedor": v.get("vendedor") or "", "vendedor_n": None,
@@ -9645,6 +9655,52 @@ def ativ_venda_tablet(v):
 
 def ativ_cliente_foto(vid):
     return os.path.join(ATIV_CLIENTES_DIR, "%s.jpg" % vid)
+
+
+ATIV_FOTO_OBRIGATORIA = ("drone", "snap")
+
+
+def ativ_foto_jpeg(f):
+    """data URL JPEG da foto do cliente (até ATIV_FOTO_MAX) -> bytes, ou None."""
+    f = str(f or "")
+    if not f.startswith("data:image/jpeg;base64,") or len(f) > ATIV_FOTO_MAX * 4 // 3 + 40:
+        return None
+    try:
+        b = base64.b64decode(f.split(",", 1)[1], validate=True)
+    except (ValueError, TypeError):
+        return None
+    return b if b.startswith(b"\xff\xd8") and len(b) <= ATIV_FOTO_MAX else None
+
+
+def ativ_cliente_foto_entrega(body):
+    """POST /ativ/cliente-foto {id, foto}: 23/11, a foto do cliente é tirada na entrega (câmera do computador do campo). Grava
+    por cima da anterior, marca a venda para procurar as fotos do Tour (como a foto da venda fazia desde a v99.29.1) e procura
+    em seguida, fora do pedido. Some com a limpeza de sempre (ativ_clientes_limpa). -> None ou o erro."""
+    vid = str(body.get("id") or "")
+    foto = ativ_foto_jpeg(body.get("foto"))
+    if not _re_ativ_id.match(vid) or foto is None:
+        return "dados"
+    with ev_lock:
+        c = vendas_db()
+        try:
+            r = c.execute("select situacao from ativ_venda where origem='eterna' and id=?", (vid,)).fetchone()
+            if not r:
+                return "nao_achou"
+            if (r[0] or "ativa") != "ativa":
+                return "cancelada"
+            c.execute("update ativ_venda set foto_busca=1 where origem='eterna' and id=?", (vid,))
+            c.commit()
+        finally:
+            c.close()
+    ativ_cliente_foto_grava(vid, foto)
+
+    def procura():
+        try:
+            ativ_tour_atualiza(vid)
+        except Exception as ex:
+            print("  tour: busca pela foto da entrega falhou (%s)" % str(ex)[:120])
+    threading.Thread(target=procura, daemon=True).start()
+    return None
 
 
 def ativ_cliente_foto_grava(vid, foto):
@@ -10327,6 +10383,10 @@ def ativ_video_checa(vid, qr):
             return "sem_video" if not prev and r[2] != "chute" else "completa", None
     finally:
         c.close()
+    # 23/11 (Ronaldo): a foto do cliente saiu da venda e é tirada na entrega; no Drone e no Snap Pop ela é obrigatória para
+    # entregar (Chute a Gol: opcional)
+    if r[2] in ATIV_FOTO_OBRIGATORIA and not os.path.isfile(ativ_cliente_foto(vid)):
+        return "sem_foto", None
     try:
         if REPO.ler_manifesto(qr):              # cartão já usado numa galeria de fotos
             return "qr_usado", None
@@ -11451,6 +11511,38 @@ def posto_quem(token, ip=""):
     return {"id": r[0], "nome": r[1], "num": r[2], "auto": str(r[3] or "").startswith("auto:")} if r else None
 
 
+def porta_retratos_valida(v):
+    """config/porta-retratos (24/11): {itens: [{id: pr1|pr2|pr3, nome, preco, foto (JPEG em data URL, até 300 KB), ativo}], por, em}."""
+    if not isinstance(v, dict) or not isinstance(v.get("itens"), list) or len(v["itens"]) > 3:
+        return None
+    itens, vistos = [], set()
+    for x in v["itens"]:
+        if not isinstance(x, dict) or x.get("id") not in ("pr1", "pr2", "pr3") or x["id"] in vistos:
+            return None
+        nome, preco, foto = x.get("nome"), x.get("preco"), x.get("foto")
+        if not isinstance(nome, str) or not 0 < len(nome.strip()) <= 60 or isinstance(preco, bool) or not isinstance(preco, (int, float)) or not 0 < preco <= 10000:
+            return None
+        if foto is not None and not (isinstance(foto, str) and foto.startswith("data:image/jpeg;base64,") and len(foto) <= 300 * 1024
+                                     and re.fullmatch(r"[A-Za-z0-9+/=]+", foto[23:])):
+            return None
+        vistos.add(x["id"])
+        itens.append({"id": x["id"], "nome": nome.strip(), "preco": round(float(preco), 2), "foto": foto, "ativo": x.get("ativo") is True})
+    return {"itens": itens, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
+
+
+def postos_lado_valida(v):
+    """config/postos-lado (23/11): {lados: {<id do posto>: "esq"}, por, em}; só "esq" fica gravado (sem entrada = direita), até 200 postos."""
+    if not isinstance(v, dict) or not isinstance(v.get("lados"), dict) or len(v["lados"]) > 200:
+        return None
+    lados = {}
+    for k, x in v["lados"].items():
+        if not isinstance(k, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", k) or x not in ("esq", "dir"):
+            return None
+        if x == "esq":
+            lados[k] = "esq"
+    return {"lados": lados, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
+
+
 def posto_lista():
     with estado_lock:
         db = auth_db()
@@ -11976,6 +12068,16 @@ def estado_gravar(body, quem=""):
                         v = {**ok_, "por": str(v.get("por") or "")[:120] or None, "em": str(v.get("em") or "")[:40] or None}
                     r_ = db.execute("select valor from doc where col = 'config' and id = 'ia'").fetchone()
                     auditoria.append((r_[0] if r_ else None, v))
+                if d["col"] == "config" and d["id"] == "postos-lado" and v is not None:   # 23/11: lado da barra do Checkout por posto
+                    v = postos_lado_valida(v)
+                    if v is None:
+                        print("  config/postos-lado recusada (formato inválido) · de %s" % (quem or "?"))
+                        continue
+                if d["col"] == "config" and d["id"] == "porta-retratos" and v is not None:   # 24/11: cadastro dos porta-retratos
+                    v = porta_retratos_valida(v)
+                    if v is None:
+                        print("  config/porta-retratos recusada (formato inválido) · de %s" % (quem or "?"))
+                        continue
                 if d["col"] == "config" and d["id"] == "montagem" and v is not None:   # montagem no servidor: só {modo, por, em}
                     v = montagem_valida(v)
                     if v is None:
@@ -12636,8 +12738,7 @@ def _backup_ok_grava(t):
         pass
 
 
-# Bancos que vão para o backup na nuvem. Dado de visitante não sai do servidor: o cena.db (vetores das fotos) e o poses.db (pid e
-# card de cada foto) ficam de fora.
+# Sobem para a nuvem estes bancos e os JSON das sessões (códigos de foto e de sessão, sem imagem nem rosto); cena.db e poses.db não.
 BACKUP_BANCOS = ("VENDAS_DB", "ESTADO_DB", "OPERACAO_DB", "NUVEM_DB", "TREINO_DB")   # v92: entradas da bilheteria; 15/11: fila da nuvem; 16/11: treino
 
 
@@ -17694,6 +17795,7 @@ ROTAS = (
     ("GET", "/ativ/demo/", "sessao", ("ativvenda.r", "catalogo.r")),
     ("GET", "/ativ/cliente-foto", "sessao", ("ativentrega.r",)),     # foto do cliente para quem entrega (some com a limpeza)   # vídeos de demonstração (lista e arquivo)
     ("GET", "/ativ/fila", "sessao", ("ativentrega.r",)), ("POST", "/ativ/etapa", "sessao", ("ativentrega.u",)),   # fase 4: entrega
+    ("POST", "/ativ/cliente-foto", "sessao", ("ativentrega.c",)),   # 23/11: a foto do cliente é tirada na entrega
     ("GET", "/ativ/pulseira", "sessao", ("ativentrega.r", "ativvenda.c")),     # v99.25: de quem é a pulseira
     ("POST", "/ativ/pulseiras", "sessao", ("ativvenda.c", "ativvenda.u", "ativvenda.d", "financeiro.u")),   # v99.28: corrigir a pulseira
     ("POST", "/ativ/video", "sessao", ("ativentrega.c",)), ("POST", "/ativ/video/liga", "sessao", ("ativentrega.c",)),
@@ -17711,6 +17813,7 @@ ROTAS = (
     ("POST", "/agenda/atualizar", "sessao", ("escala.u", "configuracao.u")), ("POST", "/ponto/entradas/totais", "sessao", ("estatisticas.c",)),
     ("POST", "/agenda/fonte", "sessao", ("configuracao.u",)), ("POST", "/agenda/testar", "sessao", ("configuracao.u",)),
     ("GET", "/visitas", "posto_ou_sessao", FOTOS_LER), ("POST", "/visitas/juntar", "posto_ou_sessao", ("venda.u",)),   # v97-recorte (Eduardo); a rota confere o resto
+    ("POST", "/posto/lado", "posto_ou_sessao", ("venda.u",)),   # 23/11: o próprio aparelho pareado escolhe o lado da barra do Checkout
     ("POST", "/visitas/separar", "posto_ou_sessao", ("venda.u",)), ("POST", "/visitas/config", "sessao", ("configuracao.u",)),
     ("GET", "/impressao/fila", "sessao", ("venda.r",)), ("GET", "/impressao/miniatura", "sessao", ("venda.r",)),
     ("POST", "/imprimir", "sessao", ("venda.c", "venda.u")), ("POST", "/impressao/acao", "sessao", ("venda.u",)),
@@ -17725,11 +17828,12 @@ ROTAS = (
     ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
-    ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa)
+    ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa); 24/11: só o Admin (poses_post)
     # 23/11 (AF): números por fotógrafo só com desempenho.r (Admin e Supervisora), conferido aqui pela sessão; a calibração da luz
     # é da Medição (qualidade.r); os limites, de configuracao.u E desempenho.r (o segundo conferido no fotografos_post)
     ("GET", "/fotografos/alertas", "sessao", ("desempenho.r",)), ("GET", "/fotografos/dias", "sessao", ("desempenho.r",)),
     ("GET", "/fotografos/luz/medida", "sessao", ("qualidade.r",)), ("POST", "/fotografos/config", "sessao", ("configuracao.u",)),
+    ("POST", "/compra-online/config", "sessao", ("configuracao.u",)),   # 24/11: liga e desliga a compra online (vai para a Nuvem)
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
 )
 
@@ -19120,11 +19224,16 @@ class H(BaseHTTPRequestHandler):
             if e:
                 return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409, "cadastro": 400, "pulseira": 409}[e])
             return self.js({"ok": True})
+        if rota == "/ativ/cliente-foto":
+            e = ativ_cliente_foto_entrega(body)
+            if e:
+                return self.js({"error": e}, {"dados": 400, "nao_achou": 404, "cancelada": 409}[e])
+            return self.js({"ok": True})
         if rota == "/ativ/video/liga":
             e, n = ativ_video_liga(body, eu.get("usuario") or "")
             if e:
                 return self.js({"error": e}, {"dados": 400, "rascunho": 410, "nao_achou": 404, "cancelada": 409, "qr_usado": 409,
-                                              "pulseira": 409, "pulseira_usada": 409,
+                                              "pulseira": 409, "pulseira_usada": 409, "sem_foto": 409,
                                               "completa": 409, "sem_video": 409, "formato": 415,
                                               "cartao_desconhecido": 409, "cartao_cancelado": 409}[e])
             return self.js({"ok": True, "qr": body["qr"], "codigo": cartao_codigo(body["qr"]), "n": n})
@@ -19256,6 +19365,44 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, cod, nostore=True)
 
+    def posto_lado_post(self):
+        """23/11 (Ronaldo): POST /posto/lado {lado: "esq"|"dir"}: o vendedor troca no Posto de venda o lado da barra do Checkout
+        DESTE aparelho (o id vem do cookie do posto, nunca do corpo). Grava config/postos-lado no estado.db, como a coluna do Painel."""
+        pa = self.posto_atual()
+        if not pa or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "só num aparelho pareado como posto"}, 403)
+        if not limite_ok(self.client_address[0], "posto-lado", 20):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(256)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        lado = body.get("lado") if isinstance(body, dict) else None
+        if lado not in ("esq", "dir"):
+            return self.js({"error": "lado deve ser esq ou dir"}, 400)
+        quem_ = ((self.sessao() or {}).get("usuario") or ("posto " + str(pa.get("nome") or "")))[:120]
+        with estado_lock:
+            db = estado_db()
+            try:
+                r_ = db.execute("select valor from doc where col = 'config' and id = 'postos-lado'").fetchone()
+                try:
+                    at = postos_lado_valida(json.loads(r_[0])) if r_ and r_[0] else None
+                except ValueError:
+                    at = None
+                lados = dict((at or {}).get("lados") or {})
+                if lado == "esq":
+                    lados[pa["id"]] = "esq"
+                else:
+                    lados.pop(pa["id"], None)
+                v = {"lados": lados, "por": quem_, "em": _iso()}
+                rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+                db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                           ("config", "postos-lado", json.dumps(v, ensure_ascii=False), rev, _iso()))
+                db.commit()
+            finally:
+                db.close()
+        print("  posto %s: barra do Checkout à %s · por %s" % (pa.get("nome"), "esquerda" if lado == "esq" else "direita", quem_))
+        return self.js(v, 200, nostore=True)
+
     def visitas_config_post(self):
         """B1: POST /visitas/config {rosto: bool, por, posto}: liga ou desliga a ligação automática por rosto. Posto +
         origem + X-Eterna: 1 + 10 por minuto, corpo só com rosto booleano. O app só mostra o interruptor ao Admin."""
@@ -19334,10 +19481,15 @@ class H(BaseHTTPRequestHandler):
 
     def poses_post(self):
         """23/11 (P1 de poses): POST /poses/config {modo?, janela?} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna
-        (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo."""
+        (conferido no autoriza), 6 por minuto por pessoa, corpo até 1 KB. O console nunca imprime o corpo.
+        24/11 (Eduardo): só o Admin muda a classificação de poses; o perfil vem do cadastro da sessão, nunca do pedido (a
+        Supervisora pode ter configuracao.u e recebe 403). O "ver como" já parou antes, no do_POST (403 so_ver)."""
         if not self.origem_local():
             return self.js({"ok": False, "erro": "origem"}, 403)
-        quem = (self.sessao() or {}).get("usuario") or ""
+        eu = self.sessao() or {}
+        if (eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por"):
+            return self.js({"ok": False, "error": "so_admin"}, 403)
+        quem = eu.get("usuario") or ""
         if not limite_ok("u:" + quem, "poses_cfg", 6):
             return self.js({"ok": False, "error": "limite"}, 429)
         body, err = self.corpo(1024)
@@ -19409,6 +19561,29 @@ class H(BaseHTTPRequestHandler):
             print("  fotógrafos: %s" % type(ex).__name__)
             return self.js({"ok": False, "error": "erro no servidor"}, 500)
         return self.js(r, st, nostore=True)
+
+    def compra_online_post(self):
+        """24/11: POST /compra-online/config {ligada} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna, 6 por minuto
+        por pessoa, corpo até 1 KB. Repassa à Nuvem com o segredo do ponto e responde a chave como a Nuvem gravou."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "compra_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        if not isinstance(body.get("ligada"), bool):
+            return self.js({"ok": False, "error": "ligada"}, 400)
+        if not NUVEM_API:
+            return self.js({"ok": False, "error": "sem_nuvem"}, 409)
+        try:
+            r = nuvem_compra(nuvem_segredo(), body["ligada"], quem)
+        except Exception as ex:
+            print("  compra online: a Nuvem não respondeu (%s)" % type(ex).__name__)
+            return self.js({"ok": False, "error": "nuvem"}, 502)
+        print("  compra online %s por %s" % ("ligada" if r["ligada"] else "desligada", quem or "?"))
+        return self.js(dict(r, ok=True), nostore=True)
 
     def montagens_post(self):
         """v97 (selo): POST /ponto/montagens {dia, terminal, vistas}: total de montagens vistas no Checkout deste terminal no dia.
@@ -20967,7 +21142,7 @@ class H(BaseHTTPRequestHandler):
             return self.ff_funcao_post()
         if u.path == "/ativ/video":
             return self.ativ_video_post(u)
-        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao"):
+        if u.path in ("/ativ/etapa", "/ativ/cadastros", "/ativ/video/liga", "/ativ/cartoes/lote", "/ativ/cartoes/situacao", "/ativ/cliente-foto"):
             return self.ativ_post(u.path)
         if u.path in ("/ativ/venda", "/ativ/cancelar", "/ativ/pulseiras"):
             return self.ativ_post(u.path)
@@ -20975,12 +21150,16 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
             return self.visitas_config_post()
+        if u.path == "/posto/lado":
+            return self.posto_lado_post()
         if u.path in ("/treino/rotulo", "/treino/config"):
             return self.treino_post(u.path)
         if u.path == "/poses/config":
             return self.poses_post()
         if u.path == "/fotografos/config":
             return self.fotografos_post()
+        if u.path == "/compra-online/config":
+            return self.compra_online_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":

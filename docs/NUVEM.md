@@ -302,5 +302,14 @@ prontas da AWS, começando só contando.
 - 17/11: no ar. Firewall `eterna-galeria` (us-east-1, contando), CloudFront `https://dxsulr2e9z91t.cloudfront.net`, API com `OrigemSha256` e `ExigirBorda=0`. App (idiomas-base, producao e main, que publica o eterna.photo), `galeria-ligar.sh` e `instalar.sh` apontam para o CloudFront; o servidor do estádio já publica por ele.
 - Falta: depois de uns dias olhando as métricas, o passo 5 (regras bloqueando e `ExigirBorda=1`). Passo a passo e custo: `servidor/galeria-nuvem/README.md`, seção "Firewall (WAF)".
 
+## 9e. Compra online: nuvem com a consulta do pagamento (24/11)
+- 24/11: `eterna-galeria` atualizada pelo Ronaldo no CloudShell a partir de `idiomas-base` (inclui o GetCart de `96f9cf7`), com a compra ainda desligada (`CompraOnline=0`).
+- Para ligar: chave da Imply em `/eterna/imply-chave` (SSM, SecureString) e deploy com `CompraOnline=1 ImplyChaveParametro=/eterna/imply-chave`; desligar é o mesmo deploy com `CompraOnline=0`. Antes, os produtos da venda online no Catálogo têm de estar marcados como online e com o `idproduto` da Imply.
+- 24/11 (v99.40.0): catálogo online só com a Foto digital avulsa = produto da Imply "1 foto (adicional) digital ou impressa", R$ 35; a nuvem aceita pedido sem pacote. Precisa de novo deploy da `eterna-galeria`.
+- 24/11: nuvem atualizada de novo com a v99.40.0 e chave da Imply gravada pelo Ronaldo em `/eterna/imply-chave` (versão 1). Compra ainda desligada até o teste.
+- 24/11 ~01h30: primeiro teste real: o pedido chega à Imply e o setPessoa responde `{"code": 0, "message": "Sem permissão"}`. A chave gravada não tem permissão para criar pessoa/carrinho; falta a Imply liberar o setPessoa (e o GetCart) para essa chave ou passar a chave do usuário de serviço certo.
+- 24/11 (v99.41.0): liga e desliga pelo painel em Configurações › Preços e Checkout › Checkout, card "Compra online na galeria" (Configurações em Alterar). A chave fica na nuvem (`CFG/compra` na tabela, sem registro = ligada) pelas rotas `GET|POST /ponto/compra` com o segredo do ponto; o servidor do ponto repassa pela `POST /compra-online/config`. `CompraOnline=1` e a chave da Imply continuam valendo por cima (sem elas o card mostra "Indisponível na nuvem"). Precisa de novo deploy da `eterna-galeria` (rotas novas no template).
+- Falta: compra de teste real (paga e cancelada na Imply) para fechar.
+
 ## 10. Antes da produção
 As pendências operacionais e de segurança da homologação ficam fora do repositório, no servidor do ponto (`~/Eterna/NUVEM-pendencias.md`). Este repositório é público.

@@ -1,7 +1,7 @@
 # Plano: Estatística de poses (ramo `feat/poses-estatistica`, a partir de `idiomas-base` 77e0901)
 
 ## Status (24/11/2026)
-- **Pronto:** a P1 (classificador no servidor, chave Desligada/Sombra/Ligada, `poses.db` fora do backup, instalador e medição), com as revisões de 23/11 e 24/11. Revisor, testador e segurança aprovaram. Sai na **v99.38.0**, junto com os alertas do fotógrafo. Com a chave no padrão (Desligada), nada roda.
+- **Pronto:** a P1 (classificador no servidor, chave Desligada/Sombra/Ligada, `poses.db` fora do backup, instalador e medição), com as revisões de 23/11 e 24/11. Revisor, testador e segurança aprovaram. Sai na **v99.43.0**, junto com os alertas do fotógrafo. Com a chave no padrão (Desligada), nada roda.
 - **Depende do Ronaldo (TI), nesta ordem** (passos em `docs/SERVIDOR-ESTADIO.md`, "Classificação de poses"):
   1. Rodar o `visao-instalar.sh` com `LLAMA_TAG`, `LLAMA_COMMIT`, `POSE_SHA_MODELO` e `POSE_SHA_MMPROJ`, e mandar esses valores e o commit do repositório do modelo no Hugging Face.
   2. Fixar no código `POSE_SHA` e `POSE_MMPROJ_SHA` (agente e instalador), o padrão de `LLAMA_TAG` e `LLAMA_COMMIT` no `visao-instalar.sh` e o commit no `BASE` do instalador. Publicar.

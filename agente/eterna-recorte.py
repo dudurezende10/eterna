@@ -452,7 +452,7 @@ def medidas(alfa, rgb, pessoas):
     if principais:
         jy = [max(k[j][1] for j in (13, 14) if k[j][2] >= PONTO_POSE) for k in principais if max(k[13][2], k[14][2]) >= PONTO_POSE]
         if jy:
-            joelho = round(min(1.0, max(jy) / h), 4)
+            joelho = round(min(1.0, float(max(jy)) / h), 4)   # float(): o ponto da pose vem em float32, que o json.dumps recusa
         pernas = all(max(k[15][2], k[16][2]) >= PONTO_POSE for k in principais)
     return {"trunc": bool(trunc), "borda": borda, "luz": luz, "joelho": joelho, "pernas": bool(pernas and joelho is not None)}
 

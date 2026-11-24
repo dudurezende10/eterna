@@ -2516,7 +2516,7 @@ Plano: `docs/planos/2026-11-23-poses-estatistica.md` (fatia P1). À noite, o ser
 | Peça | O que faz |
 | --- | --- |
 | `agente/eterna-poses.py` | Filho do agente, um JSON por linha, como o `eterna-recorte.py`. Sobe o `llama-server` só em `127.0.0.1`, numa porta livre, com uma chave nova num arquivo 0600 em `~/Eterna/ponto/poses-*/` (`--api-key-file`), sem `-hf` e com `LLAMA_OFFLINE=1`. Avisa `{"llama_pid"}` logo depois de abrir e `{"pronto"}` com o `/health`. Lotes de até 8 fotos a 768 px, `temperature 0`, `json_schema` fechado. No SIGTERM, também durante a abertura, fecha o grupo do `llama-server` e apaga a chave. |
-| Bloco "Poses" do agente | Chave `config/poses` (`desligada` (padrão), `sombra` ou `ligada`), gravada só por `POST /poses/config` (`configuracao.u`, 6 por minuto; Ligada responde 409 `criterio` até a P2). `ETERNA_POSES=0` força Desligada. Banco `~/Eterna/ponto/poses.db`, tabela `pose` (fora do backup na nuvem, apagada na exclusão LGPD, linhas vencem em 60 dias). `/status.poses` só com números e códigos. |
+| Bloco "Poses" do agente | Chave `config/poses` (`desligada` (padrão), `sombra` ou `ligada`), gravada só por `POST /poses/config` (`configuracao.u` e, desde 24/11, só o perfil Admin da sessão: os outros recebem 403 `so_admin` e a tela mostra o estado sem os botões; 6 por minuto; Ligada responde 409 `criterio` até a P2). `ETERNA_POSES=0` força Desligada. Banco `~/Eterna/ponto/poses.db`, tabela `pose` (fora do backup na nuvem, apagada na exclusão LGPD, linhas vencem em 60 dias). `/status.poses` só com números e códigos. |
 | `poses_pode_rodar` | Nesta ordem: `desligada`, `fora_janela` (padrão 20:00 às 07:00), `parado`/`versao`, `recorte_ocupado`, `montagem_ocupada` (trabalho de prioridade 0 ou 1 nos últimos 120 s), `sem_modelo`/`conferindo`, `vram` (9.000 MB livres, só antes de abrir). Conferido entre um lote e outro; se não pode, o lote termina e o filho fecha. |
 | SHA do modelo | Lido uma vez por arquivo, pelo laço e só depois de todas as condições anteriores. O resultado fica em `~/Eterna/ponto/poses-sha.json` (0600, com tamanho, mtime, inode e SHA). Só é relido se um deles mudar. O `/status` nunca lê os 6,2 GB: mostra `conferindo` ou o estado guardado. O filho recebe `--conferido` e só confere tamanho, mtime e inode. `POSE_SHA` e `POSE_MMPROJ_SHA` vazios: `sem_modelo`. |
 | Processos | Agente: fecha o stdin, depois SIGTERM e espera `POSE_TERM_SEG`, e só então SIGKILL. No grupo do `llama-server`: SIGTERM, depois SIGKILL. A abertura do filho tem 300 s contados do início, e o agente espera 360 s. Na partida, `poses_orfaos_encerrar` encerra o que sobrou pelo `poses-filho.json` e procurando `--api-key-file` em `ponto/poses-*`, e apaga as pastas de chave. |
@@ -2525,9 +2525,9 @@ Plano: `docs/planos/2026-11-23-poses-estatistica.md` (fatia P1). À noite, o ser
 
 Testes: `testes/poses_agente.py`, com o `llama-server` trocado por `testes/_poses_filho_falso.py` e o `eterna-poses.py` real, e as rotas em `testes/seguranca_rotas_agente.py`. A medição no servidor (`agente/medir-poses.py`) é manual. Ela se recusa a rodar com o classificador do agente aberto.
 
-## v99.38.0 (24/11/2026): alertas do fotógrafo, Treino, sessão e backup
+## v99.43.0 (24/11/2026): alertas do fotógrafo, Treino, sessão e backup
 
-Três entregas publicadas juntas, como v99.38.0: os alertas do fotógrafo (AF), a classificação de poses P1 (seção acima) e as correções do Treino e da sessão. Planos: `docs/planos/2026-11-23-alertas-fotografo.md` e `docs/planos/2026-11-23-poses-estatistica.md`. Nomes de código em `docs/CONTEXTO-ETERNA.md`, seção 4.
+Três entregas publicadas juntas, como v99.43.0: os alertas do fotógrafo (AF), a classificação de poses P1 (seção acima) e as correções do Treino e da sessão. Planos: `docs/planos/2026-11-23-alertas-fotografo.md` e `docs/planos/2026-11-23-poses-estatistica.md`. Nomes de código em `docs/CONTEXTO-ETERNA.md`, seção 4.
 
 ### 1. Alertas do fotógrafo e Fotógrafos na Curadoria (AF)
 
@@ -2636,3 +2636,11 @@ Pedido do Eduardo em 23/11, no Maracanã: muitas fotos passadas com Próxima fic
 - **IMPORTANTE:** números por fotógrafo são dado de funcionário. A permissão `desempenho.r` é conferida no servidor em todas as rotas novas, no `/metricas/dia` e no `/metricas`. Rota nova com dado por fotógrafo tem que fazer o mesmo.
 - A exposição começa Desligada (padrão). Para medir, alguém com Configuração em Alterar põe em Só medir no Treino da IA. Para gerar alertas de luz, a calibração precisa de marcações suficientes no Treino (critério acima).
 - Comparação por set na conversão e a aba "Poses e roteiro" ficam para as próximas fatias.
+## v99.38.0 (23/11/2026): foto do cliente na entrega
+
+Pedido do Ronaldo: tirar a foto do cliente da venda (tablet) e passar para quem entrega o vídeo (notebook com câmera no campo).
+
+- **Venda:** sem botão, câmera e exigência de foto. Saíram `avFotoBotao`, `avCamPode`, `avCamAbre`, `avCamFecha`, `avCamFoto` e o texto `av_e_foto`. `avFotoJpeg` e `avFotoReduz` ficam (a entrega usa).
+- **Entrega (`aeAtend`):** bloco `aeFotoBloco(v, podeC)`. Drone e Snap Pop no passo "4. Foto do cliente"; Chute a Gol em "Foto do cliente (opcional)", depois de Chutou. Câmera de frente (`facingMode: user`, `aeFcAbre`/`aeFcTira`/`aeFcFecha`, 3 tentativas com câmera ocupada, igual à venda antes). Sem câmera ou sem permissão: escolhe arquivo (`ae-fc-arq`). A foto é reduzida a 480 px JPEG e vai por `POST /ativ/cliente-foto`; a imagem da fila ganha `&v=` para trocar na hora. A câmera do QR e a da foto não abrem juntas. `pronto` exige `v.foto` quando `aeFotoObrig(v)` (drone, snap).
+- **Agente:** `ATIV_FOTO_OBRIGATORIA = ("drone", "snap")`; `ativ_video_checa` devolve `sem_foto` (409) sem o arquivo da foto. `ativ_foto_jpeg` confere o data URL (venda e entrega). `ativ_cliente_foto_entrega`: venda ativa (404 `nao_achou`, 409 `cancelada`, 400 `dados`), grava por cima, marca `foto_busca=1` e procura as fotos do Tour numa thread. A foto some com a limpeza de sempre (`ativ_clientes_limpa`).
+- **Testes:** `ativacoes_entrega_agente.py` (sem foto não entrega, permissão, formato, venda inexistente, com foto entrega), `pulseira.js` (Entregar desligado sem foto, câmera abre, foto vai ao servidor, Entregar libera), `ativacoes_venda.js` (venda sem a foto).
