@@ -184,7 +184,8 @@ def _situacao_tickets(ref, ts):
     dos campos (sem valores, sem dado de pessoa)."""
     sts = [_st(t) for t in ts]
     loc = next((str(t.get(k)) for t in ts for k in ("localizador", "idmovimentacao", "idpurchase") if t.get(k)), None)
-    campos = ",".join(sorted(ts[0].keys()))[:400]
+    # nomes dos campos de situação e valor (a lista inteira passa de 60 campos e cortava antes deles)
+    campos = ",".join(k for k in sorted(ts[0].keys()) if any(x in k for x in ("status", "valor", "total", "pago", "localizador")))[:400]
     if sts and all(x == "PA" for x in sts):
         print("GetCart %s: pago, %d tickets (campos: %s)" % (ref, len(ts), campos))
         return "pago", {"idpedido": loc, "valor": _valor_tickets(ts), "meio": None, "bruto": "PA %d tickets" % len(ts)}
