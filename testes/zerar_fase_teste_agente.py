@@ -660,6 +660,99 @@ try:
     pdb = [x for x in la if x.startswith("rostos.db.pos-") and not x.endswith("-wal")]
     ok(len(la) == 6 and len(pdb) == 1 and pdb[0] + "-wal" in la and open(os.path.join(mv, "arq", pdb[0] + "-wal")).read() == "novo",
        "mover_arq: banco e -wal ao lado continuam um par: %s" % la)
+    # revisão 24/11: banco, -wal e -shm são um grupo. Bancos de verdade: o do arquivo (fase de teste, 3 linhas, sem -wal) e o da
+    # origem (nasceu depois, 5 linhas que ainda estão só no -wal). O -wal novo nunca pode cair ao lado do banco do arquivo.
+    import shutil as _sh
+
+    def banco_teste(pasta, n, wal):
+        os.makedirs(pasta, exist_ok=True)
+        tmp = os.path.join(mv, "fabrica-%d" % len(os.listdir(mv)))
+        os.makedirs(tmp)
+        c = sqlite3.connect(os.path.join(tmp, "rostos.db"))
+        try:
+            if wal:
+                c.execute("pragma journal_mode=wal")
+                c.execute("pragma wal_autocheckpoint=0")
+            c.execute("create table rosto (id integer primary key, de text)")
+            c.executemany("insert into rosto (de) values (?)", [("wal" if wal else "teste",)] * n)
+            c.commit()
+            for x in os.listdir(tmp):            # com a conexão aberta: o -wal e o -shm ainda existem
+                _sh.copy2(os.path.join(tmp, x), os.path.join(pasta, x))
+        finally:
+            c.close()
+
+    def conta(arq):
+        c = sqlite3.connect(arq)
+        try:
+            return (c.execute("select count(*) from rosto").fetchone()[0], c.execute("pragma integrity_check").fetchone()[0])
+        finally:
+            c.close()
+
+    def move_rostos(o, a):
+        return sum(m._zerar_mover_arq(os.path.join(o, x), os.path.join(a, x)) for x in ("rostos.db", "rostos.db-wal", "rostos.db-shm"))
+
+    g_o, g_a = os.path.join(mv, "g1", "home"), os.path.join(mv, "g1", "arq")
+    banco_teste(g_a, 3, False)
+    banco_teste(g_o, 5, True)
+    ok(sorted(os.listdir(g_a)) == ["rostos.db"] and "rostos.db-wal" in os.listdir(g_o), "grupo: preparo do caso: %s %s" % (os.listdir(g_a), os.listdir(g_o)))
+    n_g = move_rostos(g_o, g_a)
+    la = sorted(os.listdir(g_a))
+    pdb = [x for x in la if x.startswith("rostos.db.pos-") and not x.endswith(("-wal", "-shm"))]
+    ok(n_g == 3 and os.listdir(g_o) == [] and len(pdb) == 1 and la == sorted(["rostos.db", pdb[0], pdb[0] + "-wal", pdb[0] + "-shm"]),
+       "grupo: arquivo só com o banco, origem com banco e -wal: o grupo novo vai inteiro ao lado: n=%s %s" % (n_g, la))
+    ok(conta(os.path.join(g_a, "rostos.db")) == (3, "ok"), "grupo: o banco arquivado continua mostrando as linhas dele: %s" % (conta(os.path.join(g_a, "rostos.db")),))
+    ok(len(pdb) == 1 and conta(os.path.join(g_a, pdb[0])) == (5, "ok"), "grupo: o banco novo ao lado abre com o -wal dele")
+    # par que sobrou sozinho na origem (o banco foi numa tentativa anterior): fica à parte, nunca ao lado do banco do arquivo
+    g_o, g_a = os.path.join(mv, "g2", "home"), os.path.join(mv, "g2", "arq")
+    banco_teste(g_a, 3, False)
+    banco_teste(g_o, 5, True)
+    os.remove(os.path.join(g_o, "rostos.db"))
+    n_g = move_rostos(g_o, g_a)
+    la = sorted(os.listdir(g_a))
+    ok(n_g == 2 and os.listdir(g_o) == [] and "rostos.db-wal" not in la and "rostos.db-shm" not in la and len(la) == 3
+       and all(m._re_zerar_pos.search(x) for x in la if x != "rostos.db") and conta(os.path.join(g_a, "rostos.db")) == (3, "ok"),
+       "grupo: -wal que sobrou sozinho na origem vai à parte (.pos-): n=%s %s" % (n_g, la))
+    # sem nada no arquivo: o grupo segue com o nome normal e continua um par
+    g_o, g_a = os.path.join(mv, "g3", "home"), os.path.join(mv, "g3", "arq")
+    banco_teste(g_o, 5, True)
+    n_g = move_rostos(g_o, g_a)
+    ok(n_g == 3 and sorted(os.listdir(g_a)) == ["rostos.db", "rostos.db-shm", "rostos.db-wal"] and conta(os.path.join(g_a, "rostos.db")) == (5, "ok"),
+       "grupo: sem conflito, banco e pares seguem com o nome normal: n=%s %s" % (n_g, sorted(os.listdir(g_a))))
+    # o arquivo só tem o -wal (o banco não): o banco novo também não pode cair ao lado dele
+    g_o, g_a = os.path.join(mv, "g4", "home"), os.path.join(mv, "g4", "arq")
+    os.makedirs(g_a)
+    open(os.path.join(g_a, "rostos.db-wal"), "w").write("de outro banco")
+    banco_teste(g_o, 5, True)
+    move_rostos(g_o, g_a)
+    la = sorted(os.listdir(g_a))
+    pdb = [x for x in la if x.startswith("rostos.db.pos-") and not x.endswith(("-wal", "-shm"))]
+    ok("rostos.db" not in la and len(pdb) == 1 and open(os.path.join(g_a, "rostos.db-wal")).read() == "de outro banco"
+       and conta(os.path.join(g_a, pdb[0])) == (5, "ok"), "grupo: -wal sozinho no arquivo, o banco novo vai ao lado com os pares: %s" % la)
+    # o mesmo dentro de uma pasta movida por entradas (_zerar_mover)
+    g_o, g_a = os.path.join(mv, "g5", "home"), os.path.join(mv, "g5", "arq")
+    banco_teste(g_a, 3, False)
+    banco_teste(g_o, 5, True)
+    n_g = m._zerar_mover(g_o, g_a)
+    la = sorted(os.listdir(g_a))
+    pdb = [x for x in la if x.startswith("rostos.db.pos-") and not x.endswith(("-wal", "-shm"))]
+    ok(n_g == 3 and len(pdb) == 1 and la == sorted(["rostos.db", pdb[0], pdb[0] + "-wal", pdb[0] + "-shm"])
+       and conta(os.path.join(g_a, "rostos.db")) == (3, "ok") and conta(os.path.join(g_a, pdb[0])) == (5, "ok"),
+       "grupo: pasta com banco repetido, o grupo novo vai inteiro ao lado: n=%s %s" % (n_g, la))
+    # desfazer: os .pos- ficam e o banco devolvido não herda o -wal do banco que está no lugar
+    g_h, g_p = os.path.join(mv, "g5", "lugar"), os.path.join(mv, "g5", "pos-zeragem")
+    banco_teste(g_h, 5, True)
+    for solto in (False, True):
+        if solto:
+            g_a, g_h, g_p = os.path.join(mv, "g6", "arq"), os.path.join(mv, "g6", "lugar"), os.path.join(mv, "g6", "pos-zeragem")
+            banco_teste(g_a, 3, False)
+            banco_teste(g_h, 5, True)
+            open(os.path.join(g_a, "rostos.db.pos-20261124-230000-wal"), "w").write("fica")
+        nv = m._zerar_volta(g_a, g_h, g_p, soltos=solto)
+        ok(nv == 1 and sorted(os.listdir(g_h)) == ["rostos.db"] and conta(os.path.join(g_h, "rostos.db")) == (3, "ok")
+           and sorted(os.listdir(g_p)) == ["rostos.db", "rostos.db-shm", "rostos.db-wal"] and conta(os.path.join(g_p, "rostos.db")) == (5, "ok")
+           and all(m._re_zerar_pos.search(x) for x in os.listdir(g_a)) and len(os.listdir(g_a)) == 1,
+           "grupo: desfazer (soltos=%s) devolve o banco sem par trocado: n=%s lugar=%s pos=%s arq=%s"
+           % (solto, nv, sorted(os.listdir(g_h)), sorted(os.listdir(g_p)) if os.path.isdir(g_p) else None, sorted(os.listdir(g_a))))
     # desfazer: o que foi ao lado fica no arquivo
     volta = os.path.join(mv, "volta")
     nv = m._zerar_volta(dst, volta, os.path.join(mv, "pos-zeragem"))
