@@ -16370,6 +16370,7 @@ ROTAS = (
     ("POST", "/agenda/atualizar", "sessao", ("escala.u", "configuracao.u")), ("POST", "/ponto/entradas/totais", "sessao", ("estatisticas.c",)),
     ("POST", "/agenda/fonte", "sessao", ("configuracao.u",)), ("POST", "/agenda/testar", "sessao", ("configuracao.u",)),
     ("GET", "/visitas", "posto_ou_sessao", FOTOS_LER), ("POST", "/visitas/juntar", "posto_ou_sessao", ("venda.u",)),   # v97-recorte (Eduardo); a rota confere o resto
+    ("POST", "/posto/lado", "posto_ou_sessao", ("venda.u",)),   # 23/11: o próprio aparelho pareado escolhe o lado da barra do Checkout
     ("POST", "/visitas/separar", "posto_ou_sessao", ("venda.u",)), ("POST", "/visitas/config", "sessao", ("configuracao.u",)),
     ("GET", "/impressao/fila", "sessao", ("venda.r",)), ("GET", "/impressao/miniatura", "sessao", ("venda.r",)),
     ("POST", "/imprimir", "sessao", ("venda.c", "venda.u")), ("POST", "/impressao/acao", "sessao", ("venda.u",)),
@@ -17904,6 +17905,44 @@ class H(BaseHTTPRequestHandler):
             print("  visitas: %s" % str(ex)[:120])
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, cod, nostore=True)
+
+    def posto_lado_post(self):
+        """23/11 (Ronaldo): POST /posto/lado {lado: "esq"|"dir"}: o vendedor troca no Posto de venda o lado da barra do Checkout
+        DESTE aparelho (o id vem do cookie do posto, nunca do corpo). Grava config/postos-lado no estado.db, como a coluna do Painel."""
+        pa = self.posto_atual()
+        if not pa or not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"error": "só num aparelho pareado como posto"}, 403)
+        if not limite_ok(self.client_address[0], "posto-lado", 20):
+            return self.js({"error": "muitos pedidos"}, 429)
+        body, err = self.corpo(256)
+        if err:
+            return self.js({"error": "corpo inválido"}, err)
+        lado = body.get("lado") if isinstance(body, dict) else None
+        if lado not in ("esq", "dir"):
+            return self.js({"error": "lado deve ser esq ou dir"}, 400)
+        quem_ = ((self.sessao() or {}).get("usuario") or ("posto " + str(pa.get("nome") or "")))[:120]
+        with estado_lock:
+            db = estado_db()
+            try:
+                r_ = db.execute("select valor from doc where col = 'config' and id = 'postos-lado'").fetchone()
+                try:
+                    at = postos_lado_valida(json.loads(r_[0])) if r_ and r_[0] else None
+                except ValueError:
+                    at = None
+                lados = dict((at or {}).get("lados") or {})
+                if lado == "esq":
+                    lados[pa["id"]] = "esq"
+                else:
+                    lados.pop(pa["id"], None)
+                v = {"lados": lados, "por": quem_, "em": _iso()}
+                rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+                db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                           ("config", "postos-lado", json.dumps(v, ensure_ascii=False), rev, _iso()))
+                db.commit()
+            finally:
+                db.close()
+        print("  posto %s: barra do Checkout à %s · por %s" % (pa.get("nome"), "esquerda" if lado == "esq" else "direita", quem_))
+        return self.js(v, 200, nostore=True)
 
     def visitas_config_post(self):
         """B1: POST /visitas/config {rosto: bool, por, posto}: liga ou desliga a ligação automática por rosto. Posto +
@@ -19554,6 +19593,8 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
             return self.visitas_config_post()
+        if u.path == "/posto/lado":
+            return self.posto_lado_post()
         if u.path in ("/treino/rotulo", "/treino/config"):
             return self.treino_post(u.path)
         if u.path == "/poses/config":

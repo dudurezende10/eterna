@@ -1511,7 +1511,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.38.4 · 23/11 22:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.38.5 · 23/11 22:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2665,7 +2665,7 @@ function vPosto(o){o=o||{};const a=state.agent;const filtro=o.filtro==='dinheiro
   const manual=man?`<section class="panel posto-manual${cortM?' posto-cortesia':''}" id="posto-manual"><div class="head"><div>${cortM?`<h2>${CORT_ICO} ${TE('po_cort_sac')}</h2>`:`<h2>${TE('vm_titulo')}</h2><div class="note">${TE('vm_nota')}</div>`}</div><button class="link-quiet" data-act="posto-manual-fechar">${TE('vm_fechar')}</button></div>${vCheckoutCorpo()}</section>`:'';
   const balcao=demoSessions().filter(s=>s.status==='no caixa');
   const filaBalcao=balcao.length?`<div class="panel"><h2>${TE('po_vindas_fila')}</h2><div class="sess">${balcao.map(s=>`<button class="scard" data-act="caixa-open" data-card="${esc(s.card)}"${trava?` disabled title="${esc(TE('po_feche_vm_sess'))}"`:''}><div class="code">${esc(s.card)}</div><div class="meta"><span>${esc(P[s.key]?P[s.key].name:'')}</span><span>${fmtR(cartTotal(simOf(s.card).cart))}</span></div></button>`).join('')}</div></div>`:'';
-  return `${roloFaixa()}${ultimoQrFaixa()}<div class="head posto-head"><div><div class="eyebrow">${esc(cx?postoTitulo():postoNome())}</div><h1>${esc(viewLabel(cx?'caixa':'posto'))}</h1></div><div class="row">${roloSelo('neutral')}</div></div>
+  return `${roloFaixa()}${ultimoQrFaixa()}<div class="head posto-head"><div><div class="eyebrow">${esc(cx?postoTitulo():postoNome())}</div><h1>${esc(viewLabel(cx?'caixa':'posto'))}</h1></div><div class="row">${postoDisp()&&can('venda','u')?`<button class="btn ghost" data-act="posto-lado-troca" title="${esc(TE('cf_lado_troca'))}">${postoLado()==='esq'?'◀ ':''}${TE('cf_lado_barra')}: ${postoLado()==='esq'?TE('cf_lado_esq'):TE('cf_lado_dir')}${postoLado()==='esq'?'':' ▶'}</button>`:''}${roloSelo('neutral')}</div></div>
   ${conn}${recibo}${manual}
   <div class="posto-cols"><div class="posto-esq"><div class="panel posto-eco"><div class="head"><h2>${TE('po_agora_ck')}</h2></div><div id="eco">${ecoBody()}</div></div>${pendPainel({filtro,semId:ep?ep.id:null})}${filaBalcao}</div>
     <div class="posto-dir">${pendDetalhe({filtro,semId:ep?ep.id:null})}${impPainel(null,{semRolo:true})}</div></div>
@@ -9204,6 +9204,7 @@ const EQ={
   cf_lado_barra:["Barra do Checkout","Checkout side bar","Barra del Checkout","Barre du Checkout","Checkout-Seitenleiste"],
   cf_lado_dir:["Direita","Right","Derecha","Droite","Rechts"],
   cf_lado_esq:["Esquerda","Left","Izquierda","Gauche","Links"],
+  cf_lado_troca:["Trocar o lado da barra no Checkout deste posto","Switch the side bar on this station's Checkout","Cambiar el lado de la barra en el Checkout de este puesto","Changer le côté de la barre sur le Checkout de ce poste","Seite der Leiste am Checkout dieser Station wechseln"],
   cf_lado_salvo:["Lado da barra salvo para este posto","Side bar position saved for this station","Lado de la barra guardado para este puesto","Côté de la barre enregistré pour ce poste","Seite der Leiste für diese Station gespeichert"],
   cf_este:["este","this one","este","celui-ci","dieses"],
   cf_revogado:["revogado","revoked","revocado","révoqué","widerrufen"],
@@ -12717,6 +12718,9 @@ document.addEventListener('click',e=>{
         auditLog('lgpd_excluir','fotos do cliente',[{campo:'fotos',de:pids.length+pl.fica.length,para:nFica}],{apagadas:nAp,preservadas:nFica,galerias_mantidas:abertas.length}); // só contagens: sem id de foto, sessão ou galeria
         toast(`Apagadas: ${nAp} ${nAp===1?'foto':'fotos'}${j.nuvem?' (também na nuvem)':''}${nFica?` · ${nFica} ${nFica===1?'comprada ficou':'compradas ficaram'} com o cliente`:''}${j.galerias?' · galeria fora do ar':''}${j.ok?'':' · com falhas, veja o registro'}`);render();})
         .catch(()=>toast('Sem conexão com o servidor. Nada foi apagado.'));break;}
+    case 'posto-lado-troca':{const novo=postoLado()==='esq'?'dir':'esq';
+      agFetch(state.agent.url+'/posto/lado',{method:'POST',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({lado:novo})}).then(r=>r.ok?r.json():null)
+        .then(v=>{if(!v||!v.lados){toast(TE('nao_gravou'));return;}state.postosLado=v;toast(TE('cf_lado_salvo'));render();}).catch(()=>toast(TE('nao_gravou')));break;}
     case 'ult-qr':{const u=state.pend.ultimoQr;if(!u)break;toast(ecoMostrarQr(u.card,u.token,u.codigo,u.total,u.pend,true)?'QR enviado para a tela do cliente':'Este navegador não fala com a tela do cliente');break;}
     case 'eco-qr':{const tok=galDoRecibo(d.card);const m=tok&&SIM.galerias&&SIM.galerias[tok];if(!m){toast('Esta venda não tem galeria online');break;}const sim=SIM.sessions[d.card]||{};
       if(!ECO_CH){toast('Este navegador não fala com a tela do cliente');break;}try{ECO_CH.postMessage({tipo:'mostrar-qr',em:Date.now(),card:d.card,token:tok,codigo:m.codigo||null,total:saleTotal(sim)});toast('QR enviado para a tela do cliente');}catch(e){toast('Não consegui falar com a tela do cliente');}break;}
