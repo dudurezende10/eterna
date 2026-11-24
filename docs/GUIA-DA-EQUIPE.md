@@ -236,6 +236,8 @@ Logo abaixo do título, uma faixa diz como estão as suas fotos:
 
 O ajuste automático da IA clareia a foto escura e segura a estourada em toda foto que chega. Desde 24/11 ele só mexe na exposição: contraste e temperatura ficam como saíram da câmera, e quem quiser muda à mão em Configurações › Ajuste automático.
 
+As fotos do **chute a gol** não recebem ajuste automático (24/11): ficam como saíram da câmera. O servidor reconhece o chute a gol sozinho, pelas marcações do Treino da IA. Por isso a foto nova pode levar até um minuto e meio para ser ajustada, enquanto o servidor confere de onde ela é. Quem quiser ainda pode ajustar uma foto do chute à mão.
+
 Desde 24/11 essa chave não fica mais em Minhas fotos. Só o Admin liga e desliga, em **Configurações › IA automática**, linha **Ajuste automático das fotos**.
 
 1. O Admin abre **Configurações › IA automática**.

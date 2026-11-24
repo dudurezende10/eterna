@@ -17048,6 +17048,15 @@ cena_filho = {"p": None, "fila": None, "seq": 0, "criado": None}
 cena_q = collections.OrderedDict()         # pid -> (prio, seq, thumb, dia); a mais antiga sai acima de CENA_FILA_MAX
 _cena_seq = itertools.count()
 cena_mem = {}                              # pid -> {"r", "c", "v", "g", "rec", "dia"} de hoje e ontem
+
+
+def _lib_ponto(pid):
+    """Ponto da foto para a biblioteca (24/11): "chute" quando o reconhecimento diz chute a gol com confiança, "-" quando já
+    leu e é outro ponto (ou não deu para ler), "" enquanto ainda não leu. O navegador usa para não ajustar o chute a gol."""
+    c = cena_mem.get(pid)
+    if not c:
+        return ""
+    return "chute" if c.get("r") == "chute" and float(c.get("c") or 0) >= CENA_LIMIAR else "-"
 cena_pend = {}                             # card -> hora em que fechou com cena_pendente (só com o sess_lock)
 cena_parar = threading.Event()             # só os testes ligam: o cena_loop termina
 _cena_base = {}                            # chave -> {"t", "base"}
@@ -22763,7 +22772,8 @@ class H(BaseHTTPRequestHandler):
                 out.append({"id": pid, "name": name, "day": day, "t": u, "size": st.st_size,
                             "origem": m.get("o") or "", "via": m.get("s") or "",
                             "cap": m.get("cap") or 0, "serie": m.get("serie") or "", "autor": m.get("autor") or "",
-                            "dono": m.get("dono") or "", "modelo": m.get("modelo") or ""})
+                            "dono": m.get("dono") or "", "modelo": m.get("modelo") or "",
+                            "pt": _lib_ponto(pid)})
             out.sort(key=lambda x: x["t"])
             if meta_dirty[0]:
                 meta_dirty[0] = False
