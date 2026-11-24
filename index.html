@@ -8377,9 +8377,11 @@ const lxDiaBR=d=>/^\d{4}-\d{2}-\d{2}$/.test(d||'')?d.slice(8,10)+'/'+d.slice(5,7
 function lxNomeFot(k){if(!k)return TE('lx_sem_fot');const p=P[k]||P[keyByName(k)];return p&&p.name?p.name:String(k);}
 // as fotos da lista com o filtro de motivo (a lupa percorre esta mesma lista)
 function lxFiltrados(){const L=state.lx;const it=(L.j&&L.j.itens)||[];return L.mot==='todos'?it:it.filter(x=>(x.mot||[]).includes(L.mot));}
-async function lxPull(o){o=o||{};const L=state.lx,u=trAg();if(!u||L.busy)return;L.busy=true;L.err=null;if(!o.quieto)render();
-  try{const r=await agFetch(u+'/lixeira'+(L.dia?'?dia='+encodeURIComponent(L.dia):''),{cache:'no-store'});const j=r.ok?await r.json().catch(()=>null):null;
+// revisão 24/11: a resposta de um dia que já não é o escolhido (a pessoa trocou de dia no meio) é descartada; a tela pede de novo
+async function lxPull(o){o=o||{};const L=state.lx,u=trAg();if(!u||L.busy)return;L.busy=true;L.err=null;if(!o.quieto)render();const pedido=L.dia;
+  try{const r=await agFetch(u+'/lixeira'+(pedido?'?dia='+encodeURIComponent(pedido):''),{cache:'no-store'});const j=r.ok?await r.json().catch(()=>null):null;
     if(!j||!Array.isArray(j.itens))L.err='lx_erro';
+    else if(L.dia!==pedido||(pedido&&j.dia!==pedido)){if(L.j&&L.j.dia!==L.dia)L.j=null;}
     else{j.itens=j.itens.filter(x=>x&&/^[0-9a-f]{6,40}$/.test(x.pid));j.itens.forEach(x=>{const id='ag_'+x.pid;if(!UP[id])UP[id]={src:u+'/thumb/'+x.pid,name:x.pid};});
       L.j=j;if(!L.dia)L.dia=j.dia;L.t=Date.now();}}
   catch(e){L.err='lx_erro';}finally{L.busy=false;if(state.view==='lixeira')render();}}
@@ -8406,7 +8408,7 @@ async function lxRec(pid){const L=state.lx,u=trAg();if(!u||!/^[0-9a-f]{6,40}$/.t
     else toast(TE('lx_erro'));}
   catch(e){toast(TE('lx_erro'));}finally{delete L.voo[pid];if(state.view==='lixeira')render();lxPillUpd();}}
 function lxReguaHtml(){const L=state.lx;const M=L.med;
-  const corpo=L.medBusy?`<div class="note">${TE('tr_med_calculando')}</div>`:L.medErr?`<div class="note">${TE(L.medErr)}</div>`:!M?'':
+  const corpo=L.medBusy?`<div class="note">${TE('lx_calculando')}</div>`:L.medErr?`<div class="note">${TE(L.medErr)}</div>`:!M?'':
     `<ul class="lx-regua-l">${LX_MOTIVOS.map(m=>{const x=(M.motivos||{})[m]||{};const n=+x.n||0;const pct=x.precisao==null?0:Math.round(x.precisao*100);const crit=(M.crit&&+M.crit.n)||20;
       return `<li><b>${esc(TEk('lx_mot_'+m,m))}</b>: ${n?esc(TE('lx_regua_linha',n,pct)):''}${n&&n<crit?'. ':''}${n<crit?esc(TE('lx_regua_falta',crit-n)):''}</li>`;}).join('')}</ul><div class="note">${TE('lx_regua_nota')}</div>`;
   return `<details class="panel lx-regua"${L.regua?' open':''}><summary data-act="lx-regua">${TE('lx_regua_h')}</summary>${L.regua?corpo:''}</details>`;}
@@ -8416,7 +8418,7 @@ function vLixeira(){const L=state.lx,u=trAg();const st=state.agent.lixeira||null
   const modoPill=modo==='ligada'?`<span class="pill warn">${esc(TE('lx_modo_ligado',lxMotTxt(J&&J.valendo)))}</span>`:`<span class="pill neutral">${TE('lx_modo_teste')}</span>`;
   const head=`<div class="head"><div><div class="eyebrow">${TE('g_curadoria')}</div><h1>${esc(viewLabel('lixeira'))}</h1><div class="note">${TE('lx_nota')}</div></div></div><div class="row lx-modo">${modoPill}</div>`;
   if(!u)return head+`<div class="panel"><div class="note">${TE('lx_sem_servidor')}</div></div>`;
-  if(!J)return head+`<div class="panel">${L.err?`<div class="note">${TE(L.err)}</div><div class="row"><button class="btn" data-act="lx-reler">${TE('lx_tentar')}</button></div>`:`<div class="note">${TE('tr_med_calculando')}</div>`}</div>`;
+  if(!J)return head+`<div class="panel">${L.err?`<div class="note">${TE(L.err)}</div><div class="row"><button class="btn" data-act="lx-reler">${TE('lx_tentar')}</button></div>`:`<div class="note">${TE('lx_carregando')}</div>`}</div>`;
   const hoje=venueToday();const cont={};(J.dias||[]).forEach(x=>{cont[x.dia]=+x.n||0;});
   const dias=[];for(let i=0;i<30;i++)dias.push(addDays(hoje,-i));if(J.dia&&!dias.includes(J.dia))dias.push(J.dia);
   const sel=`<label class="lx-dia">${TE('lx_dia')} <select data-act="lx-dia">${dias.map(d=>`<option value="${esc(d)}"${d===J.dia?' selected':''}>${esc(lxDiaBR(d))} · ${cont[d]||0}</option>`).join('')}</select></label>`;
@@ -8441,7 +8443,7 @@ const LX_LIGADO_PRONTO=false; // Parte B: destrava só para os motivos que passa
 function lxCfgPanel(){if(!canView('ia-auto'))return '';const s=state.agent.lixeira;const ag=trAg();const L=state.lx;
   const modo=s&&s.modo==='ligada'?'ligada':'medir';const pode=isAdminUser(state.user)&&!state.assumido;
   const pil=`<span class="pill ${modo==='ligada'?'good':'neutral'}">${TE(modo==='ligada'?'lx_cfg_ligado':'lx_cfg_teste')}</span>`;
-  const ctl=!ag||!s?`<span class="note">${TE('tr_sem_servidor')}</span>`:pode?`<span class="seg" role="group" aria-label="${esc(TE('lx_cfg_k'))}"><button class="chip" data-act="lx-cfg" data-v="medir" aria-pressed="${modo==='medir'}" ${L.cfgVoo?'disabled':''}>${TE('lx_cfg_teste')}</button><button class="chip" data-act="lx-cfg" data-v="ligada" aria-pressed="${modo==='ligada'}" ${L.cfgVoo||!LX_LIGADO_PRONTO?'disabled':''}>${TE('lx_cfg_ligado')}</button></span>`:pil;
+  const ctl=!ag||!s?`<span class="note">${TE('lx_sem_servidor')}</span>`:pode?`<span class="seg" role="group" aria-label="${esc(TE('lx_cfg_k'))}"><button class="chip" data-act="lx-cfg" data-v="medir" aria-pressed="${modo==='medir'}" ${L.cfgVoo?'disabled':''}>${TE('lx_cfg_teste')}</button><button class="chip" data-act="lx-cfg" data-v="ligada" aria-pressed="${modo==='ligada'}" ${L.cfgVoo||!LX_LIGADO_PRONTO?'disabled':''}>${TE('lx_cfg_ligado')}</button></span>`:pil;
   const ex=(!LX_LIGADO_PRONTO?`<div class="note lx-cfg-breve">${TE('lx_cfg_em_breve')}</div>`:'')+(!pode&&ag&&s?`<div class="note">${TE('lx_cfg_so_admin')}</div>`:'')+(s&&s.on===false?`<div class="note">${TE('lx_cfg_desligada')}</div>`:'');
   return `<div class="panel tr-an" id="lx-cfg"><div class="tr-an-b" data-k="lixeira"><div class="tr-an-l"><span class="tr-an-k">${TE('lx_cfg_k')}</span>${ctl}</div><div class="note">${TE('lx_cfg_nota')}</div>${ex}</div></div>`;}
 async function lxCfg(v){if(state.assumido){toast(TE('vc_so_ver'));return;}if(!isAdminUser(state.user)){toast(TE('lx_cfg_so_admin'));return;}
@@ -12011,6 +12013,8 @@ const EQ={
   lx_mais:["Mostrando as 3.000 fotos mais recentes do dia.","Showing the 3,000 most recent photos of the day.","Se muestran las 3.000 fotos más recientes del día.","Affichage des 3 000 photos les plus récentes du jour.","Angezeigt werden die 3.000 neuesten Fotos des Tages."],
   lx_sem_servidor:["A lixeira fica no servidor do ponto. Abra o Eterna pelo servidor para ver.","The bin lives on the on-site server. Open Eterna through the server to see it.","La papelera está en el servidor del punto. Abra Eterna desde el servidor para verla.","La corbeille se trouve sur le serveur du point. Ouvrez Eterna par le serveur pour la voir.","Der Papierkorb liegt auf dem Server vor Ort. Öffnen Sie Eterna über den Server, um ihn zu sehen."],
   lx_erro:["Não deu para falar com o servidor. Tente de novo.","Could not reach the server. Try again.","No se pudo conectar con el servidor. Inténtelo de nuevo.","Impossible de joindre le serveur. Réessayez.","Der Server ist nicht erreichbar. Versuchen Sie es noch einmal."],
+  lx_carregando:["Carregando as fotos da lixeira...","Loading the photos in the bin...","Cargando las fotos de la papelera...","Chargement des photos de la corbeille...","Fotos im Papierkorb werden geladen..."],
+  lx_calculando:["Fazendo a conta...","Working it out...","Haciendo la cuenta...","Calcul en cours...","Wird berechnet..."],
   lx_tentar:["Tentar de novo","Try again","Intentar de nuevo","Réessayer","Noch einmal versuchen"],
   lx_sumiu:["Esta foto já saiu da lixeira.","This photo has already left the bin.","Esta foto ya salió de la papelera.","Cette photo a déjà quitté la corbeille.","Dieses Foto ist schon nicht mehr im Papierkorb."],
   lx_regua_h:["Quanto a IA acerta","How often the AI is right","Cuánto acierta la IA","À quel point l'IA a raison","Wie oft die KI richtig liegt"],

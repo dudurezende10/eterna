@@ -37,7 +37,7 @@ Tempo estimado: Parte A cerca de 4h30 de programação + 45 min de revisão + 1h
 - **D4 Falha aberta:** sem OpenCV, sem medida, erro de leitura, agente fora do ar ou primeira carga do Checkout ainda sem a lista = a foto aparece. A lixeira nunca esconde por engano de sistema. `ETERNA_LIXEIRA=0` desliga a medida e qualquer efeito.
 - **D5 Ligado só vale para os motivos que passam na régua** (LX_CRIT: pelo menos 20 fotos marcadas no Treino que a regra mandaria para a lixeira, com 95% ou mais delas marcadas "Não pode"). A lista dos motivos que valem é congelada no momento em que o Admin liga (`valendo`, `desde`), como no "ligar de novo" do reconhecimento do ponto. Nenhum motivo passando = 409 `criterio`. Motivo que passa depois só vale quando o Admin liga de novo.
 - **D6 Ligado não esconde foto vendida, de cortesia, nem foto que chegou antes do `desde`.** Bases de IA já escolhidas numa leva fechada não mudam (Parte B).
-- **D7 Contagem no menu = fotos de hoje na lixeira, ainda não recuperadas.** Some quando é zero. Hoje em vez de 30 dias porque o número dos 30 dias só cresce e deixa de chamar atenção.
+- **D7 Contagem no menu = fotos dos últimos 7 dias na lixeira, ainda não recuperadas** (decisão do Eduardo, 24/11; `LX_MENU_DIAS` no agente, `/status.lixeira.n7`). Some quando é zero. 7 dias em vez de 30 porque o número dos 30 dias só cresce e deixa de chamar atenção.
 - **D8 "Não é ruim" não grava marcação no Treino.** "Não é ruim" não quer dizer "boa"; fica na própria lixeira (`rec_por`, `rec_em`) e conta como erro na régua. Sem desfazer: o erro de clicar só devolve uma foto ruim à venda.
 - **D9 Dado no `treino.db`** (tabelas `lixeira` e `lixeira_log`): já vai para o backup, já tem o gancho da LGPD (`treino_lgpd`) e a zeragem das 23h não mexe nele.
 
@@ -51,7 +51,7 @@ Custo: 6 a 10 ms de processador por foto (um `resize`, dois `Laplacian`, a luz q
 |---|---|---|---|
 | `escura` | luz do maior rosto (`r.med`); sem rosto, o quadro central (`q.med`, `q.baixo`) | com rosto: `r.med < 22`; sem rosto: `q.med < 18` e `q.baixo >= 60` | `luz_medir` (o alerta usa 50; o Ajuste automático clareia no máximo 1,4 vez, então 22 vira ~31, ainda sem salvação) |
 | `estourada` | `r.p95`, `r.alto`; sem rosto `q.med`, `q.alto` | com rosto: `r.p95 >= 254` e `r.alto >= 40`; sem rosto: `q.med >= 235` e `q.alto >= 50` | `luz_medir` (o alerta usa 250 e 8%; branco estourado não volta com ajuste) |
-| `desfocada` | variância do Laplaciano: `nq` = 60% centrais reduzidos a 1024 px no lado maior, cinza, `cv2.Laplacian(CV_32F, ksize=3).var()`; `nr` = maior rosto (caixa 10% maior) reduzido a 160 px de largura | com rosto: `nr < 15` **e** `nq < 25`; sem rosto: `nq < 20` | novo, só OpenCV e numpy (já no servidor). Nas imagens do repositório, nítida dá 10.000 a 40.000; desfoque gaussiano de sigma 4 dá 15 a 40; sigma 8 dá 9 a 15. Exigir rosto e quadro juntos evita mandar para a lixeira o fundo desfocado de propósito |
+| `desfocada` | variância do Laplaciano: `nq` = 60% centrais reduzidos a 1024 px no lado maior, cinza, `cv2.Laplacian(CV_32F, ksize=3).var()`; `nr` = maior rosto (caixa 10% maior) na mesma escala do quadro (24/11: a 160 px o valor do rosto borrado variava de 11 a 88 com o tamanho; `resize` INTER_LINEAR) | com rosto: `nr < 25` **e** `nq < 25`; sem rosto: `nq < 20` | novo, só OpenCV e numpy (já no servidor). Nas imagens do repositório, nítida dá 10.000 a 40.000; desfoque gaussiano de sigma 4 dá 15 a 40; sigma 8 dá 9 a 15. Exigir rosto e quadro juntos evita mandar para a lixeira o fundo desfocado de propósito |
 | `sem_ninguem` | rostos achados pelo YuNet em qualquer tamanho (`nb`, antes do filtro `ROSTO_MIN`) e os de tamanho normal (`n`) | `nb == 0` | `ler_rostos` ganha o parâmetro opcional `brutos` (lista que recebe a contagem antes do filtro); nada muda para quem não passa o parâmetro |
 
 Uma foto pode ter mais de um motivo; a tela mostra o primeiro nesta ordem: escura, estourada, desfocada, sem ninguém. Os limites ficam em `LX_LIM_PADRAO` e em `config/lixeira.lim` (faixas em `LX_FAIXAS`). Os números de desfoque são ponto de partida: as imagens do repositório são pequenas, e as fotos do estádio só dão o valor real a partir de amanhã. Por isso o padrão é Teste.
@@ -79,9 +79,9 @@ Funções:
 - `treino_db()`: cria `lixeira (pid text primary key, dia text, v integer, mot text, dados text, em text, rec_por text, rec_em text)` com índice em `dia`, e `lixeira_log (pid text, acao text, por text, em text)`.
 - `lx_medir(img, caixas, n, nb, luz=None)` -> `dados` = `{v, nq, nr, n, nb, luz:{q:{med,alto,baixo,p95}, r:{med,p95,alto}|null}}`. Sem `luz`, chama `luz_medir(img, caixas)`. Números arredondados (1 casa). Função pura, testável com imagem gerada.
 - `lx_classe(dados, lim)` -> lista de motivos na ordem fixa (vazia = ok). Pura.
-- `lx_acrescenta(pid, dia, dados)`: aplica `lx_classe` com os limites de agora, põe em `lx_novas` e em `lx_mem`; acima de `LX_FILA_MAX` sai o mais antigo.
+- `lx_acrescenta(pid, dia, dados, ms)`: aplica `lx_classe` com os limites de agora, lidos só da memória (`lx_cfg_mem`; revisão 24/11: o leitor de rostos nunca abre o `estado.db` nem espera o `estado_lock`; o `lx_grava_loop` relê a chave), põe em `lx_novas`, em `lx_vistos` (já medida) e, com motivo, em `lx_mem`; acima de `LX_FILA_MAX` sai o mais antigo. `ms` = tempo da medida (`/status.lixeira.ms_med`).
 - `lx_grava()` / `lx_grava_loop()`: como `luz_grava` (lote, só pid ainda em `lib`, apaga o que saiu pela LGPD no meio). `insert ... on conflict(pid) do nothing`: o veredito não muda (D3).
-- `lx_mem_carregar()` na partida: linhas de hoje e ontem com pid em `lib`.
+- `lx_mem_carregar()` na partida: linhas dos últimos 7 dias com pid em `lib` (`lx_mem` só com as que têm motivo; `lx_vistos` com todas).
 - `lx_cfg()` / `lx_cfg_valida(j, base)` / `lx_cfg_gravar(body, sessao)`: formato fechado. `modo` só `medir` ou `ligada`. **Parte A:** `ligada` responde 409 `{"error": "em_breve"}`. **Parte B:** `ligada` chama `lx_medida()`, `valendo` = motivos com `passa`; vazio = 409 `{"error": "criterio", "falta": [...]}`; senão grava `valendo`, `desde` (agora), `por`. `lim` aceito só dentro de `LX_FAIXAS` (400 `lim`). Igual ao que já está = 200 `igual`. Cada gravação aceita entra em `lixeira_log` (`acao` `cfg_medir` ou `cfg_ligada`, pid vazio).
 - `lx_lista(dia)`: linhas do dia com motivo e pid em `lib`, juntando `treino_fotos_dia(dia)["idx"]` (fotógrafo, código da leva, ordem) e o nível do Treino (`rotulo`), da mais nova para a mais antiga, até `LX_ITENS_MAX`; e `dias`: os últimos `RETENCAO_DIAS` com contagem (sem as recuperadas).
 - `lx_recuperar(pid, quem)`: 404 `pid` se não está na lixeira com motivo; já recuperada = 200 `igual`; senão grava `rec_por`, `rec_em`, linha em `lixeira_log` (`recuperar`), atualiza `lx_mem`, sobe `lx_st["rev"]`. **Parte B:** se a leva de hoje está fechada, sem venda, com `ia` vazia e `ia_regra.motivo == "sem_gramado"`, volta para `cena_pend` com `motivo "cena_pendente"` (o `cena_completa` escolhe as bases de novo, nunca com base vendida).
@@ -89,7 +89,7 @@ Funções:
 - `lx_ids()`: **Parte B.** Com `ligada`: pids de hoje e ontem com motivo em `valendo`, `em >= desde`, sem `rec`. Com `medir`: `[]`.
 - `lx_fora(pid)`: **Parte B.** Só memória: o pid estaria em `lx_ids()`. Usada no `_sess_ia_base_de` (devolve `"fora"`), então foto da lixeira nunca vira base de IA nem montagem.
 - `lx_status()` -> `{v:1, on, modo, rev, hoje, valendo, hoje_fora}` só com números e códigos (`hoje` = de hoje na lixeira sem recuperar; `hoje_fora` = de hoje escondidas pelo Ligado, 0 em Teste).
-- `lx_limpa()`: uma vez por madrugada (janela `LUZ_NOITE`, cede ao `_luz_ocupado()`), num laço próprio `lx_loop`. Apaga linha de foto que saiu da `lib` há mais de 24 h, menos as recuperadas e as das fotos marcadas no Treino (são a régua). O `lixeira_log` fica.
+- `lx_limpa()`: uma vez por madrugada (janela `LUZ_NOITE`, cede ao `_luz_ocupado()`), num laço próprio `lx_loop`. Apaga a linha da foto que não está mais na `lib` e foi medida há mais de 24 h (pela hora da medida, `em`), menos as recuperadas e as das fotos marcadas no Treino (são a régua). O `lixeira_log` fica.
 - `treino_lgpd`: `"lixeira"` e `"lixeira_log"` entram na tupla das tabelas apagadas por pid; tira o pid de `lx_mem` e de `lx_novas`.
 - `ler_rostos(..., brutos=None)`: se receber lista, acrescenta `len(f)` antes do filtro `ROSTO_MIN`. Avisar o Ronaldo (função dele).
 - `leitor_loop`: depois do bloco da luz e antes de `img = img_l = fs_l = None`: `if img_l is not None and LX_ON: lx_acrescenta(pid, dia, lx_medir(img_l, caixas, len(fs_l), nb[0], v_l))` dentro de `try/except` próprio (erro = linha no console com o nome da exceção, sem caminho). `v_l` vem da luz quando ela mediu; senão `None`.
@@ -119,7 +119,7 @@ Funções:
   - régua: `<details>` com o que vem de `/lixeira/medida` (pedido só ao abrir): por motivo `lx_regua_linha` ou `lx_regua_falta`;
   - vazio `lx_vazio`; sem agente `lx_sem_servidor`; erro `lx_erro`.
 - `case 'lx-rec'`: POST; 200 atualiza o item e a contagem; 200 `igual` só atualiza; 404 toast `lx_sumiu` e recarrega; outro erro `lx_erro`. Toast `lx_rec_ok_teste` (Teste) ou `lx_rec_ok` (Ligado).
-- `lxPill()`: como o `postoPill`: `<span class="pill neutral" id="rail-lx" aria-label="lx_pill(n)">n</span>` no item `lixeira` quando `canView('lixeira')` e `st.lixeira.hoje > 0`. Atualizado no mesmo lugar em que o `postoPill` é refeito sem `render`.
+- `lxPill()`: como o `postoPill`: `<span class="pill neutral" id="rail-lx" aria-label="lx_pill(n)">n</span>` no item `lixeira` quando `canView('lixeira')` e `st.lixeira.n7 > 0`. Atualizado no mesmo lugar em que o `postoPill` é refeito sem `render`.
 - `lxCfgPanel()`: bloco no padrão `.tr-an-b` com título `lx_cfg_k`, nota `lx_cfg_nota`, chips Teste e Ligado (`data-act="lx-cfg" data-v="medir|ligada"`) só para `isAdminUser(state.user) && !state.assumido`; os outros veem a pílula. Parte A: Ligado `disabled` com `lx_cfg_em_breve`. Parte B: 409 `criterio` mostra o que falta em texto puro; ligado mostra `lx_cfg_valendo` e, quando outro motivo passou depois, o botão `lx_cfg_religar`. Chamado com **uma linha** no `vIaAuto`, depois do `trCfgPanel()`.
 - **Parte B no Checkout:** `lxFora(id)` = Ligado, id `ag_`, pid em `state.lixo.ids` e fora de `vendidasTodas()`. Entra ao lado do `SIM.discarded` em `lojaFotos`, `lojaMaisIds`, `ljSessSemFoto`, `fiaBaseBoa`, `barrada` e `aiCands`. Não entra em `revSessions`, Qualidade, Minhas fotos nem Ajuste (a equipe continua vendo tudo).
 - **Parte B em Alertas:** no `alerts()`, com `canView('lixeira')` e `hoje_fora > 0`, um item `warn` `al_lx_t`/`al_lx_d`.
@@ -141,7 +141,7 @@ Funções:
 {"v":1,"modo":"medir","valendo":[],"desde":null,"por":null,
  "lim":{"esc_rosto_med":22,"esc_quadro_med":18,"esc_quadro_baixo":60,
         "est_rosto_p95":254,"est_rosto_alto":40,"est_quadro_med":235,"est_quadro_alto":50,
-        "nit_rosto":15,"nit_quadro_com_rosto":25,"nit_quadro":20,"sem_brutos":0}}
+        "nit_rosto":25,"nit_quadro_com_rosto":25,"nit_quadro":20,"sem_brutos":0}}
 ```
 
 Linha `lixeira.dados`: `{"v":1,"nq":812.4,"nr":95.1,"n":2,"nb":3,"luz":{"q":{"med":120,"alto":1.2,"baixo":3.4,"p95":231},"r":{"med":131,"p95":214,"alto":0.4}}}`; `mot` = `"escura,desfocada"` ou null.
@@ -163,7 +163,7 @@ Linha `lixeira.dados`: `{"v":1,"nq":812.4,"nr":95.1,"n":2,"nb":3,"luz":{"q":{"me
 
 `GET /lixeira/ids` (B) -> `{"v":1,"modo":"ligada","rev":12,"ids":["…"]}` (só pids; em Teste `ids: []`).
 
-`/status.lixeira` -> `{"v":1,"on":true,"modo":"medir","rev":12,"hoje":4,"valendo":[],"hoje_fora":0}`.
+`/status.lixeira` -> `{"v":1,"on":true,"modo":"medir","rev":12,"hoje":4,"n7":9,"dias":7,"valendo":[],"hoje_fora":0,"ms_med":4.1}`.
 
 Chaves do `EQ` (equipe, 5 línguas pt, en, es, fr, de), com o texto em português:
 - `v_lixeira` "Lixeira da IA"; `vd_lixeira` "fotos sem salvação"
@@ -176,7 +176,7 @@ Chaves do `EQ` (equipe, 5 línguas pt, en, es, fr, de), com o texto em portuguê
 - `lx_sem_fot` "Sem fotógrafo"; `lx_treino_pode` "Treino: pode"; `lx_treino_nao` "Treino: não pode"
 - `lx_vazio` "Nenhuma foto na lixeira neste dia."; `lx_sem_servidor` "A lixeira fica no servidor do ponto. Abra o Eterna pelo servidor para ver."; `lx_erro` "Não deu para falar com o servidor. Tente de novo."; `lx_sumiu` "Esta foto já saiu da lixeira."
 - `lx_regua_h` "Quanto a IA acerta"; `lx_regua_linha` (n, pct) "${n} fotos marcadas no Treino, ${pct}% eram mesmo ruins"; `lx_regua_falta` (n) "Faltam ${n} fotos marcadas no Treino para medir"; `lx_regua_nota` "A conta usa as marcações do Treino e cada \"Não é ruim\"."
-- `lx_pill` (n) "${n} fotos na lixeira hoje"
+- `lx_pill` (n, dias) "${n} fotos na lixeira nos últimos ${dias} dias"
 - `lx_cfg_k` "Lixeira da IA"; `lx_cfg_nota` "Em Teste, a IA só separa as fotos para conferir. Ligado, elas saem do Checkout."; `lx_cfg_teste` "Teste"; `lx_cfg_ligado` "Ligado"; `lx_cfg_em_breve` "O Ligado chega na próxima versão."; `lx_cfg_criterio` "Ainda nenhum motivo acerta o bastante para ligar."; `lx_cfg_valendo` (motivos) "Valendo para: ${motivos}"; `lx_cfg_religar` "Ligar de novo com a conta de agora"; `lx_cfg_so_admin` "Só o Admin muda a Lixeira da IA."
 - `al_lx_t` (n) "${n} fotos saíram do Checkout hoje pela Lixeira da IA"; `al_lx_d` "Confira em Curadoria › Lixeira da IA. \"Não é ruim\" devolve a foto."
 - `modi_qualidade_u` atualizado.
@@ -194,7 +194,7 @@ Parte A
 6. O veredito não muda depois de gravado: limite novo vale só para foto nova.
 7. `ETERNA_LIXEIRA=0`: nenhuma linha gravada, `/status.lixeira.on` false.
 8. Curadoria › Lixeira da IA aparece depois de Alertas para o Admin e a Supervisora (perfil pronto, também a já gravada, pela migração). Não aparece para Validador, Fotógrafo, Atendimento e venda, Checkout.
-9. O item do menu mostra o número de fotos de hoje na lixeira sem recuperar; sem nenhuma, não mostra nada; recuperar uma diminui o número sem recarregar a página.
+9. O item do menu mostra o número de fotos dos últimos 7 dias na lixeira sem recuperar; sem nenhuma, não mostra nada; recuperar uma diminui o número sem recarregar a página.
 10. A tela mostra miniatura, motivo, fotógrafo e hora; o filtro de dia lista os últimos 30 dias com contagem; os chips de motivo filtram; a lupa percorre a lista filtrada.
 11. "Não é ruim" grava quem e quando no servidor (`lixeira` e `lixeira_log`), a foto fica como recuperada na tela, sai da contagem; segundo clique responde `igual`.
 12. Em Teste, nenhuma foto sai do Checkout, das sessões, das bases de IA nem das galerias (o Checkout de uma leva com foto na lixeira mostra todas as fotos).
@@ -254,6 +254,6 @@ Parte B
 ## Pontos para o Eduardo decidir
 1. **Régua para ligar (D5):** o Ligado só vale para motivos que acertam 95% em pelo menos 20 fotos marcadas no Treino. Escura e estourada devem passar logo; desfocada e sem ninguém levam alguns dias. Quer um "ligar mesmo assim", como no reconhecimento do ponto?
 2. **Botão "Ruim mesmo"** ao lado do "Não é ruim": faria a régua andar muito mais rápido (cada confirmação conta como acerto). Fica para a próxima ou entra amanhã com a Parte B?
-3. **Contagem do menu** só de hoje (D7) ou de todos os 30 dias?
+3. **Contagem do menu** (decidido em 24/11: últimos 7 dias).
 4. **Validador:** fica sem a tela (escolha deste plano) ou também vê e recupera?
 5. **Limites iniciais de desfoque:** são estimativas; depois de 2 ou 3 dias em Teste, olhar a tela juntos e ajustar antes de ligar.

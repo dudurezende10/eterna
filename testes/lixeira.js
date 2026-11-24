@@ -32,7 +32,9 @@ function lista(R,dia){const base=dia===HOJE?[
 async function agente(ctx,R){const js=(r,o,st)=>r.fulfill({status:st||200,contentType:'application/json',body:J(o)});
   R.listas=[];R.posts=[];R.cfg=[];R.modo='medir';R.medidas=0;R.rec={};R.hoje=3;R.n7=4;R.rev=1;R.sumiu=false;
   await ctx.route(ORIG+'/status',r=>js(r,{ok:true,agent:'eterna-agente',version:3,boot:'blx',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:false},
-    treino:{v:1,rotulos:0,analise:{ponto:'medir',exposicao:'medir'},modelo_ponto:null,ajuste:null},lixeira:{v:1,on:true,modo:R.modo,rev:R.rev,hoje:R.hoje,n7:R.n7,dias:7,valendo:[],hoje_fora:0}}));
+    treino:{v:1,rotulos:0,analise:{ponto:'medir',exposicao:'medir'},modelo_ponto:null,ajuste:null},lixeira:{v:1,on:true,modo:R.modo,rev:R.rev,hoje:R.hoje,n7:R.n7,dias:7,valendo:[],hoje_fora:0},
+    sessoes:{v:2,pausa:60,rostos:true,rev:1,gen:'blx',hoje:1,abertas:0,dias:1}}));
+  await ctx.route(ORIG+'/sessoes*',r=>js(r,{ok:true,gen:'blx',rev:1,pausa:60,rostos:true,completo:true,sessoes:R.feed||[]}));
   await ctx.route(ORIG+'/events*',r=>js(r,{events:[],next:0,total:0}));
   await ctx.route(ORIG+'/biblioteca',r=>js(r,{fotos:[]}));
   await ctx.route(ORIG+'/ponto/docs/revs',r=>js(r,{ok:true,revs:{}}));
@@ -144,6 +146,16 @@ try{
     ok(k.sw<=k.iw&&k.h.length===2,'19: a chave em 390 px sem rolagem lateral: '+J(k));
     await pg.evaluate(()=>document.querySelector('#lx-cfg').scrollIntoView());await pg.screenshot({path:path.join(PRINTS,'lixeira-chave-390.png')});
     await ctx.close();}
+  // ---------- 12: em Teste, com a lixeira cheia, o Checkout mostra todas as fotos da leva ----------
+  {const {ctx,pg,R}=await nova();const t0=Date.now()/1000;
+    R.feed=[{card:'LPLIXO001',dia:HOJE,fotografo:'marcio',fonte:'ftp',ponto:null,funcao:null,trilha:'vivo',atrasada:false,status:'fechada',motivo:'pausa',aberta_em:t0-300,ultima_chegada:t0-250,cap0:t0-302,cap1:t0-252,fonte_t:'cap',fechada_em:t0-190,fechada_por:'pausa',
+      fotos:[P1,P2,P3,'a1b2c3d40005'],pend:[],dec:{},sim_abertura:null,fundida_em:null,removida:false,rev:1,ia:[],ia_regra:{n:2,motivo:'sem_funcao'}}];R.n7=3;
+    await pg.goto(U+'#loja');
+    ok(await espera(pg,()=>!!(window.ETERNA&&ETERNA.SIM.sessions.LPLIXO001),20000),'12: a leva chegou ao Checkout');
+    const n=await pg.evaluate(()=>{ETERNA.SIM.invalid={};return ETERNA.lojaItems('LPLIXO001').filter(x=>x.t==='ph').map(x=>x.id);});
+    ok(n.length===4&&['a1b2c3d40001','a1b2c3d40002','a1b2c3d40003'].every(p=>n.includes('ag_'+p)),'12: em Teste o Checkout mostra as 4 fotos, também as 3 da lixeira: '+J(n));
+    ok(!R.listas.length,'12: o Checkout nem pede a lista da lixeira');
+    await ctx.close();}
   // ---------- 8: Supervisora (pronta e já gravada pela migração) vê; Validador, Fotógrafo, venda e Checkout não ----------
   {const {ctx,pg}=await nova();await pg.goto(U);await pg.waitForTimeout(300);
     const r=await pg.evaluate(()=>({sup:ETERNA.presetMenu('supervisor'),val:ETERNA.presetMenu('valida'),foto:ETERNA.presetMenu('foto'),venda:ETERNA.presetMenu('venda'),qq:ETERNA.presetMenu('quiosque')}));
@@ -169,5 +181,5 @@ try{
 }catch(e){fails.push('exceção: '+(e&&e.stack||e).toString().slice(0,600));}
 await b.close();
 const erros=errs.filter(e=>!/favicon/.test(e));ok(!erros.length,'erros no console: '+J(erros.slice(0,3)));
-console.log(fails.length?'FALHA lixeira: '+fails.join(' | '):'OK lixeira: Curadoria › Lixeira da IA (critérios 8 a 11, 13 com a chave, 15 e 19; prints em '+PRINTS+')');
+console.log(fails.length?'FALHA lixeira: '+fails.join(' | '):'OK lixeira: Curadoria › Lixeira da IA (critérios 8 a 13 com a chave, 15 e 19; prints em '+PRINTS+')');
 process.exit(fails.length?1:0);})();
