@@ -13,13 +13,13 @@ const HOJE=diaSP(Date.now());const addD=(iso,n)=>{const [y,m,d]=iso.split('-').m
 const LIM={v:1,cliques_min:20,cliques_max:40,fam_min:5,conv_fam_pp:10,conv_fotos_pp:5,conv_fam_min:15,conv_equipe_min:3,luz_pct:15,luz_grave_pct:25,luz_fotos_min:50,
   luz:{v:1,rosto_p95_alto:250,rosto_alto_pct:8,rosto_med_baixo:50,quadro_alto_pct:12,quadro_med_alto:170,quadro_med_baixo:45,quadro_baixo_pct:30}};
 function resposta(R,de,ate){const f=(k,fam,med,ab,ac,cf,ct,luz)=>({k,familias:fam,cliques:{media:med,abaixo:ab,acima:ac,chute_media:1.5,nao_contadas:3},conv:{fam:cf,fotos:ct},luz});
-  return {ok:true,v:1,de,ate,limites:R.lim,exposicao:R.expo,fonte_cliques:'ponto',dias:7,sujo:R.sujo,
+  return {ok:true,v:1,de,ate,limites:R.lim,exposicao:R.expo,fonte_cliques:'ponto',dias:7,sujo:R.sujo,refeitos:R.sujo?R.refeitos:null,
     equipe:{familias:60,fam_compraram:30,fotos:1800,fotos_vendidas:400,cliques_soma:1500,chute_soma:90},
     fotografos:[f('marcio',20,26.5,2,3,[10,20],[150,600],{n:100,escuras:8,estouradas:R.grave?17:12,sem_dado:0}),f('yago',14,16.2,9,0,[4,20],[90,600],{n:80,escuras:2,estouradas:2,sem_dado:0}),f('marinara',26,30,0,1,[16,20],[160,600],{n:90,escuras:1,estouradas:1,sem_dado:0})],
     alertas:[{tipo:'fot_luz',k:'marcio',sev:R.grave?'bad':'warn',args:[R.grave?25:20,100,R.grave?17:12,8]},{tipo:'fot_poucos',k:'yago',sev:'warn',args:[16.2,9,14,20]},
       {tipo:'fot_conv_fam',k:'yago',sev:'warn',args:[20,50,4,20]},{tipo:'fot_conv_fotos',k:'yago',sev:'warn',args:[15,22,90,600]},{tipo:'fot_muitos',k:'marinara',sev:'warn',args:[45,5,12,40]}]};}
 async function agente(ctx,R){const js=(r,o,st)=>r.fulfill({status:st||200,contentType:'application/json',body:J(o)});
-  R.pedidos=[];R.posts=[];R.lim=JSON.parse(J(LIM));R.expo='ligada';R.grave=false;R.luzPassa=false;R.recusa=false;R.sujo=false;
+  R.pedidos=[];R.posts=[];R.lim=JSON.parse(J(LIM));R.expo='ligada';R.grave=false;R.luzPassa=false;R.recusa=false;R.sujo=false;R.refeitos=7;
   await ctx.route(ORIG+'/status',r=>js(r,{ok:true,agent:'eterna-agente',version:3,boot:'baf',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:false},
     treino:{v:1,rotulos:0,analise:{ponto:'medir',exposicao:R.expo==='ligada'?'ligada':R.expo},modelo_ponto:null,ajuste:null},luz:{v:1,medidas_hoje:0,fila:0,ms_med:null,varredura:{pendentes:0},opencv:true}}));
   await ctx.route(ORIG+'/events*',r=>js(r,{events:[],next:0,total:0}));
@@ -29,14 +29,14 @@ async function agente(ctx,R){const js=(r,o,st)=>r.fulfill({status:st||200,conten
   await ctx.route(ORIG+'/metricas/dia*',r=>js(r,{ok:true,dias:[]}));
   await ctx.route(ORIG+'/treino/medida*',r=>js(r,{v:1,erro:'sem_numpy'}));
   await ctx.route(ORIG+'/fotografos/alertas*',r=>{const q=new URL(r.request().url()).searchParams;R.pedidos.push([q.get('de'),q.get('ate')]);js(r,resposta(R,q.get('de'),q.get('ate')));});
-  await ctx.route(ORIG+'/fotografos/luz/medida*',r=>js(r,{v:1,limites:R.lim.luz,classes:{escura:{n:31,precisao:R.luzPassa?0.9:0.6,revocacao:0.8},estourada:{n:30,precisao:0.92,revocacao:0.75}},boas_n:160,sem_medida:2,
+  await ctx.route(ORIG+'/fotografos/luz/medida*',r=>js(r,{v:1,refaz_ja:7,limites:R.lim.luz,classes:{escura:{n:31,precisao:R.luzPassa?0.9:0.6,revocacao:0.8},estourada:{n:30,precisao:0.92,revocacao:0.75}},boas_n:160,sem_medida:2,
     matriz:{},grade:{rosto_med_baixo:[30,40,50,60,70].map(v=>({valor:v,classe:'escura',precisao:0.8,revocacao:0.7,atual:v===R.lim.luz.rosto_med_baixo})),quadro_alto_pct:[7,10,12,14,17].map(v=>({valor:v,classe:'estourada',precisao:0.9,revocacao:0.7,atual:v===R.lim.luz.quadro_alto_pct}))},
     criterio:R.luzPassa?{passa:true,falta:[]}:{passa:false,falta:[{k:'precisao_escura',tem:0.6,precisa:0.85},{k:'boas',tem:120,precisa:150}]}}));
   await ctx.route(ORIG+'/fotografos/config',r=>{const b=JSON.parse(r.request().postData()||'{}');R.posts.push({h:r.request().headers(),b});
     if(b.cliques_min!=null&&b.cliques_min>=(b.cliques_max||R.lim.cliques_max))return js(r,{ok:false,error:'campo',campo:'cliques_min'},400);
     if((b.luz&&R.recusa)||R.recusaTudo)return js(r,{ok:false,error:'criterio',falta:[{k:'revocacao_escura',tem:0.4,precisa:0.7}]},409);
     const antes=JSON.parse(J(R.lim));Object.entries(b).forEach(([k,v])=>{if(k==='luz')Object.assign(R.lim.luz,v);else R.lim[k]=v;});if(b.luz)R.sujo=true;
-    js(r,{ok:true,limites:R.lim,antes,mudou:Object.keys(b),por:'x',em:'2026-11-23T12:00:00Z',...(b.luz?{refeitos:7,noite:true}:{})});});}
+    js(r,{ok:true,limites:R.lim,antes,mudou:Object.keys(b),por:'x',em:'2026-11-23T12:00:00Z',...(b.luz?{refeitos:R.refeitos,noite:true}:{})});});}
 function usuario(pg,email,nome,preset,extra){return pg.evaluate(([e,n,p,x])=>{const U0=JSON.parse(localStorage.getItem('eterna.users.v1')||'null')||JSON.parse(JSON.stringify(ETERNA.USERS));
   U0[e]=Object.assign({v:2,email:e,name:n,active:true,preset:p,perms:ETERNA.presetPerms(p),menu:ETERNA.presetMenu(p),key:null},x||{});localStorage.setItem('eterna.users.v1',JSON.stringify(U0));},[email,nome,preset,extra]);}
 (async()=>{const b=await chromium.launch();const errs=[];
@@ -103,11 +103,11 @@ try{
     await pg.fill('#fot-lim input[data-k="cliques_min"]','18');
     // ---------- Medição › Exposição: critério, grade e "Usar estes limites" ----------
     await pg.evaluate(()=>{ETERNA.state.train.aba='medida';ETERNA.go('treino');});await espera(pg,()=>document.querySelector('.tr-luz-cls'));
-    ok(await pg.$eval('[data-act="tr-analise"][data-k="exposicao"][data-v="ligada"]',x=>x.disabled===false||x.getAttribute('aria-pressed')==='true'),'exposição Ligada (do /status) não fica travada');
+    ok(await espera(pg,()=>{const x=document.querySelector('[data-act="tr-analise"][data-k="exposicao"][data-v="ligada"]');return !!x&&(x.disabled===false||x.getAttribute('aria-pressed')==='true');}),'exposição Ligada (do /status) não fica travada');
     const lz=await pg.evaluate(()=>({cls:[...document.querySelectorAll('.tr-luz-cls tbody tr')].map(tr=>tr.textContent),falta:[...document.querySelectorAll('.tr-luz-faltas li')].map(x=>x.textContent)}));
     ok(lz.cls.length===2&&/Escura31/.test(lz.cls[0].replace(/\s/g,''))&&lz.falta.some(x=>/Precisão de Escura: 60%/.test(x))&&lz.falta.some(x=>/Boas: 120 de 150/.test(x)),'Medição › Exposição: classes e o que falta: '+J(lz));
     ok(await pg.$eval('[data-act="tr-luz-usar"]',x=>x.disabled),'Usar estes limites travado sem escolha');
-    ok(/os dias mais antigos, de madrugada/.test(await pg.textContent('.tr-luz-noite').catch(()=>'')),'R2: a Medição avisa que os dias antigos são refeitos de madrugada');
+    ok(/hoje e os 6 dias anteriores são refeitos na hora; os dias mais antigos, de madrugada/.test(await pg.textContent('.tr-luz-noite').catch(()=>'')),'R2 e S5: a Medição avisa quantos dias refaz na hora (refaz_ja do servidor) e que os antigos são de madrugada');
     // R4: exposição Ligada e limite que não passa no critério: 409, nada gravado, o que falta na tela
     R.recusa=true;const nAu=await pg.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='fotografos_limites').length);
     await pg.click('[data-act="tr-luz-val"][data-k="rosto_med_baixo"][data-v="40"]');await pg.click('[data-act="tr-luz-usar"]');await pg.waitForTimeout(400);
@@ -115,7 +115,7 @@ try{
     ok(/^Não salvo: com a exposição Ligada/.test(rc.toast)&&rc.li.some(x=>/Revocação de Escura: 40% \(precisa 70%\)/.test(x))&&/Nada foi salvo/.test(rc.h),'R4: 409 mostra o que falta na Medição: '+J(rc));
     ok(await pg.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='fotografos_limites').length)===nAu,'R4: 409 não vai para o auditLog');
     R.recusa=false;await pg.click('[data-act="tr-luz-usar"]');await pg.waitForTimeout(400);
-    ok(/madrugada/.test(await pg.textContent('#toast'))&&!(await pg.$('#tr-luz .fot-recusa')),'R2: salvo, avisa a madrugada e some a recusa');
+    ok(/Hoje e os 6 dias anteriores já foram refeitos; os dias mais antigos são refeitos de madrugada/.test(await pg.textContent('#toast'))&&!(await pg.$('#tr-luz .fot-recusa')),'R2 e S5: salvo, diz os dias refeitos (refeitos do servidor), avisa a madrugada e some a recusa: '+await pg.textContent('#toast'));
     const p2=R.posts[R.posts.length-1];ok(p2&&J(p2.b)===J({luz:{rosto_med_baixo:40}}),'Usar estes limites grava pelo mesmo POST: '+J(p2&&p2.b));
     const au2=await pg.evaluate(()=>ETERNA.auditRead().find(e=>e.acao==='fotografos_limites'));ok(au2&&J(au2.mudancas)===J([{campo:'luz.rosto_med_baixo',de:50,para:40}]),'auditLog da luz: '+J(au2));
     // ---------- 19: abas, cartões e Medição nas 5 línguas, sem chave faltando ----------
@@ -127,7 +127,12 @@ try{
     await pg.evaluate(()=>{ETERNA.state.user.idioma='pt';});
     // R2 na aba: depois de mudar a luz, a aba diz que os dias antigos são refeitos de madrugada; R4 nos limites da aba
     await pg.evaluate(()=>{ETERNA.state.fg.aba='af';ETERNA.go('fotografos');ETERNA.fotPull(true);});await espera(pg,()=>!!document.querySelector('.fot-sujo'));
-    ok(/os dias mais antigos são refeitos de madrugada/.test(await pg.textContent('.fot-sujo').catch(()=>'')),'R2: a aba avisa a madrugada');
+    ok(/hoje e os 6 dias anteriores já foram refeitos; os dias mais antigos são refeitos de madrugada/.test(await pg.textContent('.fot-sujo').catch(()=>'')),'R2 e S5: a aba avisa os dias refeitos e a madrugada');
+    // S5: o refazer falhou no servidor (refeitos 0): a tela não diz que já foram refeitos
+    R.refeitos=0;await pg.evaluate(()=>ETERNA.fotPull(true));await espera(pg,()=>/os dias são refeitos de madrugada/.test((document.querySelector('.fot-sujo')||{}).textContent||''));
+    const sj0=await pg.textContent('.fot-sujo').catch(()=>'');ok(/os dias são refeitos de madrugada/.test(sj0)&&!/já foram refeitos/.test(sj0),'S5: refazer que falhou não diz "já foram refeitos": '+sj0);
+    const ts0=await pg.evaluate(()=>['fot_lim_ok_noite','tr_luz_ok_noite'].map(k=>ETERNA.TE(k,0)));ok(ts0.every(t=>/Não deu para refazer os dias agora/.test(t)&&!/já foram refeitos/.test(t)),'S5: os avisos de salvo com refeitos 0 não dizem "já foram refeitos": '+J(ts0));
+    R.refeitos=7;
     R.recusaTudo=true;await pg.fill('#fot-lim input[data-k="fam_min"]','6');await pg.click('[data-act="fot-cfg-salvar"]');await pg.waitForTimeout(400);
     const rc2=await pg.evaluate(()=>({toast:document.querySelector('#toast').textContent,li:[...document.querySelectorAll('#fot-lim .fot-recusa li')].map(x=>x.textContent),v:document.querySelector('#fot-lim input[data-k="fam_min"]').value}));
     ok(/^Não salvo/.test(rc2.toast)&&rc2.li.length===1&&rc2.v==='6','R4: os limites da aba tratam o 409 e mostram o que falta: '+J(rc2));

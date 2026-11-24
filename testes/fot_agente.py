@@ -429,14 +429,17 @@ try:
 
     rw = leva(D_R, "samuel", 3, cor=60)
     m._cv.update(cv2=CvEspia(), np=np)
-    ocup = iter([False, True, True, False])          # livre na 1ª foto; na 2ª, o leitor pegou uma foto: espera
+    # livre na 1ª foto (antes e depois do uma); na 2ª, o leitor pegou uma foto antes: espera; na 3ª (S4), o leitor começa entre a
+    # espera e o uma(): a conferência depois do uma() volta o OpenCV, espera e só então mede
+    ocup = iter([False, False, True, True, False, False, False, True, False, False])
     luz_ocupado_real = m._luz_ocupado
     m._luz_ocupado = lambda: next(ocup, False)
     t_w = time.time()
     n_w = m.luz_varre(noite=True)
     m._luz_ocupado = luz_ocupado_real
     m._cv.clear()
-    ok(n_w >= 3 and time.time() - t_w >= 1.9, "R1: esperou o leitor antes de medir: %r" % n_w)
+    ok(n_w >= 3 and time.time() - t_w >= 3.9, "R1: esperou o leitor antes de medir: %r" % n_w)
+    ok(registro[4:8] == [("le", 1), ("set", 8), ("set", 1), ("le", 1)], "S4: leitor começou depois do uma(): volta o OpenCV e espera antes de medir: %r" % registro)
     sets = [x for x in registro if x[0] == "set"]
     ok(registro[:4] == [("set", 1), ("le", 1), ("set", 8), ("set", 1)] and sets[-1] == ("set", 8) and all(x == ("le", 1) for x in registro if x[0] == "le"),
        "R1: OpenCV com 1 thread só durante a varredura e de volta no fim: %r" % registro)
@@ -600,6 +603,47 @@ try:
     m._janelas.clear()
     cods = [pede("POST", "/fotografos/config", {"cliques_min": 20}, cookie=sup, limpa=False)[0] for _ in range(7)]
     ok(cods[:6] == [200] * 6 and cods[6] == 429, "11: 6 por minuto por pessoa: %r" % cods)
+    # S3 (revisão): POST de limite de luz no meio da rodada da madrugada. A rodada grava cada dia com o fot_lock; o POST refaz os
+    # dias recentes entre um dia e outro; no fim, os dias já feitos ficaram com o limite antigo: o sujo fica e a noite não conta
+    D_MEIO = m._dia_mais(HOJE, -20)
+    orig_gravar, sem_lock, post = m.fot_gravar, [], {}
+
+    def gravar_espia(dia):
+        if threading.current_thread() is threading.main_thread() and not m.fot_lock.locked():
+            sem_lock.append(dia)
+        r_ = orig_gravar(dia)
+        if dia == D_MEIO and "t" not in post and threading.current_thread() is threading.main_thread():
+            rev = m.fot_st["luz_rev"]
+            post["t"] = threading.Thread(target=lambda: post.update(r=m.fotografos_cfg_gravar({"luz": {"quadro_med_baixo": 45}}, "supervisora-af")))
+            post["t"].start()
+            fim = time.time() + 10
+            while m.fot_st["luz_rev"] == rev and time.time() < fim:   # o POST gravou o limite; o refazer espera o fot_lock da rodada
+                time.sleep(0.01)
+        return r_
+    m.fot_gravar = gravar_espia
+    try:
+        m.fot_st.update(noite=None, sujo=False)
+        m.fot_rodada(HOJE, True, hora=3)
+        post["t"].join(20)
+    finally:
+        m.fot_gravar = orig_gravar
+    st_p, r_p = post.get("r") or (None, {})
+    m._fot_cfg["t"] = 0.0
+    ok(st_p == 200 and r_p.get("refeitos") == 7 and m.luz_limites()["quadro_med_baixo"] == 45, "S3: o POST no meio da rodada grava e refaz 7 dias: %s %r" % (st_p, r_p))
+    ok(not sem_lock, "S3: a rodada grava cada dia com o fot_lock: %r" % sem_lock)
+    ok(m.fot_st["sujo"] is True and m.fot_st["noite"] != HOJE, "S3: limite mudou durante a rodada: o sujo fica e a noite não conta: %r" % m.fot_st)
+    ok(m.fot_alertas(HOJE, HOJE, agora_hoje=False)["refeitos"] == 7, "S3: a resposta dos alertas traz quantos dias foram refeitos")
+    em_meio = calc_em(D_MEIO)[0]
+    time.sleep(1.1)
+    m.fot_rodada(HOJE, False, hora=3)
+    ok(m.fot_st["sujo"] is False and m.fot_st["noite"] == HOJE and calc_em(D_MEIO)[0] > em_meio,
+       "S3: a próxima volta na janela refaz com o limite novo e limpa o sujo: %r" % m.fot_st)
+    orig_refaz = m.fot_dia
+    m.fot_dia = lambda d: (_ for _ in ()).throw(RuntimeError("teste"))
+    try:
+        ok(m.fot_refaz_recentes() == 0 and m.fot_st["refeitos"] == 0, "S5: refazer que falha devolve 0 (a tela não diz que refez)")
+    finally:
+        m.fot_dia = orig_refaz
 
     # ---------- 12 e R3: o mês congelado é a soma dos dias, não muda depois; só do dia 4 em diante e depois da madrugada ----------
     fd_limpa()

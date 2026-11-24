@@ -14506,6 +14506,14 @@ def luz_varre(parar=None, noite=None):
             if not arq or not os.path.exists(arq):
                 continue
             th.uma()
+            # confere de novo depois do uma(): o leitor ou a selfie podem ter começado entre a espera acima e o ajuste, e o
+            # OpenCV com 1 thread vale para o processo inteiro (deixaria a selfie lenta); volta e espera antes de medir
+            while _luz_ocupado():
+                th.volta()
+                if parar.wait(2):
+                    return feitas
+                if not _luz_ocupado():
+                    th.uma()
             try:
                 v = luz_medir_arquivo(arq, det)
             except Exception:
@@ -14657,7 +14665,7 @@ FOT_MES_ATE_DIA = 5          # faltando dia calculado, espera até o dia 5 (depo
 FOT_REFAZ_JA = 7             # revisão 23/11: limite de luz novo refaz na hora os 7 dias do período padrão da tela; o resto, de madrugada
 fot_lock = threading.Lock()
 fot_cfg_lock = threading.Lock()
-fot_st = {"ultimo_dia": None, "em": None, "noite": None, "sujo": False, "erro": None}
+fot_st = {"ultimo_dia": None, "em": None, "noite": None, "sujo": False, "erro": None, "luz_rev": 0, "refeitos": None}
 _fot_cfg = {"t": 0.0, "v": None}
 
 
@@ -14757,26 +14765,31 @@ def fotografos_cfg_gravar(corpo, quem):
             finally:
                 db.close()
         _fot_cfg.update(t=time.time(), v=v)
+        if luz_mudou:
+            # dentro do fot_cfg_lock: a rodada da madrugada (fot_rodada) confere luz_rev e zera o sujo sob o mesmo lock
+            fot_st["luz_rev"] += 1
+            fot_st["sujo"] = True                 # os dias mais antigos só na rodada da madrugada (fot_rodada)
     print("  fotógrafos: limites %s · por %s" % (", ".join("%s %s -> %s" % (k, _fot_cfg_val(antes, k), _fot_cfg_val(novo, k)) for k in mud), v["por"] or "?"))
     r = {"ok": True, "limites": novo, "antes": antes, "mudou": mud, "por": v["por"], "em": v["em"]}
     if luz_mudou:
-        fot_st["sujo"] = True                     # os dias mais antigos só na rodada da madrugada (fot_rodada)
         r.update(refeitos=fot_refaz_recentes(), noite=True)
     return 200, r
 
 
 def fot_refaz_recentes(hoje=None):
-    """Limite de luz novo: refaz na hora hoje e os FOT_REFAZ_JA - 1 dias antes (o período padrão da tela). -> dias refeitos"""
+    """Limite de luz novo: refaz na hora hoje e os FOT_REFAZ_JA - 1 dias antes (o período padrão da tela). -> dias refeitos
+    (FOT_REFAZ_JA; 0 se falhou no meio: a tela não diz que foram refeitos e a madrugada refaz todos)"""
     hoje = hoje or _ff_hoje()
     n = 0
     try:
         with fot_lock:
             for i in range(FOT_REFAZ_JA):
                 fot_gravar(_dia_mais(hoje, -i))
-                n += 1
             fot_st.update(hoje_em=time.time(), hoje_dia=hoje)
+        n = FOT_REFAZ_JA
     except Exception as ex:
         print("  fotógrafos: refazer os dias recentes %s (a madrugada refaz)" % str(ex)[:120])
+    fot_st["refeitos"] = n
     return n
 
 
@@ -15043,7 +15056,8 @@ def fot_mes_fechar(hoje=None, noite=None):
             res = "espera" if res != "fechado" else res
             continue
         for d in falta:                           # dia que nunca foi calculado (agente parado): calcula antes de congelar
-            fot_gravar(d)
+            with fot_lock:
+                fot_gravar(d)
         dados = fot_mes(mes)
         with op_lock:
             db = operacao_db()
@@ -15059,16 +15073,29 @@ def fot_mes_fechar(hoje=None, noite=None):
 
 def fot_rodada(hoje, virou, hora=None):
     """Dentro do dia_loop: hoje sempre (a cada 10 min); ontem na virada; os 35 dias de madrugada (revisão 23/11: limite de luz
-    novo refaz na hora só os dias recentes, fot_refaz_recentes, e o resto espera esta rodada); o fechamento do mês."""
+    novo refaz na hora só os dias recentes, fot_refaz_recentes, e o resto espera esta rodada); o fechamento do mês.
+    Cada dia grava com o fot_lock (o mesmo do fot_refaz_recentes e do GET): um POST de limite de luz no meio da rodada refaz os
+    dias recentes entre um dia e outro da rodada, nunca no meio de um. Limite de luz mudou durante a rodada: os dias já feitos
+    ficaram com o limite antigo, então o sujo fica e a noite não conta como feita (a próxima volta do dia_loop, ainda na
+    janela, refaz os 35 dias)."""
     try:
-        fot_gravar(hoje)
+        with fot_lock:
+            fot_gravar(hoje)
         if virou:
-            fot_gravar(_dia_mais(hoje, -1))
+            with fot_lock:
+                fot_gravar(_dia_mais(hoje, -1))
         hora = int(time.strftime("%H")) if hora is None else hora
         if 2 <= hora < 6 and fot_st["noite"] != hoje:
+            with fot_cfg_lock:
+                rev0, luz0 = fot_st["luz_rev"], dict(fotografos_cfg().get("luz") or {})
             for i in range(1, FOT_DIAS_NOITE + 1):
-                fot_gravar(_dia_mais(hoje, -i))
-            fot_st.update(noite=hoje, sujo=False)
+                with fot_lock:
+                    fot_gravar(_dia_mais(hoje, -i))
+            with fot_cfg_lock:                    # o POST sobe o luz_rev e marca o sujo sob este lock: conferir e zerar sem corrida
+                if fot_st["luz_rev"] == rev0 and dict(fotografos_cfg().get("luz") or {}) == luz0:
+                    fot_st.update(noite=hoje, sujo=False)
+                else:
+                    print("  fotógrafos: limite de luz mudou durante a rodada da madrugada (refaz na próxima volta)")
         fot_mes_fechar(hoje)
         fot_st["erro"] = None
     except Exception as ex:
@@ -15133,7 +15160,7 @@ def fot_alertas(de, ate, agora_hoje=True):
     lim = {k: (dict(v) if isinstance(v, dict) else v) for k, v in cfg.items() if k not in ("por", "em")}
     # sujo (revisão 23/11): limite de luz mudou e os dias mais antigos que os FOT_REFAZ_JA recentes só são refeitos de madrugada
     return {"ok": True, "v": 1, "de": de, "ate": ate, "limites": lim, "exposicao": expo, "fonte_cliques": fonte, "dias": len(dias),
-            "equipe": eq, "fotografos": fs, "alertas": al, "em": _iso(), "sujo": bool(fot_st["sujo"])}
+            "equipe": eq, "fotografos": fs, "alertas": al, "em": _iso(), "sujo": bool(fot_st["sujo"]), "refeitos": fot_st["refeitos"]}
 
 
 def fot_status():
@@ -19002,7 +19029,7 @@ class H(BaseHTTPRequestHandler):
             if u.path == "/fotografos/luz/medida":
                 if not limite_ok("u:" + quem, "luz_medida", 10):
                     return self.js({"error": "limite"}, 429)
-                return self.js(luz_medida(), nostore=True)
+                return self.js(dict(luz_medida(), refaz_ja=FOT_REFAZ_JA), nostore=True)   # refaz_ja: a nota "Usar" da tela diz quantos dias refaz na hora
             hoje = _ff_hoje()
             de, ate = (q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0]
             try:

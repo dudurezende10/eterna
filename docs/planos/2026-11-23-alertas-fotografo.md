@@ -94,9 +94,9 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
   - `luz_grava_loop` grava em lote, a cada 5 s, em `treino.db` `medida(pid, tipo='luz', valor, em)`. A tabela já existe, já vai para o backup e o `treino_lgpd` já apaga as linhas dela.
 - **`luz_varre()`** (uma thread, prioridade baixa):
   - Mede o que ficou sem medida nos últimos 30 dias, **primeiro as fotos com rótulo no Treino**.
-  - Lê a miniatura com cv2 e roda só o detector YuNet, com `src:"thumb"`.
-  - Sem OpenCV: Pillow, só o quadro, `r:null`.
-  - Roda quando a chave muda para `medir` e de hora em hora.
+  - Lê o original como o leitor de rostos (`luz_medir_arquivo`: `IMREAD_REDUCED_COLOR_2` e YuNet na escala do leitor), com `src:"original"`. Medida antiga de miniatura (`src:"thumb"`) volta a ser pendente.
+  - Sem OpenCV: Pillow no original reduzido pela metade, só o quadro, `r:null`.
+  - Roda quando a chave sai de `desligada` e a cada hora, mas fora da madrugada só mede as fotos marcadas no Treino (no máximo `LUZ_HORA_MAX` por hora); o resto, só de 2h às 6h (`LUZ_NOITE`).
 - **Agregado por dia:**
   - `fot_dia(dia)` é uma função pura sobre o arquivo de sessões, o `cena.db`, a `medida` e o `vendas.db` (conexão só de leitura, como o `_mtg_pagas_ler`).
   - Grava em `operacao.db` `fotografo_dia(dia, fotografo, dados, em, primary key(dia, fotografo))`.
@@ -107,7 +107,7 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
     - `fam_compraram`, `fotos`, `fotos_vendidas`
     - `luz: {n, escuras, estouradas, sem_dado}`
   - Roda dentro do `dia_loop`: hoje a cada 10 min, ontem na virada, e os últimos 35 dias de madrugada (por causa da LGPD e de venda atrasada).
-- **Fechamento do mês:** `fot_mes(mes)` soma os dias. No dia 1 (e até o dia 5 se faltar dia), o mês é congelado em `operacao.db` `fotografo_mes(mes, dados, fechado_em)`. A P5 das poses lê daqui.
+- **Fechamento do mês:** `fot_mes(mes)` soma os dias. A partir do dia 4 (`FOT_MES_DESDE_DIA`), depois da rodada da madrugada desse dia (e até o dia 5 se faltar dia), o mês anterior é congelado em `operacao.db` `fotografo_mes(mes, dados, fechado_em)`. A P5 das poses lê daqui.
 - **Calibração:** `luz_medida()`.
   - Positivos como no AF-D6. Negativos: fotos marcadas com nível `boa`.
   - Por classe: n, precisão, revocação e matriz. Mais uma grade de 5 valores para cada limite principal, com precisão e revocação, para o Eduardo escolher.
@@ -197,7 +197,7 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
 
 ## Custo e escala
 - **Medida na chegada:** de 3 a 6 ms por foto, porque a imagem já está decodificada no leitor de rostos (histograma em cerca de 3 MP). Isso dá menos de 20 s de processador por dia com 3.000 fotos. Não usa a placa de vídeo.
-- **Varredura de 30 dias:** cerca de 90.000 miniaturas, com detector, a ~15 ms cada, em uma thread de prioridade baixa: perto de 25 min, uma vez só.
+- **Varredura de 30 dias:** cerca de 90.000 fotos, medidas pelo original reduzido pela metade (a mesma fonte do leitor), com detector, em uma thread de prioridade baixa e com o OpenCV em 1 thread. Decodificar o original custa bem mais que a miniatura, e a varredura só trabalha de 2h às 6h e para enquanto o leitor, a selfie, o recorte ou a montagem trabalham: a primeira varredura leva algumas madrugadas. Depois, só entram as fotos que o leitor não mediu.
 - **Agregação:** menos de 1 s por dia. Os 35 dias da madrugada levam menos de 30 s.
 - **Com 100 venues:** cada um calcula no próprio servidor. Os limites são por venue (`config/fotografos`). Sem internet, nada muda.
 
@@ -219,4 +219,5 @@ Os valores de `luz` são o ponto de partida. A calibração (Treino › Mediçã
 - **Exposição Ligada (R4):** `POST /fotografos/config` com limite de luz novo confere o `LUZ_CRIT` com os limites novos (`luz_medida(lim=...)`); sem passar, 409 `criterio` com `falta` e nada gravado. Sem mudança, não regrava nem sobe o `rev`. A rota exige também `desempenho.r`.
 - **Decisão 3 (fonte do dia):** o dia conta pelo ponto pelo estado daquele dia: hoje grava o interruptor em `fotografo_dia_calc.ponto`; dia passado usa o que ficou gravado; sem registro, só se havia um Ligar no `liga_log` até o dia e o ponto está Ligado agora (o desligar não fica registrado). A cobertura de 90% continua.
 - **Para a P5:** `fotografo_dia` e `fotografo_mes` não têm mais `hist` nem `lim`; a faixa de cliques sai do `por_n` com os limites de quem lê.
+- **Ajustes do revisor (S2 a S5):** a rodada da madrugada grava cada dia com o `fot_lock` (o mesmo do refazer dos dias recentes) e só zera o `sujo` e conta a noite se o limite de luz não mudou durante a rodada (o POST sobe `fot_st.luz_rev` sob o `fot_cfg_lock`); se mudou, a próxima volta do `dia_loop` na janela refaz os 35 dias. A varredura confere `_luz_ocupado()` de novo depois de pôr o OpenCV em 1 thread. Os avisos de refazer dizem o número de dias que o servidor devolve (`refeitos` no POST e nos alertas, `refaz_ja` na Medição); refazer que falha devolve 0 e a tela não diz que refez.
 - **Tela:** título dos Alertas com o período dos dados do servidor; nota da conversão por foto na aba; "quem vê" pela permissão (Índice do fotógrafo); o rascunho dos limites não some no pull; sair limpa `state.fot`, `state.fg.est` e a calibração.
