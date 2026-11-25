@@ -12679,6 +12679,13 @@ def metricas_dia(dia):
             v["criar"], v["dia"] = d, _ev_dia(e["em"])
         elif e["tipo"] == "pagar":
             v["paga"] = True
+            p = e.get("por")
+            if isinstance(p, str) and p.startswith("{"):
+                try:
+                    p = json.loads(p)
+                except ValueError:
+                    p = None
+            v["pagou_por"] = _nome_pessoa(p)   # 25/11: venda sem vendedor declarado conta para quem confirmou
         elif e["tipo"] == "cancelar":
             v["cancelada"] = True
             v["canc"] = {"em": e.get("em"), "por": e.get("por"), "motivo": d.get("obs") or None, "tipo": d.get("motivo")}
@@ -12746,7 +12753,7 @@ def metricas_dia(dia):
         if card:
             com_venda.add(card)
         com_venda.update(c.get("sessoes") or [])     # v91: as outras sessões juntadas pela selfie também converteram
-        for chave, nome in (("por_vendedor", c.get("vendedor") or "sem vendedor"), ("por_posto", v.get("posto") or "sem posto"), ("por_meio", c.get("meio") or "?")):
+        for chave, nome in (("por_vendedor", c.get("vendedor") or v.get("pagou_por") or "sem vendedor"), ("por_posto", v.get("posto") or "sem posto"), ("por_meio", c.get("meio") or "?")):
             g = m[chave].setdefault(nome, {"vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0})
             g["vendas"] += 1
             g["faturamento"] += tot

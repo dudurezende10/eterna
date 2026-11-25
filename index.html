@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.67.0 · 25/11 13:05"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.68.0 · 25/11 13:58"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2022,7 +2022,8 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   if(r.escolha&&meio!=='dinheiro'&&meio!=='cortesia'){const PP=PAG_PROV[prov];const ini=(PP&&PP.iniciar({id:r.id,meio,total:r.total}))||{estado:'aguardando'};r.iniciado=ini.estado||'aguardando';} // segurança S3: a maquininha só começa na confirmação
   s.cart=cartComPreco(r.cart);s.total=r.total;s.nFotos=r.n;s.selected=(r.selected||[]).slice();s.aiSel=(r.aiSel||[]).slice();s.fav=(r.fav||[]).slice();
   s.status='paga';s.payment=PAG_NOME[meio]||MEIO_NOME[meio];s.paidAt=at;s.caixaEm=at;s.caixaPor=u.name;s.saleNo=r.saleNo||s.saleNo||novoSaleNo();s.seller=LOJA_VENDEDOR;s.prints=r.prints;delete s.din;
-  s.vendaId=r.id;if(r.sessoes&&(r.sessoes.length>1||((SIM.galerias||{})[r.token]||{}).venda)){s.sessoes=r.sessoes.slice();s.galVenda=r.token;}s.vendedor=r.vendedor||null;s.posto=r.posto||postoNome();s.pag={prov,ref,em:at,porNome:u.name};impIniciar(s);
+  s.vendaId=r.id;if(r.sessoes&&(r.sessoes.length>1||((SIM.galerias||{})[r.token]||{}).venda)){s.sessoes=r.sessoes.slice();s.galVenda=r.token;}if(!r.vendedor&&u&&u.email)r.vendedor={nome:u.name,email:u.email}; // 25/11 (Ronaldo): Checkout sem vendedor declarado, quem confirma é o vendedor
+  s.vendedor=r.vendedor||null;s.posto=r.posto||postoNome();s.pag={prov,ref,em:at,porNome:u.name};impIniciar(s);
   if((r.aiSel||[]).length){const ai=aiOf(r.card);r.aiSel.forEach(k=>{const [ph,bg]=String(k).split('|');if(!ai.bought.some(b=>b.ph===ph&&b.bg===bg))ai.bought.push({ph,bg,paidAt:at,where:'loja'});});}
   if(r.cortFoto){r.cortFoto.valor=cortValor(r,r.n);s.cortFoto=Object.assign({},r.cortFoto);SIM.cortesiaLog=SIM.cortesiaLog||[];
     SIM.cortesiaLog.unshift({token:r.token||null,card:r.card,pid:null,acao:'deu',motivo:r.cortFoto.motivo,nota:r.cortFoto.nota,por:r.cortFoto.por,em:at,onde:'checkout',venda:s.saleNo,n:1,valor:r.cortFoto.valor});SIM.cortesiaLog=SIM.cortesiaLog.slice(0,500);}
@@ -2679,10 +2680,10 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards);const rw=can('venda
 // 18/11 (Ronaldo): o pacote de cada venda; o valor só para quem vê o Financeiro (vendedor não vê valor)
 const mvPacote=cart=>(cart||[]).map(x=>DATA.catalog.find(c=>c.id===x.id)).filter(Boolean).map(c=>c.name).join(' + ');
 function minhasVendas(trava){const u=state.user;if(!u)return '';const val=can('financeiro','r');const hoje=todayISO();const rows=[];const vistos=new Set();
-  (SIM.caixaDin||[]).forEach(r=>{if(!r.vendedor||r.vendedor.email!==u.email||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;const canc=meu&&s.status==='cancelada'&&!!s.cancelada;
+  (SIM.caixaDin||[]).forEach(r=>{if((r.vendedor?r.vendedor.email!==u.email:r.por!==u.email)||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;const canc=meu&&s.status==='cancelada'&&!!s.cancelada;
     if(!(meu&&r.estado==='confirmada'&&(s.status==='paga'||canc)))return; // 25/11 (Ronaldo): só vendas pagas e as canceladas depois de pagas; pendência aberta ou substituída fica fora
     rows.push({t:r.criada,card:r.card,no:r.saleNo||'',meio:pendMeioTxt(r),pac:r.pkg?catName(r.pkg):vendaMais(r.card)&&r.n?TE('po_comprar_mais',TE('n_adicionais',r.n)):mvPacote(r.cart),v:pendSemMeio(r)?null:r.total,pag:canc?TE('din_cancelada'):TE('st_paga'),rec:!canc,imp:meu&&s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
-  Object.entries(SIM.sessions).forEach(([c,s])=>{const canc=s.status==='cancelada'&&!!s.cancelada;if((s.status!=='paga'&&!canc)||!s.vendaId||vistos.has(s.vendaId)||!s.vendedor||s.vendedor.email!==u.email||isoDia(s.paidAt||0)!==hoje)return;
+  Object.entries(SIM.sessions).forEach(([c,s])=>{const canc=s.status==='cancelada'&&!!s.cancelada;if((s.status!=='paga'&&!canc)||!s.vendaId||vistos.has(s.vendaId)||(s.vendedor?s.vendedor.email!==u.email:s.caixaPor!==u.name)||isoDia(s.paidAt||0)!==hoje)return;
     rows.push({t:s.paidAt,card:c,rec:!canc,no:s.saleNo||'',meio:pagNome(s.payment||''),pac:mvPacote(s.cart),v:saleTotal(s),pag:canc?TE('din_cancelada'):TE('st_paga'),imp:s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
   rows.sort((a,b)=>String(b.t).localeCompare(String(a.t)));
   // v94 (E): dentro de <details> "Minhas vendas de hoje", aberto por padrão; "Recibo" nas vendas pagas abre o recibo em cima do Posto
