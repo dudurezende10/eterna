@@ -12712,7 +12712,7 @@ SELFIE_LOG_DIR = os.environ.get("ETERNA_SELFIE_LOG") or os.path.join(os.path.dir
 _selfie_log_aviso = [False]
 
 
-def selfie_diagnostico(origem, r, t0, res):
+def selfie_diagnostico(origem, r, t0, res, posto=None):
     try:
         fotos = r.get("fotos") or []
         agora = time.time()
@@ -12720,7 +12720,9 @@ def selfie_diagnostico(origem, r, t0, res):
                  "ms": int((agora - t0) * 1000), "claras": sum(1 for f in fotos if f.get("sim", 0) >= LIMITE),
                  "duvida": sum(1 for f in fotos if f.get("sim", 0) < LIMITE), "melhor": max((f.get("sim", 0) for f in fotos), default=None),
                  "janela_min": r.get("janela_min"), "fila": r.get("fila"), "erro": r.get("error"),
-                 "top": [{"id": f.get("id"), "sim": f.get("sim")} for f in fotos[:10]]}
+                 "top": [{"id": f.get("id"), "sim": f.get("sim")} for f in fotos[:10]],
+                 # 25/11: posto e todas as fotos devolvidas (id e semelhança, até 400), para conferir cada reclamação de selfie
+                 "posto": posto, "grupo": bool(r.get("grupo")), "ids": [[f.get("id"), f.get("sim")] for f in fotos[:400]]}
         os.makedirs(SELFIE_LOG_DIR, exist_ok=True)
         with open(os.path.join(SELFIE_LOG_DIR, time.strftime("%Y-%m-%d", time.localtime(agora)) + ".jsonl"), "a", encoding="utf-8") as fh:
             fh.write(json.dumps(linha, ensure_ascii=False) + "\n")
@@ -12736,12 +12738,12 @@ def selfie_diagnostico(origem, r, t0, res):
             print("  selfie: diagnóstico não gravou em %s: %s" % (SELFIE_LOG_DIR, str(ex)[:120]))
 
 
-def selfie_registra(origem, r, t0):
+def selfie_registra(origem, r, t0, posto=None):
     """Conta uma selfie para o BI. Falha aqui nunca atrapalha a busca do cliente."""
     try:
         r = r or {}
         res = "erro" if r.get("error") else "varias_pessoas" if r.get("varias") else "sem_rosto" if not r.get("rosto") else "achou" if r.get("fotos") else "nao_achou"
-        selfie_diagnostico(origem, r, t0, res)
+        selfie_diagnostico(origem, r, t0, res, posto)
         agora = time.time()
         with ev_lock:
             db = vendas_db()
@@ -20228,6 +20230,7 @@ ROTAS = (
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),
     ("GET", "/ponto/vendas-dia", "posto_ou_sessao", VENDER),     # 25/11: vendas pagas de hoje de todos os postos (lista do Posto)   # vendas do posto sem impressão, para recuperar (15/11)
+    ("GET", "/ponto/selfies", "sessao", ("galerias.r",)),        # 25/11: buscas por selfie do dia (conferir reclamação)
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
@@ -21081,7 +21084,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/vendas-dia", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/vendas-dia", "/ponto/selfies", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
 
 
 # 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
@@ -22950,7 +22953,7 @@ class H(BaseHTTPRequestHandler):
                                 continue
                             g.update(codigo=m.get("codigo"), criada=m.get("criada"), venda=bool(m.get("venda")), tipo=m.get("tipo"),
                                      sessoes=list(m.get("sessoes") or [])[:20], substituida=bool(m.get("substituida")),
-                                     fotos=[{"id": f.get("id"), "direito": f.get("direito")} for f in (m.get("fotos") or [])[:60]])
+                                     fotos=[{"id": f.get("id"), "direito": f.get("direito")} for f in (m.get("fotos") or [])[:500]])   # 25/11: era 60 e cortava galerias grandes
                         gs.append(g)
                 return self.js({"fila": gal_fila.qsize(), "galerias": gs})
             return self.js({"error": "not found"}, 404)
@@ -23509,6 +23512,22 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "origem não autorizada"}, 403)
             ids = ",".join(parse_qs(u.query).get("vendas") or []).split(",")
             return self.js({"ok": True, "vendas": ev_impressoes(ids)}, nostore=True)
+        if u.path == "/ponto/selfies":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            dia = (parse_qs(u.query).get("dia") or [""])[0]
+            dia = dia if re.match(r"^\d{4}-\d{2}-\d{2}$", dia) else time.strftime("%Y-%m-%d")
+            linhas = []
+            try:
+                with open(os.path.join(SELFIE_LOG_DIR, dia + ".jsonl"), encoding="utf-8") as fh:
+                    for ln in fh:
+                        try:
+                            linhas.append(json.loads(ln))
+                        except ValueError:
+                            pass
+            except OSError as ex:
+                return self.js({"ok": False, "dia": dia, "erro": str(ex)[:160], "buscas": []}, nostore=True)
+            return self.js({"ok": True, "dia": dia, "buscas": linhas[-3000:]}, nostore=True)
         if u.path == "/ponto/vendas-dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -23981,12 +24000,16 @@ class H(BaseHTTPRequestHandler):
                 if u.path == "/rostos/buscar":
                     # janela: a do Painel (estado.db); a galeria por QR manda todo:true (dia todo)
                     todo, t0 = body.get("todo") is True, time.time()
+                    pa = self.posto_atual()
+                    pnome = str(pa.get("nome") or "")[:30] if pa else None
                     try:
                         r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None, grupo=body.get("grupo") is True)
                     except Exception as ex:
-                        selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0)
+                        selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0, pnome)
                         raise
-                    selfie_registra("qr" if todo else "checkout", r, t0)
+                    if isinstance(r, dict) and body.get("grupo") is True:
+                        r.setdefault("grupo", True)
+                    selfie_registra("qr" if todo else "checkout", r, t0, pnome)
                     return self.js(r)
                 return self.js(medir(body.get("sessoes") or {}))
             except Exception as ex:
