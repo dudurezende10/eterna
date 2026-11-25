@@ -12145,10 +12145,19 @@ def pedidos_gravar(lista, posto_srv=None):
                 if len(txt) > PEDIDO_MAX or not posto or (posto_srv and posto != posto_srv):
                     recusados += 1
                     continue
-                velho = db.execute("select estado from pedido where id = ?", (r["id"],)).fetchone()
+                velho = db.execute("select estado, valor from pedido where id = ?", (r["id"],)).fetchone()
                 if velho and velho[0] not in PEDIDO_ABERTO and (r["estado"] in PEDIDO_ABERTO or r["estado"] != velho[0]):
                     recusados += 1                      # fechado não reabre nem troca de desfecho
                     continue
+                try:
+                    corr = (json.loads(velho[1]) or {}).get("corrigido") if velho else None
+                except ValueError:
+                    corr = None
+                if isinstance(corr, dict):              # 25/11: a correção do admin (vendedor, cancelamento desfeito) vale sobre a cópia do posto
+                    r["corrigido"] = corr
+                    if isinstance(corr.get("vendedor"), dict):
+                        r["vendedor"] = corr["vendedor"]
+                    txt = json.dumps(r, ensure_ascii=False)
                 db.execute("insert into pedido values (?,?,?,?,?,?) on conflict(id) do update set estado = excluded.estado, "
                            "valor = excluded.valor, em = excluded.em", (r["id"], posto, r["estado"], txt, str(r.get("criada") or "")[:40], time.time()))
                 gravados += 1
@@ -12199,6 +12208,7 @@ def venda_trocar_vendedor(venda, nome, email, quem):
                 j = json.loads(r[0])
                 antes = antes or _nome_pessoa(j.get("vendedor"))
                 j["vendedor"] = {"nome": nome, "email": email}
+                j.setdefault("corrigido", {})["vendedor"] = j["vendedor"]   # o posto aplica e não sobrescreve
                 db.execute("update pedido set valor = ?, em = ? where id = ?", (json.dumps(j, ensure_ascii=False), time.time(), venda))
                 db.commit()
         finally:
@@ -12223,6 +12233,17 @@ def venda_descancelar(venda, quem):
                 return {"error": "venda sem pagamento registrado"}, 409
             n = db.execute("delete from evento where venda = ? and tipo = 'cancelar'", (venda,)).rowcount
             db.commit()
+        finally:
+            db.close()
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            r = db.execute("select valor from pedido where id = ?", (venda,)).fetchone()
+            if r:
+                j = json.loads(r[0])
+                j.setdefault("corrigido", {})["descancelada"] = _iso()   # o posto volta a venda para paga
+                db.execute("update pedido set valor = ?, em = ? where id = ?", (json.dumps(j, ensure_ascii=False), time.time(), venda))
+                db.commit()
         finally:
             db.close()
     print("  venda %s: cancelamento desfeito (%d) · por %s" % (venda, n, quem or "?"))
