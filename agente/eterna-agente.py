@@ -14504,14 +14504,18 @@ def met_v2(dia, ss, evs):
     vs = {}
     compradas = 0                                     # v97 (selo): montagens (nAI) das vendas pagas do Checkout
     for e in evs or []:
-        v = vs.setdefault(e["venda"], {"criar": None, "criar_em": 0, "pagar_em": 0, "pagar_por": None})
+        v = vs.setdefault(e["venda"], {"criar": None, "criar_em": 0, "pagar_em": 0, "pagar_por": None, "cancelada": False, "dia": None})
         if e["tipo"] == "criar":
-            v["criar"], v["criar_em"] = e.get("dados") or {}, _epoch(e.get("em"))
+            v["criar"], v["criar_em"], v["dia"] = e.get("dados") or {}, _epoch(e.get("em")), _ev_dia(e.get("em"))
         elif e["tipo"] == "pagar" and not v["pagar_em"]:
             v["pagar_em"], v["pagar_por"] = _epoch(e.get("em")) or 1, e.get("por")
+        elif e["tipo"] == "cancelar":
+            v["cancelada"] = True
     for v in vs.values():
         c = v["criar"]
-        if not c or not v["pagar_em"]:
+        # 25/11 (Ronaldo, auditoria): a mesma regra do faturamento da v1. Só venda paga, do dia em que foi feita e não
+        # cancelada depois; antes a paga e cancelada continuava em produtos e por hora e a soma passava do faturamento.
+        if not c or not v["pagar_em"] or v["cancelada"] or (v["dia"] and v["dia"] != dia):
             continue
         tot = float(c.get("total") or 0)
         quando = v["pagar_em"] if v["pagar_em"] > 1 else v["criar_em"]
