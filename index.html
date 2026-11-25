@@ -370,7 +370,7 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .pend-pkg b{grid-column:1}.pend-pkg small{grid-column:1;color:#5b6b83;font-size:12px}.pend-pkg span{grid-column:2;grid-row:1/span 2;align-self:center;font-weight:800}.pend-pkg i{position:absolute;top:-8px;right:8px;font-style:normal;font-size:10px}
 .pend-mont{margin:2px 0 10px;padding:10px 12px;border-radius:10px;background:#fff6d6;border:1.5px solid #FFB800;color:#5a4300;font-size:14px;font-weight:600}
 .pend-pkg .pend-semmont{grid-column:1/-1;justify-self:start;font-style:normal;font-size:12px;font-weight:600;color:#5a4300;background:#fff6d6;border:1px solid #FFB800;border-radius:999px;padding:1px 8px;margin-top:2px}
-.pend-segue{display:flex;justify-content:flex-end;margin:2px 0 8px}.pend-segue .btn{min-height:44px;min-width:180px}.pend-pkgw{display:flex;flex-direction:column;gap:4px}.pend-pkgw .pend-pkg{flex:1}.pend-q{display:flex;align-items:center;justify-content:center;gap:10px}.pend-q button{min-width:44px;min-height:36px;border-radius:8px;border:1.5px solid #134078;background:#fff;color:#134078;font-size:20px;font-weight:700;cursor:pointer}.pend-q button:disabled{opacity:.35;cursor:default}.pend-q b{min-width:34px;text-align:center;font-size:16px}
+.pend-segue{display:flex;justify-content:flex-end;align-items:center;gap:14px;flex-wrap:wrap;margin:2px 0 8px}.pend-tot{display:flex;flex-direction:column;align-items:flex-end;min-width:0}.pend-tot span{font-size:12px;color:#5b6b83}.pend-tot b{font-size:20px;font-weight:800;color:#0C2340}.pend-segue .btn{min-height:44px;min-width:180px}.pend-pkgw{display:flex;flex-direction:column;gap:4px}.pend-pkgw .pend-pkg{flex:1}.pend-q{display:flex;align-items:center;justify-content:center;gap:10px}.pend-q button{min-width:44px;min-height:36px;border-radius:8px;border:1.5px solid #134078;background:#fff;color:#134078;font-size:20px;font-weight:700;cursor:pointer}.pend-q button:disabled{opacity:.35;cursor:default}.pend-q b{min-width:34px;text-align:center;font-size:16px}
 .pend-pkg.on,.pend-meio.on{border-color:#134078;background:#eef4fc;box-shadow:0 0 0 1.5px #134078 inset}
 .pend-meios{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px}.pend-meio{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;border:1.5px solid var(--line,#d9dee6);background:#fff;color:inherit;font-weight:700;cursor:pointer}.pend-meio svg{width:28px;height:20px}
 .posto-head .row{flex-wrap:wrap}
@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.56.0 · 25/11 12:28"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.57.0 · 25/11 12:36"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2053,11 +2053,14 @@ function ultimoQrFaixa(){const u=state.pend&&state.pend.ultimoQr;if(!u||Date.now
 const pendN=r=>(Array.isArray(r.selected)?r.selected.length:0)+(Array.isArray(r.aiSel)?r.aiSel.length:0);
 function pendEscolher(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(!r.escolha){toast('Esta compra já veio com o pacote escolhido');return false;}
   const n=pendN(r);if(!n||n!==r.n){toast('As fotos deste pedido não conferem. Cancele e peça ao cliente para escolher de novo.');render();return false;}
-  const antes=JSON.stringify(SIM);const de={pkg:r.pkg||null,q:r.pkgQ||1,total:r.total,meio:r.meio||null};
-  if(o.pkg&&!vendaMais(r.card)){const q0=r.pkgQ;const q=o.q!=null?o.q:o.pkg===r.pkg?(r.pkgQ||1):1;r.pkgQ=Math.max(1,Math.min(PKG_Q_MAX,q));if(r.pkgQ===1)delete r.pkgQ;
-    const c=vendaCalcCort(r,n,o.pkg);if(!c.pkg){if(q0)r.pkgQ=q0;else delete r.pkgQ;return false;}Object.assign(r,{pkg:c.pkg,cart:c.cart.map(x=>({...x})),total:c.total,prints:c.prints});}
+  const pkgsTxt=x=>Object.entries(x.pkgs||(x.pkg?{[x.pkg]:x.pkgQ||1}:{})).map(([id,q])=>q+'× '+catName(id)).join(', ')||null;
+  const antes=JSON.stringify(SIM);const de={pkg:r.pkg||null,pk:pkgsTxt(r),total:r.total,meio:r.meio||null};
+  if(o.pkg&&!vendaMais(r.card)&&pkgEscolhivel(o.pkg)){const m=Object.assign({},r.pkgs||(r.pkg?{[r.pkg]:r.pkgQ||1}:{}));const q=o.q!=null?o.q:(m[o.pkg]||0)+1;
+    if(q>0)m[o.pkg]=Math.min(PKG_Q_MAX,q);else delete m[o.pkg];delete r.pkgQ;
+    if(!Object.keys(m).length){delete r.pkgs;Object.assign(r,{pkg:null,cart:[],total:null,prints:null});}
+    else{r.pkgs=m;const c=vendaCalcCort(r,n,r.pkg&&m[r.pkg]?r.pkg:Object.keys(m)[0]);if(!c.pkg)return false;Object.assign(r,{pkg:c.pkg,pkgs:c.pkgs,cart:c.cart.map(x=>({...x})),total:c.total,prints:c.prints});}}
   if(o.meio&&MEIO_NOME[o.meio]){const prov=o.meio==='dinheiro'?'dinheiro':pagProv();Object.assign(r,{meio:o.meio,prov,iniciado:'aguardando'});}
-  const muda=[];if(de.pkg!==(r.pkg||null))muda.push({campo:'pacote',de:de.pkg?catName(de.pkg):null,para:r.pkg?catName(r.pkg):null});if(de.q!==(r.pkgQ||1))muda.push({campo:'quantidade do pacote',de:de.q,para:r.pkgQ||1});if(de.total!==r.total)muda.push({campo:'valor',de:de.total,para:r.total});
+  const muda=[];if(de.pkg!==(r.pkg||null))muda.push({campo:'pacote',de:de.pkg?catName(de.pkg):null,para:r.pkg?catName(r.pkg):null});if(de.pk!==pkgsTxt(r))muda.push({campo:'pacotes',de:de.pk,para:pkgsTxt(r)});if(de.total!==r.total)muda.push({campo:'valor',de:de.total,para:r.total});
   if(de.meio!==(r.meio||null))muda.push({campo:'forma de pagamento',de:de.meio?MEIO_NOME[de.meio]:null,para:r.meio?MEIO_NOME[r.meio]:null});
   if(!muda.length){render();return true;}
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return false;}
@@ -2234,9 +2237,10 @@ function pendMontAviso(r){const nAI=(r.aiSel||[]).length;if(!nAI||!r.pkg||r.prin
 function pendEscolhaItem(r,o){const n=r.n||0;const nc=n-(r.cortFoto?1:0)-portasDe(r).length;const ideal=lojaIdeal(nc).pkg;const mais=vendaMais(r.card);const temMont=(r.aiSel||[]).length>0;const pronto=r.total!=null&&(r.pkg||mais)&&MEIO_NOME[r.meio];
   const fotos=[...(r.selected||[]).map(id=>({t:'ph',id})),...(r.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {t:'ai',id,bg};})];
   const th=x=>x.t==='ai'?`<div class="pend-th ai">${lojaThumb(x)}</div>`:`<button class="pend-th" style="${phStyle(x.id)}"${fotoReal(x.id)} data-act="zoom" data-id="${esc(x.id)}" aria-label="Foto"></button>`;
-  const pkgs=mais?'':DATA.catalog.filter(c=>pkgEscolhivel(c.id)).map(p=>{const on=r.pkg===p.id;const q=on?(r.pkgQ||1):1;const v=vendaCalc(nc,nc,p.id,false,q);const c={extra:v.extra,custo:v.total};
-    const qtd=on&&p.digital!=='todas'&&o.rw?`<div class="pend-q" role="group" aria-label="${esc(TE('po_qtd'))}"><button data-act="pend-pkg-q" data-id="${esc(r.id)}" data-p="${esc(p.id)}" data-q="${q-1}" ${q>1?'':'disabled'} aria-label="−1">−</button><b>${q}×</b><button data-act="pend-pkg-q" data-id="${esc(r.id)}" data-p="${esc(p.id)}" data-q="${q+1}" ${q<PKG_Q_MAX?'':'disabled'} aria-label="+1">+</button></div>`:'';
-    return `<div class="pend-pkgw"><button class="pend-pkg${on?' on':''}" data-act="pend-pkg" data-id="${esc(r.id)}" data-p="${esc(p.id)}" aria-pressed="${on}" ${o.rw?'':'disabled'}><b>${q>1?q+'× ':''}${esc(p.name)}</b><small>${p.digital==='todas'?TE('po_todas_fotos'):TE('n_fotos',q*p.digital)}${p.prints?' · '+TE('po_impressas'):' · '+TE('po_so_digital')}${c.extra?` + ${TE('n_adic',c.extra)}`:''}</small><span>${fmtR(c.custo)}</span>${p.id===ideal&&q===1?`<i class="pill good">${TE('ideal')}</i>`:''}${temMont&&!p.prints?`<em class="pend-semmont">${TE('po_sem_edicao')}</em>`:''}</button>${qtd}</div>`;}).join('');
+  const QM=r.pkgs||(r.pkg?{[r.pkg]:r.pkgQ||1}:{});const algum=Object.keys(QM).length>0;
+  const pkgs=mais?'':DATA.catalog.filter(c=>pkgEscolhivel(c.id)).map(p=>{const q=QM[p.id]||0;const on=q>0;const todasP=p.digital==='todas';const c=algum?{extra:0,custo:Math.max(1,q)*priceOf(p.id)}:lojaPkgCusto(p,nc);const mx=todasP?1:PKG_Q_MAX;
+    const qtd=o.rw?`<div class="pend-q" role="group" aria-label="${esc(TE('po_qtd')+' · '+p.name)}"><button data-act="pend-pkg-q" data-id="${esc(r.id)}" data-p="${esc(p.id)}" data-q="${q-1}" ${q>0?'':'disabled'} aria-label="−1">−</button><b>${q}</b><button data-act="pend-pkg-q" data-id="${esc(r.id)}" data-p="${esc(p.id)}" data-q="${q+1}" ${q<mx?'':'disabled'} aria-label="+1">+</button></div>`:'';
+    return `<div class="pend-pkgw"><button class="pend-pkg${on?' on':''}" data-act="pend-pkg" data-id="${esc(r.id)}" data-p="${esc(p.id)}" aria-pressed="${on}" ${o.rw&&q<mx?'':'disabled'}><b>${q>1?q+'× ':''}${esc(p.name)}</b><small>${todasP?TE('po_todas_fotos'):TE('n_fotos',Math.max(1,q)*p.digital)}${p.prints?' · '+TE('po_impressas'):' · '+TE('po_so_digital')}${c.extra?` + ${TE('n_adic',c.extra)}`:''}</small><span>${fmtR(c.custo)}</span>${p.id===ideal&&!algum?`<i class="pill good">${TE('ideal')}</i>`:''}${temMont&&!p.prints?`<em class="pend-semmont">${TE('po_sem_edicao')}</em>`:''}</button>${qtd}</div>`;}).join('');
   const meios=['cartao','pix','dinheiro'].map(m=>`<button class="pend-meio${r.meio===m?' on':''}" data-act="pend-meio" data-id="${esc(r.id)}" data-m="${m}" aria-pressed="${r.meio===m}" ${o.rw?'':'disabled'}>${ICO[m==='pix'?'pix':m==='cartao'?'card':'cash']} ${meioNome(m)}</button>`).join('');
   // 15/11: passo a passo. 1 Pacote → 2 Pagamento → 3 Confirmar; cada escolha avança sozinha e o passo já feito volta pelo número
   const pkgOk=!!(r.pkg||mais),meioOk=!!MEIO_NOME[r.meio];let passo=!pkgOk?1:!meioOk?2:3;
@@ -2244,10 +2248,10 @@ function pendEscolhaItem(r,o){const n=r.n||0;const nc=n-(r.cortFoto?1:0)-portasD
   const nomes=[TE('pacote'),TE('pagamento'),TE('po_passo_conf')],feito=[pkgOk,meioOk,false];
   const barra=`<ol class="pend-passos">${nomes.map((t,i)=>{const k=i+1;const pode=k!==passo&&feito.slice(0,k-1).every(Boolean);
     return `<li class="${k===passo?'on':feito[i]?'feito':''}"><button data-act="pend-passo" data-id="${esc(r.id)}" data-p="${k}" ${pode&&o.rw?'':'disabled'} aria-current="${k===passo?'step':'false'}"><span>${feito[i]&&k!==passo?ICO.ok:k}</span>${esc(t)}</button></li>`;}).join('')}</ol>`;
-  const pkgNome=mais?TE('po_comprar_mais',TE('n_adicionais',n)):r.pkg?((r.pkgQ||1)>1?r.pkgQ+'× ':'')+esc(catName(r.pkg)):'';
+  const pkgNome=mais?TE('po_comprar_mais',TE('n_adicionais',n)):r.pkg?Object.entries(r.pkgs||{[r.pkg]:r.pkgQ||1}).map(([id,q])=>(q>1?q+'× ':'')+esc(catName(id))).join(' + ')+((r.cart||[]).filter(x=>x.id==='extra').length&&!(r.pkgs||{}).extra?' + '+TE('n_adic',(r.cart||[]).filter(x=>x.id==='extra').length):''):'';
   // DRY: o valor fica só no cabeçalho e no botão de confirmar; o resumo diz o que foi escolhido, uma vez
   const resumo=[pkgOk?`<div class="pend-res"><span>${TE('pacote')}</span><b>${pkgNome}</b></div>`:'',pkgOk&&r.cortFoto?`<div class="pend-res"><span>${TE('po_cortesia')}</span><b>${TE('po_cort_foto')}</b></div>`:'',pkgOk&&portasDe(r).length?`<div class="pend-res"><span>${TE('po_porta')}</span><b>${esc(portaResumo(r))}</b></div>`:'',meioOk&&passo===3?`<div class="pend-res"><span>${TE('pagamento')}</span><b>${esc(meioNome(r.meio))}</b></div>`:''].join('');
-  const corpo=passo===1?(mais?`<div class="note">${TE('po_comprar_mais',TE('n_adicionais',n))}</div>`:`<div class="pend-pkgs">${pkgs}</div>${pendMontAviso(r)}`)+(pkgOk&&o.rw?`<div class="pend-segue"><button class="btn primary" data-act="pend-passo" data-id="${esc(r.id)}" data-p="2">${TE('pagamento')} →</button></div>`:'')+pendPortaHtml(r,o)+pendCortHtml(r,o)
+  const corpo=passo===1?(mais?`<div class="note">${TE('po_comprar_mais',TE('n_adicionais',n))}</div>`:`<div class="pend-pkgs">${pkgs}</div>${pendMontAviso(r)}`)+(pkgOk&&o.rw?`<div class="pend-segue"><div class="pend-tot"><span>${esc(pkgNome)}</span><b>${TE('total')} ${r.total!=null?fmtR(r.total):'—'}</b></div><button class="btn primary" data-act="pend-passo" data-id="${esc(r.id)}" data-p="2">${TE('pagamento')} →</button></div>`:'')+pendPortaHtml(r,o)+pendCortHtml(r,o)
     :passo===2?`${resumo}<div class="pend-meios">${meios}</div>`:resumo;
   const cancel=`<div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">${CROSS} ${TE('po_cancelar_compra')}</button></div>`;
   const acts=!o.rw?o.acts:o.conf||(passo===3&&pronto)?o.acts:cancel;
@@ -2279,13 +2283,13 @@ function pendCortesia(id,dar){if(!can('galerias','u')){toast(TE('po_so_cortesia'
 // 24/11 (Ronaldo): porta-retrato no pedido. Um toque no modelo põe uma unidade; ✕ tira uma. Cada unidade precisa de uma foto escolhida a mais
 // que o pacote (a que vai no porta-retrato); sem sobra o modelo fica desligado e o "Rever as fotos" leva o cliente a escolher mais uma.
 const portaResumo=r=>{const q={};portasDe(r).forEach(id=>{q[id]=(q[id]||0)+1;});return Object.entries(q).map(([id,n])=>catName(id)+(n>1?' ×'+n:'')).join(', ');};
-function pendPortaHtml(r,o){const M=DATA.catalog.filter(c=>c.kind==='porta');if(!M.length||vendaMais(r.card))return '';const pr=portasDe(r);const sobra=(r.n||0)-(r.cortFoto?1:0)-pr.length>=2;const pode=o.rw&&sobra;
+function pendPortaHtml(r,o){const M=DATA.catalog.filter(c=>c.kind==='porta');if(!M.length||vendaMais(r.card))return '';const pr=portasDe(r);const sobra=true;const pode=o.rw; // 25/11: sempre à venda; sem foto a mais, sai cópia
   const q={};pr.forEach(id=>{q[id]=(q[id]||0)+1;});
   return `<div class="pend-porta" id="pend-porta"><span class="eyebrow">${TE('po_porta')}</span><div class="pend-portas">${M.map(c=>`<div class="pend-pr${q[c.id]?' on':''}"><button data-act="pend-porta" data-id="${esc(r.id)}" data-p="${esc(c.id)}" ${pode?'':'disabled'} title="${esc(sobra?TE('po_porta_add'):TE('po_porta_sem_sobra'))}">${c.foto?`<img src="${esc(c.foto)}" alt="">`:''}<b>${esc(c.name)}</b><span>+ ${fmtR(priceOf(c.id))}</span></button>${q[c.id]?`<span class="pill good">${q[c.id]}×</span>${o.rw?`<button class="link-danger" data-act="pend-porta-rm" data-id="${esc(r.id)}" data-p="${esc(c.id)}" aria-label="${esc(TE('po_porta_rm',c.name))}">${CROSS}</button>`:''}`:''}</div>`).join('')}</div></div>`;}
 function pendPorta(id,pid,poe){const r=dinPegar(id);if(!r)return false;if(!r.escolha){toast('Esta compra já veio com o pacote escolhido');return false;}
   const n=pendN(r);if(!n||n!==r.n){toast('As fotos deste pedido não conferem. Cancele e peça ao cliente para escolher de novo.');render();return false;}
   if(!DATA.catalog.some(c=>c.id===pid&&c.kind==='porta'))return false;const pr=portasDe(r);
-  if(poe){if(n-(r.cortFoto?1:0)-pr.length<2){toast(TE('po_porta_sem_sobra'));return false;}pr.push(pid);}else{const i=pr.lastIndexOf(pid);if(i<0)return false;pr.splice(i,1);}
+  if(poe){pr.push(pid);}else{const i=pr.lastIndexOf(pid);if(i<0)return false;pr.splice(i,1);}
   const antes=JSON.stringify(SIM);const de=r.total;r.portas=pr;if(!pr.length)delete r.portas;
   if(r.pkg||vendaMais(r.card)){const c=vendaCalcCort(r,n,r.pkg);Object.assign(r,{cart:c.cart.map(x=>({...x})),total:c.total,prints:c.prints});}
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return false;}
@@ -3130,22 +3134,26 @@ const vendaMais=card=>!!(SIM.sessions[card]||{}).pai;
 // v96 (P3): o preço de uma escolha (n fotos, pacote) sai daqui, no Checkout antigo e no Posto de venda: mesmo carrinho, total, impressas e economia
 // 25/11 (Ronaldo): q = quantas unidades do pacote (2 Gramados, 2 Arquibancadas) e a Foto adicional também vale como opção do passo Pacote
 const PKG_Q_MAX=10,pkgEscolhivel=id=>DATA.catalog.some(c=>c.id===id&&(c.kind==='pacote'||c.id==='extra'));
-function vendaCalc(n,nSes,pkg,mais,q){pkg=n&&pkg&&pkgEscolhivel(pkg)?pkg:null;const P0=pkg&&DATA.catalog.find(c=>c.id===pkg);const todas=!!P0&&P0.digital==='todas';
-  q=P0&&!todas?Math.max(1,Math.min(PKG_Q_MAX,Math.floor(+q||1))):1;
-  const extra=mais?n:P0&&!todas?Math.max(0,n-q*P0.digital):0;
-  const cart=cartComPreco([...(pkg?Array(q).fill(0).map(()=>({id:pkg})):[]),...Array(extra).fill(0).map(()=>({id:'extra'}))]);const total=cartTotal(cart);
+// q: número (unidades do pkg) ou mapa {id: unidades} com vários pacotes misturados (25/11: 2 Gramados + 1 Arquibancada)
+const pkgMapa=(pkg,q)=>{const m={};if(q&&typeof q==='object')Object.entries(q).forEach(([id,v])=>{const p=DATA.catalog.find(c=>c.id===id);const k=Math.floor(+v||0);if(p&&pkgEscolhivel(id)&&k>0)m[id]=p.digital==='todas'?1:Math.min(PKG_Q_MAX,k);});
+  else if(pkg&&pkgEscolhivel(pkg)){const p=DATA.catalog.find(c=>c.id===pkg);m[pkg]=p.digital==='todas'?1:Math.max(1,Math.min(PKG_Q_MAX,Math.floor(+q||1)));}return m;};
+function vendaCalc(n,nSes,pkg,mais,q){const M=n?pkgMapa(pkg,q):{};const ids=Object.keys(M);pkg=ids.length?(pkg&&M[pkg]?pkg:ids[0]):null;const P0=pkg&&DATA.catalog.find(c=>c.id===pkg);
+  const todas=ids.some(id=>DATA.catalog.find(c=>c.id===id).digital==='todas');q=pkg?M[pkg]:1;
+  const cap=ids.reduce((a,id)=>{const p=DATA.catalog.find(c=>c.id===id);return a+(p.digital==='todas'?0:M[id]*p.digital);},0);
+  const extra=mais?n:pkg&&!todas?Math.max(0,n-cap):0;
+  const cart=cartComPreco([...ids.flatMap(id=>Array(M[id]).fill(0).map(()=>({id}))),...Array(extra).fill(0).map(()=>({id:'extra'}))]);const total=cartTotal(cart);
   const prints=P0||mais?printsVenda(cart,n):0; // pacote até n impressas + cada adicional impressa
   const sobra=P0&&!todas?Math.max(0,P0.digital-n):0;
   // economia (N6, revisão): contra a compra avulsa de verdade, Arquibancada + (fotos − 1) adicionais; no "Todas" contam as fotos da sessão. Só aparece quando > 0.
   const ndig=todas?nSes:n;const save=!P0||!ndig?0:Math.max(0,priceOf('arq')+(ndig-1)*priceOf('extra')-total);
-  const lines=[];if(P0)lines.push({t:'pkg',id:pkg,q,n:todas?'todas':q*P0.digital,v:q*priceOf(pkg)});if(extra)lines.push({t:'extra',n:extra,un:priceOf('extra'),v:extra*priceOf('extra')});
-  return {pkg,q,extra,cart,total,prints,sobra,nSes,save,lines};}
+  const lines=ids.map(id=>{const p=DATA.catalog.find(c=>c.id===id);return {t:'pkg',id,q:M[id],n:p.digital==='todas'?'todas':M[id]*p.digital,v:M[id]*priceOf(id)};});if(extra)lines.push({t:'extra',n:extra,un:priceOf('extra'),v:extra*priceOf('extra')});
+  return {pkg,q,pkgs:M,extra,cart,total,prints,sobra,nSes,save,lines};}
 // 17/11 (Ronaldo): "+1 foto cortesia" na venda paga do Checkout. O cliente escolhe uma foto a mais; o atendente que pode dar cortesia
 // registra o motivo e o que houve. O pacote é calculado com uma foto a menos e a cortesia sai digital e impressa, sem valor.
 // 24/11 (Ronaldo): porta-retrato no pedido do Checkout (r.portas, um id por unidade). Cada unidade cobra o modelo e leva a CORTESIA
 // PORTA-RETRATO (brinde do catálogo): uma das fotos escolhidas sai impressa sem custo, então o pacote conta uma foto a menos, como a cortesia.
 const portasDe=r=>Array.isArray(r&&r.portas)?r.portas.filter(id=>DATA.catalog.some(c=>c.id===id&&c.kind==='porta')):[];
-function vendaCalcCort(r,n,pkg){const mais=vendaMais(r.card);const kc=r.cortFoto?1:0;const pr=portasDe(r);const k=kc+pr.length;const c=vendaCalc(n-k,Math.max(0,(r.nSes||n)-k),pkg,mais,r.pkgQ);
+function vendaCalcCort(r,n,pkg){const mais=vendaMais(r.card);const kc=r.cortFoto?1:0;const pr=portasDe(r);const k=kc+pr.length;const nb=Math.max(n?1:0,n-k);const c=vendaCalc(nb,Math.max(nb,(r.nSes||n)-k),pkg,mais,r.pkgs||r.pkgQ);
   if(!k||(!c.pkg&&!mais))return c;const cart=cartComPreco([...c.cart,...(kc?[{id:'cort_foto'}]:[]),...pr.map(id=>({id}))]);
   return Object.assign({},c,{cart,total:cartTotal(cart),prints:c.prints+k,lines:[...c.lines,...(kc?[{t:'cort',n:1,v:0}]:[]),...pr.map(id=>({t:'porta',id,v:priceOf(id)}))]});}
 // quanto a cortesia valeu: o que a venda custaria sem ela menos o que o cliente pagou
@@ -14139,9 +14147,8 @@ document.addEventListener('click',e=>{
     case 'kiosk-minhas':state.kiosk.minhas=true;state.kiosk.minhasI=null;render();break;
     case 'kiosk-minhas-i':state.kiosk.minhasI=d.i!=null&&state.kiosk.minhasI==null?+d.i:null;render();break;
     case 'kiosk-minhas-x':if(state.kiosk.minhasI!=null)state.kiosk.minhasI=null;else state.kiosk.minhas=false;render();break;
-    case 'pend-pkg':{const r0=(SIM.caixaDin||[]).find(x=>x.id===d.id);const mais1=r0&&r0.pkg===d.p&&DATA.catalog.some(c=>c.id===d.p&&c.digital!=='todas'); // 25/11: tocar de novo no mesmo pacote soma uma unidade
-      state.pend.passo={id:d.id,p:1}; /* fica no Pacote para somar; Pagamento pelo passo 2 */pendEscolher(d.id,mais1?{pkg:d.p,q:Math.min(PKG_Q_MAX,(r0.pkgQ||1)+1)}:{pkg:d.p});break;}
-    case 'pend-pkg-q':state.pend.passo={id:d.id,p:1};pendEscolher(d.id,{pkg:d.p,q:+d.q||1});break; // 25/11: fica no passo Pacote para somar mais
+    case 'pend-pkg':state.pend.passo={id:d.id,p:1};pendEscolher(d.id,{pkg:d.p});break; // 25/11: cada toque soma uma unidade do pacote; Pagamento pelo botão
+    case 'pend-pkg-q':state.pend.passo={id:d.id,p:1};pendEscolher(d.id,{pkg:d.p,q:Math.max(0,+d.q||0)});break; // − e + de cada pacote (0 tira)
     case 'pend-porta':pendPorta(d.id,d.p,true);break;
     case 'pend-porta-rm':pendPorta(d.id,d.p,false);break;
     case 'porta-salvar':portaSalvar(+d.i);break;
