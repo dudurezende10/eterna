@@ -13928,9 +13928,13 @@ def metricas_periodo(de, ate):
             out.append(metricas_gravar(d))
         elif os.path.exists(arq):
             try:
-                out.append(json.load(open(arq, encoding="utf8")))
+                m = json.load(open(arq, encoding="utf8"))
             except Exception:
-                pass
+                m = None
+            if m is not None:
+                if isinstance(m, dict) and m.get("v") == 2 and not m.get("t3"):
+                    met_t3_agenda(d)                 # os tempos novos entram em segundo plano; a leitura segue rápida (critério 27)
+                out.append(m)
         t += 86400
     return out
 
@@ -13969,6 +13973,108 @@ def h_add(h, s):
 
 def _hora_local(ts):
     return time.strftime("%H", time.localtime(ts))
+
+
+# 24/11 (Ronaldo, "tempo de fotografia", "tempo de atendimento"): tempos que faltavam nas Estatísticas, nas mesmas faixas.
+# fotografia_s: do primeiro ao último clique da sessão (trilha ao vivo); escolha_s: do início do Checkout à escolha das fotos
+# (vendas pagas); fila_s: do pedido entrar na fila até a impressora começar; impressao_s: da fila até a impressão terminar.
+# fotos_sessao: sessões por número de cliques (1–5, 6–10, 11–20, 21–40, 41–80, 81 ou mais).
+FOTOS_SESSAO_FAIXAS = (6, 11, 21, 41, 81)
+
+
+def met_t3(ss, evs):
+    t = {k: h_novo() for k in ("fotografia_s", "escolha_s", "fila_s", "impressao_s")}
+    fs = [0] * (len(FOTOS_SESSAO_FAIXAS) + 1)
+    for x in ss or []:
+        if not isinstance(x, dict) or x.get("removida"):
+            continue
+        n = len(x.get("fotos") or []) + len(x.get("pend") or [])
+        if n:
+            fs[next((i for i, lim in enumerate(FOTOS_SESSAO_FAIXAS) if n < lim), len(FOTOS_SESSAO_FAIXAS))] += 1
+        c0, c1 = _num(x.get("cap0")), _num(x.get("cap1"))
+        if c0 and c1 and c1 >= c0 and x.get("trilha", "vivo") == "vivo" and not x.get("atrasada"):
+            h_add(t["fotografia_s"], c1 - c0)
+    pagas = {e["venda"] for e in evs or [] if e.get("tipo") == "pagar"}
+    for e in evs or []:
+        d = e.get("dados") if isinstance(e.get("dados"), dict) else {}
+        if e.get("tipo") == "criar" and e.get("venda") in pagas:
+            tp = d.get("tempos") if isinstance(d.get("tempos"), dict) else {}
+            a, b = _epoch(tp.get("inicio")), _epoch(tp.get("escolha"))
+            if a and b:
+                h_add(t["escolha_s"], b - a)
+        elif e.get("tipo") == "fila":
+            a, b, c = _epoch(d.get("entrou")), _epoch(d.get("comecou")), _epoch(d.get("terminou"))
+            if a and b:
+                h_add(t["fila_s"], b - a)
+            if a and c:
+                h_add(t["impressao_s"], c - a)
+    return t, fs
+
+
+def met_t3_completa(dia, m):
+    """Dia passado gravado antes de 24/11: acrescenta os tempos novos uma vez (nunca troca o que existe)."""
+    if not isinstance(m, dict) or m.get("v") != 2 or m.get("t3"):
+        return m
+    with met_lock(dia):                              # relê dentro do lock: outra gravação do dia pode ter chegado
+        try:
+            with open(os.path.join(MET_DIR, dia + ".json"), encoding="utf8") as f:
+                m = json.load(f)
+        except Exception:
+            return m
+        if not isinstance(m, dict) or m.get("v") != 2 or m.get("t3"):
+            return m
+        return _met_t3_grava(dia, m)
+
+
+_t3 = {"fila": set(), "vivo": False}
+_t3_lock = threading.Lock()
+
+
+def met_t3_agenda(dia):
+    with _t3_lock:
+        _t3["fila"].add(dia)
+        if _t3["vivo"]:
+            return
+        _t3["vivo"] = True
+    threading.Thread(target=_met_t3_trabalha, daemon=True, name="met-t3").start()
+
+
+def _met_t3_trabalha():
+    time.sleep(3)                                    # deixa a leitura que pediu terminar antes
+    while True:
+        with _t3_lock:
+            if not _t3["fila"]:
+                _t3["vivo"] = False
+                return
+            dia = max(_t3["fila"])                   # os dias mais novos primeiro
+            _t3["fila"].discard(dia)
+        try:
+            met_t3_completa(dia, {"v": 2})
+        except Exception as ex:
+            print("  métricas (tempos novos %s): %s" % (dia, str(ex)[:120]))
+        time.sleep(0.05)
+
+
+def _met_t3_grava(dia, m):
+    sf = os.path.join(SESS_DIR, dia + ".json")
+    ss = None
+    if os.path.exists(sf):
+        try:
+            with open(sf, encoding="utf8") as f:
+                ss = json.load(f).get("sessoes") or []
+        except Exception:
+            ss = None
+    t, fs = met_t3(ss, _ev_ler(dia))
+    if ss is None:                                   # sem o arquivo de sessões: não inventa tempo de fotografia
+        t.pop("fotografia_s", None)
+    tem = m.setdefault("tempos", {})
+    for k, v in t.items():
+        tem.setdefault(k, v)
+    if ss is not None:
+        m.setdefault("fotos_sessao", fs)
+    m["t3"] = 1
+    met_escreve(dia, m)
+    return m
 
 
 def met_v2(dia, ss, evs):
@@ -14049,6 +14155,10 @@ def met_v2(dia, ss, evs):
             # R4: quem confirmou fica em por_confirmador, nunca misturado com o por_vendedor da v1 (vendas e faturamento)
             nome = _nome_pessoa(v["pagar_por"]) or _nome_pessoa(c.get("vendedor")) or "sem nome"
             h_add(out["por_confirmador"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
+    t3, fs = met_t3(ss, evs)
+    tempos.update(t3)
+    out["fotos_sessao"] = fs
+    out["t3"] = 1
     out["entradas"] = entradas_dia(dia)
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     out["selfies"] = selfies_dia(dia)
@@ -14605,9 +14715,10 @@ def _migra_dia(dia, arq):
             ss = None
     v2 = met_v2(dia, ss, _ev_ler(dia))
     if ss is None:                                   # sem arquivo de sessões: não inventa tempos de clique nem de câmera
-        for k in ("clique_checkout_s", "transferencia_s"):
+        for k in ("clique_checkout_s", "transferencia_s", "fotografia_s"):
             v2["tempos"].pop(k, None)
         v2.pop("por_fotografo", None)
+        v2.pop("fotos_sessao", None)
     met_v2_junta(m, v2, so_acrescenta=True)
     m["migrado"] = True
     met_escreve(dia, m)

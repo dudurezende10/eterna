@@ -1557,7 +1557,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.50.0 · 25/11 01:15"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.51.0 · 25/11 02:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -6471,7 +6471,7 @@ function venueOffsetMin(){try{const d=new Date();d.setSeconds(0,0);const p=Objec
   return Math.round((Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute)-d.getTime())/60000);}catch(e){return null;}}
 // soma dos dias do servidor (e, com o interruptor, os dias da Roverpix que o servidor não tem). Pura: o chamador passa roverDias.
 function esDados(ds,o){o=o||{};ds=(ds||[]).filter(d=>d&&typeof d==='object'&&ISO_DIA.test(d.dia));
-  const O0=()=>Object.create(null);const porDia=O0(),prod=O0(),meios=O0(),postos=O0(),canais=O0(),idiomas=O0(),vend=O0(),tempos={cliente_s:[],pagamento_s:[],clique_checkout_s:[],transferencia_s:[]};
+  const O0=()=>Object.create(null);const porDia=O0(),prod=O0(),meios=O0(),postos=O0(),canais=O0(),idiomas=O0(),vend=O0(),tempos={cliente_s:[],pagamento_s:[],clique_checkout_s:[],transferencia_s:[],fotografia_s:[],escolha_s:[],fila_s:[],impressao_s:[]},fotosSessao=[0,0,0,0,0,0];
   const horas={};for(let h=0;h<24;h++)horas[h]={vendas:0,faturamento:0,sessoes:0,fotos:0};const semN=[0,0,0,0,0,0,0],semF=[0,0,0,0,0,0,0],semV=[0,0,0,0,0,0,0];const hxd=[];for(let h=0;h<24;h++)hxd.push([0,0,0,0,0,0,0]);
   const soma=(dst,src)=>{Object.entries(src||{}).forEach(([n,v])=>{if(!v||typeof v!=='object'||ES_PROIBIDO.has(n))return;const a=dst[n]||(dst[n]={});Object.entries(v).forEach(([k,x])=>{if(typeof x==='number'&&k!=='conversao'&&k!=='primeira_foto')a[k]=(a[k]||0)+x;});});};
   let semDetalhe={n:0,receita:0};let comV2=0;
@@ -6485,6 +6485,7 @@ function esDados(ds,o){o=o||{};ds=(ds||[]).filter(d=>d&&typeof d==='object'&&ISO
     soma(meios,d.por_meio);soma(postos,d.por_posto);soma(canais,d.por_canal);soma(idiomas,d.por_idioma); /* 23/11: por fotógrafo saiu para fgFotoAgrega (Fotógrafos › Estatísticas) */
     Object.entries(d.por_confirmador||{}).forEach(([n,v])=>{if(ES_PROIBIDO.has(n)||!v||!v.pagamento_s)return;const a=vend[n]||(vend[n]={pagamento_s:[]});a.pagamento_s.push(v.pagamento_s);});
     Object.keys(tempos).forEach(k=>{const h=d.tempos&&d.tempos[k];if(h)tempos[k].push(h);});
+    if(Array.isArray(d.fotos_sessao))d.fotos_sessao.forEach((n,i)=>{if(i<fotosSessao.length)fotosSessao[i]+=safeN(n);});
     const wd=diaSemana(d.dia);
     Object.entries(d.por_hora||{}).forEach(([h,v])=>{const hh=+h;if(!(hh>=0&&hh<24)||!v)return;const x=horas[hh];['vendas','faturamento','sessoes','fotos'].forEach(k=>x[k]+=numF(v[k]));hxd[hh][wd]+=numF(v.vendas);});});
   if(o.rover)(o.roverDias||[]).forEach(r=>{if(!r||!ISO_DIA.test(r.date))return;const e=porDia[r.date];if(e&&(e.vendas||e.sessoes))return; // o dia do servidor vale por cima
@@ -6494,7 +6495,7 @@ function esDados(ds,o){o=o||{};ds=(ds||[]).filter(d=>d&&typeof d==='object'&&ISO
   const S=k=>dias.reduce((a,x)=>a+numF(x[k]),0);const kpi={faturamento:S('faturamento'),vendas:S('vendas'),sessoes:S('sessoes'),sessoes_com_venda:S('sessoes_com_venda'),fotos:S('fotos'),online:S('online'),dias:dias.length};
   kpi.ticket=kpi.vendas?kpi.faturamento/kpi.vendas:null;kpi.conversao=kpi.sessoes?kpi.sessoes_com_venda/kpi.sessoes:null;
   const hxdN=hxd.map(l=>l.map((v,i)=>semN[i]?v/semN[i]:0));
-  return {dias,kpi,produtos:Object.values(prod).sort((a,b)=>b.receita-a.receita||b.n-a.n),semDetalhe,meios,postos,canais,idiomas,vendedores:vend,tempos,
+  return {fotosSessao,dias,kpi,produtos:Object.values(prod).sort((a,b)=>b.receita-a.receita||b.n-a.n),semDetalhe,meios,postos,canais,idiomas,vendedores:vend,tempos,
     horas,semana:ES_SEMANA.map((nome,i)=>({nome,dias:semN[i],faturamento:semN[i]?semF[i]/semN[i]:0,vendas:semN[i]?semV[i]/semN[i]:0})),hxd:hxdN,comV2,
     entradas:ds.filter(d=>d.entradas&&d.entradas.total).map(d=>({dia:d.dia,...d.entradas,sessoes:safeN(d.sessoes),vendas:safeN(d.vendas)+safeN((d.online||{}).vendas),faturamento:numF(d.faturamento)+numF((d.online||{}).faturamento)}))};}
 // grupos de dias (d): com e sem jogo, mandante, competição, tipo de evento, fim de semana e feriado; média por dia de cada grupo
@@ -6554,6 +6555,7 @@ const esPorMin=v=>v>0&&v<0.05?TE('es_menos_01'):v.toLocaleString('pt-BR',{minimu
 const esMed=n=>Number.isFinite(n)?(Math.round(n*10)/10).toLocaleString('pt-BR'):'—';
 function esBars(items,o){o=o||{};const mx=Math.max(1e-9,...items.map(x=>numF(x.v)));const fmt=o.fmt||(v=>fmtN(v));
   return `<div class="es-bars" role="img" aria-label="${esc((o.label||'')+': '+items.map(x=>x.nome+' '+fmt(x.v)).join('; '))}">${items.map(x=>`<div class="es-bar${x.hi?' hi':''}" data-tip="${esc(x.nome+': '+fmt(x.v))}" tabindex="0"><span class="v">${numF(x.v)?esc(fmt(x.v)):''}</span><i style="height:${Math.max(1.5,Math.round(100*numF(x.v)/mx))}%"></i><span class="l">${esc(x.nome)}</span></div>`).join('')}</div>`;}
+const ES_FOTOS_SESSAO=['1–5','6–10','11–20','21–40','41–80','81+']; // 24/11: sessões por número de cliques (FOTOS_SESSAO_FAIXAS do agente)
 function esTempoCard(tit,hs,nota){const F=esFaixas(hs);const mx=Math.max(1,...F.f);
   return `<article class="es-t"><h3>${esc(tit)}</h3>${F.n?`<div class="es-t-v"><span><small>${TE('es_mediana')}</small><b>${esc(esFx(F.iMed))}</b></span><span><small>p90</small><b>${esc(esFx(F.iP90))}</b></span><span><small>n</small><b>${fmtN(F.n)}</b></span></div>
     <div class="es-hist" role="img" aria-label="${esc(tit+': '+TE('es_faixas').map((l,i)=>l+' '+F.f[i]).join(', '))}">${F.f.map((v,i)=>`<i class="${i===F.iMed?'med':''}" style="height:${Math.max(2,Math.round(100*v/mx))}%" data-tip="${esc(esFx(i)+': '+v)}"></i>`).join('')}</div>`:`<div class="note">${TE('es_sem_dado')}</div>`}${nota?`<div class="note">${esc(nota)}</div>`:''}</article>`;}
@@ -7399,7 +7401,9 @@ function esEdPainel(D){const ds=(D.dias||[]).filter(x=>x.fonte==='eterna').slice
 function esSecC(D){const V=Object.entries(D.vendedores).filter(([,v])=>v.pagamento_s.length).map(([n,v])=>({n,F:esFaixas(v.pagamento_s)})).filter(x=>x.F.n).sort((a,b)=>b.F.n-a.F.n);
   return `<div class="es-tempos">${esTempoCard(TE('es_t1'),D.tempos.cliente_s,TE('es_t1n'))}${esTempoCard(TE('es_t2'),D.tempos.pagamento_s,TE('es_t2n'))}
     ${esTempoCard(TE('es_t3'),D.tempos.clique_checkout_s,TE('es_t3n'))}${esTempoCard(TE('es_t4'),D.tempos.transferencia_s,TE('es_t4n'))}
-    <article class="es-t"><h3>${TE('es_impressao')}</h3><div class="note">${TE('es_sem_dado')}</div></article></div>
+    ${esTempoCard(TE('es_t5'),D.tempos.fotografia_s,TE('es_t5n'))}${esTempoCard(TE('es_t6'),D.tempos.escolha_s,TE('es_t6n'))}
+    ${esTempoCard(TE('es_t7'),D.tempos.fila_s,TE('es_t7n'))}${esTempoCard(TE('es_impressao'),D.tempos.impressao_s,TE('es_t8n'))}</div>
+  ${D.fotosSessao.some(n=>n)?`<section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_cl_sessao')}</h2></div></div>${esBars(ES_FOTOS_SESSAO.map((nome,i)=>({nome,v:D.fotosSessao[i]})),{label:TE('es_cl_sessao')})}</section>`:''}
   <section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_conf_vend')}</h2><p class="pn-take">${TE('es_conf_take')}</p></div></div>${V.length?esTab([{t:TE('es_vendedor')},{t:TE('es_mediana_c')},{t:'p90'},{t:'n',n:1}],V.map(x=>`<tr><td class="name">${esc(x.n)}</td><td>${esc(esFx(x.F.iMed))}</td><td>${esc(esFx(x.F.iP90))}</td><td class="num">${fmtN(x.F.n)}</td></tr>`)):`<div class="note">${TE('es_sem_conf')}</div>`}</section>`;}
 function esSecD(D){const G=esGrupoDia(D.dias,AGENDA);const ordem=['Jogo','Mandante','Competição','Tipo de evento','Semana','Feriado'];const ev={};Object.values(AGENDA).forEach(a=>{(ev[a.data]=ev[a.data]||[]).push(a);});
   const linha=g=>`<tr><td class="name">${esc(esGN(g.nome))}${g.poucos?` <span class="pill warn">${TE('es_poucos')}</span>`:''}</td><td class="num">${fmtN(g.n)}</td><td class="num">${fmtR(g.faturamento)}</td><td class="num">${esMed(g.vendas)}</td><td class="num">${esMed(g.sessoes)}</td><td class="num">${g.ticket!=null?fmtR(g.ticket):'—'}</td><td class="num">${esPct(g.conversao)}</td><td class="num">${esPct(g.outras)}</td><td class="num">${g.entradas!=null?fmtN(g.entradas):'—'}</td></tr>`;
@@ -11528,6 +11532,14 @@ const EQ={
   es_t4:["Câmera até o servidor","Camera to server","Cámara hasta el servidor","De l'appareil au serveur","Kamera bis Server"],
   es_t4n:["Clique até a foto chegar (trilha ao vivo)","Click until the photo arrives (live track)","Clic hasta que llega la foto (pista en vivo)","Du clic à l'arrivée de la photo (piste en direct)","Klick bis das Foto ankommt (Live-Spur)"],
   es_impressao:["Impressão","Printing","Impresión","Impression","Druck"],
+  es_t5:["Fotografia","Photography","Fotografía","Photographie","Fotografie"],
+  es_t5n:["Do primeiro ao último clique da sessão (trilha ao vivo)","From the session's first to last click (live track)","Del primer al último clic de la sesión (pista en vivo)","Du premier au dernier clic de la séance (piste en direct)","Vom ersten bis zum letzten Klick der Sitzung (Live-Spur)"],
+  es_t6:["Escolha das fotos","Choosing the photos","Elección de las fotos","Choix des photos","Fotoauswahl"],
+  es_t6n:["Do início do Checkout até escolher as fotos (vendas pagas)","From starting the Checkout to choosing the photos (paid sales)","Desde el inicio del Checkout hasta elegir las fotos (ventas pagadas)","Du début du Checkout au choix des photos (ventes payées)","Vom Checkout-Start bis zur Fotoauswahl (bezahlte Verkäufe)"],
+  es_t7:["Espera na fila","Waiting in the queue","Espera en la cola","Attente dans la file","Wartezeit in der Warteschlange"],
+  es_t7n:["Do pedido entrar na fila até a impressora começar","From the order entering the queue until the printer starts","Desde que el pedido entra en la cola hasta que empieza la impresora","De l'entrée en file à la mise en route de l'imprimante","Vom Eintritt in die Warteschlange bis zum Druckbeginn"],
+  es_t8n:["Do pedido entrar na fila até a impressão terminar","From the order entering the queue until printing ends","Desde que el pedido entra en la cola hasta que termina la impresión","De l'entrée en file à la fin de l'impression","Vom Eintritt in die Warteschlange bis Druckende"],
+  es_cl_sessao:["Sessões por número de cliques","Sessions by number of clicks","Sesiones por número de clics","Séances par nombre de clics","Sitzungen nach Klickzahl"],
   es_sem_dado:["sem dado ainda","no data yet","sin datos aún","pas encore de données","noch keine Daten"],
   es_mediana:["mediana","median","mediana","médiane","Median"],
   es_mediana_c:["Mediana","Median","Mediana","Médiane","Median"],

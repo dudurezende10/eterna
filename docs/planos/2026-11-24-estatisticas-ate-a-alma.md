@@ -30,17 +30,16 @@ Regra: **acrescentar, nunca substituir**. Tudo que existe nas Estatísticas cont
 | Tempo da busca | média de `ms` da selfie | |
 | Cliques por venda | fotos tiradas ÷ vendas | `fotos`, `vendas` |
 | Receita por clique | faturamento ÷ fotos tiradas | |
-| Meta de cliques | meta de receita ÷ receita por clique dos últimos 28 dias | |
-| Tempo de fotografia | do primeiro ao último clique da sessão | sessão `cap0`/`cap1` |
+| Meta de cliques | meta de receita ÷ receita por clique do período escolhido | `sim/metaDia` |
 | Tempo de atendimento | da abertura da sessão no Checkout ao pagamento | `tempos.cliente_s`, `pagamento_s` |
-| Tempo de impressão | do pagamento à foto impressa | `venda_tempos` |
+| Tempo de fotografia, escolha, fila, impressão | `tempos.fotografia_s`, `escolha_s`, `fila_s`, `impressao_s` | `met_t3` |
 
 ## Leva 1: mostrar o que já é gravado (vale para os dias passados)
 
 1. **Selfies e pessoas** (v99.49.0, feita): pessoas abordadas por dia e por hora, resultado das selfies, tempo da busca.
 2. **Cliques e metas** (v99.50.0, feita; meta em `sim/metaDia`): cliques por venda, receita por clique, meta diária de receita e cliques que faltam, evolução diária
    (média móvel de 7 dias e mesmo dia da semana), por fotógrafo e por vendedor, histograma de cliques por sessão.
-3. **Tempos**: fotografia, atendimento, pagamento, impressão e escolha, com mediana e percentil 90.
+3. **Tempos** (v99.51.0, feita, na aba Rapidez): fotografia, escolha, fila e impressão, com mediana e percentil 90; sessões por número de cliques.
 4. Fotos e sessões por hora contra visitantes por hora; vendas por canal; desfecho dos pedidos (não pagos, substituídos).
 
 ## Leva 2: medir o que ainda não é gravado
