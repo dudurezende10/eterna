@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.68.0 · 25/11 13:58"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.69.0 · 25/11 14:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1932,6 +1932,7 @@ async function caixaConfirm(){const c=state.caixa.session;if(simOf(c).status==='
   if(cortes){if(!can('galerias','u')){toast(TE('po_so_cortesia'));return;}const nota=(($('#cort-nota')||{}).value||'').trim().slice(0,200);
     cortInfo={motivo:($('#cort-mot')||{}).value||null,nota,por:state.user.email,porNome:state.user.name};}
   const nSel=(s.selected||[]).length||null;const prints=printsVenda(s.cart,nSel);const antes=JSON.stringify(SIM);const u=state.user;
+  if(vendaFaltaAvisa(vendaFalta({u,vendedor:u?{nome:u.name}:null,card:c,saleNo:no,meio:cortes?'cortesia':state.caixa.pay,total:cartTotal(cartComPreco(s.cart||[])),n:(s.cart||[]).length,posto:postoNome()})))return;
   const ab=dinAbertaDe(c);if(ab)dinFechar(ab.id,'substituida','pago_de_outro_jeito',u);
   s.cart=cartComPreco(s.cart);s.total=cartTotal(s.cart);s.nFotos=nSel||0;s.status='paga';s.payment=cortes?'Cortesia':state.caixa.pay;s.cortesia=cortInfo;s.paidAt=now().toISOString();s.prints=prints;delete s.caixaPor;delete s.caixaEm;
   s.vendaId=pvId();s.saleNo=s.saleNo||no;if(!s.seller&&state.posto.manual)s.seller=SELLERS[0];
@@ -2008,6 +2009,9 @@ function postoManualOn(){if(state.posto.manual)return;state.posto.manual=true;st
 function checkoutVoltar(){const sim=state.checkout.session?simOf(state.checkout.session):null;if(sim&&sim.status==='no checkout'){sim.status=DATA.sampled.find(x=>x.card===state.checkout.session)?'pronta':'fechada';saveSim();}state.checkout.session=null;state.checkout.step=1;state.fila.session=null;state.caixa.session=null;}
 state.pend={err:null,sel:null,passo:null};
 // confirma uma pendência (cartão, PIX ou dinheiro). Sem baixa de estoque (vai para a impressão, parte F). Galeria publicada aqui só em local/off.
+// 25/11 (Ronaldo): "não pode uma venda ser fechada com um parâmetro faltando". Lista o que falta; com algo faltando a venda não fecha.
+function vendaFalta(v){const ok=x=>x!=null&&String(x).trim()!=='';return [[!v.u||!ok(v.u.email)||!ok(v.u.name),'quem confirma (faça login)'],[!v.vendedor||!ok(v.vendedor.nome),'vendedor'],[!ok(v.card),'sessão'],[!ok(v.saleNo),'número da venda'],[!ok(v.meio),'forma de pagamento'],[typeof v.total!=='number'||!isFinite(v.total)||v.total<0,'valor'],[!(v.n>0),'fotos'],[!ok(v.posto),'posto']].filter(x=>x[0]).map(x=>x[1]);}
+function vendaFaltaAvisa(f){if(!f.length)return false;toast('Venda não fechada. Falta: '+f.join(', '));render();return true;}
 function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(r.escolha&&(r.total==null||(!r.pkg&&!vendaMais(r.card)&&!pendSoBrinde(r))||!MEIO_NOME[r.meio])){toast('Escolha o pacote e a forma de pagamento');render();return false;}
   if(r.escolha){const n=pendN(r);if(n!==r.n){toast('As fotos deste pedido não conferem. Cancele e peça ao cliente para escolher de novo.');render();return false;}
     // segurança S5: o valor sai de novo do Catálogo na confirmação; se mudou, o pedido fica com o valor novo (o cliente vê) e o caixa confirma de novo
@@ -2017,6 +2021,7 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   const meio=meioDe(r);
   const ref=null; // 18/11 (Ronaldo): sem NSU; o "Pago na maquininha" confirma num toque, como o "Recebi" do dinheiro
   const antes=JSON.stringify(SIM);const u=state.user;const s=simOf(r.card);
+  if(vendaFaltaAvisa(vendaFalta({u,vendedor:r.vendedor||(u?{nome:u.name}:null),card:r.card,saleNo:r.saleNo||s.saleNo||'novo',meio:MEIO_NOME[meio]?meio:null,total:r.total,n:(r.n||0)+(r.selected||[]).length+(r.aiSel||[]).length+(r.cortFoto?1:0)+portasDe(r).length,posto:r.posto||postoNome()})))return false;
   if(s.status==='paga'){dinFechar(id,'substituida','pago_de_outro_jeito',u);if(saveSim())pvCancelEv(r,'pago_de_outro_jeito');toast('Esta sessão já foi paga de outro jeito. A pendência foi encerrada.');render();return false;}
   const at=now().toISOString();const prov=meio==='dinheiro'||meio==='cortesia'?meio:(r.prov||pagProv());
   if(r.escolha&&meio!=='dinheiro'&&meio!=='cortesia'){const PP=PAG_PROV[prov];const ini=(PP&&PP.iniciar({id:r.id,meio,total:r.total}))||{estado:'aguardando'};r.iniciado=ini.estado||'aguardando';} // segurança S3: a maquininha só começa na confirmação
