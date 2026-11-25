@@ -144,6 +144,8 @@ Funções:
         "nit_rosto":25,"nit_quadro_com_rosto":25,"nit_quadro":20,"sem_brutos":0}}
 ```
 
+Revisão de 24/11 (foto toda lavada e contraluz em silhueta ficavam fora): `est_quadro_med` 190 e `est_quadro_alto` 30, valendo com ou sem rosto; limite novo `esc_centro_med` 30 (média da região central, `luz.q.c_med`: 30% a 70% da largura, 25% a 90% da altura), usado quando não há rosto medido ou o rosto tem mediana abaixo de 40. `config/lixeira` gravada com o par antigo 235/50 vale como o padrão novo. Medida gravada antes, sem `c_med`, não dispara a regra do centro.
+
 Linha `lixeira.dados`: `{"v":1,"nq":812.4,"nr":95.1,"n":2,"nb":3,"luz":{"q":{"med":120,"alto":1.2,"baixo":3.4,"p95":231},"r":{"med":131,"p95":214,"alto":0.4}}}`; `mot` = `"escura,desfocada"` ou null.
 
 `GET /lixeira?dia=2026-11-25` -> 200

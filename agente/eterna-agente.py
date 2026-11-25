@@ -6714,7 +6714,7 @@ def _sess_ia_base_de(p, lv):
     return "rec" if ok is None else ("base" if ok else "pula")
 
 
-def _sess_ia_bases(x, n):
+def _sess_ia_bases_ordem(x, n):
     """18/11 (regra 19): as bases da leva = as N primeiras fotos de gramado que passam na regra (gramado da versão ligada com
     conf >= CENA_LIMIAR e os vetos, recorte com gente, sem corte na lateral nem no alto e com luz boa), em ordem de clique.
     -> (bases, "ok" | "pendente" | "sem_gramado"). Para no primeiro "pendente". 1 base sem nada pendente antes = ok (D9).
@@ -6731,6 +6731,87 @@ def _sess_ia_bases(x, n):
             if len(bases) >= n:
                 break
     return bases, ("ok" if bases else "sem_gramado")
+
+
+def _sess_ia_gramado(p, lv):
+    """A foto é de gramado na versão ligada (com ou sem recorte, passando ou não nos vetos). Só memória."""
+    c = cena_mem.get(p)
+    return c is not None and c.get("r") != CENA_NAO and c.get("v") == lv and bool(c.get("g"))
+
+
+def _sess_ia_bases(x, n):
+    """24/11 (bases melhores): a escolha das bases da leva. O estado ("ok" | "pendente" | "sem_gramado") é sempre o da regra de
+    antes (_sess_ia_bases_ordem): a leva nunca espera mais por causa da nota. Estado diferente de ok ou modo "primeiras":
+    devolve igual. Modo "melhores": as candidatas são as fotos que passam nos vetos entre as BASE_POOL_MAX primeiras de gramado
+    (a que ainda espera o recorte fica fora e conta em sem_medida); começa pelas N primeiras e uma posterior só entra no lugar da
+    mais fraca com BASE_NOTA_MARGEM pontos a mais (das posteriores, a de maior nota primeiro; entre fracas iguais sai a de
+    clique mais tarde). As escolhidas saem em ordem de clique. Foto que o Treino marcou "não serve" fica fora. Deixa em
+    x["_esc"] o resumo para o _sess_ia_esc (quem grava x["ia"] chama). Com o sess_lock; só memória."""
+    x.pop("_esc", None)
+    bases, est = _sess_ia_bases_ordem(x, n)
+    if est != "ok" or n < 1 or bases_modo() == "primeiras":
+        return bases, est
+    # Revisão de 24/11: a escolha por nota nunca pode travar o fechamento nem dar menos bases que a regra de antes.
+    # Qualquer erro, ou resultado menor, cai nas bases da regra de antes (conta em base_st["erros"], sem pid no registro).
+    try:
+        esc, resumo = _sess_ia_bases_nota(x, n, bases)
+    except Exception as ex:
+        base_st["erros"] += 1
+        print("  bases de IA: escolha por nota falhou (%s); vale a regra das primeiras" % type(ex).__name__)
+        return bases, est
+    if len(esc) < len(bases):
+        return bases, est
+    x["_esc"] = resumo
+    return esc, "ok"
+
+
+def _sess_ia_bases_nota(x, n, bases):
+    """A troca por nota do _sess_ia_bases. -> (escolhidas em ordem de clique, resumo). Candidatas: as bases da regra de antes
+    mais as fotos que passam nos vetos entre as BASE_POOL_MAX primeiras de gramado. Foto que o Treino marcou "não serve"
+    (nota None) perde para qualquer outra; quem chama garante que o resultado nunca fica menor que o de antes."""
+    lv = treino_cfg_mem().get("ponto_versao")
+    ts = x.get("_t") or {}
+    teto = max(BASE_POOL_MAX, n)
+    cands, gram, sem = [], 0, 0
+    for p in sorted(x["fotos"], key=lambda p: ts.get(p, (0, 0))):
+        if not _sess_ia_gramado(p, lv):
+            continue
+        gram += 1
+        e = _sess_ia_base_de(p, lv)
+        if e == "base":
+            cands.append(p)
+        elif e == "rec":
+            sem += 1
+        if gram >= teto:
+            break
+    for p in bases:                            # as boas da regra de antes entram sempre, mesmo depois das 8 primeiras
+        if p not in cands:
+            cands.append(p)
+    cands.sort(key=lambda p: ts.get(p, (0, 0)))
+    notas = {p: base_nota(p) for p in cands}
+    vivas = [p for p in cands if notas[p] is not None]
+    ordem = {p: i for i, p in enumerate(vivas)}
+    esc = list(vivas[:n])
+    for p in sorted(vivas[n:], key=lambda p: (-notas[p], ordem[p])):
+        fraca = min(esc, key=lambda q: (notas[q], -ordem[q]))
+        if notas[p] - notas[fraca] < BASE_NOTA_MARGEM:
+            break
+        esc[esc.index(fraca)] = p
+    esc.sort(key=lambda p: ordem[p])
+    return esc, {"v": 1, "modo": "melhores", "pool": len(cands), "trocas": len(set(esc) - set(bases)), "_sem": sem}
+
+
+def _sess_ia_esc(x):
+    """Depois de gravar x["ia"] e x["ia_regra"] com as bases escolhidas pela nota: o resumo vai para ia_regra.esc ({v, modo,
+    pool, trocas}, só números) e para a contagem do /status.treino.bases. Com o sess_lock."""
+    e = x.pop("_esc", None)
+    if not isinstance(e, dict) or not isinstance(x.get("ia_regra"), dict):
+        return
+    sem = e.pop("_sem", 0)
+    x["ia_regra"]["esc"] = e
+    base_st["levas"] += 1
+    base_st["trocadas"] += 1 if e.get("trocas") else 0
+    base_st["sem_medida"] += sem
 
 
 def _sess_ia_pede_rec(x, n):
@@ -6766,18 +6847,24 @@ def _sess_ia_cand(x):
     pr = 2 if x.get("atrasada") else 1
     if cena_regra19():
         lv = treino_cfg_mem().get("ponto_versao")
-        boas = 0
+        # 24/11 (bases melhores): com a placa de vídeo e o modo "melhores", vão ao recorte as candidatas das BASE_POOL_MAX
+        # primeiras fotos de gramado, em vez de parar nas N boas (na CPU a lista segue a de antes)
+        largo = bases_modo() == "melhores" and rec.get("provedor") == "cuda"
+        boas = gram = 0
         for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0))):
             e = _sess_ia_base_de(p, lv)
-            if e not in ("base", "rec"):
-                continue
-            if p not in vistos:
-                vistos.add(p)
-                sess_ia_novos.append((p, pr))
-            if e == "base":
-                boas += 1
-                if boas >= n:
-                    break
+            if largo and _sess_ia_gramado(p, lv):
+                gram += 1
+            if e in ("base", "rec"):
+                if p not in vistos:
+                    vistos.add(p)
+                    # as candidatas a mais (depois das N boas) vão com prioridade pior: não passam na frente das
+                    # duas primeiras da leva seguinte
+                    sess_ia_novos.append((p, pr if boas < n else max(pr, REC_PRIO_ANTECIPADO)))
+                if e == "base":
+                    boas += 1
+            if (gram >= max(BASE_POOL_MAX, n)) if largo else (boas >= n):
+                break
         return
     for p in sorted(x["fotos"] + x["pend"], key=lambda p: ts.get(p, (0, 0)))[:n]:
         if p not in vistos:
@@ -6801,6 +6888,8 @@ def _sess_ia_fecha(x):
         bases, est = _sess_ia_bases(x, n)
         x["ia"] = list(bases) if est == "ok" else []
         x["ia_regra"] = {"n": n, "motivo": None if est == "ok" else ("sem_gramado" if est == "sem_gramado" else "cena_pendente")}
+        if est == "ok":
+            _sess_ia_esc(x)
         if est == "pendente":
             cena_pend[x["card"]] = time.time()
             _sess_ia_pede_rec(x, n)
@@ -8098,6 +8187,7 @@ def _vis_ia_reabre(cards, motivo):
         else:
             x["ia"] = list(fs[:n])
         x["ia_regra"] = {"n": n, "motivo": None, "reaberta": motivo}
+        _sess_ia_esc(x)
         for p in x["ia"]:
             sess_ia_novos.append((p, REC_PRIO_IA))
         _sess_toca(x)
@@ -9055,6 +9145,36 @@ def estado_db():
     return c
 
 
+# 24/11 (Ronaldo): "mantenha as vendas canceladas de tal modo que possamos pedir para recuperar alguma delas, em outro lugar,
+# para não ficar refletindo". No cancelamento, a cópia inteira da venda vem para cá (estado.db, tabela venda_cancelada, fora das
+# vendas e dos feeds; entra no backup do estado.db). Nas telas e nas contagens a cancelada não aparece mais. Recuperar é pedir à TI:
+# a cópia tem tudo o que a venda tinha no momento do cancelamento. tipo: foto (venda paga do Posto), pedido (do Checkout, cancelado
+# antes de pagar) ou ativacao (Drone, Chute a Gol, Snap Pop).
+VC_TIPOS = ("foto", "pedido", "ativacao")
+_re_vc_id = re.compile(r"^[A-Za-z0-9_.:#-]{1,80}$")
+
+
+def venda_cancelada_arquiva(tipo, vid, no, motivo, por, dados, em=None):
+    """Guarda (ou atualiza) a cópia da venda cancelada. -> True se gravou."""
+    if tipo not in VC_TIPOS or not _re_vc_id.match(str(vid or "")):
+        return False
+    txt = json.dumps(dados, ensure_ascii=False, default=str)
+    if len(txt) > ESTADO_MAX:
+        return False
+    with estado_lock:
+        c = estado_db()
+        try:
+            c.execute("create table if not exists venda_cancelada (tipo text, id text, no text, em text, por text, motivo text,"
+                      " dados text, arquivada_em text, primary key (tipo, id))")
+            c.execute("insert or replace into venda_cancelada values (?,?,?,?,?,?,?,?)",
+                      (tipo, str(vid), str(no or "")[:40], str(em or "")[:40] or time.strftime("%Y-%m-%dT%H:%M:%S"),
+                       str(por or "")[:120], str(motivo or "")[:200], txt, time.strftime("%Y-%m-%dT%H:%M:%S")))
+            c.commit()
+        finally:
+            c.close()
+    return True
+
+
 # Entrada da equipe: usuário e senha conferidos aqui, no servidor, para funcionar sem internet e sem e-mail. Mora no estado.db,
 # em tabelas próprias, fora de /ponto/docs e dos feeds: credencial guarda só o hash scrypt com sal, sessao_login só o hash do token
 # (o navegador fica com o token em cookie HttpOnly). O admin cadastra; a senha que ele gera é provisória e a pessoa troca na entrada.
@@ -9507,7 +9627,7 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
            ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("bgOn2", ("configuracao",)), ("fundosModo", ("configuracao",)),
            ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
-           ("bgPodioV86", ("configuracao",)), ("bgTelaoV97", ("configuracao",)), ("bgTunelV2", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
+           ("bgPodioV86", ("configuracao",)), ("bgTelaoV97", ("configuracao",)), ("bgTunelV2", ("configuracao",)), ("pagProv", ("financeiro",)), ("metaDia", ("configuracao", "financeiro")), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
 
 
 ATIV_VENDA_CAMPOS = ("origem", "id", "tipo", "dia", "criado", "itens", "valor", "pagamento", "vendedor", "vendedor_n", "pessoas", "videos",
@@ -9937,8 +10057,15 @@ def ativ_cancelar(vid, motivo, eu):
             c.execute("update ativ_venda set situacao='cancelada', cancel_motivo=?, cancel_por=?, cancel_em=? where origem='eterna' and id=?",
                       (motivo, eu, time.strftime("%Y-%m-%dT%H:%M:%S"), vid))
             c.commit()
+            cur = c.execute("select * from ativ_venda where origem='eterna' and id=?", (vid,))
+            cols = [d[0] for d in cur.description]
+            linha = dict(zip(cols, cur.fetchone() or ()))
         finally:
             c.close()
+    try:                                          # 24/11: a cópia vai para o arquivo das canceladas (estado.db)
+        venda_cancelada_arquiva("ativacao", vid, linha.get("venda") or linha.get("numero") or vid, motivo, eu, linha)
+    except Exception as ex:
+        print("  arquivo das canceladas: %s" % type(ex).__name__)
     return None
 
 
@@ -13801,9 +13928,13 @@ def metricas_periodo(de, ate):
             out.append(metricas_gravar(d))
         elif os.path.exists(arq):
             try:
-                out.append(json.load(open(arq, encoding="utf8")))
+                m = json.load(open(arq, encoding="utf8"))
             except Exception:
-                pass
+                m = None
+            if m is not None:
+                if isinstance(m, dict) and m.get("v") == 2 and not m.get("t3"):
+                    met_t3_agenda(d)                 # os tempos novos entram em segundo plano; a leitura segue rápida (critério 27)
+                out.append(m)
         t += 86400
     return out
 
@@ -13842,6 +13973,108 @@ def h_add(h, s):
 
 def _hora_local(ts):
     return time.strftime("%H", time.localtime(ts))
+
+
+# 24/11 (Ronaldo, "tempo de fotografia", "tempo de atendimento"): tempos que faltavam nas Estatísticas, nas mesmas faixas.
+# fotografia_s: do primeiro ao último clique da sessão (trilha ao vivo); escolha_s: do início do Checkout à escolha das fotos
+# (vendas pagas); fila_s: do pedido entrar na fila até a impressora começar; impressao_s: da fila até a impressão terminar.
+# fotos_sessao: sessões por número de cliques (1–5, 6–10, 11–20, 21–40, 41–80, 81 ou mais).
+FOTOS_SESSAO_FAIXAS = (6, 11, 21, 41, 81)
+
+
+def met_t3(ss, evs):
+    t = {k: h_novo() for k in ("fotografia_s", "escolha_s", "fila_s", "impressao_s")}
+    fs = [0] * (len(FOTOS_SESSAO_FAIXAS) + 1)
+    for x in ss or []:
+        if not isinstance(x, dict) or x.get("removida"):
+            continue
+        n = len(x.get("fotos") or []) + len(x.get("pend") or [])
+        if n:
+            fs[next((i for i, lim in enumerate(FOTOS_SESSAO_FAIXAS) if n < lim), len(FOTOS_SESSAO_FAIXAS))] += 1
+        c0, c1 = _num(x.get("cap0")), _num(x.get("cap1"))
+        if c0 and c1 and c1 >= c0 and x.get("trilha", "vivo") == "vivo" and not x.get("atrasada"):
+            h_add(t["fotografia_s"], c1 - c0)
+    pagas = {e["venda"] for e in evs or [] if e.get("tipo") == "pagar"}
+    for e in evs or []:
+        d = e.get("dados") if isinstance(e.get("dados"), dict) else {}
+        if e.get("tipo") == "criar" and e.get("venda") in pagas:
+            tp = d.get("tempos") if isinstance(d.get("tempos"), dict) else {}
+            a, b = _epoch(tp.get("inicio")), _epoch(tp.get("escolha"))
+            if a and b:
+                h_add(t["escolha_s"], b - a)
+        elif e.get("tipo") == "fila":
+            a, b, c = _epoch(d.get("entrou")), _epoch(d.get("comecou")), _epoch(d.get("terminou"))
+            if a and b:
+                h_add(t["fila_s"], b - a)
+            if a and c:
+                h_add(t["impressao_s"], c - a)
+    return t, fs
+
+
+def met_t3_completa(dia, m):
+    """Dia passado gravado antes de 24/11: acrescenta os tempos novos uma vez (nunca troca o que existe)."""
+    if not isinstance(m, dict) or m.get("v") != 2 or m.get("t3"):
+        return m
+    with met_lock(dia):                              # relê dentro do lock: outra gravação do dia pode ter chegado
+        try:
+            with open(os.path.join(MET_DIR, dia + ".json"), encoding="utf8") as f:
+                m = json.load(f)
+        except Exception:
+            return m
+        if not isinstance(m, dict) or m.get("v") != 2 or m.get("t3"):
+            return m
+        return _met_t3_grava(dia, m)
+
+
+_t3 = {"fila": set(), "vivo": False}
+_t3_lock = threading.Lock()
+
+
+def met_t3_agenda(dia):
+    with _t3_lock:
+        _t3["fila"].add(dia)
+        if _t3["vivo"]:
+            return
+        _t3["vivo"] = True
+    threading.Thread(target=_met_t3_trabalha, daemon=True, name="met-t3").start()
+
+
+def _met_t3_trabalha():
+    time.sleep(3)                                    # deixa a leitura que pediu terminar antes
+    while True:
+        with _t3_lock:
+            if not _t3["fila"]:
+                _t3["vivo"] = False
+                return
+            dia = max(_t3["fila"])                   # os dias mais novos primeiro
+            _t3["fila"].discard(dia)
+        try:
+            met_t3_completa(dia, {"v": 2})
+        except Exception as ex:
+            print("  métricas (tempos novos %s): %s" % (dia, str(ex)[:120]))
+        time.sleep(0.05)
+
+
+def _met_t3_grava(dia, m):
+    sf = os.path.join(SESS_DIR, dia + ".json")
+    ss = None
+    if os.path.exists(sf):
+        try:
+            with open(sf, encoding="utf8") as f:
+                ss = json.load(f).get("sessoes") or []
+        except Exception:
+            ss = None
+    t, fs = met_t3(ss, _ev_ler(dia))
+    if ss is None:                                   # sem o arquivo de sessões: não inventa tempo de fotografia
+        t.pop("fotografia_s", None)
+    tem = m.setdefault("tempos", {})
+    for k, v in t.items():
+        tem.setdefault(k, v)
+    if ss is not None:
+        m.setdefault("fotos_sessao", fs)
+    m["t3"] = 1
+    met_escreve(dia, m)
+    return m
 
 
 def met_v2(dia, ss, evs):
@@ -13922,6 +14155,10 @@ def met_v2(dia, ss, evs):
             # R4: quem confirmou fica em por_confirmador, nunca misturado com o por_vendedor da v1 (vendas e faturamento)
             nome = _nome_pessoa(v["pagar_por"]) or _nome_pessoa(c.get("vendedor")) or "sem nome"
             h_add(out["por_confirmador"].setdefault(nome, {}).setdefault("pagamento_s", h_novo()), d)
+    t3, fs = met_t3(ss, evs)
+    tempos.update(t3)
+    out["fotos_sessao"] = fs
+    out["t3"] = 1
     out["entradas"] = entradas_dia(dia)
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     out["selfies"] = selfies_dia(dia)
@@ -14478,9 +14715,10 @@ def _migra_dia(dia, arq):
             ss = None
     v2 = met_v2(dia, ss, _ev_ler(dia))
     if ss is None:                                   # sem arquivo de sessões: não inventa tempos de clique nem de câmera
-        for k in ("clique_checkout_s", "transferencia_s"):
+        for k in ("clique_checkout_s", "transferencia_s", "fotografia_s"):
             v2["tempos"].pop(k, None)
         v2.pop("por_fotografo", None)
+        v2.pop("fotos_sessao", None)
     met_v2_junta(m, v2, so_acrescenta=True)
     m["migrado"] = True
     met_escreve(dia, m)
@@ -14575,7 +14813,7 @@ TREINO_QUAL_MOTIVOS = ("desfocada", "olhos", "cortada", "semrosto", "estourada",
 TREINO_CAMPOS = frozenset(("pid", "v", "ponto", "ia", "qual", "duvida", "obs", "base_em"))
 TREINO_MODOS = ("misto", "ia", "qualidade", "duvidas")   # 18/11: duvidas = as mais perto do limiar do reconhecimento
 TREINO_ANALISE = ("desligada", "medir", "ligada")
-TREINO_CFG_PADRAO = {"ponto": "desligada", "exposicao": "desligada"}
+TREINO_CFG_PADRAO = {"ponto": "desligada", "exposicao": "desligada", "bases": "melhores"}
 TREINO_DIAS = 60
 TREINO_OBS_MAX = 200
 _re_treino_slug = re.compile(r"^[a-z][a-z0-9_]{0,23}$")
@@ -14965,6 +15203,7 @@ def treino_gravar(quem, corpo):
             db.close()
     _treino_n["t"] = 0.0
     _cena_base_t[0] = time.time()          # 18/11: rótulo novo muda a versão do Só medir (o Ligada usa o congelado)
+    base_humano_poe(v["pid"], (v["ia"] or {}).get("serve"))   # 24/11 (bases melhores): "serve" na memória, para a nota
     return 200, {"ok": True, "doc": doc}
 
 
@@ -14975,6 +15214,7 @@ def treino_lgpd(pids):
     pids = [p for p in pids if pid_ok(p)]
     if not pids:
         return falhas
+    base_lgpd(pids)                        # 24/11: caches da nota da base (só memória; sai mesmo se o banco falhar)
     try:
         with treino_lock:
             db = treino_db()
@@ -15024,8 +15264,13 @@ def treino_cfg_valida(j):
     pv = j.get("ponto_versao")
     if pv is not None and not (isinstance(pv, str) and _re_cena_versao.match(pv)):
         return None
+    bs = j.get("bases")                    # 24/11 (bases melhores): "melhores" | "primeiras"; ausente (documento antigo) = melhores
+    if bs is None:
+        bs = "melhores"
+    if not isinstance(bs, str) or bs not in ("melhores", "primeiras"):
+        return None
     # 23/11 (AF-D5): exposicao_ok = a exposição foi ligada pelo servidor passando no LUZ_CRIT (treino_cfg_gravar); só vale com ligada
-    return {"ponto": j["ponto"], "exposicao": j["exposicao"], "ponto_versao": pv if j["ponto"] == "ligada" else None,
+    return {"ponto": j["ponto"], "exposicao": j["exposicao"], "bases": bs, "ponto_versao": pv if j["ponto"] == "ligada" else None,
             "exposicao_ok": j.get("exposicao_ok") is True and j["exposicao"] == "ligada"}
 
 
@@ -15099,11 +15344,14 @@ def treino_cfg():
 
 
 def treino_cfg_gravar(corpo, quem):
-    """POST /treino/config {ponto?, exposicao?, forcar?}: muda uma das análises (ou as duas). por = usuário da sessão (a rota
-    exige configuracao.u). forcar (só com ponto "ligada"): liga o reconhecimento mesmo abaixo do critério (Eduardo, 18/11),
-    com a linha no liga_log. -> (status, resposta)"""
-    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"ponto", "exposicao", "forcar"}:
+    """POST /treino/config {ponto?, exposicao?, bases?, forcar?}: muda uma das análises (ou as duas). por = usuário da sessão
+    (a rota exige configuracao.u). forcar (só com ponto "ligada"): liga o reconhecimento mesmo abaixo do critério (Eduardo,
+    18/11), com a linha no liga_log. bases (24/11): "melhores" | "primeiras"; pedido sem o campo (aba antiga do app) mantém o
+    valor gravado. -> (status, resposta)"""
+    if not isinstance(corpo, dict) or not corpo or set(corpo) - {"ponto", "exposicao", "forcar", "bases"}:
         return 400, {"ok": False, "error": "campo"}
+    if "bases" in corpo and (not isinstance(corpo["bases"], str) or corpo["bases"] not in ("melhores", "primeiras")):
+        return 400, {"ok": False, "error": "valor"}
     forcar = corpo.get("forcar", False)
     if not isinstance(forcar, bool) or (forcar and corpo.get("ponto") != "ligada"):
         return 400, {"ok": False, "error": "valor"}
@@ -15111,6 +15359,8 @@ def treino_cfg_gravar(corpo, quem):
     novo = {"ponto": corpo.get("ponto", de["ponto"]), "exposicao": corpo.get("exposicao", de["exposicao"])}
     if treino_cfg_valida(novo) is None:
         return 400, {"ok": False, "error": "valor"}
+    bases_de = de.get("bases") or "melhores"
+    novo["bases"] = corpo.get("bases", bases_de)
     expo_ok = bool(de.get("exposicao_ok")) and novo["exposicao"] == "ligada"
     if novo["exposicao"] == "ligada" and de["exposicao"] != "ligada":   # 23/11 (AF-D5): Ligada só passando na calibração da luz
         crit_l = luz_medida(forcar=True)["criterio"]
@@ -15133,9 +15383,9 @@ def treino_cfg_gravar(corpo, quem):
             if falta_rot:
                 return 409, {"ok": False, "error": "rotulos", "falta": falta_rot}
         if (de["ponto"] == "ligada" and base_ok is not None and base_ok["versao"] == de.get("ponto_versao")
-                and bool(de.get("abaixo")) == (not passa) and novo["exposicao"] == de["exposicao"]):
+                and bool(de.get("abaixo")) == (not passa) and novo["exposicao"] == de["exposicao"] and novo["bases"] == bases_de):
             # revisão de segurança: Ligada de novo com a mesma versão congelada e a mesma situação: nada muda, nada no liga_log
-            r = {"ok": True, "analise": {"ponto": de["ponto"], "exposicao": de["exposicao"]}, "por": de.get("por"), "em": de.get("em"),
+            r = {"ok": True, "analise": {"ponto": de["ponto"], "exposicao": de["exposicao"]}, "bases": bases_de, "por": de.get("por"), "em": de.get("em"),
                  "abaixo": de.get("abaixo"), "ponto_versao": de.get("ponto_versao"), "igual": True,
                  "congelados": cena_congelados(de.get("ponto_versao"))}
             if not cena_modelo_ok()[0]:
@@ -15171,10 +15421,10 @@ def treino_cfg_gravar(corpo, quem):
             print("  treino: versões antigas do reconhecimento não apagadas agora (%s)" % type(ex).__name__)
     _treino_cfg.update(t=time.time(), v=dict(v))
     _cena_base_t[0] = time.time()
-    print("  treino: análise do ponto %s -> %s%s%s, da exposição %s -> %s · por %s" % (
+    print("  treino: análise do ponto %s -> %s%s%s, da exposição %s -> %s, bases %s -> %s · por %s" % (
         de["ponto"], v["ponto"], " (%s)" % pv if pv else "", " ABAIXO DA META" if abaixo and corpo.get("ponto") == "ligada" else "",
-        de["exposicao"], v["exposicao"], v["por"] or "?"))
-    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "por": v["por"], "em": v["em"], "abaixo": abaixo,
+        de["exposicao"], v["exposicao"], bases_de, v["bases"], v["por"] or "?"))
+    r = {"ok": True, "analise": {"ponto": v["ponto"], "exposicao": v["exposicao"]}, "bases": v["bases"], "por": v["por"], "em": v["em"], "abaixo": abaixo,
          "congelados": cena_congelados(pv) if v["ponto"] == "ligada" else None}
     if pv:
         r["ponto_versao"] = pv
@@ -15189,7 +15439,7 @@ def _treino_desfaz(de, pv, antes):
     falhou = []
     if de is not None:
         try:
-            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "ponto_versao", "por", "em", "abaixo", "exposicao_ok")})
+            _treino_cfg_escreve({k: de.get(k) for k in ("ponto", "exposicao", "bases", "ponto_versao", "por", "em", "abaixo", "exposicao_ok")})
             _treino_cfg.update(t=time.time(), v=dict(de))
         except Exception as ex:
             _treino_cfg.update(t=0.0)
@@ -15223,7 +15473,14 @@ def treino_status():
             pass
         _treino_n.update(t=agora, n=n)
     c = treino_cfg()
-    return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": cena_status(), "ajuste": None}
+    # 24/11 (bases melhores): o modo que vale agora (ETERNA_BASES=primeiras vence a chave) e a contagem desde a partida; só números
+    bs = {"modo": "primeiras" if BASES_FORCA == "primeiras" or c.get("bases") == "primeiras" else "melhores",
+          "levas": base_st["levas"], "trocadas": base_st["trocadas"], "sem_medida": base_st["sem_medida"],
+          "erros": base_st["erros"]}
+    if BASES_FORCA == "primeiras":
+        bs["forcada"] = True
+    return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": cena_status(),
+            "ajuste": None, "bases": bs}
 
 
 # ---------- Luz da foto: escura ou estourada (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md, AF-D4 a AF-D6) ----------
@@ -15288,9 +15545,17 @@ def _luz_cinza(img, x0=0, y0=0, x1=None, y1=None, passo=1):
     return g.astype(np.uint8)
 
 
+def _luz_centro(w, h):
+    """A região central onde fica a pessoa (24/11, Lixeira da IA): 30% a 70% da largura, 25% a 90% da altura -> (x0, y0, x1, y1)."""
+    x0, y0 = int(w * 0.3), int(h * 0.25)
+    return x0, y0, max(x0 + 1, int(w * 0.7)), max(y0 + 1, int(h * 0.9))
+
+
 def luz_medir(img, caixas=None, src="original"):
-    """img BGR (numpy) e caixas dos rostos (x, y, l, a) nas coordenadas dela -> {v, src, q:{med,p5,p95,alto,baixo},
-    r:{med,p95,alto,n}|None}. q = os 60% centrais do quadro (o céu fica de fora); r = o maior rosto com a caixa 10% maior."""
+    """img BGR (numpy) e caixas dos rostos (x, y, l, a) nas coordenadas dela -> {v, src, q:{med,p5,p95,alto,baixo,c_med},
+    r:{med,p95,alto,n}|None}. q = os 60% centrais do quadro (o céu fica de fora); r = o maior rosto com a caixa 10% maior.
+    q.c_med (24/11) = MÉDIA aritmética da luminância na região central (_luz_centro), com 1 casa; as medidas gravadas antes
+    não têm a chave (quem lê trata a falta como "não se sabe"; LUZ_V não sobe para a varredura não medir tudo de novo)."""
     np = _vis_np()
     h, w = img.shape[:2]
     y0, y1 = int(h * 0.2), max(int(h * 0.2) + 1, int(h * 0.8))
@@ -15298,6 +15563,9 @@ def luz_medir(img, caixas=None, src="original"):
     passo = 2 if (y1 - y0) * (x1 - x0) > 2_000_000 else 1     # o histograma não precisa de todos os pixels
     c = _luz_cinza(img, x0, y0, x1, y1, passo)
     q = _luz_hist(np.bincount(c.ravel(), minlength=256).tolist())
+    if q:
+        cx0, cy0, cx1, cy1 = _luz_centro(w, h)
+        q["c_med"] = round(float(_luz_cinza(img, cx0, cy0, cx1, cy1, passo).mean()), 1)
     r = None
     cs = [b for b in (caixas or []) if b and len(b) >= 4 and b[2] > 0 and b[3] > 0]
     if cs:
@@ -15322,9 +15590,20 @@ def luz_medir_pil(caminho):
         except Exception:
             pass
         g = im.convert("L")
+        try:        # 24/11: a região central (c_med) não é simétrica na altura; o Pillow não gira pelo EXIF sozinho (o cv2.imread gira)
+            giro = {3: Image.ROTATE_180, 6: Image.ROTATE_270, 8: Image.ROTATE_90}.get(im.getexif().get(0x0112))
+            if giro is not None:
+                g = g.transpose(giro)
+        except Exception:
+            pass
         w, h = g.size
-        g = g.crop((int(w * 0.2), int(h * 0.2), max(int(w * 0.2) + 1, int(w * 0.8)), max(int(h * 0.2) + 1, int(h * 0.8))))
-        return {"v": LUZ_V, "src": "original", "q": _luz_hist(g.histogram()[:256]), "r": None}
+        q = _luz_hist(g.crop((int(w * 0.2), int(h * 0.2), max(int(w * 0.2) + 1, int(w * 0.8)), max(int(h * 0.2) + 1, int(h * 0.8)))).histogram()[:256])
+        if q:
+            hc = g.crop(_luz_centro(w, h)).histogram()[:256]
+            nc = sum(hc)
+            if nc:
+                q["c_med"] = round(sum(i * x for i, x in enumerate(hc)) / nc, 1)
+        return {"v": LUZ_V, "src": "original", "q": q, "r": None}
 
 
 def luz_medir_arquivo(caminho, det=None):
@@ -15828,10 +16107,16 @@ def luz_medida(forcar=False, lim=None):
 # a foto fica fora da lixeira. ETERNA_LIXEIRA=0 desliga a medida e qualquer efeito. Nada sai do servidor.
 LX_V = 1
 LX_MOTIVOS = ("escura", "estourada", "desfocada", "sem_ninguem")      # ordem fixa: a tela mostra o primeiro
-LX_LIM_PADRAO = {"esc_rosto_med": 22, "esc_quadro_med": 18, "esc_quadro_baixo": 60,
-                 "est_rosto_p95": 254, "est_rosto_alto": 40, "est_quadro_med": 235, "est_quadro_alto": 50,
+# 24/11 (Eduardo: foto toda lavada e contraluz em silhueta ficavam fora). Nas 571 fotos medidas no servidor, a medida do
+# quadro nunca chegava a 235, então "estourada pelo quadro" não disparava: est_quadro_med 235 -> 190 e est_quadro_alto 50 -> 30
+# (med = mediana e alto = % de pixels >= 250, os dois nos 60% centrais), agora COM ou SEM rosto. "Escura pelo centro": esc_centro_med = média da região
+# central (q.c_med) abaixo de 30, quando não há rosto medido ou o rosto tem mediana abaixo de LX_ESC_CENTRO_ROSTO.
+LX_LIM_PADRAO = {"esc_rosto_med": 22, "esc_quadro_med": 18, "esc_quadro_baixo": 60, "esc_centro_med": 30,
+                 "est_rosto_p95": 254, "est_rosto_alto": 40, "est_quadro_med": 190, "est_quadro_alto": 30,
                  "nit_rosto": 25, "nit_quadro_com_rosto": 25, "nit_quadro": 20, "sem_brutos": 0}
-LX_FAIXAS = {"esc_rosto_med": (1, 80), "esc_quadro_med": (1, 80), "esc_quadro_baixo": (1, 100),
+LX_LIM_ANTIGO = {"est_quadro_med": 235, "est_quadro_alto": 50}   # o padrão até a v99.47.5: gravado assim = ninguém mexeu = vale o padrão novo
+LX_ESC_CENTRO_ROSTO = 40     # rosto com mediana a partir daqui está iluminado (flash, roupa preta): o centro escuro não conta
+LX_FAIXAS = {"esc_rosto_med": (1, 80), "esc_quadro_med": (1, 80), "esc_quadro_baixo": (1, 100), "esc_centro_med": (1, 80),
              "est_rosto_p95": (200, 255), "est_rosto_alto": (1, 100), "est_quadro_med": (150, 255), "est_quadro_alto": (1, 100),
              "nit_rosto": (1, 1000), "nit_quadro_com_rosto": (1, 1000), "nit_quadro": (1, 1000), "sem_brutos": (0, 1)}
 LX_CRIT = {"n": 20, "precisao": 0.95}
@@ -15873,12 +16158,12 @@ def _lx_nitidez(cinza):
 def lx_medir(img, caixas, n, nb, luz=None):
     """img BGR (numpy, a do leitor), caixas dos rostos (x, y, l, a) nas coordenadas dela, n = rostos de tamanho normal, nb =
     rostos achados em qualquer tamanho (None = não se sabe), luz = medida do luz_medir (sem ela, mede aqui). -> dados (só
-    números): {v, nq, nr, n, nb, luz:{q:{med,alto,baixo,p95}, r:{med,p95,alto}|None}}. nq/nr = variância do Laplaciano do
+    números): {v, nq, nr, n, nb, luz:{q:{med,alto,baixo,p95,c_med}, r:{med,p95,alto}|None}}. nq/nr = variância do Laplaciano do
     quadro central (60%, lado maior a LX_QUADRO_LADO) e do maior rosto (caixa 10% maior, na mesma escala do quadro); None sem
     OpenCV (falha aberta: sem veredito de desfoque)."""
     luz = luz if isinstance(luz, dict) else luz_medir(img, caixas)
     q, r = luz.get("q") or None, luz.get("r") or None
-    lz = {"q": {k: q.get(k) for k in ("med", "alto", "baixo", "p95")} if isinstance(q, dict) else None,
+    lz = {"q": {k: q.get(k) for k in ("med", "alto", "baixo", "p95", "c_med")} if isinstance(q, dict) else None,
           "r": {k: r.get(k) for k in ("med", "p95", "alto")} if isinstance(r, dict) else None}
     nq = nr = None
     cv2 = _cv.get("cv2")
@@ -15906,8 +16191,9 @@ def lx_medir(img, caixas, n, nb, luz=None):
 
 def lx_classe(dados, lim=None):
     """dados (lx_medir, ou só {luz} para as fotos medidas antes) -> lista de motivos na ordem de LX_MOTIVOS (vazia = ok).
-    Campo que falta não dá motivo (falha aberta)."""
-    lim = lim or LX_LIM_PADRAO
+    Campo que falta não dá motivo (falha aberta): medida antiga sem q.c_med não dispara a "escura pelo centro"; lim antigo
+    sem um limite usa o do padrão."""
+    lim = dict(LX_LIM_PADRAO, **lim) if lim else LX_LIM_PADRAO
     if not isinstance(dados, dict):
         return []
     out = set()
@@ -15922,10 +16208,20 @@ def lx_classe(dados, lim=None):
         elif isinstance(q, dict) and q.get("med") is not None:
             if q["med"] < lim["esc_quadro_med"] and q["baixo"] >= lim["esc_quadro_baixo"]:
                 out.add("escura")
-            if q["med"] >= lim["est_quadro_med"] and q["alto"] >= lim["est_quadro_alto"]:
-                out.add("estourada")
     except (KeyError, TypeError):
         pass
+    if isinstance(q, dict):
+        try:        # 24/11: quadro lavado (estourada pelo quadro), com ou sem rosto
+            if q["med"] >= lim["est_quadro_med"] and q["alto"] >= lim["est_quadro_alto"]:
+                out.add("estourada")
+        except (KeyError, TypeError):
+            pass
+        try:        # 24/11: contraluz (escura pelo centro), só sem rosto medido ou com o rosto também escuro
+            com_rosto = isinstance(r, dict) and r.get("med") is not None
+            if q.get("c_med") is not None and (not com_rosto or r["med"] < LX_ESC_CENTRO_ROSTO) and q["c_med"] < lim["esc_centro_med"]:
+                out.add("escura")
+        except (KeyError, TypeError):
+            pass
     nq, nr = dados.get("nq"), dados.get("nr")
     if isinstance(nq, (int, float)):
         if isinstance(nr, (int, float)):
@@ -15980,7 +16276,11 @@ def lx_cfg():
                 finally:
                     db.close()
             if r:
-                v = lx_cfg_valida(json.loads(r[0]))
+                j = json.loads(r[0])
+                lj = j.get("lim") if isinstance(j, dict) else None
+                if isinstance(lj, dict) and all(lj.get(k) == x for k, x in LX_LIM_ANTIGO.items()):
+                    j = dict(j, lim={k: x for k, x in lj.items() if k not in LX_LIM_ANTIGO})   # 24/11: padrão antigo gravado = padrão novo
+                v = lx_cfg_valida(j)
     except Exception:
         v = _lx_cfg["v"]
     if v and v["modo"] == "ligada" and not LX_LIGADO_PRONTO:
@@ -16038,6 +16338,7 @@ def lx_cfg_gravar(corpo, quem):
 def lx_acrescenta(pid, dia, dados, ms=None):
     """Veredito na chegada (D3): os limites de agora decidem (da memória, lx_cfg_mem: roda no leitor de rostos). Vai para a fila
     de gravação; com motivo, também para a memória da contagem. ms = o tempo da medida (média no /status.lixeira)."""
+    base_sinais_poe(pid, dados)          # 24/11 (bases melhores): nitidez e rostos na memória, para a nota da base
     if not LX_ON or not isinstance(dados, dict):
         return []
     mot = lx_classe(dados, lx_cfg_mem()["lim"])
@@ -16137,6 +16438,7 @@ def lx_mem_carregar():
 
 def lx_lgpd_mem(pids):
     """LGPD: a foto sai da memória e da fila (as linhas saem pelo treino_lgpd)."""
+    base_lgpd(pids)                      # 24/11: e dos caches da nota da base
     with lx_lock:
         for p in pids:
             lx_novas.pop(p, None)
@@ -17036,6 +17338,134 @@ CENA_CRIT = {"dias": 3, "fotografos": 3, "precisao": 0.98, "cobertura": 0.85, "o
 # Base boa (Eduardo, 18/11): gramado reconhecido, pessoa sem corte na lateral nem no alto e luz boa. Limites a calibrar no estádio.
 BASE_LUZ_MED_MIN = 40.0    # mediana da luminância (0 a 255) na pessoa abaixo disto: escura demais
 BASE_LUZ_P95_MAX = 254.0   # p95 da luminância no rosto (sem rosto, na pessoa) a partir disto: estourada
+# 24/11 (plano docs/planos/2026-11-24-bases-melhores.md): as bases são as N de MAIOR NOTA entre as que passam nos vetos nas
+# BASE_POOL_MAX primeiras fotos de gramado da leva. Começa pelas N primeiras (como antes); uma posterior só entra no lugar da
+# mais fraca com BASE_NOTA_MARGEM pontos a mais. config/treino.bases: "melhores" (padrão) | "primeiras" (a regra de antes);
+# ETERNA_BASES=primeiras vence tudo (como o ETERNA_MONTAGEM=0). Os pesos são provisórios (nada foi medido no estádio).
+BASE_POOL_MAX = 8
+BASE_NOTA_MARGEM = 10.0
+BASES_MODOS = ("melhores", "primeiras")
+BASES_FORCA = (os.environ.get("ETERNA_BASES") or "").strip().lower()
+BASE_SINAIS_MAX = 20000
+BASE_HUMANO_MAX = 20000
+base_lock = threading.Lock()               # só para gravar nos dois caches (folha: nunca pega outro lock com ele na mão)
+base_sinais = collections.OrderedDict()    # pid -> {"nq", "nr", "n", "nb"} do lx_medir (hoje e ontem na partida; teto BASE_SINAIS_MAX)
+base_humano = collections.OrderedDict()    # pid -> True | False: "serve para os fundos de IA" marcado no Treino (teto BASE_HUMANO_MAX)
+base_st = {"levas": 0, "trocadas": 0, "sem_medida": 0, "erros": 0}   # /status.treino.bases, desde a partida (só com o sess_lock)
+
+
+def bases_modo():
+    """O modo da escolha das bases, só da memória (treino_cfg_mem): pode rodar com o sess_lock."""
+    if BASES_FORCA == "primeiras":
+        return "primeiras"
+    return "primeiras" if treino_cfg_mem().get("bases") == "primeiras" else "melhores"
+
+
+def base_sinais_poe(pid, dados):
+    """Guarda a nitidez e a contagem de rostos da foto (lx_medir) para a nota da base. Só números."""
+    if not isinstance(pid, str) or not isinstance(dados, dict):
+        return
+    v = {k: dados.get(k) for k in ("nq", "nr", "n", "nb")}
+    with base_lock:
+        base_sinais.pop(pid, None)
+        base_sinais[pid] = v
+        while len(base_sinais) > BASE_SINAIS_MAX:
+            base_sinais.popitem(last=False)
+
+
+def base_humano_poe(pid, serve):
+    """A resposta do Treino "serve para os fundos de IA" (True | False; outra coisa tira a marca)."""
+    if not isinstance(pid, str):
+        return
+    with base_lock:
+        base_humano.pop(pid, None)
+        if isinstance(serve, bool):
+            base_humano[pid] = serve
+            while len(base_humano) > BASE_HUMANO_MAX:
+                base_humano.popitem(last=False)
+
+
+def base_lgpd(pids):
+    """LGPD: a foto sai dos dois caches da nota."""
+    with base_lock:
+        for p in pids:
+            base_sinais.pop(p, None)
+            base_humano.pop(p, None)
+
+
+def base_mem_carregar():
+    """Na partida: os sinais (lixeira.dados) e as marcações do Treino de hoje e de ontem, das fotos ainda na biblioteca."""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    ds = (_ff_hoje(time.time() - 86400), _ff_hoje())
+    with treino_lock:
+        db = treino_db()
+        try:
+            rs = db.execute("select pid, dados from lixeira where dia in (?, ?) order by dia, em", ds).fetchall()
+            hs = db.execute("select pid, dados from rotulo where dia in (?, ?)", ds).fetchall()
+        finally:
+            db.close()
+    with lock:
+        rs = [r for r in rs if r[0] in lib]
+        hs = [r for r in hs if r[0] in lib]
+    n = 0
+    for p, txt in rs[-BASE_SINAIS_MAX:]:
+        try:
+            base_sinais_poe(p, json.loads(txt))
+            n += 1
+        except (ValueError, TypeError):
+            pass
+    for p, txt in hs[-BASE_HUMANO_MAX:]:
+        try:
+            ia = (json.loads(txt) or {}).get("ia")
+            base_humano_poe(p, ia.get("serve") if isinstance(ia, dict) else None)
+        except (ValueError, TypeError, AttributeError):
+            pass
+    return n
+
+
+def _base_num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def base_nota(pid):
+    """A nota da foto como base, 0 a 100 (mais 100 se o Treino marcou "serve"); None = o Treino marcou "não serve" (fora).
+    Função pura, só memória (cena_mem, base_sinais, base_humano): pode rodar com o sess_lock, nunca abre banco. Sinal ausente
+    vale metade do peso. Corpo 30 (do joelho para cima 30, pernas inteiras encostando embaixo 20, chão sob os pés 0), luz 25
+    (mediana de 90 a 170 vale tudo, em linha reta até 0 em 40 e em 230; menos 10 com p95 de 245 para cima), nitidez 20 (rosto,
+    sem ele o quadro: 150 vale tudo, 0 em 25), gente atrás 15 (rostos pequenos demais: 0 = 15, 1 = 8, mais = 0), rosto lido 10."""
+    h = base_humano.get(pid)
+    if h is False:
+        return None
+    rec = (cena_mem.get(pid) or {}).get("rec")
+    rec = rec if isinstance(rec, dict) else {}
+    s = base_sinais.get(pid) or {}
+    nota = 100.0 if h is True else 0.0
+    tr = rec.get("trunc")
+    if not isinstance(tr, bool):
+        nota += 15.0
+    elif tr:
+        nota += 20.0 if rec.get("pernas") else 30.0
+    luz = rec.get("luz") if isinstance(rec.get("luz"), dict) else {}
+    med, p95 = luz.get("med"), luz.get("p95")
+    if _base_num(med):
+        f = (med - 40.0) / 50.0 if med < 90 else (1.0 if med <= 170 else (230.0 - med) / 60.0)
+        l = 25.0 * min(1.0, max(0.0, f))
+        if _base_num(p95) and p95 >= 245:
+            l = max(0.0, l - 10.0)
+        nota += l
+    else:
+        nota += 12.5
+    nit = s.get("nr") if _base_num(s.get("nr")) else s.get("nq")
+    nota += 20.0 * min(1.0, max(0.0, (nit - 25.0) / 125.0)) if _base_num(nit) else 10.0
+    n, nb = s.get("n"), s.get("nb")
+    if _base_num(n) and _base_num(nb):
+        atras = nb - n
+        nota += 15.0 if atras <= 0 else (8.0 if atras == 1 else 0.0)
+    else:
+        nota += 7.5
+    nota += (10.0 if n >= 1 else 0.0) if _base_num(n) else 5.0
+    return round(nota, 1)
 CENA_SINAIS = ("verde", "flash", "cadeiras", "dourado")
 CENA_SINAL_ALVO = {"verde": ("gramado", None), "flash": ("gramado", "chute"), "cadeiras": ("arquibancada", None), "dourado": ("trofeu", None)}
 
@@ -17048,6 +17478,15 @@ cena_filho = {"p": None, "fila": None, "seq": 0, "criado": None}
 cena_q = collections.OrderedDict()         # pid -> (prio, seq, thumb, dia); a mais antiga sai acima de CENA_FILA_MAX
 _cena_seq = itertools.count()
 cena_mem = {}                              # pid -> {"r", "c", "v", "g", "rec", "dia"} de hoje e ontem
+
+
+def _lib_ponto(pid):
+    """Ponto da foto para a biblioteca (24/11): "chute" quando o reconhecimento diz chute a gol com confiança, "-" quando já
+    leu e é outro ponto (ou não deu para ler), "" enquanto ainda não leu. O navegador usa para não ajustar o chute a gol."""
+    c = cena_mem.get(pid)
+    if not c:
+        return ""
+    return "chute" if c.get("r") == "chute" and float(c.get("c") or 0) >= CENA_LIMIAR else "-"
 cena_pend = {}                             # card -> hora em que fechou com cena_pendente (só com o sess_lock)
 cena_parar = threading.Event()             # só os testes ligam: o cena_loop termina
 _cena_base = {}                            # chave -> {"t", "base"}
@@ -18244,6 +18683,7 @@ def cena_completa(agora=None):
             if est == "ok" and not (set(bases) & pagas) and not _vis_ja_tem_ia(card):
                 x["ia"] = list(bases)
                 x["ia_regra"] = {"n": nn, "motivo": None, "reaberta": "cena"}
+                _sess_ia_esc(x)
                 for p in bases:
                     sess_ia_novos.append((p, REC_PRIO_IA))
             elif est == "ok" and _vis_ja_tem_ia(card):
@@ -19411,6 +19851,7 @@ ROTAS = (
     # posto + origem local; o POST, X-Eterna, 2 por minuto, corpo até 1 KB e confirma == "ZERAR"
     ("GET", "/zerar/previa", "sessao", ("configuracao.u",)), ("POST", "/zerar/fase-teste", "sessao", ("configuracao.u",)),
     ("POST", "/compra-online/config", "sessao", ("configuracao.u",)),   # 24/11: liga e desliga a compra online (vai para a Nuvem)
+    ("POST", "/vendas/canceladas", "sessao", ("venda.c", "venda.u", "quiosque.c", "financeiro.d")),   # 24/11: cópia da venda cancelada
     ("POST", "/rostos/projecao", "teste", ()), ("GET", "/nuvem/link", "teste", ()),
     # 24/11: Lixeira da IA (Curadoria). Ver e "Não é ruim" pelo módulo qualidade; a chave só o Admin (conferido no lixeira_post)
     ("GET", "/lixeira", "sessao", ("qualidade.r",)),
@@ -21265,6 +21706,24 @@ class H(BaseHTTPRequestHandler):
             return self.js({"ok": False, "error": "erro no servidor"}, 500, nostore=True)
         return self.js(r, st, nostore=True)
 
+    def vendas_canceladas_post(self):
+        """24/11: POST /vendas/canceladas {tipo: foto|pedido, id, no, motivo, em, dados}: o app manda a cópia da venda que acabou de
+        cancelar (e as canceladas de antes, uma vez). Origem local, X-Eterna, 120 por minuto por pessoa, até ESTADO_MAX."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "vcanc", 120):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(ESTADO_MAX + 4096)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        tipo, dados = body.get("tipo"), body.get("dados")
+        if tipo not in ("foto", "pedido") or not isinstance(dados, dict):
+            return self.js({"ok": False, "error": "dados"}, 400)
+        if not venda_cancelada_arquiva(tipo, body.get("id"), body.get("no"), body.get("motivo"), body.get("por") or quem, dados, body.get("em")):
+            return self.js({"ok": False, "error": "dados"}, 400)
+        return self.js({"ok": True}, nostore=True)
+
     def compra_online_post(self):
         """24/11: POST /compra-online/config {ligada} (configuracao.u, pela tabela ROTAS). Origem local, X-Eterna, 6 por minuto
         por pessoa, corpo até 1 KB. Repassa à Nuvem com o segredo do ponto e responde a chave como a Nuvem gravou."""
@@ -22763,7 +23222,8 @@ class H(BaseHTTPRequestHandler):
                 out.append({"id": pid, "name": name, "day": day, "t": u, "size": st.st_size,
                             "origem": m.get("o") or "", "via": m.get("s") or "",
                             "cap": m.get("cap") or 0, "serie": m.get("serie") or "", "autor": m.get("autor") or "",
-                            "dono": m.get("dono") or "", "modelo": m.get("modelo") or ""})
+                            "dono": m.get("dono") or "", "modelo": m.get("modelo") or "",
+                            "pt": _lib_ponto(pid)})
             out.sort(key=lambda x: x["t"])
             if meta_dirty[0]:
                 meta_dirty[0] = False
@@ -22871,6 +23331,8 @@ class H(BaseHTTPRequestHandler):
             return self.lixeira_post(u.path)
         if u.path == "/compra-online/config":
             return self.compra_online_post()
+        if u.path == "/vendas/canceladas":
+            return self.vendas_canceladas_post()
         if u.path == "/ponto/entradas":
             return self.entradas_post()
         if u.path == "/ponto/montagens":
@@ -23102,6 +23564,10 @@ def main():
         lx_mem_carregar()                                         # e as fotos dos últimos 7 dias (LX_MENU_DIAS), para a contagem do menu
     except Exception as ex:
         print("  lixeira: memória não carregada (%s)" % type(ex).__name__)
+    try:
+        base_mem_carregar()                                       # 24/11 (bases melhores): sinais e marcações de hoje e ontem
+    except Exception as ex:
+        print("  bases: memória não carregada (%s)" % type(ex).__name__)
     threading.Thread(target=lx_grava_loop, daemon=True).start()    # 24/11: vereditos da Lixeira da IA em lote no treino.db
     threading.Thread(target=lx_loop, daemon=True).start()          # 24/11: limpeza da madrugada da Lixeira da IA
     # 23/11: classificador de poses de uma partida anterior não segura a placa. Roda aqui, na thread do main e ANTES do

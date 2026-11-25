@@ -290,3 +290,14 @@ Decisão do Ronaldo: cada pessoa entra com a própria conta; contas genéricas (
   Excluir a conta Supervisão só depois de cadastrar os supervisores: ela é o modelo.
 
 A conta `hello@eterna.photo` do sistema pode ser excluída: o e-mail de nova senha sai pela nuvem (SES, remetente `MailFrom` da stack), sem depender dela.
+
+## Vendas canceladas (24/11)
+
+A venda cancelada sai das telas e das contagens, mas nada é apagado: a cópia inteira fica em `~/Eterna/ponto/estado.db`, tabela `venda_cancelada` (`tipo` foto, pedido ou ativacao; `id`; `no` = número da venda; `em`; `por`; `motivo`; `dados` = JSON da venda no momento do cancelamento; `arquivada_em`). Para achar uma:
+
+```
+sqlite3 ~/Eterna/ponto/estado.db "select tipo, id, no, em, por, motivo from venda_cancelada order by em desc limit 50"
+sqlite3 ~/Eterna/ponto/estado.db "select dados from venda_cancelada where no = 'P14-003'"
+```
+
+Recuperar uma venda de foto (`foto`): a sessão continua no SIM com `status` cancelada; volta a paga com `status: 'paga'` e sem o campo `cancelada`, e as compradas voltam à galeria quando ela for publicada de novo. Ativação: `update ativ_venda set situacao = null, cancel_motivo = null, cancel_por = null, cancel_em = null where origem = 'eterna' and id = ?` no `vendas.db` (a situação ativa é vazia). Sempre com o pedido de quem tem o Financeiro e registro no git.
