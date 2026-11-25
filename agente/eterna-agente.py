@@ -14596,12 +14596,52 @@ def pessoas_rostos(dia):
     return {"ok": True, "dia": dia, "pessoas": out, "sem_identificar": sem_id}
 
 
+PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronaldo): a contagem do dia roda às 19h, com o tour encerrado
+_pessoas_cache = {}
+_pessoas_lock = threading.Lock()
+
+
 def pessoas_dia(dia):
+    """A contagem de pessoas do dia, guardada: calculada uma vez por dia e por uma tarefa só. A de hoje só sai pelo
+    pessoas_loop depois das PESSOAS_HORA; antes disso (e enquanto outra conta) volta None, sem ocupar o processador."""
+    if dia in _pessoas_cache:
+        return _pessoas_cache[dia]
+    if dia >= _ff_hoje() or not _pessoas_lock.acquire(blocking=False):
+        return None
+    try:
+        r = _pessoas_dia_calc(dia)
+        if r is not None:
+            _pessoas_cache[dia] = r
+        return r
+    finally:
+        _pessoas_lock.release()
+
+
+def pessoas_loop():
+    """25/11 (Ronaldo): "pode rodar por cron às 19h? o tour já acabou nesse horário". Uma vez por dia, depois das PESSOAS_HORA."""
+    while True:
+        time.sleep(60)
+        hoje = _ff_hoje()
+        if hoje in _pessoas_cache or time.localtime().tm_hour < PESSOAS_HORA or not _pessoas_lock.acquire(blocking=False):
+            continue
+        try:
+            t0 = time.time()
+            r = _pessoas_dia_calc(hoje, forcar=True)
+            if r is not None:
+                _pessoas_cache[hoje] = r
+                print("  pessoas de %s: %s (%.0f s)" % (hoje, r.get("pessoas"), time.time() - t0))
+        except Exception as e:
+            print("  pessoas de %s: falhou (%s)" % (hoje, e))
+        finally:
+            _pessoas_lock.release()
+
+
+def _pessoas_dia_calc(dia, forcar=False):
     """16/11 (Ronaldo: quantas pessoas abordamos?): quantas pessoas diferentes aparecem nas fotos do dia, agrupando os rostos
     lidos com o mesmo critério da busca por selfie (LIMITE). Só contagens: nenhuma imagem, rosto ou identificação sai daqui.
     Agrupamento guloso, do rosto maior para o menor, pelo centro de cada grupo; dois rostos da mesma foto nunca são a mesma
     pessoa. É estimativa: a mesma pessoa de perfil ou muito de longe pode virar duas, e a equipe aparece junto."""
-    if dia >= _ff_hoje():
+    if dia >= _ff_hoje() and not forcar:
         return None   # 25/11 (servidor travado às 13h): agrupar todos os rostos do dia ocupa o processador e trava selfie, venda e login; hoje fica sem a contagem de pessoas
     try:
         np, rows, boas = _pessoas_le(dia)
@@ -23684,6 +23724,7 @@ def main():
     print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta
     threading.Thread(target=mtg_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
+    threading.Thread(target=pessoas_loop, daemon=True).start()
     # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
     # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.
     try:
