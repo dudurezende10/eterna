@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.67.0 · 25/11 13:05"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.72.0 · 25/11 14:07"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1932,6 +1932,7 @@ async function caixaConfirm(){const c=state.caixa.session;if(simOf(c).status==='
   if(cortes){if(!can('galerias','u')){toast(TE('po_so_cortesia'));return;}const nota=(($('#cort-nota')||{}).value||'').trim().slice(0,200);
     cortInfo={motivo:($('#cort-mot')||{}).value||null,nota,por:state.user.email,porNome:state.user.name};}
   const nSel=(s.selected||[]).length||null;const prints=printsVenda(s.cart,nSel);const antes=JSON.stringify(SIM);const u=state.user;
+  if(vendaFaltaAvisa(vendaFalta({u,vendedor:u?{nome:u.name}:null,card:c,saleNo:no,meio:cortes?'cortesia':state.caixa.pay,total:cartTotal(cartComPreco(s.cart||[])),n:(s.cart||[]).length,posto:postoNome()})))return;
   const ab=dinAbertaDe(c);if(ab)dinFechar(ab.id,'substituida','pago_de_outro_jeito',u);
   s.cart=cartComPreco(s.cart);s.total=cartTotal(s.cart);s.nFotos=nSel||0;s.status='paga';s.payment=cortes?'Cortesia':state.caixa.pay;s.cortesia=cortInfo;s.paidAt=now().toISOString();s.prints=prints;delete s.caixaPor;delete s.caixaEm;
   s.vendaId=pvId();s.saleNo=s.saleNo||no;if(!s.seller&&state.posto.manual)s.seller=SELLERS[0];
@@ -2008,6 +2009,9 @@ function postoManualOn(){if(state.posto.manual)return;state.posto.manual=true;st
 function checkoutVoltar(){const sim=state.checkout.session?simOf(state.checkout.session):null;if(sim&&sim.status==='no checkout'){sim.status=DATA.sampled.find(x=>x.card===state.checkout.session)?'pronta':'fechada';saveSim();}state.checkout.session=null;state.checkout.step=1;state.fila.session=null;state.caixa.session=null;}
 state.pend={err:null,sel:null,passo:null};
 // confirma uma pendência (cartão, PIX ou dinheiro). Sem baixa de estoque (vai para a impressão, parte F). Galeria publicada aqui só em local/off.
+// 25/11 (Ronaldo): "não pode uma venda ser fechada com um parâmetro faltando". Lista o que falta; com algo faltando a venda não fecha.
+function vendaFalta(v){const ok=x=>x!=null&&String(x).trim()!=='';return [[!v.u||!ok(v.u.email)||!ok(v.u.name),'quem confirma (faça login)'],[!v.vendedor||!ok(v.vendedor.nome),'vendedor'],[!ok(v.card),'sessão'],[!ok(v.saleNo),'número da venda'],[!ok(v.meio),'forma de pagamento'],[typeof v.total!=='number'||!isFinite(v.total)||v.total<0,'valor'],[!(v.n>0),'fotos'],[!ok(v.posto),'posto']].filter(x=>x[0]).map(x=>x[1]);}
+function vendaFaltaAvisa(f){if(!f.length)return false;toast('Venda não fechada. Falta: '+f.join(', '));render();return true;}
 function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(r.escolha&&(r.total==null||(!r.pkg&&!vendaMais(r.card)&&!pendSoBrinde(r))||!MEIO_NOME[r.meio])){toast('Escolha o pacote e a forma de pagamento');render();return false;}
   if(r.escolha){const n=pendN(r);if(n!==r.n){toast('As fotos deste pedido não conferem. Cancele e peça ao cliente para escolher de novo.');render();return false;}
     // segurança S5: o valor sai de novo do Catálogo na confirmação; se mudou, o pedido fica com o valor novo (o cliente vê) e o caixa confirma de novo
@@ -2017,12 +2021,14 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   const meio=meioDe(r);
   const ref=null; // 18/11 (Ronaldo): sem NSU; o "Pago na maquininha" confirma num toque, como o "Recebi" do dinheiro
   const antes=JSON.stringify(SIM);const u=state.user;const s=simOf(r.card);
+  if(vendaFaltaAvisa(vendaFalta({u,vendedor:r.vendedor||(u?{nome:u.name}:null),card:r.card,saleNo:r.saleNo||s.saleNo||'novo',meio:MEIO_NOME[meio]?meio:null,total:r.total,n:(r.n||0)+(r.selected||[]).length+(r.aiSel||[]).length+(r.cortFoto?1:0)+portasDe(r).length,posto:r.posto||postoNome()})))return false;
   if(s.status==='paga'){dinFechar(id,'substituida','pago_de_outro_jeito',u);if(saveSim())pvCancelEv(r,'pago_de_outro_jeito');toast('Esta sessão já foi paga de outro jeito. A pendência foi encerrada.');render();return false;}
   const at=now().toISOString();const prov=meio==='dinheiro'||meio==='cortesia'?meio:(r.prov||pagProv());
   if(r.escolha&&meio!=='dinheiro'&&meio!=='cortesia'){const PP=PAG_PROV[prov];const ini=(PP&&PP.iniciar({id:r.id,meio,total:r.total}))||{estado:'aguardando'};r.iniciado=ini.estado||'aguardando';} // segurança S3: a maquininha só começa na confirmação
   s.cart=cartComPreco(r.cart);s.total=r.total;s.nFotos=r.n;s.selected=(r.selected||[]).slice();s.aiSel=(r.aiSel||[]).slice();s.fav=(r.fav||[]).slice();
   s.status='paga';s.payment=PAG_NOME[meio]||MEIO_NOME[meio];s.paidAt=at;s.caixaEm=at;s.caixaPor=u.name;s.saleNo=r.saleNo||s.saleNo||novoSaleNo();s.seller=LOJA_VENDEDOR;s.prints=r.prints;delete s.din;
-  s.vendaId=r.id;if(r.sessoes&&(r.sessoes.length>1||((SIM.galerias||{})[r.token]||{}).venda)){s.sessoes=r.sessoes.slice();s.galVenda=r.token;}s.vendedor=r.vendedor||null;s.posto=r.posto||postoNome();s.pag={prov,ref,em:at,porNome:u.name};impIniciar(s);
+  s.vendaId=r.id;if(r.sessoes&&(r.sessoes.length>1||((SIM.galerias||{})[r.token]||{}).venda)){s.sessoes=r.sessoes.slice();s.galVenda=r.token;}if(!r.vendedor&&u&&u.email)r.vendedor={nome:u.name,email:u.email}; // 25/11 (Ronaldo): Checkout sem vendedor declarado, quem confirma é o vendedor
+  s.vendedor=r.vendedor||null;s.posto=r.posto||postoNome();s.pag={prov,ref,em:at,porNome:u.name};impIniciar(s);
   if((r.aiSel||[]).length){const ai=aiOf(r.card);r.aiSel.forEach(k=>{const [ph,bg]=String(k).split('|');if(!ai.bought.some(b=>b.ph===ph&&b.bg===bg))ai.bought.push({ph,bg,paidAt:at,where:'loja'});});}
   if(r.cortFoto){r.cortFoto.valor=cortValor(r,r.n);s.cortFoto=Object.assign({},r.cortFoto);SIM.cortesiaLog=SIM.cortesiaLog||[];
     SIM.cortesiaLog.unshift({token:r.token||null,card:r.card,pid:null,acao:'deu',motivo:r.cortFoto.motivo,nota:r.cortFoto.nota,por:r.cortFoto.por,em:at,onde:'checkout',venda:s.saleNo,n:1,valor:r.cortFoto.valor});SIM.cortesiaLog=SIM.cortesiaLog.slice(0,500);}
@@ -2085,7 +2091,7 @@ setInterval(()=>{if(state.user&&!state.pub)vcArquivaPendentes();},10*60000);setT
 // continua contando no rolo. Download já feito não impede. Motivo opcional.
 function vendaPodeCancelar(card){const s=SIM.sessions[card];const u=state.user;if(!s||s.status!=='paga'||!u||state.assumido)return false;
   if(isAdminUser(u)||can('financeiro','d'))return true;
-  return can('venda','u')&&!!s.vendedor&&s.vendedor.email===u.email&&isoDia(s.paidAt||0)===todayISO();}
+  return can('venda','u')&&(s.vendedor?s.vendedor.email===u.email:s.caixaPor===u.name)&&isoDia(s.paidAt||0)===todayISO();}
 const vendaCancTxt=s=>{const c=s&&s.cancelada;if(!c)return '';const d=c.em?new Date(c.em):null;return [c.porNome||c.por,d?(isoDia(d)===todayISO()?hhmm(d):dlabel(isoDia(d))+' '+hhmm(d)):'',c.motivo].filter(Boolean).join(' · ');};
 const vendaCancBtn=card=>!vendaPodeCancelar(card)?'':state.vendaCanc===card
   ?`<span class="vc-conf"><input id="venda-canc-mot" maxlength="200" placeholder="${esc(TE('vc_motivo_ph'))}" aria-label="${esc(TE('vc_motivo_ph'))}"><button class="btn ghost vc-sim" data-act="venda-cancel-ok" data-card="${esc(card)}">${TE('vc_confirmar')}</button><button class="chip" data-act="venda-cancel" data-card="">${TE('nao')}</button></span>`
@@ -2618,7 +2624,8 @@ function lgpdSelo(sim){const L=sim.lgpd||{};const d=L.em?new Date(L.em):null;con
   return `<div class="panel lgpd-selo"><div class="lgpd-carimbo">${TE('lg_carimbo')}</div><p>${TE('lg_todas',L.n||'',q)}.</p><p class="note">${TE('lg_nada')}</p></div>`;}
 // 24/11 (Ronaldo): sessão com pedido ainda esperando pagamento (comprar mais, nova escolha) não aparece para imprimir até ser paga
 const impEsperaPag=c=>(SIM.caixaDin||[]).some(r=>aberta(r)&&(r.card===c||(r.sessoes||[]).includes(c)));
-function impVendas(cards){return Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'&&s.impressao&&s.impressao.estado!=='nao_se_aplica'&&!impEsperaPag(c)&&(cards?cards.includes(c):isoDia(s.paidAt||0)===todayISO()))
+// 25/11 (Ronaldo): no posto (dig) entram também as vendas só digitais do dia: "coloque todas, mesmo que não seja de impressão"
+function impVendas(cards,dig){return Object.entries(SIM.sessions).filter(([c,s])=>s.status==='paga'&&!impEsperaPag(c)&&(cards?s.impressao&&s.impressao.estado!=='nao_se_aplica'&&cards.includes(c):isoDia(s.paidAt||0)===todayISO()&&(s.impressao&&s.impressao.estado!=='nao_se_aplica'||dig)))
   .sort((a,b)=>String(b[1].paidAt||'').localeCompare(String(a[1].paidAt||'')));}
 function impThumb(x,on,act,card){const st=x.t==='ph'?phStyle(x.id):'';const b=x.t==='ai'?bgOf(x.bg):null;
   return `<button class="imp-th${on?' on':''}" ${act?`data-act="${act}" data-card="${esc(card)}" data-k="${esc(x.k)}"`:'disabled'} aria-pressed="${!!on}" style="${st}" aria-label="${x.t==='ai'?'Foto com fundo de IA':'Foto'}">${x.t==='ai'?`<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?b.file:''})"></span><span class="imp-ia">IA</span>`:''}${on?'<span class="imp-ok">✓</span>':''}</button>`;}
@@ -2641,15 +2648,16 @@ function impPedidoLinha(p){const F=state.impFila||{};const e=(F.estados||{})[p.i
   else if(p.estado==='cancelado')t=`<span class="pill neutral">${TE('imp_ped_cancelado')}</span>`;
   else t=`<span class="pill good">${TE('imp_terminou',fotos)}</span>`;
   return `<div class="note">${t}${impAtivo(p)&&parada?` <span class="pill bad" role="alert">${TE('imp_parada',esc(parada))}</span>`:''}</div>`;}
-function impPainel(cards,o){o=o||{};const L=impVendas(cards);const rw=can('venda','c');const noSrv=impNoServidor();
+function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can('venda','c');const noSrv=impNoServidor();
   if(noSrv){impJobVolta();if(!impPostoTimer){impPostoTimer=setInterval(impPostoPoll,2500);setTimeout(impPostoPoll,0);}}
   if(!L.length&&cards){const s0=SIM.sessions[cards[0]]||{};return `<div class="panel" id="imp-painel"><div class="note">${s0.impressao?TE('imp_sem_fotos_pkg'):TE('imp_antes_v83')}</div></div>`;}
-  const item=([card,s])=>{const im=s.impressao;const job=state.impJob&&state.impJob.card===card?state.impJob:null;const hora=s.paidAt?hhmm(new Date(s.paidAt)):'';
+  const item=([card,s])=>{const im=s.impressao||{estado:'nao_se_aplica'};const job=state.impJob&&state.impJob.card===card?state.impJob:null;const hora=s.paidAt?hhmm(new Date(s.paidAt)):'';
     const ped=noSrv?impPedido(s.saleNo||card):null;const naFila=impAtivo(ped);const linhaFila=ped?impPedidoLinha(ped):'';const cancelaFila=naFila&&rw?`<div class="row"><button class="btn ghost" data-act="if-acao" data-a="cancelar" data-id="${ped.id}">${TE('imp_cancelar_ped')}</button></div>`:'';
     const semSaida=ped&&(ped.estado==='erro'||ped.estado==='cancelado');
     const head=`<div class="din-top"><b>${esc(s.saleNo||card)}</b><span class="row" style="gap:8px">${cards?'':`<button class="chip" data-act="caixa-open" data-card="${esc(card)}">${TE('imp_recibo_qr')}</button>`}</span></div><div class="note">${TE('imp_head_nota',esc(card),hora,esc(pagNome(s.payment||'')),TE('n_impressas',s.prints||0))}</div>`;
     let body='';
-    if(im.estado==='pendente'){const S=impSel(card,s);const selK=new Set(S.sel.map(x=>x.k));const feitas=new Set(im.feitas||[]);
+    if(im.estado==='nao_se_aplica')body=`<div class="note"><span class="pill neutral">${TE('po_so_digital')}</span> ${TE('n_fotos',(s.selected||[]).length+(s.aiSel||[]).length)}</div>`;
+    else if(im.estado==='pendente'){const S=impSel(card,s);const selK=new Set(S.sel.map(x=>x.k));const feitas=new Set(im.feitas||[]);
       const nota=S.semFoto?`<div class="note"><span class="pill bad">${TE('imp_sem_foto',S.semFoto)}</span></div>`:'';
       const ult=(s.impressoes||[]).slice(-1)[0];const falhaIA=ult&&ult.falhasIA&&ult.falhasIA.length?`<div class="note"><span class="pill warn">${TE('imp_falha_fundo')}</span></div>`:'';
       if(job&&job.fase==='montando')body=`<div class="note"><span class="pill neutral">${TE('imp_preparando',TE('n_fotos',job.fotos.length))}</span></div>`;
@@ -2676,18 +2684,21 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards);const rw=can('venda
   return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2>${o.semRolo?'':roloSelo('neutral',true)}</div>
     ${L.length?`<div class="din-list">${L.map(item).join('')}</div>`:`<div class="note">${TE('imp_nenhuma')}</div>`}</div>`;}
 // "Minhas vendas de hoje" (D9): deste notebook e do e-mail de quem está logado; nenhum total.
-// 18/11 (Ronaldo): o pacote de cada venda; o valor só para quem vê o Financeiro (vendedor não vê valor)
+// 18/11 (Ronaldo): o pacote de cada venda. 25/11 (Ronaldo): o vendedor vê o valor e o total do que vendeu (só o confirmado)
 const mvPacote=cart=>(cart||[]).map(x=>DATA.catalog.find(c=>c.id===x.id)).filter(Boolean).map(c=>c.name).join(' + ');
-function minhasVendas(trava){const u=state.user;if(!u)return '';const val=can('financeiro','r');const hoje=todayISO();const rows=[];const vistos=new Set();
-  (SIM.caixaDin||[]).forEach(r=>{if(!r.vendedor||r.vendedor.email!==u.email||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;const canc=meu&&s.status==='cancelada'&&!!s.cancelada;
+function minhasVendas(trava){const u=state.user;if(!u)return '';const val=true;const hoje=todayISO();const rows=[];const vistos=new Set();
+  const pn=postoNome(); // 25/11 (Ronaldo): todas as vendas do dia deste posto, além das minhas, para achar e cancelar
+  (SIM.caixaDin||[]).forEach(r=>{if(((r.vendedor?r.vendedor.email!==u.email:r.por!==u.email)&&r.posto!==pn)||isoDia(r.criada)!==hoje)return;vistos.add(r.id);const s=SIM.sessions[r.card]||{};const meu=s.vendaId===r.id;const canc=meu&&s.status==='cancelada'&&!!s.cancelada;
     if(!(meu&&r.estado==='confirmada'&&(s.status==='paga'||canc)))return; // 25/11 (Ronaldo): só vendas pagas e as canceladas depois de pagas; pendência aberta ou substituída fica fora
-    rows.push({t:r.criada,card:r.card,no:r.saleNo||'',meio:pendMeioTxt(r),pac:r.pkg?catName(r.pkg):vendaMais(r.card)&&r.n?TE('po_comprar_mais',TE('n_adicionais',r.n)):mvPacote(r.cart),v:pendSemMeio(r)?null:r.total,pag:canc?TE('din_cancelada'):TE('st_paga'),rec:!canc,imp:meu&&s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
-  Object.entries(SIM.sessions).forEach(([c,s])=>{const canc=s.status==='cancelada'&&!!s.cancelada;if((s.status!=='paga'&&!canc)||!s.vendaId||vistos.has(s.vendaId)||!s.vendedor||s.vendedor.email!==u.email||isoDia(s.paidAt||0)!==hoje)return;
-    rows.push({t:s.paidAt,card:c,rec:!canc,no:s.saleNo||'',meio:pagNome(s.payment||''),pac:mvPacote(s.cart),v:saleTotal(s),pag:canc?TE('din_cancelada'):TE('st_paga'),imp:s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
+    rows.push({t:r.criada,card:r.card,no:r.saleNo||'',vend:(r.vendedor&&r.vendedor.nome)||r.porNome||'',meio:pendMeioTxt(r),pac:r.pkg?catName(r.pkg):vendaMais(r.card)&&r.n?TE('po_comprar_mais',TE('n_adicionais',r.n)):mvPacote(r.cart),v:pendSemMeio(r)?null:r.total,pag:canc?TE('din_cancelada'):TE('st_paga'),rec:!canc,imp:meu&&s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
+  Object.entries(SIM.sessions).forEach(([c,s])=>{const canc=s.status==='cancelada'&&!!s.cancelada;if((s.status!=='paga'&&!canc)||!s.vendaId||vistos.has(s.vendaId)||((s.vendedor?s.vendedor.email!==u.email:s.caixaPor!==u.name)&&s.posto!==pn)||isoDia(s.paidAt||0)!==hoje)return;
+    rows.push({t:s.paidAt,card:c,rec:!canc,no:s.saleNo||'',vend:(s.vendedor&&s.vendedor.nome)||s.caixaPor||'',meio:pagNome(s.payment||''),pac:mvPacote(s.cart),v:saleTotal(s),pag:canc?TE('din_cancelada'):TE('st_paga'),imp:s.impressao?(s.impressao.estado==='impressa'?TE('imp_impressa'):s.impressao.estado==='pendente'?TE('imp_para_imprimir'):'—'):'—'});});
   rows.sort((a,b)=>String(b.t).localeCompare(String(a.t)));
+  const MVP=10,pgs=Math.max(1,Math.ceil(rows.length/MVP)),pg=Math.min(Math.max(0,state.mvPag||0),pgs-1),soma=rows.reduce((t,r)=>t+(r.rec&&r.v!=null?+r.v||0:0),0);const vis=rows.slice(pg*MVP,pg*MVP+MVP);
+  const pag=pgs>1?`<div class="row mv-pag"><button class="chip" data-act="mv-pag" data-p="${pg-1}" ${pg>0?'':'disabled'}>${TE('aj_anterior')}</button><span class="note">${pg+1} / ${pgs}</span><button class="chip" data-act="mv-pag" data-p="${pg+1}" ${pg<pgs-1?'':'disabled'}>${TE('aj_proxima')}</button></div>`:'';
   // v94 (E): dentro de <details> "Minhas vendas de hoje", aberto por padrão; "Recibo" nas vendas pagas abre o recibo em cima do Posto
-  return `<details class="panel mv-det" open><summary><h2>${TE('mv_titulo')}</h2></summary><div id="minhas-vendas">${rows.length?`<div class="tablewrap"><table class="mv-tab"><thead><tr><th>${TE('mv_hora')}</th><th>${TE('mv_venda')}</th><th>${TE('pacote')}</th><th>${TE('pagamento')}</th>${val?`<th class="num">${TE('mv_valor')}</th>`:''}<th>${TE('mv_estado')}</th><th>${TE('mv_impressao')}</th><th></th></tr></thead><tbody>
-    ${rows.map(r=>`<tr><td>${hhmm(new Date(r.t))}</td><td class="name">${esc(r.no)}</td><td>${esc(r.pac||'—')}</td><td>${esc(r.meio)}</td>${val?`<td class="num">${r.v==null?`<span class="note">${TE('sem_valor')}</span>`:fmtR(r.v)}</td>`:''}<td>${esc(r.pag)}</td><td>${esc(r.imp)}</td><td>${r.rec&&r.card?`<button class="chip" data-act="caixa-open" data-card="${esc(r.card)}"${trava?` disabled title="${esc(TE('mv_feche_vm'))}"`:''}>${TE('po_recibo')}</button> ${vendaCancBtn(r.card)}`:''}</td></tr>`).join('')}</tbody></table></div>`:`<div class="note">${TE('mv_nenhuma')}</div>`}</div></details>`;}
+  return `<details class="panel mv-det" open><summary><h2>${TE('mv_titulo')}</h2></summary><div id="minhas-vendas">${rows.length?`<div class="tablewrap"><table class="mv-tab"><thead><tr><th>${TE('mv_hora')}</th><th>${TE('mv_venda')}</th><th>${TE('ve_vendedor')}</th><th>${TE('pacote')}</th><th>${TE('pagamento')}</th>${val?`<th class="num">${TE('mv_valor')}</th>`:''}<th>${TE('mv_estado')}</th><th>${TE('mv_impressao')}</th><th></th></tr></thead><tbody>
+    ${vis.map(r=>`<tr><td>${hhmm(new Date(r.t))}</td><td class="name">${esc(r.no)}</td><td>${esc(r.vend||'—')}</td><td>${esc(r.pac||'—')}</td><td>${esc(r.meio)}</td>${val?`<td class="num">${r.v==null?`<span class="note">${TE('sem_valor')}</span>`:fmtR(r.v)}</td>`:''}<td>${esc(r.pag)}</td><td>${esc(r.imp)}</td><td>${r.rec&&r.card?`<button class="chip" data-act="caixa-open" data-card="${esc(r.card)}"${trava?` disabled title="${esc(TE('mv_feche_vm'))}"`:''}>${TE('po_recibo')}</button> ${vendaCancBtn(r.card)}`:''}</td></tr>`).join('')}</tbody><tfoot><tr><th colspan="5">${TE('total')} · ${rows.filter(r=>r.rec).length}</th><th class="num">${fmtR(soma)}</th><th colspan="3"></th></tr></tfoot></table></div>${pag}`:`<div class="note">${TE('mv_nenhuma')}</div>`}</div></details>`;}
 
 // ---------- v83 (parte E): venda acompanhada. O Checkout publica o que o cliente vê; o Posto de venda só lê (nada vai para o agente) ----------
 const ECO_CH=(()=>{try{return window.BroadcastChannel?new BroadcastChannel('eterna-loja'):null;}catch(e){return null;}})();
@@ -12324,14 +12335,14 @@ const EQ={
   imp_terminou:[(f)=>`Impressora terminou ${f}`,(f)=>`Printer finished ${f}`,(f)=>`La impresora terminó ${f}`,(f)=>`Imprimante terminée : ${f}`,(f)=>`Drucker fertig: ${f}`],
   imp_parada:[(m)=>`Impressora parada: ${m}`,(m)=>`Printer stopped: ${m}`,(m)=>`Impresora detenida: ${m}`,(m)=>`Imprimante arrêtée : ${m}`,(m)=>`Drucker angehalten: ${m}`],
   mv_aguardando:["aguardando","waiting","esperando","en attente","wartend"],
-  mv_titulo:["Minhas vendas de hoje","My sales today","Mis ventas de hoy","Mes ventes du jour","Meine Verkäufe heute"],
+  mv_titulo:["Vendas de hoje","Sales today","Ventas de hoy","Ventes du jour","Verkäufe heute"],
   mv_hora:["Hora","Time","Hora","Heure","Uhrzeit"],
   mv_venda:["Venda","Sale","Venta","Vente","Verkauf"],
   mv_valor:["Valor","Amount","Importe","Montant","Betrag"],
   mv_estado:["Estado","Status","Estado","État","Status"],
   mv_impressao:["Impressão","Printing","Impresión","Impression","Druck"],
   mv_feche_vm:["Feche a venda manual antes de abrir outro recibo","Close the manual sale before opening another receipt","Cierra la venta manual antes de abrir otro recibo","Fermez la vente manuelle avant d'ouvrir un autre reçu","Schließen Sie den manuellen Verkauf, bevor Sie einen anderen Beleg öffnen"],
-  mv_nenhuma:["Nenhuma venda sua hoje neste notebook.","None of your sales today on this computer.","Ninguna venta tuya hoy en este portátil.","Aucune vente de votre part aujourd'hui sur cet ordinateur.","Heute keine Verkäufe von Ihnen auf diesem Computer."],
+  mv_nenhuma:["Nenhuma venda hoje neste posto.","No sales today at this station.","Ninguna venta hoy en este puesto.","Aucune vente aujourd'hui à ce poste.","Heute keine Verkäufe an dieser Station."],
   rolo_n:[(v,c)=>`Rolo: ${v} de ${c}`,(v,c)=>`Roll: ${v} of ${c}`,(v,c)=>`Rollo: ${v} de ${c}`,(v,c)=>`Rouleau : ${v} sur ${c}`,(v,c)=>`Rolle: ${v} von ${c}`],
   rolo_reg_troca:[(p)=>`Registrar troca de rolo em ${p}`,(p)=>`Record roll change at ${p}`,(p)=>`Registrar cambio de rollo en ${p}`,(p)=>`Enregistrer le changement de rouleau à ${p}`,(p)=>`Rollenwechsel bei ${p} erfassen`],
   rolo_troquei:["Troquei o rolo","I changed the roll","Cambié el rollo","J'ai changé le rouleau","Rolle gewechselt"],
@@ -14067,6 +14078,7 @@ document.addEventListener('click',e=>{
       {const sb=simOf(state.fila.session);const cb=compBases(state.fila.session).find(x=>x.b.id===d.bg);if(sb.bg!==d.bg&&cb&&!mtgMarcavel({t:'ai',id:cb.id,bg:d.bg})){toast(TE('mtg_aguarde'));break;}} // E2: montagem do servidor ainda não pronta
       const s=simOf(state.fila.session);s.bg=s.bg===d.bg?null:d.bg;s.cart=(s.cart||[]).filter(c=>c.id!=='fundo');if(s.bg)s.cart.push({id:'fundo'});saveSim();render();break;}
     case 'fila-add':{const s=simOf(state.fila.session);s.cart=s.cart||[];const c=DATA.catalog.find(x=>x.id===d.id);if(s.cart.find(x=>x.id===d.id))s.cart=s.cart.filter(x=>x.id!==d.id);else{if(c.kind==='pacote'||c.id==='cort_sac')s.cart=s.cart.filter(x=>{const y=DATA.catalog.find(z=>z.id===x.id);return !y||(y.kind!=='pacote'&&y.id!=='cort_sac')});s.cart.push({id:d.id});}saveSim();render();break;}
+    case 'mv-pag':state.mvPag=Math.max(0,+d.p||0);render();break;
     case 'caixa-open':if(state.posto.manual&&state.checkout.session){toast('Feche a venda manual antes de abrir outro recibo');break;}state.posto.manual=false;state.caixa.session=d.card;state.posto.recibo=d.card;render();if(state.view==='posto'||state.view==='caixa')window.scrollTo({top:0});break;
     case 'posto-recibo-fechar':state.posto.recibo=null;state.caixa.session=null;state.caixa.reprint=null;render();break;
     case 'posto-filtro':go(d.f==='dinheiro'?'caixa':'posto');break; // v97-ux: o filtro é a view (caixa = só dinheiro)

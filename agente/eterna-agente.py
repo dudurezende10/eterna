@@ -12171,6 +12171,44 @@ def pedidos_do_posto(posto, dias=2):
     return {"ok": True, "pedidos": [json.loads(x[0]) for x in rows]}
 
 
+def venda_trocar_vendedor(venda, nome, email, quem):
+    """25/11 (Ronaldo): POST /ponto/vendedor {venda, nome, email}: a venda ficou no nome de quem não vendeu (login de outra
+    pessoa no posto). Troca o vendedor no evento "criar" (Estatísticas) e no pedido (Minhas vendas). Fica no registro."""
+    venda, nome = str(venda or ""), _nome_pessoa(nome)
+    email = str(email or "").strip()[:120] or None
+    if not _re_pedido.match(venda) or not nome:
+        return {"error": "venda ou nome inválido"}, 400
+    with ev_lock:
+        db = vendas_db()
+        try:
+            evs = db.execute("select idem, dados from evento where venda = ? and tipo = 'criar'", (venda,)).fetchall()
+            antes = None
+            for idem, dados in evs:
+                d = json.loads(dados or "{}")
+                antes = antes or d.get("vendedor")
+                d["vendedor"] = nome
+                db.execute("update evento set dados = ? where idem = ?", (json.dumps(d, ensure_ascii=False), idem))
+            db.commit()
+        finally:
+            db.close()
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            r = db.execute("select valor from pedido where id = ?", (venda,)).fetchone()
+            if r:
+                j = json.loads(r[0])
+                antes = antes or _nome_pessoa(j.get("vendedor"))
+                j["vendedor"] = {"nome": nome, "email": email}
+                db.execute("update pedido set valor = ?, em = ? where id = ?", (json.dumps(j, ensure_ascii=False), time.time(), venda))
+                db.commit()
+        finally:
+            db.close()
+    if not evs and not r:
+        return {"error": "venda não encontrada"}, 404
+    print("  venda %s: vendedor %s -> %s · por %s" % (venda, antes or "-", nome, quem or "?"))
+    return {"ok": True, "venda": venda, "antes": antes, "depois": nome, "eventos": len(evs), "pedido": bool(r)}, 200
+
+
 def estado_gravar(body, quem=""):
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
     auditoria = []
@@ -12679,6 +12717,13 @@ def metricas_dia(dia):
             v["criar"], v["dia"] = d, _ev_dia(e["em"])
         elif e["tipo"] == "pagar":
             v["paga"] = True
+            p = e.get("por")
+            if isinstance(p, str) and p.startswith("{"):
+                try:
+                    p = json.loads(p)
+                except ValueError:
+                    p = None
+            v["pagou_por"] = _nome_pessoa(p)   # 25/11: venda sem vendedor declarado conta para quem confirmou
         elif e["tipo"] == "cancelar":
             v["cancelada"] = True
             v["canc"] = {"em": e.get("em"), "por": e.get("por"), "motivo": d.get("obs") or None, "tipo": d.get("motivo")}
@@ -12746,7 +12791,7 @@ def metricas_dia(dia):
         if card:
             com_venda.add(card)
         com_venda.update(c.get("sessoes") or [])     # v91: as outras sessões juntadas pela selfie também converteram
-        for chave, nome in (("por_vendedor", c.get("vendedor") or "sem vendedor"), ("por_posto", v.get("posto") or "sem posto"), ("por_meio", c.get("meio") or "?")):
+        for chave, nome in (("por_vendedor", c.get("vendedor") or v.get("pagou_por") or "sem vendedor"), ("por_posto", v.get("posto") or "sem posto"), ("por_meio", c.get("meio") or "?")):
             g = m[chave].setdefault(nome, {"vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0})
             g["vendas"] += 1
             g["faturamento"] += tot
@@ -14551,11 +14596,53 @@ def pessoas_rostos(dia):
     return {"ok": True, "dia": dia, "pessoas": out, "sem_identificar": sem_id}
 
 
+PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronaldo): a contagem do dia roda às 19h, com o tour encerrado
+_pessoas_cache = {}
+_pessoas_lock = threading.Lock()
+
+
 def pessoas_dia(dia):
+    """A contagem de pessoas do dia, guardada: calculada uma vez por dia e por uma tarefa só. A de hoje só sai pelo
+    pessoas_loop depois das PESSOAS_HORA; antes disso (e enquanto outra conta) volta None, sem ocupar o processador."""
+    if dia in _pessoas_cache:
+        return _pessoas_cache[dia]
+    if dia >= _ff_hoje() or not _pessoas_lock.acquire(blocking=False):
+        return None
+    try:
+        r = _pessoas_dia_calc(dia)
+        if r is not None:
+            _pessoas_cache[dia] = r
+        return r
+    finally:
+        _pessoas_lock.release()
+
+
+def pessoas_loop():
+    """25/11 (Ronaldo): "pode rodar por cron às 19h? o tour já acabou nesse horário". Uma vez por dia, depois das PESSOAS_HORA."""
+    while True:
+        time.sleep(60)
+        hoje = _ff_hoje()
+        if hoje in _pessoas_cache or time.localtime().tm_hour < PESSOAS_HORA or not _pessoas_lock.acquire(blocking=False):
+            continue
+        try:
+            t0 = time.time()
+            r = _pessoas_dia_calc(hoje, forcar=True)
+            if r is not None:
+                _pessoas_cache[hoje] = r
+                print("  pessoas de %s: %s (%.0f s)" % (hoje, r.get("pessoas"), time.time() - t0))
+        except Exception as e:
+            print("  pessoas de %s: falhou (%s)" % (hoje, e))
+        finally:
+            _pessoas_lock.release()
+
+
+def _pessoas_dia_calc(dia, forcar=False):
     """16/11 (Ronaldo: quantas pessoas abordamos?): quantas pessoas diferentes aparecem nas fotos do dia, agrupando os rostos
     lidos com o mesmo critério da busca por selfie (LIMITE). Só contagens: nenhuma imagem, rosto ou identificação sai daqui.
     Agrupamento guloso, do rosto maior para o menor, pelo centro de cada grupo; dois rostos da mesma foto nunca são a mesma
     pessoa. É estimativa: a mesma pessoa de perfil ou muito de longe pode virar duas, e a equipe aparece junto."""
+    if dia >= _ff_hoje() and not forcar:
+        return None   # 25/11 (servidor travado às 13h): agrupar todos os rostos do dia ocupa o processador e trava selfie, venda e login; hoje fica sem a contagem de pessoas
     try:
         np, rows, boas = _pessoas_le(dia)
     except Exception:
@@ -19834,6 +19921,7 @@ ROTAS = (
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/ponto/vendedor", "sessao", ("financeiro.u",)),   # 25/11: corrige o vendedor de uma venda
     ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),   # vendas do posto sem impressão, para recuperar (15/11)
@@ -23344,6 +23432,14 @@ class H(BaseHTTPRequestHandler):
             return self.leitores_post(u.path)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
+        if u.path == "/ponto/vendedor":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            res, st = venda_trocar_vendedor(body.get("venda"), body.get("nome"), body.get("email"), (self.sessao() or {}).get("usuario") or "")
+            return self.js(res, st)
         if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
@@ -23628,6 +23724,7 @@ def main():
     print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta
     threading.Thread(target=mtg_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
+    threading.Thread(target=pessoas_loop, daemon=True).start()
     # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
     # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.
     try:
