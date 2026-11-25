@@ -14556,6 +14556,8 @@ def pessoas_dia(dia):
     lidos com o mesmo critério da busca por selfie (LIMITE). Só contagens: nenhuma imagem, rosto ou identificação sai daqui.
     Agrupamento guloso, do rosto maior para o menor, pelo centro de cada grupo; dois rostos da mesma foto nunca são a mesma
     pessoa. É estimativa: a mesma pessoa de perfil ou muito de longe pode virar duas, e a equipe aparece junto."""
+    if dia >= _ff_hoje():
+        return None   # 25/11 (servidor travado às 13h): agrupar todos os rostos do dia ocupa o processador e trava selfie, venda e login; hoje fica sem a contagem de pessoas
     try:
         np, rows, boas = _pessoas_le(dia)
     except Exception:
