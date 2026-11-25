@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.60.0 · 25/11 13:47"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.62.0 · 25/11 14:14"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3055,9 +3055,9 @@ const lojaDele=(card,id)=>{const so=state.kiosk&&state.kiosk.so;return !so||so.c
 const soCards=card=>{const so=state.kiosk&&state.kiosk.so;return so&&so.card===card&&Array.isArray(so.cards)&&so.cards.length?so.cards:[card];};
 function sesHora(c){const sim=SIM.sessions[c]||{};const t=sim.openedAt?Date.parse(sim.openedAt):NaN;if(!isNaN(t))return t;const s=sessionObj(c);const m=/^(\d\d?):(\d\d)/.exec((s&&s.time)||sim.time||'');return m?new Date().setHours(+m[1],+m[2],0,0):0;}
 // fotos do cliente no Checkout: sessão por sessão, em ordem de hora; cada foto sabe de que sessão veio (ses)
-function lojaFotos(card){const vis=new Set();const so=state.kiosk&&state.kiosk.so;const sel=so&&so.card===card&&so.cards; // selfie: fora o que já foi comprado (C3)
+function lojaFotos(card,soltas){const vis=new Set();const so=state.kiosk&&state.kiosk.so;const sel=so&&so.card===card&&so.cards; // selfie: fora o que já foi comprado (C3)
   const vend=sel?vendidasTodas():null;return soCards(card).filter(c=>!sel||!lojaJaPaga(c)).map(c=>({c,s:sessionObj(c)})).filter(x=>x.s).sort((a,b)=>sesHora(a.c)-sesHora(b.c))
-  .flatMap(({c,s})=>s.photos.filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]&&lojaDele(card,p.id)&&!(vend&&vend.has(p.id))&&!vis.has(p.id)&&vis.add(p.id)).map(p=>({...p,ses:c})));}
+  .flatMap(({c,s})=>[...(soltas?((SIM.sessions[c]||{}).ia||[]).filter(id=>soltas.has(id)).map(id=>({id})):[]),...s.photos].filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]&&lojaDele(card,p.id)&&!(vend&&vend.has(p.id))&&!vis.has(p.id)&&vis.add(p.id)).map(p=>({...p,ses:c})));}
 // rótulo discreto de cada bloco quando as fotos vêm de mais de uma sessão: ponto · hora
 function lojaBloco(c){const s=sessionObj(c)||{};const sim=SIM.sessions[c]||{};const pt=(DATA.points.find(p=>p.id===sim.point)||{}).name||s.pdv||sim.pdv||'';const h=sim.openedAt?new Date(sim.openedAt).toLocaleTimeString(LOCALES[lang()]||'pt-BR',{hour:'2-digit',minute:'2-digit'}):(s.time||'');return [pt,h].filter(Boolean).join(' · ');}
 // v93 (Eduardo, 06/11 07:54; plano docs/planos/2026-11-06-dois-cliques-ia.md): os primeiros cliques de cada sessão de ponto de
@@ -3121,11 +3121,13 @@ function lojaAIAntigo(card){const s=sessionObj(card);if(!s||!fiaOferece())return
   bgOn().forEach(o=>{const b=bgFor(o,card);if(!b)return;const i=Math.min(b.id in FIA_BASE?FIA_BASE[b.id]:1,ids.length-1);
     const id=[ids[i],...ids.filter((_,j)=>j!==i)].find(x=>!FIA_RUIM.has(x+'|'+b.id));if(id)out.push({t:'ai',id,bg:b.id,k:'ai:'+id+'|'+b.id});});
   return out;}
-function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=soCards(card).length>1;let ant=null;
-  const ph=lojaFotos(card).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi){o.lb=lojaBloco(p.ses);if(p.ses!==ant){o.blk=o.lb;ant=p.ses;}}return o;});
+// 25/11 (Ronaldo): "falhando ou não, elas têm que entrar": as bases da IA também são foto à venda, no começo da sessão dela
+function lojaBasesSoltas(card){const out=new Set();soCards(card).forEach(c=>((SIM.sessions[c]||{}).ia||[]).forEach(id=>out.add(id)));return out;}
+function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=soCards(card).length>1;let ant=null;const ai0=lojaAI(card);
+  const ph=lojaFotos(card,lojaBasesSoltas(card)).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi){o.lb=lojaBloco(p.ses);if(p.ses!==ant){o.blk=o.lb;ant=p.ses;}}return o;});
   // v97 (selo, A1/A7/A8): as montagens vêm primeiro, na ordem de bgOn, sem "ponto · hora"; depois as fotos comuns na ordem de sempre.
   // edIni marca a 1ª montagem (título do grupo na grade); edFotos marca a 1ª foto comum (separador, só com uma leva)
-  const ai=lojaAI(card).map((x,i)=>i?x:{...x,edIni:true});if(!ai.length)return ph;if(!multi&&ph.length)ph[0].edFotos=true;return [...ai,...ph];}
+  const ai=ai0.map((x,i)=>i?x:{...x,edIni:true});if(!ai.length)return ph;if(!multi&&ph.length)ph[0].edFotos=true;return [...ai,...ph];}
 function lojaPick(card){const s=simOf(card);s.pick=s.pick||{};return s.pick;}
 // v96 (B2): só valem as marcas das fotos que este cliente vê (lojaItems); marca velha de outra pessoa da mesma sessão fica de fora
 function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const vale=new Set(lojaItems(card).map(x=>x.k));const ks=Object.keys(pk).filter(k=>(pk[k]==='ok'||pk[k]==='fav')&&vale.has(k));s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();}
