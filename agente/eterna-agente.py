@@ -987,6 +987,41 @@ def ler_rostos(img, det, rec, minimo=ROSTO_MIN, detalhe=False, brutos=None):
     return sorted(out, key=lambda x: -x[0])
 
 
+def rosto_dia(pid, path=None):
+    """25/11: o dia da leitura de rosto é o da chegada da foto (meta u); sem ela, a pasta da inbox."""
+    m = meta.get(pid) or {}
+    try:
+        if m.get("u"):
+            return time.strftime("%Y-%m-%d", time.localtime(float(m["u"])))
+    except Exception:
+        pass
+    return os.path.basename(os.path.dirname(path or (lib.get(pid) or {}).get("file") or ""))
+
+
+def rostos_dia_conserta(db):
+    """25/11: leituras gravadas com o dia do relógio da câmera (foto do cartão) passam para o dia da chegada.
+    Só olha as fotos que chegaram nos últimos 2 dias; a matriz dos dias mexidos é relida na próxima busca."""
+    lim = time.time() - 2 * 86400
+    with lock:
+        quer = {p: time.strftime("%Y-%m-%d", time.localtime(float(m["u"]))) for p, m in meta.items()
+                if isinstance(m, dict) and m.get("u") and float(m["u"]) >= lim}
+    if not quer:
+        return 0
+    errado = [(p, d) for p, d in db.execute("select pid, dia from foto") if p in quer and quer[p] != d]
+    if not errado:
+        return 0
+    for p, d in errado:
+        for tb in ("foto", "rosto", "rosto_q"):
+            db.execute("update %s set dia=? where pid=?" % tb, (quer[p], p))
+    db.commit()
+    with _mat_lock:
+        for d in {d for _, d in errado} | {quer[p] for p, _ in errado}:
+            _mat.pop(d, None)
+            _mat_ver[d] = _mat_ver.get(d, 0) + 1
+    print("  Rostos:            %d fotos passaram para o dia da chegada" % len(errado))
+    return len(errado)
+
+
 def limpar_rostos(db=None):
     """Apaga as leituras de rosto com mais de RETENCAO_DIAS (no início e uma vez por dia, pelo galeria_loop)."""
     db = db or rostos_db()
@@ -1018,6 +1053,10 @@ def rostos_thread():
         return
     db = rostos_db()
     limpar_rostos(db)
+    try:
+        rostos_dia_conserta(db)
+    except Exception as ex:
+        print("  Rostos: dia da chegada: %s" % str(ex)[:80])
     feitas = {r[0] for r in db.execute("select pid from foto")}
     rostos["lidas"] = len(feitas)
     rostos["rostos"] = db.execute("select count(*) from rosto").fetchone()[0]
@@ -1054,7 +1093,7 @@ def leitor_loop(det, rec, db):
             if img is None:
                 continue
             fs = ler_rostos(img, det, rec, detalhe=True, brutos=nb)
-            dia = os.path.basename(os.path.dirname(path))
+            dia = rosto_dia(pid, path)
             db.execute("insert or replace into foto values (?,?,?,?)", (pid, dia, len(fs), time.time()))
             db.execute("delete from rosto where pid=?", (pid,))
             db.executemany("insert into rosto values (?,?,?,?)", [(pid, dia, f[0], f[1].tobytes()) for f in fs])
@@ -2121,7 +2160,9 @@ def ingest_file(src, fn, st, origin, src_kind, move=False, dedupe_set=None, quie
             metricas.append(md); metrica_grava(md)
             return "dup"
     pid = h[:12]
-    day = time.strftime("%Y-%m-%d", time.localtime(st.st_mtime))
+    # 25/11: a pasta é o dia da chegada. Pela data do arquivo, a foto do cartão de uma câmera com o relógio em outro dia
+    # ia para a pasta desse dia e a selfie do dia (BUSCA_DIAS) não achava a pessoa (P15-127: 4 de 15)
+    day = time.strftime("%Y-%m-%d")
     ddir = os.path.join(INBOX, day)
     os.makedirs(ddir, exist_ok=True)
     dst = os.path.join(ddir, f"{pid}_{fn}")
