@@ -99,7 +99,7 @@ O Painel responde em poucos segundos "como foi o período": faturamento, fotos, 
 1. Toque em **Hoje**, **Ontem**, **7 dias** ou **30 dias**. Os dias seguem o horário do Rio, mesmo abrindo de outro país.
 2. Para outras datas, toque em **Personalizado** ou direto nas datas **De** e **Até**.
 3. **Ponto**: filtra pelo ponto onde a foto foi tirada. Só liga com a Roverpix ao vivo (pelo computador do ponto) ou com a fonte **Eterna**.
-4. **Fonte**: **Tudo** (Roverpix + Eterna), só **Roverpix** ou só **Eterna**. A parte Eterna são as vendas deste computador.
+4. **Fonte**: **Tudo** (Roverpix + Eterna), só **Roverpix** ou só **Eterna**. A parte Eterna são as vendas de todos os caixas, lidas do servidor do ponto.
 5. No grupo **Exportar**, o ícone azul **CSV** baixa um dia por linha e uma linha de total. Os ícones PDF e XLS estão na parte 1B.
 
 ### Como ler
@@ -1546,5 +1546,5 @@ O servidor já tem o programa que, à noite, vai separar as fotos por pose. Ele 
 - **CSV da Lista de vendas** baixa todas as vendas, sem os filtros da tela. Use o XLS para o recorte.
 - **Permissões**: desde a v93, o servidor do ponto confere a permissão de cada pessoa ou aparelho em cada pedido. O que a conta não pode mudar volta com o aviso "alterações não foram aceitas (sem permissão)".
 - **Sessão vencida ao recarregar**: a tela volta à entrada sem o aviso "Sua sessão terminou". Basta entrar de novo.
-- **Painel: a parte Eterna são as vendas deste computador.** Dois computadores podem mostrar totais diferentes até as vendas irem para o servidor.
+- **Painel: a parte Eterna vem do servidor do ponto.** Qualquer computador mostra o mesmo total. Sem conexão com o servidor, a parte Eterna não aparece.
 - **Fotógrafo sem o próprio índice**: no perfil pronto, o fotógrafo não vê a tela Fotógrafos. Decisão confirmada pelo Eduardo.
