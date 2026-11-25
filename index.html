@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.74.0 · 25/11 14:32"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.75.0 · 25/11 14:54"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2509,8 +2509,11 @@ async function printMontar(fotos,ed){ed=ed||SIM.edits||{};let root=document.getE
 // imprime: monta, chama window.print() (com --kiosk-printing sai direto na DNP) e, depois do afterprint (uma vez só), pergunta se saiu certo.
 // re = {sel:[chaves já impressas], motivo}: reimpressão das fotos escolhidas pelo vendedor (o rolo só baixa no "Saiu certo")
 async function impImprimir(card,re){simFresh();const s=SIM.sessions[card];const im=s&&s.impressao;if(!s||s.status!=='paga'||impEsperaPag(card)){toast(TE('imp_so_pago'));render();return;}
-  if(!s||s.status!=='paga'||!im){toast('Esta venda não está paga');render();return;}
-  let fotos;if(re){if(im.estado!=='impressa'){toast('Reimpressão só depois da primeira impressão');render();return;}const feitas=im.feitas||[];fotos=impFotos(s).todas.filter(x=>feitas.includes(x.k)&&re.sel.includes(x.k)).slice(0,impReMax(s));}
+  if(!s||s.status!=='paga'||(!im&&!(re&&re.todas))){toast('Esta venda não está paga');render();return;}
+  let fotos;if(re&&re.todas){ // 25/11 (Ronaldo): abrir a venda e imprimir qualquer foto comprada (venda só digital também)
+    if(im&&im.estado==='pendente'){toast('Imprima primeiro as fotos do pacote');render();return;}if(!im||im.estado!=='impressa')s.impressao={estado:'impressa',feitas:[],n:0,alvo:0};
+    fotos=impFotos(s).todas.filter(x=>re.sel.includes(x.k)).slice(0,IMP_AVULSA_MAX);}
+  else if(re){if(im.estado!=='impressa'){toast('Reimpressão só depois da primeira impressão');render();return;}const feitas=im.feitas||[];fotos=impFotos(s).todas.filter(x=>feitas.includes(x.k)&&re.sel.includes(x.k)).slice(0,impReMax(s));}
   else{if(im.estado!=='pendente'){toast('Esta venda já foi impressa');state.impSel[card]=null;render();return;}fotos=impSel(card,s).sel;}
   if(!fotos.length){toast('Marque as fotos para imprimir');return;}
   const job={card,fase:'montando',re:re?{motivo:re.motivo}:null,fotos:fotos.map(x=>x.k),at:Date.now(),t0:performance.now()};state.impJob=job;render();
@@ -2604,7 +2607,9 @@ function impFalha(card){const job=state.impJob;simFresh();const s=SIM.sessions[c
   state.impJob=null;document.body.classList.remove('pr-on');toast('Registrado. Confira a impressora e imprima de novo.');render();}
 const IMP_MOTIVOS=[['falhou','Falhou'],['copia','Outra cópia'],['cor','Cor'],['outro','Outro']];
 // reimpressão: o vendedor escolhe quais das fotos já impressas (até prints por vez) e o motivo; imprime e depois marca "Saiu certo" ou "Não saiu"
+const IMP_AVULSA_MAX=10;
 function impReimprimir(card){const re=state.impRe;simFresh();const s=SIM.sessions[card];const im=s&&s.impressao;
+  if(re&&re.card===card&&re.todas&&s){const sel=(re.sel||[]).filter(k=>impFotos(s).todas.some(x=>x.k===k));if(!sel.length){toast('Marque as fotos para imprimir');return;}if(!re.motivo){toast('Escolha o motivo da impressão');return;}state.impRe=null;impImprimir(card,{sel,motivo:re.motivo,todas:true});return;}
   if(!re||re.card!==card||!im||im.estado!=='impressa'){toast('Abra a reimpressão de novo');state.impRe=null;render();return;}
   const sel=(re.sel||[]).filter(k=>(im.feitas||[]).includes(k));if(!sel.length){toast('Marque as fotos para reimprimir');return;}if(sel.length>impReMax(s)){toast(`No máximo ${impReMax(s)} por reimpressão`);return;}
   if(!re.motivo){toast('Escolha o motivo da reimpressão');return;}
@@ -2656,12 +2661,17 @@ function impPedidoLinha(p){const F=state.impFila||{};const e=(F.estados||{})[p.i
 function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can('venda','c');const noSrv=impNoServidor();
   if(noSrv){impJobVolta();if(!impPostoTimer){impPostoTimer=setInterval(impPostoPoll,2500);setTimeout(impPostoPoll,0);}}
   if(!L.length&&cards){const s0=SIM.sessions[cards[0]]||{};return `<div class="panel" id="imp-painel"><div class="note">${s0.impressao?TE('imp_sem_fotos_pkg'):TE('imp_antes_v83')}</div></div>`;}
+  const avulsa=(card,s)=>{const re=state.impRe&&state.impRe.card===card&&state.impRe.todas?state.impRe:null;if(!rw)return '';
+    if(!re)return `<div class="row"><button class="btn ghost" data-act="imp-avulsa" data-card="${esc(card)}">${TE('imp_ver_fotos')}</button></div>`;
+    return `<div class="din-conf"><span class="eyebrow">${TE('imp_quais_avulsa',IMP_AVULSA_MAX)}</span><div class="imp-grid">${impFotos(s).todas.filter(x=>!/#/.test(x.k)).map(x=>impThumb(x,(re.sel||[]).includes(x.k),'imp-repick',card)).join('')}</div>
+      <div class="chips">${IMP_MOTIVOS.map(([k,l])=>`<button class="chip" data-act="imp-motivo" data-m="${k}" aria-pressed="${re.motivo===k}">${TEk('impm_'+k,l)}</button>`).join('')}</div>
+      <div class="row"><button class="btn primary" data-act="imp-reprint-ok" data-card="${esc(card)}" ${(re.sel||[]).length?'':'disabled'}>${TE('imp_imprimir_n',TE('n_fotos',(re.sel||[]).length))}</button><button class="btn ghost" data-act="imp-reprint-no">${TE('voltar')}</button></div></div>`;};
   const item=([card,s])=>{const im=s.impressao||{estado:'nao_se_aplica'};const job=state.impJob&&state.impJob.card===card?state.impJob:null;const hora=s.paidAt?hhmm(new Date(s.paidAt)):'';
     const ped=noSrv?impPedido(s.saleNo||card):null;const naFila=impAtivo(ped);const linhaFila=ped?impPedidoLinha(ped):'';const cancelaFila=naFila&&rw?`<div class="row"><button class="btn ghost" data-act="if-acao" data-a="cancelar" data-id="${ped.id}">${TE('imp_cancelar_ped')}</button></div>`:'';
     const semSaida=ped&&(ped.estado==='erro'||ped.estado==='cancelado');
     const head=`<div class="din-top"><b>${esc(s.saleNo||card)}</b><span class="row" style="gap:8px">${cards?'':`<button class="chip" data-act="caixa-open" data-card="${esc(card)}">${TE('imp_recibo_qr')}</button>`}</span></div><div class="note">${TE('imp_head_nota',esc(card),hora,esc(pagNome(s.payment||'')),TE('n_impressas',s.prints||0))}</div>`;
     let body='';
-    if(im.estado==='nao_se_aplica')body=`<div class="note"><span class="pill neutral">${TE('po_so_digital')}</span> ${TE('n_fotos',(s.selected||[]).length+(s.aiSel||[]).length)}</div>`;
+    if(im.estado==='nao_se_aplica')body=`<div class="note"><span class="pill neutral">${TE('po_so_digital')}</span> ${TE('n_fotos',(s.selected||[]).length+(s.aiSel||[]).length)}</div>${avulsa(card,s)}`;
     else if(im.estado==='pendente'){const S=impSel(card,s);const selK=new Set(S.sel.map(x=>x.k));const feitas=new Set(im.feitas||[]);
       const nota=S.semFoto?`<div class="note"><span class="pill bad">${TE('imp_sem_foto',S.semFoto)}</span></div>`:'';
       const ult=(s.impressoes||[]).slice(-1)[0];const falhaIA=ult&&ult.falhasIA&&ult.falhasIA.length?`<div class="note"><span class="pill warn">${TE('imp_falha_fundo')}</span></div>`:'';
@@ -2684,7 +2694,7 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can
           <div class="imp-grid">${impFotos(s).todas.filter(x=>feitas.has(x.k)).map(x=>impThumb(x,(re.sel||[]).includes(x.k),'imp-repick',card)).join('')}</div>
           <div class="chips">${IMP_MOTIVOS.map(([k,l])=>`<button class="chip" data-act="imp-motivo" data-m="${k}" aria-pressed="${re.motivo===k}">${TEk('impm_'+k,l)}</button>`).join('')}</div>
           <div class="row"><button class="btn primary" data-act="imp-reprint-ok" data-card="${esc(card)}" ${(re.sel||[]).length?'':'disabled'}>${(re.sel||[]).length?TE('imp_reimprimir_n',TE('n_fotos',(re.sel||[]).length)):TE('imp_reimprimir')}</button><button class="btn ghost" data-act="imp-reprint-no">${TE('voltar')}</button></div></div>`
-          :`<div class="row"><button class="btn ghost" data-act="imp-reprint" data-card="${esc(card)}">${TE('imp_reimprimir')}</button></div>`}`;}
+          :state.impRe&&state.impRe.card===card&&state.impRe.todas?avulsa(card,s):`<div class="row"><button class="btn ghost" data-act="imp-reprint" data-card="${esc(card)}">${TE('imp_reimprimir')}</button><button class="btn ghost" data-act="imp-avulsa" data-card="${esc(card)}">${TE('imp_ver_fotos')}</button></div>`}`;}
     return `<div class="din-item" data-imp="${esc(card)}">${head}${body}</div>`;};
   return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2>${o.semRolo?'':roloSelo('neutral',true)}</div>
     ${L.length?`<div class="din-list">${L.map(item).join('')}</div>`:`<div class="note">${TE('imp_nenhuma')}</div>`}</div>`;}
@@ -12303,6 +12313,8 @@ const EQ={
   imp_antes_v83:["Esta venda é de antes da impressão pelo Posto de venda (v83): não há fotos registradas para imprimir aqui.","This sale predates printing from the Point of sale (v83): there are no photos recorded to print here.","Esta venta es anterior a la impresión desde el Puesto de venta (v83): no hay fotos registradas para imprimir aquí.","Cette vente est antérieure à l'impression depuis le Point de vente (v83) : aucune photo n'est enregistrée pour être imprimée ici.","Dieser Verkauf stammt aus der Zeit vor dem Druck an der Verkaufsstelle (v83): Hier sind keine Fotos zum Drucken erfasst."],
   imp_cancelar_ped:["Cancelar pedido","Cancel order","Cancelar pedido","Annuler la commande","Auftrag abbrechen"],
   imp_recibo_qr:["Recibo e QR","Receipt and QR","Recibo y QR","Reçu et QR","Beleg und QR"],
+  imp_ver_fotos:["Ver fotos e imprimir","See photos and print","Ver fotos e imprimir","Voir les photos et imprimer","Fotos ansehen und drucken"],
+  imp_quais_avulsa:[(m)=>`Escolha as fotos para imprimir (até ${m})`,(m)=>`Choose the photos to print (up to ${m})`,(m)=>`Elige las fotos para imprimir (hasta ${m})`,(m)=>`Choisissez les photos à imprimer (jusqu'à ${m})`,(m)=>`Wähle die Fotos zum Drucken (bis ${m})`],
   imp_impressa:["impressa","printed","impresa","imprimée","gedruckt"],
   imp_so_pago:["Só imprime depois do pagamento","Printing only after payment","Solo imprime después del pago","Impression seulement après le paiement","Drucken erst nach der Zahlung"],
   imp_para_imprimir:["para imprimir","to print","para imprimir","à imprimer","zu drucken"],
@@ -14335,8 +14347,9 @@ document.addEventListener('click',e=>{
     case 'imp-falha':impFalha(d.card);break;
     case 'imp-reprint':{const s=SIM.sessions[d.card];const feitas=new Set((s&&s.impressao&&s.impressao.feitas)||[]); // já vem com as fotos impressas marcadas (até o limite): reimprimir é um clique só (Ronaldo, 10/11)
       state.impRe={card:d.card,sel:s?impFotos(s).todas.filter(x=>feitas.has(x.k)).map(x=>x.k).slice(0,impReMax(s)):[],motivo:null};render();break;}
-    case 'imp-repick':{const re=state.impRe;const s=SIM.sessions[d.card];if(!re||re.card!==d.card||!s)break;const max=impReMax(s);if(re.sel.includes(d.k))re.sel=re.sel.filter(k=>k!==d.k);else if(re.sel.length>=max){toast(`No máximo ${max} por reimpressão`);break;}else re.sel.push(d.k);render();break;}
+    case 'imp-repick':{const re=state.impRe;const s=SIM.sessions[d.card];if(!re||re.card!==d.card||!s)break;const max=re.todas?IMP_AVULSA_MAX:impReMax(s);if(re.sel.includes(d.k))re.sel=re.sel.filter(k=>k!==d.k);else if(re.sel.length>=max){toast(`No máximo ${max} por reimpressão`);break;}else re.sel.push(d.k);render();break;}
     case 'imp-motivo':if(state.impRe){state.impRe.motivo=d.m;render();}break;
+    case 'imp-avulsa':state.impRe={card:d.card,sel:[],motivo:null,todas:true};render();break;
     case 'imp-reprint-no':state.impRe=null;render();break;
     case 'imp-reprint-ok':impReimprimir(d.card);break;
     case 'sales-page':state.sales.page=Math.max(0,+d.v||0);render();break; // v94-ux (parte J): paginação da Lista de vendas, sem gravar
