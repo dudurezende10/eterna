@@ -12145,10 +12145,19 @@ def pedidos_gravar(lista, posto_srv=None):
                 if len(txt) > PEDIDO_MAX or not posto or (posto_srv and posto != posto_srv):
                     recusados += 1
                     continue
-                velho = db.execute("select estado from pedido where id = ?", (r["id"],)).fetchone()
+                velho = db.execute("select estado, valor from pedido where id = ?", (r["id"],)).fetchone()
                 if velho and velho[0] not in PEDIDO_ABERTO and (r["estado"] in PEDIDO_ABERTO or r["estado"] != velho[0]):
                     recusados += 1                      # fechado não reabre nem troca de desfecho
                     continue
+                try:
+                    corr = (json.loads(velho[1]) or {}).get("corrigido") if velho else None
+                except ValueError:
+                    corr = None
+                if isinstance(corr, dict):              # 25/11: a correção do admin (vendedor, cancelamento desfeito) vale sobre a cópia do posto
+                    r["corrigido"] = corr
+                    if isinstance(corr.get("vendedor"), dict):
+                        r["vendedor"] = corr["vendedor"]
+                    txt = json.dumps(r, ensure_ascii=False)
                 db.execute("insert into pedido values (?,?,?,?,?,?) on conflict(id) do update set estado = excluded.estado, "
                            "valor = excluded.valor, em = excluded.em", (r["id"], posto, r["estado"], txt, str(r.get("criada") or "")[:40], time.time()))
                 gravados += 1
@@ -12199,6 +12208,7 @@ def venda_trocar_vendedor(venda, nome, email, quem):
                 j = json.loads(r[0])
                 antes = antes or _nome_pessoa(j.get("vendedor"))
                 j["vendedor"] = {"nome": nome, "email": email}
+                j.setdefault("corrigido", {})["vendedor"] = j["vendedor"]   # o posto aplica e não sobrescreve
                 db.execute("update pedido set valor = ?, em = ? where id = ?", (json.dumps(j, ensure_ascii=False), time.time(), venda))
                 db.commit()
         finally:
@@ -12207,6 +12217,37 @@ def venda_trocar_vendedor(venda, nome, email, quem):
         return {"error": "venda não encontrada"}, 404
     print("  venda %s: vendedor %s -> %s · por %s" % (venda, antes or "-", nome, quem or "?"))
     return {"ok": True, "venda": venda, "antes": antes, "depois": nome, "eventos": len(evs), "pedido": bool(r)}, 200
+
+
+def venda_descancelar(venda, quem):
+    """25/11 (Ronaldo): POST /ponto/descancelar {venda}: venda cancelada por engano (foi paga). Tira o "cancelar" da venda,
+    que volta a contar como paga nas Estatísticas. Fica no registro do servidor."""
+    venda = str(venda or "")
+    if not _re_pedido.match(venda):
+        return {"error": "venda inválida"}, 400
+    with ev_lock:
+        db = vendas_db()
+        try:
+            paga = db.execute("select 1 from evento where venda = ? and tipo = 'pagar'", (venda,)).fetchone()
+            if not paga:
+                return {"error": "venda sem pagamento registrado"}, 409
+            n = db.execute("delete from evento where venda = ? and tipo = 'cancelar'", (venda,)).rowcount
+            db.commit()
+        finally:
+            db.close()
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            r = db.execute("select valor from pedido where id = ?", (venda,)).fetchone()
+            if r:
+                j = json.loads(r[0])
+                j.setdefault("corrigido", {})["descancelada"] = _iso()   # o posto volta a venda para paga
+                db.execute("update pedido set valor = ?, em = ? where id = ?", (json.dumps(j, ensure_ascii=False), time.time(), venda))
+                db.commit()
+        finally:
+            db.close()
+    print("  venda %s: cancelamento desfeito (%d) · por %s" % (venda, n, quem or "?"))
+    return {"ok": True, "venda": venda, "removidos": n}, 200
 
 
 def estado_gravar(body, quem=""):
@@ -19922,6 +19963,7 @@ ROTAS = (
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
     ("POST", "/ponto/vendedor", "sessao", ("financeiro.u",)),   # 25/11: corrige o vendedor de uma venda
+    ("POST", "/ponto/descancelar", "sessao", ("financeiro.u",)),   # 25/11: desfaz um cancelamento feito por engano
     ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),   # vendas do posto sem impressão, para recuperar (15/11)
@@ -23432,6 +23474,14 @@ class H(BaseHTTPRequestHandler):
             return self.leitores_post(u.path)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
+        if u.path == "/ponto/descancelar":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            res, st = venda_descancelar(body.get("venda"), (self.sessao() or {}).get("usuario") or "")
+            return self.js(res, st)
         if u.path == "/ponto/vendedor":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
