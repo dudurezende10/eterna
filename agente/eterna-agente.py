@@ -6749,8 +6749,26 @@ def _sess_ia_bases(x, n):
     x["_esc"] o resumo para o _sess_ia_esc (quem grava x["ia"] chama). Com o sess_lock; só memória."""
     x.pop("_esc", None)
     bases, est = _sess_ia_bases_ordem(x, n)
-    if est != "ok" or bases_modo() == "primeiras":
+    if est != "ok" or n < 1 or bases_modo() == "primeiras":
         return bases, est
+    # Revisão de 24/11: a escolha por nota nunca pode travar o fechamento nem dar menos bases que a regra de antes.
+    # Qualquer erro, ou resultado menor, cai nas bases da regra de antes (conta em base_st["erros"], sem pid no registro).
+    try:
+        esc, resumo = _sess_ia_bases_nota(x, n, bases)
+    except Exception as ex:
+        base_st["erros"] += 1
+        print("  bases de IA: escolha por nota falhou (%s); vale a regra das primeiras" % type(ex).__name__)
+        return bases, est
+    if len(esc) < len(bases):
+        return bases, est
+    x["_esc"] = resumo
+    return esc, "ok"
+
+
+def _sess_ia_bases_nota(x, n, bases):
+    """A troca por nota do _sess_ia_bases. -> (escolhidas em ordem de clique, resumo). Candidatas: as bases da regra de antes
+    mais as fotos que passam nos vetos entre as BASE_POOL_MAX primeiras de gramado. Foto que o Treino marcou "não serve"
+    (nota None) perde para qualquer outra; quem chama garante que o resultado nunca fica menor que o de antes."""
     lv = treino_cfg_mem().get("ponto_versao")
     ts = x.get("_t") or {}
     teto = max(BASE_POOL_MAX, n)
@@ -6766,6 +6784,10 @@ def _sess_ia_bases(x, n):
             sem += 1
         if gram >= teto:
             break
+    for p in bases:                            # as boas da regra de antes entram sempre, mesmo depois das 8 primeiras
+        if p not in cands:
+            cands.append(p)
+    cands.sort(key=lambda p: ts.get(p, (0, 0)))
     notas = {p: base_nota(p) for p in cands}
     vivas = [p for p in cands if notas[p] is not None]
     ordem = {p: i for i, p in enumerate(vivas)}
@@ -6776,8 +6798,7 @@ def _sess_ia_bases(x, n):
             break
         esc[esc.index(fraca)] = p
     esc.sort(key=lambda p: ordem[p])
-    x["_esc"] = {"v": 1, "modo": "melhores", "pool": len(cands), "trocas": len(set(esc) - set(bases)), "_sem": sem}
-    return esc, ("ok" if esc else "sem_gramado")
+    return esc, {"v": 1, "modo": "melhores", "pool": len(cands), "trocas": len(set(esc) - set(bases)), "_sem": sem}
 
 
 def _sess_ia_esc(x):
@@ -6837,7 +6858,9 @@ def _sess_ia_cand(x):
             if e in ("base", "rec"):
                 if p not in vistos:
                     vistos.add(p)
-                    sess_ia_novos.append((p, pr))
+                    # as candidatas a mais (depois das N boas) vão com prioridade pior: não passam na frente das
+                    # duas primeiras da leva seguinte
+                    sess_ia_novos.append((p, pr if boas < n else max(pr, REC_PRIO_ANTECIPADO)))
                 if e == "base":
                     boas += 1
             if (gram >= max(BASE_POOL_MAX, n)) if largo else (boas >= n):
@@ -15341,7 +15364,8 @@ def treino_status():
     c = treino_cfg()
     # 24/11 (bases melhores): o modo que vale agora (ETERNA_BASES=primeiras vence a chave) e a contagem desde a partida; só números
     bs = {"modo": "primeiras" if BASES_FORCA == "primeiras" or c.get("bases") == "primeiras" else "melhores",
-          "levas": base_st["levas"], "trocadas": base_st["trocadas"], "sem_medida": base_st["sem_medida"]}
+          "levas": base_st["levas"], "trocadas": base_st["trocadas"], "sem_medida": base_st["sem_medida"],
+          "erros": base_st["erros"]}
     if BASES_FORCA == "primeiras":
         bs["forcada"] = True
     return {"v": 1, "rotulos": _treino_n["n"], "analise": {"ponto": c["ponto"], "exposicao": c["exposicao"]}, "modelo_ponto": cena_status(),
@@ -17216,7 +17240,7 @@ BASE_HUMANO_MAX = 20000
 base_lock = threading.Lock()               # só para gravar nos dois caches (folha: nunca pega outro lock com ele na mão)
 base_sinais = collections.OrderedDict()    # pid -> {"nq", "nr", "n", "nb"} do lx_medir (hoje e ontem na partida; teto BASE_SINAIS_MAX)
 base_humano = collections.OrderedDict()    # pid -> True | False: "serve para os fundos de IA" marcado no Treino (teto BASE_HUMANO_MAX)
-base_st = {"levas": 0, "trocadas": 0, "sem_medida": 0}   # /status.treino.bases, desde a partida (só com o sess_lock)
+base_st = {"levas": 0, "trocadas": 0, "sem_medida": 0, "erros": 0}   # /status.treino.bases, desde a partida (só com o sess_lock)
 
 
 def bases_modo():

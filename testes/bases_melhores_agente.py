@@ -267,7 +267,32 @@ with contextlib.redirect_stdout(console):
     reset()
     p5d = leva([G(serve=False), G(serve=False), FORA])
     x5d = fecha(p5d)
-    ok(x5d["ia"] == [] and x5d["ia_regra"]["motivo"] == "sem_gramado", "5: todas marcadas como não serve: sem base: %r" % x5d["ia_regra"])
+    # revisão de 24/11: a marcação do Treino nunca deixa a leva com menos bases que a regra de antes
+    ok(x5d["ia"] == p5d[:2] and "esc" not in x5d["ia_regra"], "5: todas marcadas como não serve: valem as bases da regra de antes: %r %r" % ([p5d.index(p) for p in x5d["ia"]], x5d["ia_regra"]))
+    reset()
+    p5e = leva([G(serve=False), G(), FORA])
+    ok(fecha(p5e)["ia"] == p5e[:2], "5: uma de duas marcada como não serve: continuam as duas")
+    # as 8 primeiras de gramado vetadas e a 9ª e a 10ª boas: igual à regra de antes
+    reset()
+    VET = dict(JOELHO, borda=["cima"])
+    p5f = leva([G(VET) for _ in range(8)] + [G(), G(), FORA])
+    ok(fecha(p5f)["ia"] == p5f[8:10], "5: boas depois das 8 primeiras de gramado continuam entrando")
+    reset()
+    p5g = leva([G(VET) for _ in range(7)] + [G(), G(), FORA])
+    ok(fecha(p5g)["ia"] == p5g[7:9], "5: 7 vetadas, 8ª e 9ª boas: duas bases, como antes")
+    # erro no cálculo da nota: a leva fecha com as bases da regra de antes e o erro é contado
+    reset()
+    antes_err = m.base_st["erros"]
+    nota_boa = m.base_nota
+    def _quebra(pid):
+        raise OverflowError("teste")
+    m.base_nota = _quebra
+    try:
+        p5h = leva([G(CHAO), G(CHAO), G(), G(), FORA])
+        x5h = fecha(p5h)
+    finally:
+        m.base_nota = nota_boa
+    ok(x5h["ia"] == p5h[:2] and "esc" not in x5h["ia_regra"] and m.base_st["erros"] == antes_err + 1, "5: erro na nota: fecha com as primeiras e conta o erro: %r %r" % ([p5h.index(p) for p in x5h["ia"]], m.base_st))
 
     # ---------- 6: candidata sem recorte no fechamento: fecha na mesma hora com o que há; sem_medida soma 1 ----------
     reset()
@@ -591,8 +616,8 @@ with contextlib.redirect_stdout(console):
     # /status: só o modo e números
     st, js, _ = pede("/status", None, adm)
     bs = (js.get("treino") or {}).get("bases")
-    ok(st == 200 and isinstance(bs, dict) and set(bs) == {"modo", "levas", "trocadas", "sem_medida"} and bs["modo"] == "primeiras"
-       and all(isinstance(bs[k], int) and not isinstance(bs[k], bool) for k in ("levas", "trocadas", "sem_medida")) and bs["levas"] >= 5 and bs["trocadas"] >= 3 and bs["sem_medida"] >= 1,
+    ok(st == 200 and isinstance(bs, dict) and set(bs) == {"modo", "levas", "trocadas", "sem_medida", "erros"} and bs["modo"] == "primeiras"
+       and all(isinstance(bs[k], int) and not isinstance(bs[k], bool) for k in ("levas", "trocadas", "sem_medida", "erros")) and bs["levas"] >= 5 and bs["trocadas"] >= 3 and bs["sem_medida"] >= 1,
        "/status.treino.bases = {modo, levas, trocadas, sem_medida}, só números: %s %r" % (st, bs))
     pids_cards = set(TODOS) | {c for c in list(m.sess)}
     ok(not any(t in json.dumps(bs) for t in pids_cards), "/status.treino.bases sem pid nem card")
@@ -613,7 +638,7 @@ fonte = open(sys.argv[1], encoding="utf8").read()
 corpo_nota = fonte.split("def base_nota(pid):")[1].split("\ndef ")[0]
 ok(not re.search(r"_db\(|sqlite|open\(|with \w*lock|print\(", corpo_nota), "base_nota: sem banco, arquivo, lock ou print no corpo da função")
 corpo_esc = fonte.split("def _sess_ia_bases(x, n):")[1].split("\ndef _sess_ia_pede_rec")[0]
-ok(not re.search(r"_db\(|sqlite|open\(|print\(|treino_cfg\(\)|ia_cfg\(\)", corpo_esc), "_sess_ia_bases e _sess_ia_esc: sem banco, arquivo ou print")
+ok(not re.search(r"_db\(|sqlite|open\(|treino_cfg\(\)|ia_cfg\(\)", corpo_esc) and corpo_esc.count("print(") == 1, "_sess_ia_bases e _sess_ia_esc: sem banco nem arquivo; um só print, o do erro, sem pid")
 
 if falhas:
     print("FALHA bases_melhores_agente: " + " | ".join(f for f in falhas if f))
