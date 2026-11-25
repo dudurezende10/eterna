@@ -34,7 +34,8 @@ from datetime import datetime, timezone
 import urllib.parse
 import boto3
 import imply
-from boto3.dynamodb.conditions import Key
+import rdstation
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
@@ -724,9 +725,9 @@ def pedido(token, m, corpo, ip, pids_acesso):
     return resp({"ok": True, "ref": ref, "url": url, "total": total, "fotos": len(pids)})
 
 
-def lead(email, idioma, token, marketing, versao, ref=None):
+def lead(email, idioma, token, marketing, versao, ref=None, origem="compra"):
     """E-mail de quem comprou ou tentou comprar (lead). O consentimento de marketing é separado e opcional (LGPD):
-    só quem marcou vai para o RD Station (etapa 4 do plano)."""
+    só quem marcou vai para o RD Station (25/11: fila RDPEND, rd_fila; uma vez por origem)."""
     k = {"pk": "LEAD#" + hashlib.sha256(email.encode()).hexdigest()[:32], "sk": "M"}
     velho = item(k["pk"]) or {}
     gs = set(json.loads(velho.get("galerias") or "[]")) | {token}
@@ -737,7 +738,73 @@ def lead(email, idioma, token, marketing, versao, ref=None):
         novo.update({"marketing": True, "marketing_em": iso(), "marketing_versao": versao})
     elif velho.get("marketing"):
         novo.update({k2: velho[k2] for k2 in ("marketing", "marketing_em", "marketing_versao") if k2 in velho})
+    for k2 in ("rd_em", "rd_origens"):
+        if k2 in velho:
+            novo[k2] = velho[k2]
     TABELA.put_item(Item=novo)
+    if novo.get("marketing") and origem not in json.loads(novo.get("rd_origens") or "[]"):
+        rd_enfileira(k["pk"], email, idioma, origem)
+
+
+def rd_enfileira(lead_pk, email, idioma, origem):
+    """Um envio pendente ao RD por lead e origem. Com a integração desligada não entra nada (a varredura diária pega depois)."""
+    if not rdstation.ligada():
+        return
+    TABELA.put_item(Item={"pk": "RDPEND", "sk": "%s#%s" % (lead_pk[5:], origem), "lead": lead_pk, "email": email, "idioma": idioma or "pt",
+                          "origem": origem, "tentativas": 0, "criado": int(time.time()), "ttl": int(time.time() + 7 * 86400)})
+
+
+RD_LOTE = 40
+
+
+def rd_fila():
+    """A cada 5 min: envia ao RD os leads com consentimento que estão na fila. Recusa de chave (401/403): relê a chave do SSM
+    na próxima rodada (troca de chave sem redeploy) e para o lote, sem perder ninguém. Outro erro: tenta de novo depois."""
+    if not rdstation.ligada():
+        return {"rd": "desligado"}
+    ok_, erro = 0, 0
+    for p in TABELA.query(KeyConditionExpression=Key("pk").eq("RDPEND"), Limit=RD_LOTE).get("Items", []):
+        try:
+            rdstation.enviar(p["email"], p.get("idioma"), p.get("origem") or "galeria")
+        except rdstation.RdErro as ex:
+            erro += 1
+            n = int(p.get("tentativas") or 0) + 1
+            TABELA.update_item(Key={"pk": "RDPEND", "sk": p["sk"]}, UpdateExpression="SET tentativas = :n, erro = :e",
+                               ExpressionAttributeValues={":n": n, ":e": str(ex)[:40]})
+            if str(ex) in ("http 401", "http 403"):
+                rdstation._chave.clear()
+                print("rd: chave recusada (%s); confira o parâmetro %s" % (ex, rdstation.CHAVE_SSM))
+                break
+            continue
+        except Exception as ex:                           # SSM fora ou parâmetro ausente: tenta na próxima rodada
+            print("rd: sem a chave (%s)" % type(ex).__name__)
+            break
+        ok_ += 1
+        TABELA.delete_item(Key={"pk": "RDPEND", "sk": p["sk"]})
+        it = item(p["lead"]) or {}
+        orig = sorted(set(json.loads(it.get("rd_origens") or "[]")) | {p.get("origem") or "galeria"})
+        if it:
+            TABELA.update_item(Key={"pk": p["lead"], "sk": "M"}, UpdateExpression="SET rd_em = :t, rd_origens = :o",
+                               ExpressionAttributeValues={":t": iso(), ":o": json.dumps(orig)})
+    if ok_ or erro:
+        print("rd: %d enviados, %d com erro" % (ok_, erro))
+    return {"rd": ok_, "rd_erro": erro}
+
+
+def rd_varre():
+    """Diária: leads com consentimento que nunca foram ao RD (de antes da integração ou de quando ela estava desligada)."""
+    if not rdstation.ligada():
+        return 0
+    n, ini = 0, None
+    while True:
+        r = TABELA.scan(FilterExpression=Attr("pk").begins_with("LEAD#") & Attr("marketing").eq(True) & Attr("rd_em").not_exists(),
+                        **({"ExclusiveStartKey": ini} if ini else {}))
+        for it in r.get("Items", []):
+            rd_enfileira(it["pk"], it["email"], it.get("idioma"), "galeria")
+            n += 1
+        ini = r.get("LastEvaluatedKey")
+        if not ini:
+            return n
 
 
 def liberar(ref, it, det):
@@ -970,7 +1037,7 @@ def video_aceite(token, m, corpo, ip):
     idioma, versao = str(corpo.get("idioma") or "pt")[:2], str(corpo.get("versao") or "")[:20]
     TABELA.put_item(Item={"pk": "CON#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "tipo": "video", "versao": versao,
                           "idioma": idioma, "ttl": int(time.time() + 400 * 86400)})
-    lead(email, idioma, token, corpo.get("marketing") is True, versao)
+    lead(email, idioma, token, corpo.get("marketing") is True, versao, origem="video")
     # o acesso vale enquanto a galeria valer: o aceite é uma vez por aparelho (o cartão continua sendo a chave)
     acesso = secrets.token_urlsafe(24)
     exp = int(max(time.time() + ACESSO_TTL, epoch(m["expira"])))
@@ -1171,6 +1238,8 @@ def rosto(token, m, corpo, ip, ctx):
     if EMAIL_RE.match(em):                               # 24/11 (Ronaldo): o e-mail do cliente, junto do consentimento
         con["email"] = em
     TABELA.put_item(Item=con)
+    if EMAIL_RE.match(em):                               # 25/11: lead da galeria; ao RD só com o aceite de novidades
+        lead(em, con["idioma"], token, corpo.get("marketing") is True, con["versao"], origem="selfie")
     TABELA.update_item(Key={"pk": "IDX#" + token, "sk": "M"}, UpdateExpression="SET cons = :um, #t = :ttl",
                        ExpressionAttributeNames={"#t": "ttl"}, ExpressionAttributeValues={":um": 1, ":ttl": ttl_de(m)})
     if m.get("voucher"):                                # escola: até 10 mil fotos, lidas em lotes paralelos em segundo plano
@@ -1250,16 +1319,25 @@ def cortesia(token, m, corpo, ip, pids):
         return resp({"ok": False, "motivo": "esgotada", "galeria": galeria_obj(token, m, pids)}, 409)
     TABELA.put_item(Item={"pk": "CRT#" + token, "sk": "%s#%s" % (iso(), secrets.token_hex(3)), "foto": foto, "sel": json.dumps(sorted(pids)),
                           "email": hashlib.sha256(email.encode()).hexdigest()[:32], "ttl": ttl_de(m)})
-    lead(email, str(corpo.get("idioma") or "pt")[:2], token, bool(corpo.get("marketing")), str(corpo.get("versao") or "")[:20])
+    lead(email, str(corpo.get("idioma") or "pt")[:2], token, corpo.get("marketing") is True, str(corpo.get("versao") or "")[:20], origem="cortesia")
     evento(token, "cortesia_escolhida", ip, foto=foto, fotos=len(pids), **voucher_ev(m))
     return resp({"ok": True, "foto": foto, "galeria": galeria_obj(token, m, pids, foto)})
 
 
 def handler(ev, ctx):
     if ev.get("limpeza"):                                 # agendada, uma vez por dia
+        try:
+            print("rd: %d leads antigos na fila" % rd_varre())
+        except Exception as ex:
+            print("rd: varredura falhou (%s)" % type(ex).__name__)
         return limpeza()
-    if ev.get("conferir"):                                # agendada: pedidos online ainda sem resposta da Imply
-        return conferir_pendentes()
+    if ev.get("conferir"):                                # agendada: pedidos online ainda sem resposta da Imply e fila do RD
+        r = conferir_pendentes()
+        try:
+            rd_fila()
+        except Exception as ex:
+            print("rd: fila falhou (%s)" % type(ex).__name__)
+        return r
     if ev.get("indexar"):                                 # chamada interna em segundo plano
         t = ev["indexar"]
         m = manifesto(t)

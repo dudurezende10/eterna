@@ -546,4 +546,62 @@ for idioma, ordem in (("pt", ["Português", "English", "Español"]), ("fr", ["Fr
 s0 = emails[-1]["Content"]["Simple"]["Subject"]["Data"]
 ok("Suas fotos estão liberadas" in s0 and "Your photos are ready" in s0 and "Tus fotos están liberadas" in s0, "assunto com os três idiomas: %r" % s0)
 app.MAIL_FROM, app.manifesto = mf0, ma0
+# ---------- 25/11: leads com consentimento no RD Station (fila RDPEND, rotina de 5 min, varredura diária) ----------
+import rdstation, urllib.error
+rd0 = (rdstation.CHAVE_SSM, dict(rdstation._chave), rdstation._http)
+rdstation.CHAVE_SSM = ""
+app.lead("semrd@exemplo.com", "pt", "tok-rd", True, "v1", origem="selfie")
+ok(not [k for k in T.d if k[0] == "RDPEND"], "RD desligado: nada entra na fila")
+rdstation.CHAVE_SSM, rdstation._chave["v"] = "/eterna/rdstation-chave", "chave-de-teste"
+mandados = []
+rdstation._http = lambda dados: mandados.append(dados) or 200
+app.lead("lead@exemplo.com", "es", "tok-rd", True, "v1", origem="selfie")
+app.lead("semaceite@exemplo.com", "pt", "tok-rd", False, "v1", origem="selfie")
+fila = [v for k, v in T.d.items() if k[0] == "RDPEND"]
+ok(len(fila) == 1 and fila[0]["email"] == "lead@exemplo.com", "só quem aceitou novidades entra na fila do RD: %r" % [f["email"] for f in fila])
+r = app.rd_fila()
+pl = mandados[-1]["payload"] if mandados else {}
+ok(r.get("rd") == 1 and pl.get("email") == "lead@exemplo.com" and pl.get("conversion_identifier") == "Eterna - galeria de fotos (selfie)"
+   and pl.get("legal_bases") == [{"category": "communications", "type": "consent", "status": "granted"}] and "idioma-es" in pl.get("tags", [])
+   and pl.get("available_for_mailing") is True and set(pl) <= {"conversion_identifier", "email", "tags", "available_for_mailing", "legal_bases"},
+   "conversão no RD com consentimento, idioma em tag e só o e-mail: %r" % pl)
+ld = [v for k, v in T.d.items() if k[0].startswith("LEAD#") and v.get("email") == "lead@exemplo.com"][0]
+ok(not [k for k in T.d if k[0] == "RDPEND"] and ld.get("rd_em") and json.loads(ld["rd_origens"]) == ["selfie"], "enviado sai da fila e o lead guarda quando e de onde")
+app.lead("lead@exemplo.com", "es", "tok-rd2", True, "v1", origem="selfie")
+ok(not [k for k in T.d if k[0] == "RDPEND"] and json.loads([v for k, v in T.d.items() if k[0] == ld["pk"]][0]["rd_origens"]) == ["selfie"],
+   "mesma origem não manda de novo e o registro do RD não se perde")
+app.lead("lead@exemplo.com", "es", "tok-rd", True, "v1", ref="R1")
+ok(len([k for k in T.d if k[0] == "RDPEND"]) == 1, "origem nova (compra) manda outra conversão")
+def recusa(dados):
+    raise rdstation.RdErro("http 401")
+rdstation._http = recusa
+r = app.rd_fila()
+pend = [v for k, v in T.d.items() if k[0] == "RDPEND"]
+ok(r.get("rd_erro") == 1 and len(pend) == 1 and pend[0]["tentativas"] == 1 and "v" not in rdstation._chave, "chave recusada: fica na fila e a chave é relida do SSM na próxima")
+rdstation._chave["v"] = "chave-de-teste"
+rdstation._http = lambda dados: mandados.append(dados) or 200
+app.rd_fila()
+ok(not [k for k in T.d if k[0] == "RDPEND"] and mandados[-1]["payload"]["conversion_identifier"] == "Eterna - compra de fotos online", "na rodada seguinte vai")
+# varredura diária: quem aceitou antes da integração entra na fila
+T.put_item({"pk": "LEAD#antigo", "sk": "M", "email": "antigo@exemplo.com", "idioma": "en", "marketing": True})
+T.scan = lambda **k: {"Items": [dict(v) for kk, v in T.d.items() if kk[0].startswith("LEAD#") and v.get("marketing") is True and "rd_em" not in v]}
+nv = app.rd_varre()
+ant = [v for k, v in T.d.items() if k[0] == "RDPEND" and v["email"] == "antigo@exemplo.com"]
+ok(nv >= 1 and len(ant) == 1 and ant[0]["origem"] == "galeria" and not [v for k, v in T.d.items() if k[0] == "RDPEND" and v["email"] == "lead@exemplo.com"],
+   "varredura põe na fila os leads com aceite que nunca foram ao RD, e não repete quem já foi")
+T.d = {k: v for k, v in T.d.items() if k[0] != "RDPEND"}
+# a chave vai na URL (exigência do RD): erro nunca leva a URL
+rdstation._http = rd0[2]
+u0 = urllib.request.urlopen
+def falha(rq, timeout=None):
+    raise urllib.error.HTTPError(rq.full_url, 401, "Unauthorized " + rq.full_url, {}, None)
+urllib.request.urlopen = falha
+try:
+    rdstation.enviar("x@exemplo.com", "pt", "selfie")
+    msg = ""
+except rdstation.RdErro as ex:
+    msg = str(ex) + repr(ex.__cause__) + repr(ex.__context__ if not ex.__suppress_context__ else None)
+urllib.request.urlopen = u0
+ok(msg.startswith("http 401") and "chave-de-teste" not in msg and "api_key" not in msg, "erro do RD sem a chave nem a URL: %r" % msg)
+rdstation.CHAVE_SSM, rdstation._chave = rd0[0], rd0[1]
 print("\ntudo certo")
