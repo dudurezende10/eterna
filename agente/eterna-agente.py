@@ -4638,6 +4638,127 @@ def _mtg_pagas_ler(chave):
     return _mtg_pagas["v"]
 
 
+# 25/11 (Ronaldo): a foto com fundo de IA também vai para a galeria online. A montagem pronta do servidor (a de impressão,
+# senão a prévia) sobe para a nuvem com um id próprio (base + 8 hex do fundo) e entra no manifesto da galeria da sessão:
+# comprada se a venda paga desta galeria levou aquela base naquele fundo (aiSel), à venda nos outros fundos ativos.
+def mtg_gal_pid(pid, fundo):
+    return pid_lib(pid) + hashlib.md5(fundo.encode("utf8")).hexdigest()[:8]
+
+
+def mtg_gal_arquivo(pid, fundo):
+    """A montagem pronta de pid naquele fundo: a de impressão (i), senão a prévia (p); a da versão de agora antes das outras."""
+    pid = pid_lib(pid)
+    if not _re_mtg_pid.match(pid) or fundo not in MTG_FUNDOS:
+        return None
+    v = mtg_versao(fundo)
+    for t in ("i", "p"):
+        a = mtg_arquivo(pid, fundo, t, v) if v else None
+        if a and os.path.isfile(a):
+            return a
+    try:
+        nomes = sorted(os.listdir(os.path.join(MONTAGENS, pid)), key=lambda n: os.path.getmtime(os.path.join(MONTAGENS, pid, n)), reverse=True)
+    except OSError:
+        return None
+    for t in ("i", "p"):
+        for n in nomes:
+            x = _re_mtg_arq.match(n)
+            if x and x.group(1) == fundo and x.group(3) == t:
+                return os.path.join(MONTAGENS, pid, n)
+    return None
+
+
+def gal_ia_pagas(token):
+    """(pid, fundo) das montagens das vendas pagas e não canceladas que publicaram esta galeria (aiSel do evento criar)."""
+    if not os.path.exists(VENDAS_DB) or not token_ok(token):
+        return set()
+    db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=2, check_same_thread=False)
+    try:
+        db.execute("pragma query_only=1")
+        rs = db.execute("select dados from evento where tipo = 'criar' and dados like ?"
+                        " and venda in (select venda from evento where tipo = 'pagar')"
+                        " and venda not in (select venda from evento where tipo = 'cancelar')", ("%" + token + "%",)).fetchall()
+    finally:
+        db.close()
+    out = set()
+    for (dados,) in rs:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            continue
+        if (d.get("galeria") or {}).get("token") != token:
+            continue
+        for k in d.get("aiSel") or []:
+            a, _, f = re.sub(r"^ai:", "", str(k)).partition("|")
+            if pid_ok(a) and f in MTG_FUNDOS:
+                out.add((pid_lib(a), f))
+    return out
+
+
+def gal_ia_plano(m):
+    """Fora do gal_lock (pega o sess_lock e lê o vendas.db): (montagens das sessões, pagas desta galeria) para o gal_com_ia."""
+    if not isinstance(m, dict) or m.get("tipo") != "sessao":
+        return None
+    try:
+        pagas = gal_ia_pagas(m["token"])
+    except Exception as ex:
+        print("  galeria: fundos de IA pagos não lidos (%s)" % type(ex).__name__)
+        pagas = set()
+    quer = {}                                            # id -> (sessao, pid, fundo)
+    with sess_lock:
+        for c in m.get("sessoes") or []:
+            x = sess.get(c)
+            if x is None:
+                continue
+            bases = mtg_candidatas(x)
+            for fundo in MTG_ATIVOS:
+                i = MTG_BASE.get(fundo, 0)
+                if i < len(bases):
+                    quer["ag_" + mtg_gal_pid(bases[i], fundo)] = (c, pid_lib(bases[i]), fundo)
+        dono = {p: sess_pid.get(p) for p, _ in pagas}
+    for p, fundo in pagas:
+        quer["ag_" + mtg_gal_pid(p, fundo)] = (dono.get(p) or (m.get("sessoes") or [""])[0], p, fundo)
+    return quer, pagas
+
+
+def gal_com_ia(m, velho, plano):
+    """Põe no manifesto (tipo sessao) as montagens com fundo de IA das sessões dele e manda cada uma para a nuvem.
+    Comprada nunca regride (a venda paga ou a compra online gravada). Devolve quantas montagens estão no manifesto."""
+    if not plano or not isinstance(m, dict) or m.get("tipo") != "sessao":
+        return 0
+    quer, pagas = dict(plano[0]), plano[1]
+    antes = {f["id"]: f for f in (velho or {}).get("fotos") or [] if isinstance(f, dict) and f.get("ia")}
+    for k, f in antes.items():
+        if k not in quer and isinstance(f.get("ia"), dict):
+            quer[k] = (f.get("sessao") or "", f["ia"].get("base") or "", f["ia"].get("fundo") or "")
+    m["fotos"] = [f for f in m["fotos"] if not f.get("ia")]
+    n = 0
+    for k, (c, p, fundo) in quer.items():
+        arq = mtg_gal_arquivo(p, fundo)
+        if not arq and k not in antes:
+            continue
+        a = antes.get(k) or {}
+        if (p, fundo) in pagas:
+            d, canal = "comprada", (a.get("canal") if a.get("direito") == "comprada" else None) or "loja"
+        elif a.get("direito") == "comprada":
+            d, canal = "comprada", a.get("canal") or "online"
+        else:
+            d, canal = "venda", None
+        m["fotos"].append({"id": k, "sessao": str(c)[:40], "direito": d, "canal": canal, "ia": {"base": p, "fundo": fundo}})
+        if arq:
+            nuvem_enfileira(pid_lib(k), arq)
+        n += 1
+    return n
+
+
+def gal_foto_arquivo(f):
+    """(arquivo, miniatura) de uma foto do manifesto: a da biblioteca ou a montagem com fundo de IA."""
+    if isinstance(f.get("ia"), dict):
+        return mtg_gal_arquivo(f["ia"].get("base") or "", f["ia"].get("fundo") or ""), None
+    with lock:
+        e = lib.get(pid_lib(f["id"]))
+    return (e["file"], e.get("thumb")) if e else (None, None)
+
+
 def mtg_base_ok(pid, fundo=None):
     """Montagem nova só sai de base de IA (regra 19). Foto de leva carregada (ontem e hoje): só se é base de alguma leva.
     Foto fora das levas carregadas: só a reimpressão de montagem vendida (venda paga no vendas.db com aquela base naquele
@@ -6040,17 +6161,15 @@ def gal_processar(token):
     falta_orig = falta_vit = 0
     for f in m["fotos"]:
         if f["direito"] in ("comprada", "cortesia") and not REPO.existe(token, f["id"], "original"):
-            with lock:
-                e = lib.get(pid_lib(f["id"]))
-            if e and os.path.exists(e["file"]):
-                REPO.subir(token, f["id"], "original", e["file"])
+            arq, _ = gal_foto_arquivo(f)                 # 25/11: a montagem com fundo de IA também
+            if arq and os.path.exists(arq):
+                REPO.subir(token, f["id"], "original", arq)
             else:
                 falta_orig += 1
     for f in m["fotos"]:
         if not REPO.existe(token, f["id"], "vitrine"):
-            with lock:
-                e = lib.get(pid_lib(f["id"]))
-            if not (e and os.path.exists(e["file"]) and _vitrine(e["file"], e.get("thumb"), REPO.abrir(token, f["id"], "vitrine"))):
+            arq, mini = gal_foto_arquivo(f)
+            if not (arq and os.path.exists(arq) and _vitrine(arq, mini, REPO.abrir(token, f["id"], "vitrine"))):
                 falta_vit += 1
     with gal_lock:
         m = REPO.ler_manifesto(token) or m
@@ -22935,8 +23054,18 @@ class H(BaseHTTPRequestHandler):
                     if f["direito"] == "cortesia" and f["id"] not in ja:
                         f["direito"] = "venda"
                         f.pop("cortesia", None)
+            try:
+                plano_ia = gal_ia_plano(novo)              # 25/11: fotos com fundo de IA na galeria online (fora do gal_lock)
+            except Exception as ex:
+                plano_ia = None
+                print("  galeria: fundos de IA não planejados (%s: %s)" % (type(ex).__name__, ex))
             with gal_lock:
-                m = gal_mesclar(novo, REPO.ler_manifesto(t))
+                velho_m = REPO.ler_manifesto(t)
+                m = gal_mesclar(novo, velho_m)
+                try:
+                    gal_com_ia(m, velho_m, plano_ia)
+                except Exception as ex:
+                    print("  galeria: fundos de IA fora desta publicação (%s: %s)" % (type(ex).__name__, ex))
                 REPO.salvar_manifesto(t, m)
                 if m.get("codigo"):
                     codigos[m["codigo"]] = t
