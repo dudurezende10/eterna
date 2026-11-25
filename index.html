@@ -1342,6 +1342,7 @@ details.pn-dd{padding:0}
 .es-fotos th button.es-ord{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;white-space:nowrap}
 .es-fotos tr.sel td{background:var(--warn-bg)}.vc-conf{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center}.vc-conf input{min-width:180px}.vc-sim{color:var(--bad,#B3261E);border-color:currentColor}
 .pend-cort{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}.pend-cort-mais{display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 20px;border:0;border-radius:999px;background:#FFC20E;color:#10233F;font:inherit;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12)}.pend-cort-mais:hover{filter:brightness(1.05)}.pend-cort-mais svg{width:20px;height:20px}.pend-cort-form{align-items:end}.es-esc-img{width:48px;height:48px;object-fit:cover;border-radius:6px;display:block}.es-link{background:none;border:0;padding:0;font:inherit;font-weight:600;color:inherit;text-decoration:underline;cursor:pointer;text-align:left}
+.es-ic{display:block;color:var(--muted,#6b7280);font-size:.78em;font-weight:400}
 .es-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:10px 0}
 .es-rec{margin:6px 0 0;padding-left:18px;font-size:13px}.es-h3{font-size:14px;margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em}
 .es-vazio{font-size:15px;margin:6px 0 12px}
@@ -1556,7 +1557,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.48.0 · 24/11 23:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.49.0 · 25/11 00:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -6438,7 +6439,7 @@ async function fotCfgSalvar(){const A=state.fot;const lim=(A.j&&A.j.limites)||nu
 const ES_FAIXAS=['0–30 s','30–60 s','1–2 min','2–5 min','5–10 min','10–20 min','mais de 20 min'];
 const ES_SEMANA=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 const ES_LANG={pt:'Português',en:'Inglês',es:'Espanhol',fr:'Francês',de:'Alemão',it:'Italiano',zh:'Chinês'};
-const ES_SECOES=[['u','Funil'],['a','Vendas e produtos'],['c','Rapidez'],['d','Dias e eventos'],['e','Visitantes'],['f','Movimento'],['g','Jogos e ano a ano'],['h','Escolas']]; // v97: g só para o Admin (esSecoes); 23/11: a b (Fotógrafos) virou a aba Estatísticas da view Fotógrafos (esSecBVai)
+const ES_SECOES=[['u','Funil'],['s','Selfies e pessoas'],['a','Vendas e produtos'],['c','Rapidez'],['d','Dias e eventos'],['e','Visitantes'],['f','Movimento'],['g','Jogos e ano a ano'],['h','Escolas']]; // v97: g só para o Admin (esSecoes); 23/11: a b (Fotógrafos) virou a aba Estatísticas da view Fotógrafos (esSecBVai)
 const esSecoes=()=>ES_SECOES.filter(([s])=>s!=='g'||isAdminUser(state.user));
 // nomes na tela no idioma da equipe (os dados guardados seguem em português)
 const esFx=i=>i==null?null:TE('es_faixas')[i];
@@ -7354,13 +7355,13 @@ function esTela(){const M=state.es;const p=esPeriodo();const chave=p.de+'|'+p.at
 function vEstatisticas(){const M=state.es;const on=esOn();if(M.sec==='b'&&esSecBVai())return `<div class="note">${TE('es_carregando')}</div>`;if(!esSecoes().some(s=>s[0]===M.sec))M.sec='a';
   if(M.sec==='h')return `<div class="head pn-head"><div><div class="eyebrow">${TE('g_dashboard')} · ${esc(venueName())}</div><h1>${TE('v_estatisticas')}</h1></div></div>${esChips()}<div class="es-sec">${esSecH()}</div>`; // 17/11: escolas pelo voucher, sem o período
   if(M.sec==='g')return `<div class="head pn-head"><div><div class="eyebrow">${TE('g_dashboard')} · ${esc(venueName())}</div><h1>${TE('v_estatisticas')}</h1></div></div>${esChips()}<div class="es-sec">${esSecG()}</div>`; // v97: g tem chips de ano, sem o período
-  if(on){esPull();if(M.sec==='f'||M.sec==='u')esVisPull();}const {p,D}=esTela();const K=D.kpi;
+  if(on){esPull();if(M.sec==='f'||M.sec==='u'||M.sec==='s')esVisPull();}const {p,D}=esTela();const K=D.kpi;
   const aviso=!on||M.erro?`<div class="alert warn"><span class="sev" aria-hidden="true"></span><div><b>${TE('sem_conexao_srv')}</b><p>${TE('es_vem_srv')} ${M.rover?TE('es_so_rover'):TE('es_ligue_rover')}</p></div></div>`:(M.busy&&!M.dias?`<div class="note">${TE('es_carregando')}</div>`:'');
   const fuso=on?esFusoAviso(TE('es_fuso_horas')):'';
   const extra=`<button class="chip" data-act="es-rover" aria-pressed="${M.rover}" title="${TE('es_rover_tip')}">${TE('es_com_rover')}</button>`;
   const nota=`${p.cortado?TE('es_longo',ES_DIAS_MAX)+' ':''}${TE('es_so_eterna')}`;
   const chips=esChips();
-  const sec={u:esSecU,a:esSecA,c:esSecC,d:esSecD,e:esSecE,f:esSecF}[M.sec]||esSecA;
+  const sec={u:esSecU,s:esSecS,a:esSecA,c:esSecC,d:esSecD,e:esSecE,f:esSecF}[M.sec]||esSecA;
   return `<div class="head pn-head"><div><div class="eyebrow">${TE('g_dashboard')} · ${esc(venueName())}</div><h1>${TE('v_estatisticas')}</h1></div>${relBotao('estatisticas')}</div>
   ${rangeBar(nota,extra,true)}${chips}${aviso}${fuso}<div class="es-sec">${sec(D,K)}</div>`;}
 // aviso de fuso (servidor do ponto em outro fuso que o venue); conseq diz o que fica errado em cada seção
@@ -7417,7 +7418,7 @@ function esQuando(iso){const ms=Date.parse(String(iso||''));return Number.isFini
 // 16/11 (Ronaldo): visitantes em tempo real da API do Maraca Acessos (rota /visitantes do servidor do ponto); sai a importação de CSV
 async function esVisPull(){const M=state.es;if(!esOn())return;const p=esPeriodo();const k=p.de+'|'+p.ate;const V=M.vis||(M.vis={});if(V.busy)return;if(V.k===k&&Date.now()-V.em<(V.d?60e3:10e3))return;
   V.busy=true;try{const r=await agFetch(state.agent.url+'/visitantes?de='+p.de+'&ate='+p.ate,{cache:'no-store'});const j=await r.json();V.d=j&&j.ok?j:null;}catch(e){V.d=null;}
-  finally{V.k=k;V.em=Date.now();V.busy=false;if(state.view==='estatisticas'&&(M.sec==='u'||M.sec==='f'))render();}}
+  finally{V.k=k;V.em=Date.now();V.busy=false;if(state.view==='estatisticas'&&(M.sec==='u'||M.sec==='f'||M.sec==='s'))render();}}
 function esVis(){const M=state.es,p=esPeriodo(),V=M.vis||{};return V.k===p.de+'|'+p.ate?(V.d||false):null;} // null carregando, false sem conexão
 function esDiasAtuais(){const M=state.es,p=esPeriodo();return M.chave===p.de+'|'+p.ate&&Array.isArray(M.dias)?M.dias:[];}
 // Funil (16/11): visitantes (catracas) > pessoas fotografadas (rostos diferentes nas fotos) > fotos > sessões no balcão > compraram > fotos compradas
@@ -7440,6 +7441,38 @@ function esSecU(){const V=esVis(),ds=esDiasAtuais();const soma=f=>ds.reduce((a,d
   return `<section class="panel pn-panel" id="es-funil"><div class="pn-ph"><div><h2>${TE('esf_titulo')}</h2></div></div>
     <div class="es-fun">${passos.map((x,i)=>`<div class="es-fun-l"><div class="es-fun-b" data-passo="${i}" style="width:${W[i]}%;background:${x.cor}"><b>${x.n==null?(i===0&&V===null?'…':'—'):fmtN(x.n)}</b><span>${esc(x.t)}</span>${x.s?`<small>${esc(x.s)}</small>`:''}</div></div>
       <div class="es-fun-r">${x.c?`<b style="color:${x.cor}">${esc(x.c[0])}</b><span>${esc(x.c[1])}</span>`:''}</div>`).join('')}</div></section>`;}
+// 24/11 (Ronaldo): Selfies e pessoas: quantas pessoas a equipe fotografou (abordou) por dia e por hora, contra os visitantes das catracas,
+// e o que aconteceu com cada selfie (Checkout no balcão e galeria pelo QR). Taxas com intervalo de confiança de 95% (Wilson); n<30 = amostra pequena.
+const esWilson=(k,n)=>{if(!n)return null;const z=1.96,p=k/n,d=1+z*z/n,c=(p+z*z/(2*n))/d,m=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/d;return [Math.max(0,c-m),Math.min(1,c+m)];};
+const esTaxa=(k,n)=>{if(!n)return '—';const w=esWilson(k,n);return `${esPct(k/n)} <small class="es-ic">${esPct(w[0],false)}–${esPct(w[1])}${n<30?' · '+TE('ess_pequena'):''}</small>`;};
+function esSelfAg(ds){const z=()=>({selfies:0,achou:0,nao_achou:0,sem_rosto:0,varias_pessoas:0,erro:0,fotos:0,ms_soma:0});const o={checkout:z(),qr:z()};
+  ds.forEach(d=>{const po=d.selfies&&d.selfies.por_origem||{};['checkout','qr'].forEach(k=>{const x=po[k];if(x)Object.keys(o[k]).forEach(c=>o[k][c]+=numF(x[c]));});});return o;}
+function esSecS(){const ds=esDiasAtuais(),V=esVis();const soma=f=>ds.reduce((a,d)=>a+numF(f(d)),0);
+  const temEnt=ds.some(d=>d.entradas&&d.entradas.total!=null);const vis=temEnt?soma(d=>d.entradas&&d.entradas.total):V?numF(V.total):null;
+  const pes=soma(d=>d.pessoas&&d.pessoas.pessoas),perto=soma(d=>d.pessoas&&d.pessoas.pessoas_perto),fotos=soma(d=>d.fotos);
+  const S=esSelfAg(ds),ck=S.checkout,qr=S.qr;const seg=x=>x.selfies?(x.ms_soma/x.selfies/1000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' s':'—';
+  const kp=`<div class="pn-kpis">${kpiCard({k:'pes',ico:'ses',label:TE('ess_pes'),value:fmtN(pes),sub:`${TE('ess_abord')} ${vis?esPct(pes/vis):'—'} · ${fmtN(vis)} ${TE('ess_vis')}`})}
+    ${kpiCard({k:'perto',ico:'cam',label:TE('ess_perto'),value:fmtN(perto),sub:pes?`${esPct(perto/pes)} ${TE('ess_das_pes')}`:''})}
+    ${kpiCard({k:'sck',ico:'tic',label:TE('ess_ck'),value:fmtN(ck.selfies),sub:`${TE('ess_achou')} ${ck.selfies?esPct(ck.achou/ck.selfies):'—'} · ${seg(ck)}`})}
+    ${kpiCard({k:'sqr',ico:'rev',label:TE('ess_qr'),value:fmtN(qr.selfies),sub:`${TE('ess_achou')} ${qr.selfies?esPct(qr.achou/qr.selfies):'—'} · ${seg(qr)}`})}</div>`;
+  const taxas=esTab([{t:''},{t:TE('ess_vis_pes'),n:1},{t:TE('ess_ck'),n:1},{t:TE('ess_qr'),n:1}],[
+    `<tr><td>${TE('ess_abord')}</td><td class="num">${vis?esTaxa(pes,vis):'—'}</td><td></td><td></td></tr>`,
+    `<tr><td>${TE('ess_pediu')}</td><td></td><td class="num">${pes?esTaxa(Math.min(ck.selfies,pes),pes):'—'}</td><td></td></tr>`,
+    ...[['achou','ess_achou'],['nao_achou','ess_nao_achou'],['sem_rosto','ess_sem_rosto'],['varias_pessoas','ess_varias'],['erro','ess_erro']].map(([k,t])=>
+      `<tr><td>${TE(t)}</td><td></td><td class="num">${fmtN(ck[k])} · ${esTaxa(ck[k],ck.selfies)}</td><td class="num">${fmtN(qr[k])} · ${esTaxa(qr[k],qr.selfies)}</td></tr>`),
+    `<tr><td>${TE('ess_fotos_ach')}</td><td></td><td class="num">${ck.achou?esMed(ck.fotos/ck.achou):'—'}</td><td class="num">${qr.achou?esMed(qr.fotos/qr.achou):'—'}</td></tr>`,
+    `<tr><td>${TE('ess_tempo')}</td><td></td><td class="num">${seg(ck)}</td><td class="num">${seg(qr)}</td></tr>`]);
+  const dl=ds.filter(d=>numF(d.fotos)||(d.selfies&&d.selfies.lista&&d.selfies.lista.length)||(d.entradas&&d.entradas.total)).slice().sort((a,b)=>b.dia.localeCompare(a.dia));
+  const porDia=dl.map(d=>{const v=d.entradas?numF(d.entradas.total):0,p=numF(d.pessoas&&d.pessoas.pessoas),o=d.selfies&&d.selfies.por_origem||{},c=o.checkout||{},q=o.qr||{};
+    return `<tr><td class="stk">${esc(dlabel(d.dia))}</td><td class="num">${v?fmtN(v):'—'}</td><td class="num">${fmtN(p)}</td><td class="num">${v&&p?esPct(p/v):'—'}</td><td class="num">${fmtN(d.pessoas&&d.pessoas.pessoas_perto)}</td><td class="num">${fmtN(d.fotos)}</td><td class="num">${fmtN(c.selfies)}</td><td class="num">${c.selfies?esPct(numF(c.achou)/c.selfies):'—'}</td><td class="num">${fmtN(q.selfies)}</td><td class="num">${q.selfies?esPct(numF(q.achou)/q.selfies):'—'}</td></tr>`;});
+  const H={};const hz=h=>H[h]||(H[h]={vis:0,fotos:0,ck:0,qr:0,achou:0});
+  ds.forEach(d=>{Object.entries(d.entradas&&d.entradas.por_hora||{}).forEach(([h,n])=>{hz(+h).vis+=numF(n);});Object.entries(d.por_hora||{}).forEach(([h,v])=>{if(v)hz(+h).fotos+=numF(v.fotos);});
+    (d.selfies&&d.selfies.lista||[]).forEach(x=>{const h=+String(x.em||'').slice(0,2);if(!(h>=0&&h<24))return;const z=hz(h);if(x.origem==='qr')z.qr++;else z.ck++;if(x.resultado==='achou')z.achou++;});});
+  const hs=Object.keys(H).map(Number).filter(h=>H[h].vis||H[h].fotos||H[h].ck||H[h].qr).sort((a,b)=>a-b);
+  const porHora=hs.map(h=>{const x=H[h];return `<tr><td>${String(h).padStart(2,'0')}h</td><td class="num">${fmtN(x.vis)}</td><td class="num">${fmtN(x.fotos)}</td><td class="num">${fmtN(x.ck)}</td><td class="num">${fmtN(x.qr)}</td><td class="num">${x.ck+x.qr?esPct(x.achou/(x.ck+x.qr)):'—'}</td><td class="num">${x.vis?esPct(x.ck/x.vis):'—'}</td></tr>`;});
+  return `${kp}<section class="panel pn-panel" id="es-selfies"><div class="pn-ph"><div><h2>${TE('ess_taxas')}</h2></div></div>${taxas}</section>
+  <section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('ess_por_dia')}</h2></div></div>${dl.length?esTab([{t:TE('ess_dia')},{t:TE('ess_vis'),n:1},{t:TE('ess_pes'),n:1},{t:TE('ess_abord'),n:1},{t:TE('ess_perto'),n:1},{t:TE('esf_fotos'),n:1},{t:TE('ess_ck'),n:1},{t:TE('ess_achou'),n:1},{t:TE('ess_qr'),n:1},{t:TE('ess_achou'),n:1}],porDia):`<div class="note">${TE('pn_sem_vendas')}.</div>`}</section>
+  ${hs.length?`<section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('ess_por_hora')}</h2></div></div>${esBars(hs.map(h=>({nome:String(h).padStart(2,'0')+'h',v:H[h].ck+H[h].qr})),{label:TE('ess_selfies_hora')})}${esTab([{t:TE('es_hora')},{t:TE('ess_vis'),n:1},{t:TE('esf_fotos'),n:1},{t:TE('ess_ck'),n:1},{t:TE('ess_qr'),n:1},{t:TE('ess_achou'),n:1},{t:TE('ess_ck_vis'),n:1}],porHora)}</section>`:''}`;}
 function esSecF(){const V=esVis();
   if(V===null)return `<section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_mov')}</h2></div></div><div class="note">${TE('es_carregando2')}</div></section>`;
   if(!V)return `<section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_mov')}</h2></div></div><div class="note">${TE('esm_sem')}</div></section>`;
@@ -11269,6 +11302,30 @@ const EQ={
   es_faixas:[["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "mais de 20 min"],["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "over 20 min"],["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "más de 20 min"],["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "plus de 20 min"],["0–30 s", "30–60 s", "1–2 min", "2–5 min", "5–10 min", "10–20 min", "über 20 min"]],
   meses_curtos:[["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"],["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sept", "oct", "nov", "dic"],["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."],["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]],
   es_sec_u:["Funil","Funnel","Embudo","Entonnoir","Trichter"],
+  es_sec_s:["Selfies e pessoas","Selfies and people","Selfies y personas","Selfies et personnes","Selfies und Personen"],
+  ess_pes:["Pessoas fotografadas","People photographed","Personas fotografiadas","Personnes photographiées","Fotografierte Personen"],
+  ess_vis:["visitantes","visitors","visitantes","visiteurs","Besucher"],
+  ess_vis_pes:["Visitantes","Visitors","Visitantes","Visiteurs","Besucher"],
+  ess_abord:["Abordagem","Approach rate","Abordaje","Abordage","Ansprachequote"],
+  ess_perto:["Em primeiro plano","In the foreground","En primer plano","Au premier plan","Im Vordergrund"],
+  ess_das_pes:["das fotografadas","of those photographed","de las fotografiadas","des photographiées","der Fotografierten"],
+  ess_ck:["Selfies no Checkout","Checkout selfies","Selfies en el Checkout","Selfies au Checkout","Selfies im Checkout"],
+  ess_qr:["Selfies na galeria","Gallery selfies","Selfies en la galería","Selfies dans la galerie","Selfies in der Galerie"],
+  ess_achou:["Acharam","Found","Encontraron","Trouvées","Gefunden"],
+  ess_nao_achou:["Não acharam","Not found","No encontraron","Non trouvées","Nicht gefunden"],
+  ess_sem_rosto:["Sem rosto","No face","Sin rostro","Sans visage","Kein Gesicht"],
+  ess_varias:["Várias pessoas","Several people","Varias personas","Plusieurs personnes","Mehrere Personen"],
+  ess_erro:["Erro","Error","Error","Erreur","Fehler"],
+  ess_pediu:["Pediram as fotos","Asked for the photos","Pidieron las fotos","Ont demandé les photos","Fotos angefragt"],
+  ess_fotos_ach:["Fotos por selfie que achou","Photos per found selfie","Fotos por selfie encontrada","Photos par selfie trouvée","Fotos pro gefundenem Selfie"],
+  ess_tempo:["Tempo da busca","Search time","Tiempo de búsqueda","Durée de recherche","Suchdauer"],
+  ess_taxas:["Taxas","Rates","Tasas","Taux","Quoten"],
+  ess_pequena:["amostra pequena","small sample","muestra pequeña","petit échantillon","kleine Stichprobe"],
+  ess_por_dia:["Pessoas abordadas por dia","People approached per day","Personas abordadas por día","Personnes abordées par jour","Angesprochene Personen pro Tag"],
+  ess_por_hora:["Selfies em cada hora","Selfies each hour","Selfies en cada hora","Selfies à chaque heure","Selfies pro Stunde"],
+  ess_selfies_hora:["Selfies por hora","Selfies per hour","Selfies por hora","Selfies par heure","Selfies pro Stunde"],
+  ess_ck_vis:["Selfies ÷ visitantes","Selfies ÷ visitors","Selfies ÷ visitantes","Selfies ÷ visiteurs","Selfies ÷ Besucher"],
+  ess_dia:["Dia","Day","Día","Jour","Tag"],
   esf_titulo:["Funil da fotografia","Photo funnel","Embudo de la fotografía","Entonnoir de la photo","Foto-Trichter"],
   esf_vis:["Visitantes do Tour","Tour visitors","Visitantes del Tour","Visiteurs du Tour","Tour-Besucher"],
   esf_pes:["Pessoas fotografadas","People photographed","Personas fotografiadas","Personnes photographiées","Fotografierte Personen"],
