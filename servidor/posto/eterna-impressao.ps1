@@ -4,7 +4,7 @@
 # Escuta só em 127.0.0.1:8790; o Posto de venda manda as fotos já montadas (JPEG) e este script imprime
 # na impressora padrão (a DNP) por um Chrome escondido, igual à impressão do Eterna. Só aceita pedidos do endereço do Eterna (ORIGENS).
 # Se este script não estiver rodando, o Eterna imprime pelo Chrome (--kiosk-printing), como antes.
-#   GET  /status    -> {ok, impressora, dnp}
+#   GET  /status    -> {ok, pagina, impressora, dnp}  (pagina "retrato" desde 25/11: a página não fixa mais 4in 6in)
 #   POST /imprimir  {venda, imagens: ["data:image/jpeg;base64,..."]} -> {ok, fotos, impressora, dnp}
 # dnp (null quando não há DNP DS-RX1 no USB): {status, texto, erro, mqty, restantes, vida, antes, saiu, conferido}
 #   lido do firmware da DNP pelo USB (comandos de leitura "ESC P": STATUS, INFO MQTY, MNT_RD COUNTER_LIFE), só com a fila
@@ -172,7 +172,7 @@ function Atende($c) {
     if (-not $cors) { Responde $st 403 '{"ok":false,"erro":"origem"}' $origem $false; return }
     if ($metodo -eq "GET" -and $caminho -like "/status*") {
         $dn = $null; if (FilaVazia) { $dn = DnpLer }
-        Responde $st 200 ('{"ok":true,"impressora":' + (ConvertTo-Json ([string](Padrao))) + ',"dnp":' + (DnpJson $dn) + '}') $origem $cors
+        Responde $st 200 ('{"ok":true,"pagina":"retrato","impressora":' + (ConvertTo-Json ([string](Padrao))) + ',"dnp":' + (DnpJson $dn) + '}') $origem $cors
         return
     }
     if ($metodo -ne "POST" -or $caminho -ne "/imprimir") { Responde $st 404 '{"ok":false,"erro":"rota"}' $origem $cors; return }
