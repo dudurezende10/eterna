@@ -13005,6 +13005,10 @@ ARQUIVO_DIR = os.path.join(HOME, "arquivo")                              # NVMe:
 ARQUIVO_MIDIA = os.path.join(os.path.realpath(INBOX), ".arquivo")        # HD das fotos: o ponto esconde a pasta de quem varre a inbox
 ZERAR_PEDIDO_MAX_S = 600                 # pedido mais velho que isto na partida não executa (vira zerar-expirado.json)
 ZERAR_TENTATIVAS = 3                     # parou no meio 3 vezes: zerar-falhou.json e o agente sobe normal
+# 24/11 (Eduardo, depois de zerar): "vamos deletar esse botão, acho ele perigoso". O botão e a rota só existem quando o serviço
+# sobe com ETERNA_ZERAR_BOTAO=1 (ou nos testes, com ETERNA_MODO_TESTE=1). Sem isso a tela não mostra o cartão e o servidor recusa
+# com "desligado". O desfazer pela linha de comando e o aviso de zeragem aos navegadores (/status.zerada) continuam.
+ZERAR_BOTAO = os.environ.get("ETERNA_ZERAR_BOTAO") == "1" or os.environ.get("ETERNA_MODO_TESTE") == "1"
 ZERAR_ATE = "2026-11-25"                 # revisão de segurança (24/11): depois deste dia (data local do servidor) o botão recusa com
                                          # "prazo"; ETERNA_ZERAR_LIBERA=1 no serviço libera de novo. Pedido ou andamento já gravado retoma normal.
 ZERAR_PRAZO_DIAS = 30                    # D9 (Eduardo, 24/11): a pasta de arquivo fica 30 dias; a data vai no resumo e no console.
@@ -13187,6 +13191,8 @@ def _zerar_hoje():
 def zerar_bloqueios():
     """Códigos que impedem a zeragem agora (lista vazia = pode)."""
     b = []
+    if not ZERAR_BOTAO:
+        b.append("desligado")                            # 24/11: o botão foi tirado depois da zeragem (decisão do Eduardo)
     if _zerar_hoje() > ZERAR_ATE and os.environ.get("ETERNA_ZERAR_LIBERA") != "1":
         b.append("prazo")                                # o botão só valia até ZERAR_ATE
     if os.path.exists(ZERAR_FEITA):
@@ -13932,7 +13938,7 @@ def metricas_periodo(de, ate):
             except Exception:
                 m = None
             if m is not None:
-                if isinstance(m, dict) and m.get("v") == 2 and not m.get("t3"):
+                if isinstance(m, dict) and m.get("v") == 2 and (m.get("t3") or 0) < T3_VER:
                     met_t3_agenda(d)                 # os tempos novos entram em segundo plano; a leitura segue rápida (critério 27)
                 out.append(m)
         t += 86400
@@ -14011,9 +14017,48 @@ def met_t3(ss, evs):
     return t, fs
 
 
+def pedidos_dia(dia):
+    """24/11: desfecho dos pedidos do Checkout criados no dia (moram no servidor desde 15/11): por estado, quantos, valor e
+    o tempo até fechar (faixas). Só contagens; o motivo escrito pelo vendedor não sai daqui. None antes de 15/11 ou sem banco."""
+    if dia < "2026-11-15":
+        return None
+    try:
+        with estado_lock:
+            db = pedidos_db()
+            try:
+                rows = db.execute("select estado, valor from pedido where substr(criada, 1, 10) between ? and ?",
+                                  (_ff_hoje(time.mktime(time.strptime(dia, "%Y-%m-%d")) - 86400), dia)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return None
+    out = {}
+    for est, txt in rows:
+        try:
+            r = json.loads(txt)
+        except Exception:
+            continue
+        cr = _epoch(r.get("criada"))
+        if not cr or _ff_hoje(cr) != dia:
+            continue
+        o = out.setdefault(est if est in PEDIDO_ESTADOS else "outro", {"n": 0, "valor": 0.0, "fecha_s": h_novo()})
+        o["n"] += 1
+        try:
+            o["valor"] = round(o["valor"] + float(r.get("total") or 0), 2)
+        except (TypeError, ValueError):
+            pass
+        fe = _epoch(r.get("fechada"))
+        if fe and est not in PEDIDO_ABERTO:
+            h_add(o["fecha_s"], fe - cr)
+    return out
+
+
+T3_VER = 2      # 1: tempos e cliques por sessão (v99.51.0); 2: desfecho dos pedidos (v99.52.0)
+
+
 def met_t3_completa(dia, m):
     """Dia passado gravado antes de 24/11: acrescenta os tempos novos uma vez (nunca troca o que existe)."""
-    if not isinstance(m, dict) or m.get("v") != 2 or m.get("t3"):
+    if not isinstance(m, dict) or m.get("v") != 2 or (m.get("t3") or 0) >= T3_VER:
         return m
     with met_lock(dia):                              # relê dentro do lock: outra gravação do dia pode ter chegado
         try:
@@ -14021,7 +14066,7 @@ def met_t3_completa(dia, m):
                 m = json.load(f)
         except Exception:
             return m
-        if not isinstance(m, dict) or m.get("v") != 2 or m.get("t3"):
+        if not isinstance(m, dict) or m.get("v") != 2 or (m.get("t3") or 0) >= T3_VER:
             return m
         return _met_t3_grava(dia, m)
 
@@ -14072,7 +14117,9 @@ def _met_t3_grava(dia, m):
         tem.setdefault(k, v)
     if ss is not None:
         m.setdefault("fotos_sessao", fs)
-    m["t3"] = 1
+    if "pedidos" not in m:
+        m["pedidos"] = pedidos_dia(dia)
+    m["t3"] = T3_VER
     met_escreve(dia, m)
     return m
 
@@ -14158,7 +14205,8 @@ def met_v2(dia, ss, evs):
     t3, fs = met_t3(ss, evs)
     tempos.update(t3)
     out["fotos_sessao"] = fs
-    out["t3"] = 1
+    out["pedidos"] = pedidos_dia(dia)
+    out["t3"] = T3_VER
     out["entradas"] = entradas_dia(dia)
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     out["selfies"] = selfies_dia(dia)
@@ -22959,6 +23007,7 @@ class H(BaseHTTPRequestHandler):
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
                            pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_, luz=lz_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
+            st_["zerar_ui"] = ZERAR_BOTAO      # sem isso a tela não mostra o cartão Zerar fase de teste
             st_["lixeira"] = lx_
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS

@@ -40,7 +40,7 @@ Regra: **acrescentar, nunca substituir**. Tudo que existe nas Estatísticas cont
 2. **Cliques e metas** (v99.50.0, feita; meta em `sim/metaDia`): cliques por venda, receita por clique, meta diária de receita e cliques que faltam, evolução diária
    (média móvel de 7 dias e mesmo dia da semana), por fotógrafo e por vendedor, histograma de cliques por sessão.
 3. **Tempos** (v99.51.0, feita, na aba Rapidez): fotografia, escolha, fila e impressão, com mediana e percentil 90; sessões por número de cliques.
-4. Fotos e sessões por hora contra visitantes por hora; vendas por canal; desfecho dos pedidos (não pagos, substituídos).
+4. **Hora a hora, canais e pedidos** (v99.52.0, feita, abaixo do Funil): fotos e sessões por hora contra visitantes por hora; vendas por canal; desfecho dos pedidos do Checkout (`pedidos`).
 
 ## Leva 2: medir o que ainda não é gravado
 

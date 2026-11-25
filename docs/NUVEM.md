@@ -323,3 +323,20 @@ As pendências operacionais e de segurança da homologação ficam fora do repos
 ## Galeria só com selfie (24/11)
 
 `GET /g/<token>/livres` responde 403: nenhuma foto sai só com o QR ou o código. As compradas e cortesias da venda aparecem depois da selfie que bate em pelo menos uma foto da venda. O `POST /g/<token>/rosto` recebe `email`; um e-mail válido fica no registro `CON#<token>` do consentimento (400 dias).
+
+## E-mails em pelo menos três idiomas (25/11)
+
+Todo e-mail que a nuvem manda (fotos liberadas depois da compra online e senha provisória da equipe) sai num corpo só com o idioma da pessoa primeiro e depois português, inglês e espanhol, os que faltarem (`email_idiomas`). Não sabemos quem vai ler. O assunto junta os três primeiros; o link da galeria vai uma vez, em cima, com botão no HTML; a validade sai escrita no formato de cada idioma (`email_data`). Fotos liberadas existe também em francês, alemão, italiano e chinês. E-mail novo segue a mesma regra.
+
+## Leads no RD Station (25/11)
+
+Quem deixa o e-mail na galeria online (selfie, compra, vídeo da ativação, cortesia da escola) vira lead (`LEAD#`). Só quem marca "Quero receber novidades e ofertas" vai para o RD Station Marketing, como conversão com a base legal de consentimento (`legal_bases`: communications, consent, granted); quem não marca fica só no nosso banco (LGPD).
+
+- **Envio:** `POST https://api.rd.services/platform/conversions?api_key=` (`rdstation.py`). Só o e-mail, a tag do idioma e a origem; nada de nome, CPF ou foto. Uma conversão por origem: "Eterna - galeria de fotos (selfie)", "Eterna - compra de fotos online", "Eterna - video da ativacao", "Eterna - foto cortesia escola" e, para os antigos, "Eterna - galeria de fotos".
+- **Fila:** o cliente nunca espera o RD. `lead()` grava `RDPEND`; a rotina de 5 minutos (`conferir`) envia até 40 por vez (`rd_fila`) e marca `rd_em` e `rd_origens` no lead. Erro: fica na fila com `tentativas`. A rotina diária (`limpeza`) põe na fila quem tem aceite e nunca foi ao RD (`rd_varre`), inclusive os de antes da integração.
+- **Chave:** parâmetro SecureString do SSM `/eterna/rdstation-chave` (`RdChaveParametro`). Não vence (não é o access token do OAuth, que dura 24 h). Recusa de chave (401/403): a nuvem esquece a chave da memória e relê do SSM na rodada seguinte, então trocar a chave é só gravar a nova no SSM. A chave vai na URL por exigência do RD; por isso nenhum log nem erro imprime a URL, só o código HTTP. Sem o parâmetro, os leads esperam na fila.
+- **Gravar a chave** (CloudShell; a chave não fica no histórico nem na tela):
+
+```bash
+read -s -p "Chave do RD: " RD && aws ssm put-parameter --region us-east-2 --name /eterna/rdstation-chave --type SecureString --overwrite --value "$RD"; unset RD
+```

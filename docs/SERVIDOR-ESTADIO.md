@@ -95,6 +95,8 @@ Cadastro da equipe por comando (`vendedores.sh`, senha digitada pelo Ronaldo, se
 
 ## Zerar a fase de teste (24/11, para o Ronaldo)
 
+**A zeragem foi feita em 24/11 às 23h11 (id `fase-teste-20261124-2311`) e o botão foi tirado na v99.52.1**: o cartão não aparece mais e o servidor recusa o pedido. Ele só volta com `ETERNA_ZERAR_BOTAO=1` no serviço. O texto abaixo fica como registro de como funcionou e de como desfazer.
+
 O Admin aperta **Zerar fase de teste** no fim de Sistema › Repositório. O servidor reinicia e leva vendas, sessões, fotos, rostos, galerias e números do teste para duas pastas de arquivo, no próprio servidor. Nada vai para a nuvem e nada é apagado de vez. Plano: `docs/planos/2026-11-24-zerar-fase-teste.md`. Detalhe técnico: `docs/DOCUMENTACAO-TECNICA.md`, seção v99.45.0, item 8.
 
 O nome da zeragem (`<id>`) tem o formato `fase-teste-AAAAMMDD-HHMM`. Ele aparece no cartão do Repositório e no `zerada.json`. As duas pastas:

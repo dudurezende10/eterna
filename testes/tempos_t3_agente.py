@@ -55,7 +55,7 @@ for _ in range(100):
     g = json.load(open(os.path.join(m.MET_DIR, dia + ".json"), encoding="utf8"))
     if g.get("t3"):
         break
-ok(g.get("t3") == 1, "o dia passado ganhou os tempos novos")
+ok(g.get("t3") == m.T3_VER and "pedidos" in g, "o dia passado ganhou os tempos novos e os pedidos")
 ok(g["tempos"]["escolha_s"]["n"] == 7, "o que já existia não muda: %r" % g["tempos"].get("escolha_s"))
 ok(g["tempos"].get("fotografia_s", {}).get("n") == 2 and g.get("fotos_sessao") == [1, 0, 1, 0, 0, 1], "fotografia e cliques do arquivo de sessões: %r" % g.get("fotos_sessao"))
 ok(g.get("fotos") == 5, "o resto do resumo fica igual")
@@ -65,8 +65,23 @@ dia2 = "2026-11-19"
 json.dump({"v": 2, "dia": dia2, "tempos": {}}, open(os.path.join(m.MET_DIR, dia2 + ".json"), "w"))
 m.met_t3_completa(dia2, {"v": 2})
 g2 = json.load(open(os.path.join(m.MET_DIR, dia2 + ".json"), encoding="utf8"))
-ok(g2.get("t3") == 1 and "fotografia_s" not in g2["tempos"] and "fotos_sessao" not in g2, "sem sessões: %r" % g2)
+ok(g2.get("t3") == m.T3_VER and "fotografia_s" not in g2["tempos"] and "fotos_sessao" not in g2, "sem sessões: %r" % g2)
+
+# desfecho dos pedidos do dia: por estado, valor e tempo até fechar; o motivo escrito não sai
+db = m.pedidos_db()
+for pid, est, tot, fecha in (("p_a1", "confirmada", 110, 50), ("p_a2", "nao_paga", 35, 400), ("p_a3", "nao_paga", 70, None), ("p_a4", "aguardando", 145, None)):
+    r = {"id": pid, "estado": est, "posto": "Caixa 1", "criada": "2026-11-21T15:00:00Z", "total": tot, "motivo": "texto livre do vendedor"}
+    if fecha:
+        r["fechada"] = "2026-11-21T15:%02d:%02dZ" % (fecha // 60, fecha % 60)
+    db.execute("insert into pedido values (?,?,?,?,?,?)", (pid, "Caixa 1", est, json.dumps(r), r["criada"], time.time()))
+db.commit()
+db.close()
+p = m.pedidos_dia("2026-11-21")
+ok(p["confirmada"]["n"] == 1 and p["nao_paga"]["n"] == 2 and p["nao_paga"]["valor"] == 105 and p["aguardando"]["n"] == 1, "pedidos por estado: %r" % p)
+ok(p["confirmada"]["fecha_s"]["soma"] == 50 and p["nao_paga"]["fecha_s"]["n"] == 1 and p["aguardando"]["fecha_s"]["n"] == 0, "tempo até fechar: %r" % p)
+ok("texto livre" not in json.dumps(p), "o motivo escrito não sai no resumo")
+ok(m.pedidos_dia("2026-11-10") is None, "antes de 15/11 não há pedidos no servidor")
 
 print(json.dumps({"ok": not falhas, "falhas": falhas}, ensure_ascii=False))
-print(("OK tempos_t3_agente: fotografia, escolha, fila, impressão e cliques por sessão (v99.51.0)") if not falhas else "FALHA tempos_t3_agente: " + "; ".join(falhas))
+print(("OK tempos_t3_agente: fotografia, escolha, fila, impressão e cliques por sessão (v99.51.0), desfecho dos pedidos (v99.52.0)") if not falhas else "FALHA tempos_t3_agente: " + "; ".join(falhas))
 sys.exit(0 if not falhas else 1)

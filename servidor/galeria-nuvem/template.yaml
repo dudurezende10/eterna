@@ -20,6 +20,10 @@ Parameters:
     Default: "0"
     AllowedValues: ["0", "1"]
     Description: compra online pela Imply (v99); só liga de fato com ImplyChaveParametro e ImplyTipoPessoa preenchidos
+  RdChaveParametro:
+    Type: String
+    Default: "/eterna/rdstation-chave"
+    Description: parâmetro SecureString do SSM com a chave da API de conversões do RD Station (25/11). Sem o parâmetro no SSM, os leads esperam na fila; vazio desliga. A chave nunca vai no template
   ImplyChaveParametro:
     Type: String
     Default: ""
@@ -137,6 +141,7 @@ Resources:
           SEGREDO_PONTO_TESTE_SHA256: !Ref SegredoPontoTesteSha256
           COMPRA_ONLINE: !Ref CompraOnline
           IMPLY_CHAVE_SSM: !Ref ImplyChaveParametro
+          RD_CHAVE_PARAMETRO: !Ref RdChaveParametro
           IMPLY_TIPO_PESSOA: !Ref ImplyTipoPessoa
           IMPLY_CONSULTA: !Ref ImplyConsulta
           IMPLY_PRODUTO_CAMPO: !Ref ImplyProdutoCampo
@@ -177,7 +182,7 @@ Resources:
               Effect: Allow
               Action: [rekognition:DetectFaces]
               Resource: "*"
-            - Sid: ChaveDaImply
+            - Sid: ChavesDaImplyEdoRd
               Effect: Allow
               Action: [ssm:GetParameter]
               Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eterna/*"
