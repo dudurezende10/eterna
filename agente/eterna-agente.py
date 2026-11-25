@@ -9202,6 +9202,38 @@ def vendas_do_dia(posto=None, agora=None):
         elif d.get("resultado") == "ok":
             v["impressa"] = True
     out = [v for v in vs.values() if v.get("em")]
+    sem = {v["venda"] for v in out if not v.get("galeria")}
+    if sem:                                       # a venda do Checkout não leva a galeria no "criar": vem do pedido confirmado
+        try:
+            with estado_lock:
+                db = pedidos_db()
+                try:
+                    ps = db.execute("select id, valor from pedido where estado = 'confirmada' and criada >= ?", (dia,)).fetchall()
+                finally:
+                    db.close()
+            gal = {}
+            for pid, valor in ps:
+                if pid not in sem:
+                    continue
+                try:
+                    r = json.loads(valor or "{}")
+                except ValueError:
+                    continue
+                t = str(r.get("token") or "")
+                if token_ok(t):
+                    cod = str(r.get("codigo") or "")
+                    if not cod:
+                        try:
+                            with open(os.path.join(GALERIAS, t, "sessao.json"), encoding="utf-8") as f:
+                                cod = str((json.load(f) or {}).get("codigo") or "")
+                        except Exception:
+                            pass
+                    gal[pid] = {"token": t, "codigo": cod[:20]}
+            for v in out:
+                if v["venda"] in gal:
+                    v["galeria"] = gal[v["venda"]]
+        except Exception as ex:
+            print("  vendas do dia: pedidos não lidos (%s)" % type(ex).__name__)
     out.sort(key=lambda v: v["em"], reverse=True)
     return {"ok": True, "dia": dia, "vendas": out}
 
