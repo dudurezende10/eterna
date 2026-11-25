@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.64.0 · 25/11 15:03"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.65.0 · 25/11 15:06"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -5852,10 +5852,11 @@ function ftpContas(){const a=state.agent;if(!a.on||!can('configuracao','r'))retu
 function vImportarCore(){
   // fotógrafo logado: o upload começa no nome dele (como no Anfitrião no set); dá para trocar no seletor
   // v96-ux (Eduardo, 11/11): o fotógrafo não troca o próprio nome nem o ponto; nome do login, ponto da Escala do dia
-  const preso=impPreso(),presoPt=preso?impPontoDe(preso):null;if(preso){state.imp.key=preso;state.imp.point=presoPt.id;}else state.imp.key='todos'; // 24/11 (Eduardo, 11:04): sem o seletor Fotógrafo; quem decide o dono de cada foto é a câmera
+  if(fotoKey()&&state.imp.keyFor!==state.user.email){state.imp.key=fotoKey();state.imp.keyFor=state.user.email;}
+  const preso=impPreso(),presoPt=preso?impPontoDe(preso):null;if(preso){state.imp.key=preso;state.imp.point=presoPt.id;}
   const im=state.imp,g=state.ing;const name=impName(); // 18/11: o ponto não importa mais em Minhas fotos (sem filtro e fora do cabeçalho)
   const pending=g.queue.filter(x=>x.kind==='photo'||x.kind==='dup').length;const cur=g.cur?g.cur.photos.length:0;
-  const picker=`<div class="chips">${demoOn()?`<button class="chip" data-act="imp-mode" data-m="cartao" aria-pressed="${im.mode==='cartao'}">${TE('mf_m_cartao')}</button><button class="chip" data-act="imp-mode" data-m="wifi" aria-pressed="${im.mode==='wifi'}">${TE('mf_m_wifi')}</button><button class="chip" data-act="imp-mode" data-m="5g" aria-pressed="${im.mode==='5g'}">${TE('mf_m_5g')}</button><span style="width:8px"></span>`:''}${preso?`<span class="note imp-fixo">${TE('ga_fotografo')} <b>${esc(P[preso].name)}</b></span>${presoPt.txt?`<span class="note imp-fixo">${TE('mf_ponto')} <b>${esc(presoPt.txt)}</b></span>`:''}`:''}</div>`;
+  const picker=`<div class="chips">${demoOn()?`<button class="chip" data-act="imp-mode" data-m="cartao" aria-pressed="${im.mode==='cartao'}">${TE('mf_m_cartao')}</button><button class="chip" data-act="imp-mode" data-m="wifi" aria-pressed="${im.mode==='wifi'}">${TE('mf_m_wifi')}</button><button class="chip" data-act="imp-mode" data-m="5g" aria-pressed="${im.mode==='5g'}">${TE('mf_m_5g')}</button><span style="width:8px"></span>`:''}${preso?`<span class="note imp-fixo">${TE('ga_fotografo')} <b>${esc(P[preso].name)}</b></span>${presoPt.txt?`<span class="note imp-fixo">${TE('mf_ponto')} <b>${esc(presoPt.txt)}</b></span>`:''}`:`<label class="note">${TE('ga_fotografo')} <select data-act="imp-key" class="chip"><option value="todos" ${im.key==='todos'?'selected':''}>${TE('mf_todos')}</option>${humans.map(k=>`<option value="${esc(k)}" ${k===im.key?'selected':''}>${esc(P[k].name)}</option>`).join('')}</select></label>`}</div>`;
   const ico={ok:'good',dup:'neutral',black:'bad',auto:'warn',warn:'bad'};
   // v94 (ondas UX, D): Minhas fotos. Uma faixa de estado no lugar dos quadros de simulação; o técnico (agente, FTP, porta,
   // pasta, log de chegadas) só para o Admin, recolhido em "Detalhes técnicos" no fim da tela.
@@ -5869,7 +5870,7 @@ function vImportarCore(){
   return `<div class="head"><div><div class="eyebrow">${TE('ga_fotografo')} · ${esc(name)}</div><h1>${esc(viewLabel('importar'))}</h1></div>${fotoQuem()}</div>
   ${upFaixa(L)}${leitoresFaixa()}
   ${envioPainel()}
-  ${demoOn()||preso?picker:''}
+  ${picker}
   ${demoOn()?`<div class="row"><button class="btn primary" data-act="ing-start" ${g.running?'disabled':''}>${g.running?TE('mf_recebendo_btn'):TE('mf_simular',esc(name),srcName())}</button>${g.running?`<button class="btn ghost" data-act="ing-stop">${TE('mf_parar')}</button>`:''}${fotosNoServidor()?(state.imp.envio?`<span class="btn ghost" aria-live="polite">${TE('mf_enviando',state.imp.envio.feitas,state.imp.envio.total)}</span>`:`<label class="btn primary" style="cursor:pointer">${TE('mf_enviar')}<input type="file" accept="image/jpeg" multiple data-act="imp-files" style="display:none"></label>`):`<label class="btn ghost" style="cursor:pointer">${TE('mf_testar')}<input type="file" accept="image/*" multiple data-act="imp-files" style="display:none"></label>`}${g.n.arrived||g.done.length?`<button class="btn ghost" data-act="ing-reset">${TE('mf_limpar')}</button>`:''}</div>`:''}
   ${sessAg?upSessoes(L):''}${demoOn()||!state.agent.sessoes?`${cur?`<div class="panel"><div class="head"><h2>${TE('mf_formacao')}</h2><span class="note">${TE('mf_formacao_n',cur)}</span></div><div class="photos small">${g.cur.photos.map((p,i)=>photoBtn(p,{act:'zoom',tag:p.flag?p.flag:'',label:TE('rv_foto_n',i+1)})).join('')}</div></div>`:''}
   ${g.done.length?`<div class="panel"><div class="head"><h2>${TE('mf_criadas')}</h2><span class="note">${TE('mf_na_fila')}</span></div>
