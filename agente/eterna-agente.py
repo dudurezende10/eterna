@@ -12747,8 +12747,10 @@ def metricas_dia(dia):
         pf["sessoes"] += 1
         pf["fotos"] += len(x.get("fotos") or []) + len(x.get("pend") or [])   # v91: a sessão aberta tem fotos esperando o rosto
         m["sessoes"] += 1
-    if not m["fotos"]:
-        m["fotos"] = sum(v["fotos"] for v in m["por_fotografo"].values())
+    # 25/11 (auditoria): o total de fotos é a soma dos fotógrafos (as fotos das sessões), a mesma base da tabela por fotógrafo.
+    # Antes vinha do índice de rostos, que fica alguns minutos atrás das sessões, e o total não batia com a soma da tabela.
+    m["fotos_indexadas"] = m["fotos"]
+    m["fotos"] = sum(v["fotos"] for v in m["por_fotografo"].values())
     vendas = {}
     evs = _ev_ler(dia)
     for e in evs:
@@ -12837,7 +12839,7 @@ def metricas_dia(dia):
             g["vendas"] += 1
             g["faturamento"] += tot
             g["fotos_vendidas"] += nph
-        f = quem.get(card)
+        f = quem.get(card) or next((quem[x] for x in (c.get("sessoes") or []) if x in quem), None)   # 25/11: venda de várias sessões cujo card não é uma sessão
         if f:
             pf = m["por_fotografo"].setdefault(f, {"fotos": 0, "sessoes": 0, "sessoes_com_venda": 0, "vendas": 0, "faturamento": 0.0, "fotos_vendidas": 0})
             pf["vendas"] += 1
