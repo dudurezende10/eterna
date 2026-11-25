@@ -1557,7 +1557,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.51.1 · 25/11 02:55"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.52.1 · 25/11 03:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -7363,7 +7363,7 @@ function vEstatisticas(){const M=state.es;const on=esOn();if(M.sec==='b'&&esSecB
   const extra=`<button class="chip" data-act="es-rover" aria-pressed="${M.rover}" title="${TE('es_rover_tip')}">${TE('es_com_rover')}</button>`;
   const nota=`${p.cortado?TE('es_longo',ES_DIAS_MAX)+' ':''}${TE('es_so_eterna')}`;
   const chips=esChips();
-  const sec={u:esSecU,s:esSecS,k:esSecK,a:esSecA,c:esSecC,d:esSecD,e:esSecE,f:esSecF}[M.sec]||esSecA;
+  const sec={u:()=>esSecU()+esSecU2(),s:esSecS,k:esSecK,a:esSecA,c:esSecC,d:esSecD,e:esSecE,f:esSecF}[M.sec]||esSecA;
   return `<div class="head pn-head"><div><div class="eyebrow">${TE('g_dashboard')} · ${esc(venueName())}</div><h1>${TE('v_estatisticas')}</h1></div>${relBotao('estatisticas')}</div>
   ${rangeBar(nota,extra,true)}${chips}${aviso}${fuso}<div class="es-sec">${sec(D,K)}</div>`;}
 // aviso de fuso (servidor do ponto em outro fuso que o venue); conseq diz o que fica errado em cada seção
@@ -7508,6 +7508,25 @@ function esSecK(){const ds=esDiasAtuais().filter(d=>numF(d.fotos)||esRec(d)).sli
   <section class="panel pn-panel" id="es-cliques"><div class="pn-ph"><div><h2>${TE('esk_por_dia')}</h2></div></div>${ds.length?esTab([{t:TE('ess_dia')},{t:TE('esk_cliques_t'),n:1},{t:TE('esk_mm7'),n:1},{t:TE('pn_vendas'),n:1},{t:TE('esk_cpv'),n:1},{t:TE('pn_receita'),n:1},{t:TE('esk_mm7'),n:1},{t:TE('esk_sem_ant'),n:1},{t:TE('esk_rpc'),n:1},{t:TE('esk_faltam'),n:1},{t:TE('esk_meta')}],linhas):`<div class="note">${TE('pn_sem_vendas')}.</div>`}</section>
   ${fl.length?`<section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('esk_por_fot')}</h2></div></div>${esTab([{t:TE('esk_fotografo')},{t:TE('esk_dias'),n:1},{t:TE('esk_cliques_t'),n:1},{t:TE('esk_por_dia_m'),n:1},{t:TE('pn_sessoes'),n:1},{t:TE('esk_cl_ses'),n:1},{t:TE('esk_conv'),n:1},{t:TE('pn_vendas'),n:1},{t:TE('esk_cpv'),n:1},{t:TE('pn_receita'),n:1},{t:TE('esk_rpc'),n:1},{t:TE('esk_aprov'),n:1}],fl)}</section>`:''}
   ${vl.length?`<section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('esk_por_ven')}</h2></div></div>${esTab([{t:TE('esk_vendedor')},{t:TE('esk_dias'),n:1},{t:TE('pn_vendas'),n:1},{t:TE('esk_por_dia_m'),n:1},{t:TE('pn_receita'),n:1},{t:TE('es_ticket_medio'),n:1},{t:TE('esk_fv'),n:1},{t:TE('esk_fv_v'),n:1},{t:TE('es_parte'),n:1}],vl)}</section>`:''}`;}
+// 24/11 (Ronaldo, leva 1 do plano estatisticas-ate-a-alma): abaixo do Funil, hora a hora (visitantes das catracas × sessões,
+// fotos e vendas), vendas por canal (Checkout, balcão, online) e o desfecho dos pedidos do Checkout (resumo "pedidos" do servidor).
+const ESP_EST=['confirmada','nao_paga','cancelada','substituida','aberto'];
+function esSecU2(){const ds=esDiasAtuais();if(!ds.length)return '';
+  const H={};const hz=h=>H[h]||(H[h]={vis:0,ses:0,fotos:0,vendas:0,fat:0});
+  ds.forEach(d=>{Object.entries(d.entradas&&d.entradas.por_hora||{}).forEach(([h,n])=>{hz(+h).vis+=numF(n);});
+    Object.entries(d.por_hora||{}).forEach(([h,v])=>{if(!v)return;const x=hz(+h);x.ses+=numF(v.sessoes);x.fotos+=numF(v.fotos);x.vendas+=numF(v.vendas);x.fat+=numF(v.faturamento);});});
+  const hs=Object.keys(H).map(Number).filter(h=>h>=0&&h<24&&(H[h].vis||H[h].ses||H[h].vendas)).sort((a,b)=>a-b);
+  const hora=hs.map(h=>{const x=H[h];return `<tr><td>${String(h).padStart(2,'0')}h</td><td class="num">${fmtN(x.vis)}</td><td class="num">${fmtN(x.ses)}</td><td class="num">${x.vis?esPct(x.ses/x.vis):'—'}</td><td class="num">${fmtN(x.fotos)}</td><td class="num">${fmtN(x.vendas)}</td><td class="num">${x.ses?esPct(x.vendas/x.ses):'—'}</td><td class="num">${fmtR(x.fat)}</td></tr>`;});
+  const C={checkout:{v:0,f:0},balcao:{v:0,f:0},online:{v:0,f:0},sem_canal:{v:0,f:0}};
+  ds.forEach(d=>{Object.entries(d.por_canal||{}).forEach(([k,v])=>{const c=C[k]||C.sem_canal;c.v+=numF(v&&v.vendas);c.f+=numF(v&&v.faturamento);});if(d.online){C.online.v+=numF(d.online.vendas);C.online.f+=numF(d.online.faturamento);}});
+  const ct=Object.values(C).reduce((a,c)=>a+c.f,0);
+  const canal=Object.entries(C).filter(([,c])=>c.v).map(([k,c])=>`<tr><td>${TE('esp_c_'+k)}</td><td class="num">${fmtN(c.v)}</td><td class="num">${fmtR(c.f)}</td><td class="num">${fmtR(c.f/c.v)}</td><td class="num">${ct?esPct(c.f/ct):'—'}</td></tr>`);
+  const P={};let temP=false;ds.forEach(d=>{if(!d.pedidos)return;temP=true;Object.entries(d.pedidos).forEach(([e,v])=>{const k=['aguardando','escolha'].includes(e)?'aberto':ESP_EST.includes(e)?e:null;if(!k||!v)return;const p=P[k]||(P[k]={n:0,valor:0,h:[]});p.n+=numF(v.n);p.valor+=numF(v.valor);if(v.fecha_s)p.h.push(v.fecha_s);});});
+  const pt=Object.values(P).reduce((a,p)=>a+p.n,0);
+  const ped=ESP_EST.filter(k=>P[k]&&P[k].n).map(k=>{const p=P[k],F=esFaixas(p.h);return `<tr><td>${TE('esp_e_'+k)}</td><td class="num">${fmtN(p.n)}</td><td class="num">${esTaxa(p.n,pt)}</td><td class="num">${fmtR(p.valor)}</td><td class="num">${F.n?esc(esFx(F.iMed)):'—'}</td></tr>`;});
+  return `${hora.length?`<section class="panel pn-panel" id="es-hora-a-hora"><div class="pn-ph"><div><h2>${TE('esp_hora')}</h2></div></div>${esTab([{t:TE('es_hora')},{t:TE('ess_vis_pes'),n:1},{t:TE('pn_sessoes'),n:1},{t:TE('esp_ses_vis'),n:1},{t:TE('esf_fotos'),n:1},{t:TE('pn_vendas'),n:1},{t:TE('esk_conv'),n:1},{t:TE('pn_receita'),n:1}],hora)}</section>`:''}
+  <div class="pn-bottom">${canal.length?`<section class="panel pn-panel" id="es-canais"><div class="pn-ph"><div><h2>${TE('esp_canais')}</h2></div></div>${esTab([{t:TE('esp_canal')},{t:TE('pn_vendas'),n:1},{t:TE('pn_receita'),n:1},{t:TE('es_ticket_medio'),n:1},{t:TE('es_parte'),n:1}],canal)}</section>`:''}
+    ${temP?`<section class="panel pn-panel" id="es-pedidos"><div class="pn-ph"><div><h2>${TE('esp_pedidos')}</h2></div></div>${pt?esTab([{t:TE('esp_desfecho')},{t:TE('esp_pedidos_n'),n:1},{t:TE('es_parte'),n:1},{t:TE('esp_valor'),n:1},{t:TE('esp_fechar'),n:1}],ped):`<div class="note">${TE('pn_sem_vendas')}.</div>`}</section>`:''}</div>`;}
 function esSecF(){const V=esVis();
   if(V===null)return `<section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_mov')}</h2></div></div><div class="note">${TE('es_carregando2')}</div></section>`;
   if(!V)return `<section class="panel pn-panel"><div class="pn-ph"><div><h2>${TE('es_mov')}</h2></div></div><div class="note">${TE('esm_sem')}</div></section>`;
@@ -11361,6 +11380,24 @@ const EQ={
   ess_selfies_hora:["Selfies por hora","Selfies per hour","Selfies por hora","Selfies par heure","Selfies pro Stunde"],
   ess_ck_vis:["Selfies ÷ visitantes","Selfies ÷ visitors","Selfies ÷ visitantes","Selfies ÷ visiteurs","Selfies ÷ Besucher"],
   ess_dia:["Dia","Day","Día","Jour","Tag"],
+  esp_hora:["Hora a hora","Hour by hour","Hora a hora","Heure par heure","Stunde für Stunde"],
+  esp_ses_vis:["Sessões ÷ visitantes","Sessions ÷ visitors","Sesiones ÷ visitantes","Séances ÷ visiteurs","Sitzungen ÷ Besucher"],
+  esp_canais:["Vendas por canal","Sales by channel","Ventas por canal","Ventes par canal","Verkäufe nach Kanal"],
+  esp_canal:["Canal","Channel","Canal","Canal","Kanal"],
+  esp_c_checkout:["Checkout","Checkout","Checkout","Checkout","Checkout"],
+  esp_c_balcao:["Balcão","Counter","Mostrador","Comptoir","Theke"],
+  esp_c_online:["Online","Online","Online","En ligne","Online"],
+  esp_c_sem_canal:["Sem canal","No channel","Sin canal","Sans canal","Ohne Kanal"],
+  esp_pedidos:["Pedidos do Checkout","Checkout orders","Pedidos del Checkout","Commandes du Checkout","Checkout-Bestellungen"],
+  esp_desfecho:["Desfecho","Outcome","Resultado","Issue","Ergebnis"],
+  esp_pedidos_n:["Pedidos","Orders","Pedidos","Commandes","Bestellungen"],
+  esp_valor:["Valor","Value","Valor","Valeur","Wert"],
+  esp_fechar:["Tempo até fechar","Time to close","Tiempo hasta cerrar","Délai de clôture","Zeit bis Abschluss"],
+  esp_e_confirmada:["Pago","Paid","Pagado","Payé","Bezahlt"],
+  esp_e_nao_paga:["Não pago","Not paid","No pagado","Non payé","Nicht bezahlt"],
+  esp_e_cancelada:["Cancelado","Cancelled","Cancelado","Annulé","Storniert"],
+  esp_e_substituida:["Substituído","Replaced","Sustituido","Remplacé","Ersetzt"],
+  esp_e_aberto:["Ainda aberto","Still open","Aún abierto","Encore ouvert","Noch offen"],
   es_sec_k:["Cliques e metas","Clicks and targets","Clics y metas","Clics et objectifs","Klicks und Ziele"],
   esk_cpv:["Cliques por venda","Clicks per sale","Clics por venta","Clics par vente","Klicks pro Verkauf"],
   esk_rpc:["Receita por clique","Revenue per click","Ingreso por clic","Recette par clic","Umsatz pro Klick"],

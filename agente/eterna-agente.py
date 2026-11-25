@@ -13938,7 +13938,7 @@ def metricas_periodo(de, ate):
             except Exception:
                 m = None
             if m is not None:
-                if isinstance(m, dict) and m.get("v") == 2 and not m.get("t3"):
+                if isinstance(m, dict) and m.get("v") == 2 and (m.get("t3") or 0) < T3_VER:
                     met_t3_agenda(d)                 # os tempos novos entram em segundo plano; a leitura segue rápida (critério 27)
                 out.append(m)
         t += 86400
@@ -14017,9 +14017,48 @@ def met_t3(ss, evs):
     return t, fs
 
 
+def pedidos_dia(dia):
+    """24/11: desfecho dos pedidos do Checkout criados no dia (moram no servidor desde 15/11): por estado, quantos, valor e
+    o tempo até fechar (faixas). Só contagens; o motivo escrito pelo vendedor não sai daqui. None antes de 15/11 ou sem banco."""
+    if dia < "2026-11-15":
+        return None
+    try:
+        with estado_lock:
+            db = pedidos_db()
+            try:
+                rows = db.execute("select estado, valor from pedido where substr(criada, 1, 10) between ? and ?",
+                                  (_ff_hoje(time.mktime(time.strptime(dia, "%Y-%m-%d")) - 86400), dia)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return None
+    out = {}
+    for est, txt in rows:
+        try:
+            r = json.loads(txt)
+        except Exception:
+            continue
+        cr = _epoch(r.get("criada"))
+        if not cr or _ff_hoje(cr) != dia:
+            continue
+        o = out.setdefault(est if est in PEDIDO_ESTADOS else "outro", {"n": 0, "valor": 0.0, "fecha_s": h_novo()})
+        o["n"] += 1
+        try:
+            o["valor"] = round(o["valor"] + float(r.get("total") or 0), 2)
+        except (TypeError, ValueError):
+            pass
+        fe = _epoch(r.get("fechada"))
+        if fe and est not in PEDIDO_ABERTO:
+            h_add(o["fecha_s"], fe - cr)
+    return out
+
+
+T3_VER = 2      # 1: tempos e cliques por sessão (v99.51.0); 2: desfecho dos pedidos (v99.52.0)
+
+
 def met_t3_completa(dia, m):
     """Dia passado gravado antes de 24/11: acrescenta os tempos novos uma vez (nunca troca o que existe)."""
-    if not isinstance(m, dict) or m.get("v") != 2 or m.get("t3"):
+    if not isinstance(m, dict) or m.get("v") != 2 or (m.get("t3") or 0) >= T3_VER:
         return m
     with met_lock(dia):                              # relê dentro do lock: outra gravação do dia pode ter chegado
         try:
@@ -14027,7 +14066,7 @@ def met_t3_completa(dia, m):
                 m = json.load(f)
         except Exception:
             return m
-        if not isinstance(m, dict) or m.get("v") != 2 or m.get("t3"):
+        if not isinstance(m, dict) or m.get("v") != 2 or (m.get("t3") or 0) >= T3_VER:
             return m
         return _met_t3_grava(dia, m)
 
@@ -14078,7 +14117,9 @@ def _met_t3_grava(dia, m):
         tem.setdefault(k, v)
     if ss is not None:
         m.setdefault("fotos_sessao", fs)
-    m["t3"] = 1
+    if "pedidos" not in m:
+        m["pedidos"] = pedidos_dia(dia)
+    m["t3"] = T3_VER
     met_escreve(dia, m)
     return m
 
@@ -14164,7 +14205,8 @@ def met_v2(dia, ss, evs):
     t3, fs = met_t3(ss, evs)
     tempos.update(t3)
     out["fotos_sessao"] = fs
-    out["t3"] = 1
+    out["pedidos"] = pedidos_dia(dia)
+    out["t3"] = T3_VER
     out["entradas"] = entradas_dia(dia)
     out["montagens"] = {"vistas": montagens_dia(dia), "compradas": compradas}
     out["selfies"] = selfies_dia(dia)
