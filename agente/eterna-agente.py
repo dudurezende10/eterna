@@ -9166,7 +9166,7 @@ def vendas_do_dia(posto=None, agora=None):
     """25/11 (Ronaldo): as vendas pagas de hoje de todos os postos (ou só de um), para a lista "Vendas de hoje" do Posto.
     Venda = evento "criar" (o posto só manda na confirmação do pagamento); "cancelar" marca, "impressao" ok marca impressa."""
     dia = _ev_dia(_iso(agora or time.time()))
-    sql = "select venda, tipo, em, posto, dados from evento where dia = ? and tipo in ('criar','cancelar','impressao')"
+    sql = "select venda, tipo, em, posto, dados, por from evento where dia = ? and tipo in ('criar','pagar','cancelar','impressao')"
     arg = [dia]
     if posto:
         sql += " and posto = ?"; arg.append(str(posto)[:40])
@@ -9177,17 +9177,26 @@ def vendas_do_dia(posto=None, agora=None):
         finally:
             db.close()
     vs = {}
-    for venda, tipo, em, pst, dados in rows:
+    for venda, tipo, em, pst, dados, por in rows:
         try:
             d = json.loads(dados or "{}")
         except ValueError:
             d = {}
         v = vs.setdefault(venda, {"venda": venda})
-        if tipo == "criar":
+        if tipo == "pagar":
+            if por:
+                v["por"] = por                       # quem confirmou o pagamento (a venda do Checkout chega sem vendedor)
+        elif tipo == "criar":
             ven = d.get("vendedor") if isinstance(d.get("vendedor"), dict) else {}
+            g = d.get("galeria")
             v.update(em=em, posto=pst or "", saleNo=d.get("saleNo") or "", card=d.get("card") or "", meio=d.get("meio") or "",
                      total=d.get("total"), prints=d.get("prints") or 0, vendedor=(ven or {}).get("nome") or "",
-                     cart=[{"id": x.get("id")} for x in (d.get("cart") or []) if isinstance(x, dict)][:40])
+                     cart=[{"id": x.get("id")} for x in (d.get("cart") or []) if isinstance(x, dict)][:40],
+                     selected=[str(p)[:60] for p in (d.get("selected") or [])][:200], aiSel=[str(p)[:80] for p in (d.get("aiSel") or [])][:40],
+                     sessoes=[str(c)[:20] for c in (d.get("sessoes") or [])][:20],
+                     galeria=({"token": str(g.get("token") or "")[:40], "codigo": str(g.get("codigo") or "")[:20]}
+                              if isinstance(g, dict) and g.get("token") else
+                              ({"token": str(d["token"])[:40], "codigo": str(d.get("codigo") or "")[:20]} if d.get("token") else None)))
         elif tipo == "cancelar":
             v["cancelada"] = True
         elif d.get("resultado") == "ok":
