@@ -12209,6 +12209,26 @@ def venda_trocar_vendedor(venda, nome, email, quem):
     return {"ok": True, "venda": venda, "antes": antes, "depois": nome, "eventos": len(evs), "pedido": bool(r)}, 200
 
 
+def venda_descancelar(venda, quem):
+    """25/11 (Ronaldo): POST /ponto/descancelar {venda}: venda cancelada por engano (foi paga). Tira o "cancelar" da venda,
+    que volta a contar como paga nas Estatísticas. Fica no registro do servidor."""
+    venda = str(venda or "")
+    if not _re_pedido.match(venda):
+        return {"error": "venda inválida"}, 400
+    with ev_lock:
+        db = vendas_db()
+        try:
+            paga = db.execute("select 1 from evento where venda = ? and tipo = 'pagar'", (venda,)).fetchone()
+            if not paga:
+                return {"error": "venda sem pagamento registrado"}, 409
+            n = db.execute("delete from evento where venda = ? and tipo = 'cancelar'", (venda,)).rowcount
+            db.commit()
+        finally:
+            db.close()
+    print("  venda %s: cancelamento desfeito (%d) · por %s" % (venda, n, quem or "?"))
+    return {"ok": True, "venda": venda, "removidos": n}, 200
+
+
 def estado_gravar(body, quem=""):
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
     auditoria = []
@@ -19922,6 +19942,7 @@ ROTAS = (
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
     ("POST", "/ponto/vendedor", "sessao", ("financeiro.u",)),   # 25/11: corrige o vendedor de uma venda
+    ("POST", "/ponto/descancelar", "sessao", ("financeiro.u",)),   # 25/11: desfaz um cancelamento feito por engano
     ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),   # vendas do posto sem impressão, para recuperar (15/11)
@@ -23432,6 +23453,14 @@ class H(BaseHTTPRequestHandler):
             return self.leitores_post(u.path)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
+        if u.path == "/ponto/descancelar":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            res, st = venda_descancelar(body.get("venda"), (self.sessao() or {}).get("usuario") or "")
+            return self.js(res, st)
         if u.path == "/ponto/vendedor":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
