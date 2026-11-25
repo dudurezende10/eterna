@@ -4638,6 +4638,135 @@ def _mtg_pagas_ler(chave):
     return _mtg_pagas["v"]
 
 
+# 25/11 (Ronaldo): a foto com fundo de IA também vai para a galeria online. A montagem pronta do servidor (a de impressão,
+# senão a prévia) sobe para a nuvem com um id próprio (base + 8 hex do fundo) e entra no manifesto da galeria da sessão:
+# comprada se a venda paga desta galeria levou aquela base naquele fundo (aiSel), à venda nos outros fundos ativos.
+def mtg_gal_pid(pid, fundo):
+    return pid_lib(pid) + hashlib.md5(fundo.encode("utf8")).hexdigest()[:8]
+
+
+GAL_IA_DIR = os.path.join(HOME, "galerias-ia")        # montagens feitas no navegador do posto e mandadas para a galeria
+GAL_IA_MAX = 12 * 1024 * 1024
+
+
+def mtg_gal_arquivo(pid, fundo):
+    """A montagem de pid naquele fundo: a que o posto mandou para a galeria; senão a do servidor, a de impressão (i) e depois
+    a prévia (p), a da versão de agora antes das outras."""
+    pid = pid_lib(pid)
+    if not _re_mtg_pid.match(pid) or fundo not in MTG_FUNDOS:
+        return None
+    g = os.path.join(GAL_IA_DIR, mtg_gal_pid(pid, fundo) + ".jpg")
+    if os.path.isfile(g):
+        return g
+    v = mtg_versao(fundo)
+    for t in ("i", "p"):
+        a = mtg_arquivo(pid, fundo, t, v) if v else None
+        if a and os.path.isfile(a):
+            return a
+    try:
+        nomes = sorted(os.listdir(os.path.join(MONTAGENS, pid)), key=lambda n: os.path.getmtime(os.path.join(MONTAGENS, pid, n)), reverse=True)
+    except OSError:
+        return None
+    for t in ("i", "p"):
+        for n in nomes:
+            x = _re_mtg_arq.match(n)
+            if x and x.group(1) == fundo and x.group(3) == t:
+                return os.path.join(MONTAGENS, pid, n)
+    return None
+
+
+def gal_ia_pagas(token):
+    """(pid, fundo) das montagens das vendas pagas e não canceladas que publicaram esta galeria (aiSel do evento criar)."""
+    if not os.path.exists(VENDAS_DB) or not token_ok(token):
+        return set()
+    db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=2, check_same_thread=False)
+    try:
+        db.execute("pragma query_only=1")
+        rs = db.execute("select dados from evento where tipo = 'criar' and dados like ?"
+                        " and venda in (select venda from evento where tipo = 'pagar')"
+                        " and venda not in (select venda from evento where tipo = 'cancelar')", ("%" + token + "%",)).fetchall()
+    finally:
+        db.close()
+    out = set()
+    for (dados,) in rs:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            continue
+        if (d.get("galeria") or {}).get("token") != token:
+            continue
+        for k in d.get("aiSel") or []:
+            a, _, f = re.sub(r"^ai:", "", str(k)).partition("|")
+            if pid_ok(a) and f in MTG_FUNDOS:
+                out.add((pid_lib(a), f))
+    return out
+
+
+def gal_ia_plano(m):
+    """Fora do gal_lock (pega o sess_lock e lê o vendas.db): (montagens das sessões, pagas desta galeria) para o gal_com_ia."""
+    if not isinstance(m, dict) or m.get("tipo") != "sessao":
+        return None
+    try:
+        pagas = gal_ia_pagas(m["token"])
+    except Exception as ex:
+        print("  galeria: fundos de IA pagos não lidos (%s)" % type(ex).__name__)
+        pagas = set()
+    quer = {}                                            # id -> (sessao, pid, fundo)
+    with sess_lock:
+        for c in m.get("sessoes") or []:
+            x = sess.get(c)
+            if x is None:
+                continue
+            bases = mtg_candidatas(x)
+            for fundo in MTG_ATIVOS:
+                i = MTG_BASE.get(fundo, 0)
+                if i < len(bases):
+                    quer["ag_" + mtg_gal_pid(bases[i], fundo)] = (c, pid_lib(bases[i]), fundo)
+        dono = {p: sess_pid.get(p) for p, _ in pagas}
+    for p, fundo in pagas:
+        quer["ag_" + mtg_gal_pid(p, fundo)] = (dono.get(p) or (m.get("sessoes") or [""])[0], p, fundo)
+    return quer, pagas
+
+
+def gal_com_ia(m, velho, plano):
+    """Põe no manifesto (tipo sessao) as montagens com fundo de IA das sessões dele e manda cada uma para a nuvem.
+    Comprada nunca regride (a venda paga ou a compra online gravada). Devolve quantas montagens estão no manifesto."""
+    if not plano or not isinstance(m, dict) or m.get("tipo") != "sessao":
+        return 0
+    quer, pagas = dict(plano[0]), plano[1]
+    antes = {f["id"]: f for f in (velho or {}).get("fotos") or [] if isinstance(f, dict) and f.get("ia")}
+    for k, f in antes.items():
+        if k not in quer and isinstance(f.get("ia"), dict):
+            quer[k] = (f.get("sessao") or "", f["ia"].get("base") or "", f["ia"].get("fundo") or "")
+    m["fotos"] = [f for f in m["fotos"] if not f.get("ia")]
+    n = 0
+    for k, (c, p, fundo) in quer.items():
+        arq = mtg_gal_arquivo(p, fundo)
+        if not arq and k not in antes:
+            continue
+        a = antes.get(k) or {}
+        if (p, fundo) in pagas:
+            d, canal = "comprada", (a.get("canal") if a.get("direito") == "comprada" else None) or "loja"
+        elif a.get("direito") == "comprada":
+            d, canal = "comprada", a.get("canal") or "online"
+        else:
+            d, canal = "venda", None
+        m["fotos"].append({"id": k, "sessao": str(c)[:40], "direito": d, "canal": canal, "ia": {"base": p, "fundo": fundo}})
+        if arq:
+            nuvem_enfileira(pid_lib(k), arq)
+        n += 1
+    return n
+
+
+def gal_foto_arquivo(f):
+    """(arquivo, miniatura) de uma foto do manifesto: a da biblioteca ou a montagem com fundo de IA."""
+    if isinstance(f.get("ia"), dict):
+        return mtg_gal_arquivo(f["ia"].get("base") or "", f["ia"].get("fundo") or ""), None
+    with lock:
+        e = lib.get(pid_lib(f["id"]))
+    return (e["file"], e.get("thumb")) if e else (None, None)
+
+
 def mtg_base_ok(pid, fundo=None):
     """Montagem nova só sai de base de IA (regra 19). Foto de leva carregada (ontem e hoje): só se é base de alguma leva.
     Foto fora das levas carregadas: só a reimpressão de montagem vendida (venda paga no vendas.db com aquela base naquele
@@ -6040,17 +6169,15 @@ def gal_processar(token):
     falta_orig = falta_vit = 0
     for f in m["fotos"]:
         if f["direito"] in ("comprada", "cortesia") and not REPO.existe(token, f["id"], "original"):
-            with lock:
-                e = lib.get(pid_lib(f["id"]))
-            if e and os.path.exists(e["file"]):
-                REPO.subir(token, f["id"], "original", e["file"])
+            arq, _ = gal_foto_arquivo(f)                 # 25/11: a montagem com fundo de IA também
+            if arq and os.path.exists(arq):
+                REPO.subir(token, f["id"], "original", arq)
             else:
                 falta_orig += 1
     for f in m["fotos"]:
         if not REPO.existe(token, f["id"], "vitrine"):
-            with lock:
-                e = lib.get(pid_lib(f["id"]))
-            if not (e and os.path.exists(e["file"]) and _vitrine(e["file"], e.get("thumb"), REPO.abrir(token, f["id"], "vitrine"))):
+            arq, mini = gal_foto_arquivo(f)
+            if not (arq and os.path.exists(arq) and _vitrine(arq, mini, REPO.abrir(token, f["id"], "vitrine"))):
                 falta_vit += 1
     with gal_lock:
         m = REPO.ler_manifesto(token) or m
@@ -19972,7 +20099,7 @@ ROTAS = (
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
-    ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
+    ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER), ("POST", "/galerias/montagem", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
     ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
     ("GET", "/montagem/", "posto_ou_sessao", VENDER), ("POST", "/montagens/pedir", "posto_ou_sessao", VENDER),   # montagem feita no servidor
     ("GET", "/photoroom/status", "posto_ou_sessao", VENDER + ("configuracao.r",)),    # sem Painel de controle: só {configured, fundos_modo}
@@ -22893,6 +23020,46 @@ class H(BaseHTTPRequestHandler):
                                         str(body.get("vendedor") or "")[:60], str(body.get("posto") or "")[:40], str(body.get("venda_id") or "")[:80]))
             except Exception as ex:
                 return self.js({"ok": False, "error": str(ex)[:300]}, 500)
+        if p == "/galerias/montagem":
+            # 25/11 (Ronaldo): a foto com fundo de IA montada no navegador do posto (a montagem do servidor desligada) vai para a
+            # galeria: {token, base, fundo, jpeg}. Só base de IA de uma sessão da galeria (ou paga nela), num fundo conhecido.
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(GAL_IA_MAX)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            t, base, fundo = body.get("token"), str(body.get("base") or ""), str(body.get("fundo") or "")
+            if not token_ok(t) or not pid_ok(base) or fundo not in MTG_FUNDOS:
+                return self.js({"error": "pedido inválido"}, 400)
+            base = pid_lib(base)
+            with gal_lock:
+                m0 = REPO.ler_manifesto(t)
+            if not m0 or m0.get("tipo") != "sessao":
+                return self.js({"error": "not found"}, 404)
+            with sess_lock:
+                c = sess_pid.get(base)
+                ok = c in (m0.get("sessoes") or []) and base in ((sess.get(c) or {}).get("ia") or ())
+            if not ok and (base, fundo) not in gal_ia_pagas(t):
+                return self.js({"error": "não é base de IA desta galeria"}, 400)
+            try:
+                b = base64.b64decode(str(body.get("jpeg") or "").split(",", 1)[-1])
+            except Exception:
+                return self.js({"error": "imagem inválida"}, 400)
+            if b[:3] != b"\xff\xd8\xff" or len(b) < 20000:
+                return self.js({"error": "imagem inválida"}, 400)
+            os.makedirs(GAL_IA_DIR, exist_ok=True)
+            arq = os.path.join(GAL_IA_DIR, mtg_gal_pid(base, fundo) + ".jpg")
+            with open(arq + ".tmp", "wb") as fh:
+                fh.write(b)
+            os.replace(arq + ".tmp", arq)
+            plano = gal_ia_plano(m0)
+            with gal_lock:
+                m = REPO.ler_manifesto(t) or m0
+                n = gal_com_ia(m, m, plano)
+                REPO.salvar_manifesto(t, m)
+            gal_fila.put(t)
+            nuvem_galeria_enfileira(t)
+            return self.js({"ok": True, "ia": n})
         if p in ("/galerias/publicar", "/galerias/encerrar"):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -22935,8 +23102,18 @@ class H(BaseHTTPRequestHandler):
                     if f["direito"] == "cortesia" and f["id"] not in ja:
                         f["direito"] = "venda"
                         f.pop("cortesia", None)
+            try:
+                plano_ia = gal_ia_plano(novo)              # 25/11: fotos com fundo de IA na galeria online (fora do gal_lock)
+            except Exception as ex:
+                plano_ia = None
+                print("  galeria: fundos de IA não planejados (%s: %s)" % (type(ex).__name__, ex))
             with gal_lock:
-                m = gal_mesclar(novo, REPO.ler_manifesto(t))
+                velho_m = REPO.ler_manifesto(t)
+                m = gal_mesclar(novo, velho_m)
+                try:
+                    gal_com_ia(m, velho_m, plano_ia)
+                except Exception as ex:
+                    print("  galeria: fundos de IA fora desta publicação (%s: %s)" % (type(ex).__name__, ex))
                 REPO.salvar_manifesto(t, m)
                 if m.get("codigo"):
                     codigos[m["codigo"]] = t
@@ -23492,7 +23669,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, err)
             res, st = venda_trocar_vendedor(body.get("venda"), body.get("nome"), body.get("email"), (self.sessao() or {}).get("usuario") or "")
             return self.js(res, st)
-        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/montagem", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
