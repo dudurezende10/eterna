@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.61.0 · 25/11 14:12"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.62.0 · 25/11 14:14"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3121,11 +3121,10 @@ function lojaAIAntigo(card){const s=sessionObj(card);if(!s||!fiaOferece())return
   bgOn().forEach(o=>{const b=bgFor(o,card);if(!b)return;const i=Math.min(b.id in FIA_BASE?FIA_BASE[b.id]:1,ids.length-1);
     const id=[ids[i],...ids.filter((_,j)=>j!==i)].find(x=>!FIA_RUIM.has(x+'|'+b.id));if(id)out.push({t:'ai',id,bg:b.id,k:'ai:'+id+'|'+b.id});});
   return out;}
-// 25/11 (Ronaldo): base da IA cuja montagem falhou (ou sessão sem montagem nenhuma) volta a ser foto à venda, no começo da sessão dela
-function lojaBasesSoltas(card,ai){const usa=new Set(ai.map(x=>x.id));const ruim=id=>FIA_RUIM.has(id)||[...FIA_RUIM].some(k=>k.startsWith(id+'|'));const out=new Set();
-  soCards(card).forEach(c=>((SIM.sessions[c]||{}).ia||[]).forEach(id=>{if(!usa.has(id)&&(!ai.length||ruim(id)))out.add(id);}));return out;}
+// 25/11 (Ronaldo): "falhando ou não, elas têm que entrar": as bases da IA também são foto à venda, no começo da sessão dela
+function lojaBasesSoltas(card){const out=new Set();soCards(card).forEach(c=>((SIM.sessions[c]||{}).ia||[]).forEach(id=>out.add(id)));return out;}
 function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=soCards(card).length>1;let ant=null;const ai0=lojaAI(card);
-  const ph=lojaFotos(card,lojaBasesSoltas(card,ai0)).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi){o.lb=lojaBloco(p.ses);if(p.ses!==ant){o.blk=o.lb;ant=p.ses;}}return o;});
+  const ph=lojaFotos(card,lojaBasesSoltas(card)).map(p=>{const o={t:'ph',id:p.id,k:p.id,ses:p.ses};if(multi){o.lb=lojaBloco(p.ses);if(p.ses!==ant){o.blk=o.lb;ant=p.ses;}}return o;});
   // v97 (selo, A1/A7/A8): as montagens vêm primeiro, na ordem de bgOn, sem "ponto · hora"; depois as fotos comuns na ordem de sempre.
   // edIni marca a 1ª montagem (título do grupo na grade); edFotos marca a 1ª foto comum (separador, só com uma leva)
   const ai=ai0.map((x,i)=>i?x:{...x,edIni:true});if(!ai.length)return ph;if(!multi&&ph.length)ph[0].edFotos=true;return [...ai,...ph];}
