@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.73.0 · 25/11 14:13"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.74.0 · 25/11 14:32"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1728,7 +1728,7 @@ async function impRecupera(){if(!pedLigado()||pontoModo()!=='posto')return;try{c
     Object.assign(s,{status:'paga',vendaId:v.venda,saleNo:d.saleNo||null,selected:d.selected||[],aiSel:d.aiSel||[],cart:d.cart||[],total:+d.total||0,prints:+d.prints||0,paidAt:v.em,posto:postoNome(),
       vendedor:d.vendedor?{nome:d.vendedor}:null,payment:d.meio==='cortesia'?'Cortesia':PAG_NOME[d.meio]||PAG_NOME.cartao,recuperada:true});if(Array.isArray(d.sessoes)&&d.sessoes.length>1)s.sessoes=d.sessoes.slice();impIniciar(s);n++;});
   if(n){saveSim();toast(TE('po_recuperadas',n));render();}}catch(e){}}
-setInterval(()=>{pedDesce();},15000);setTimeout(()=>{pedDesce();},4000);setInterval(()=>{impRecupera();},60000);setTimeout(()=>{impRecupera();},6000);
+setInterval(()=>{postoVendedorSync();pedDesce();},15000);setTimeout(()=>{postoVendedorSync();pedDesce();},4000);window.addEventListener('hashchange',()=>postoVendedorSync());setInterval(()=>{impRecupera();},60000);setTimeout(()=>{impRecupera();},6000);
 function saveSim(){if(ZERADA_SAINDO)return false;pedAgenda();if(state.db&&SIM_SRV){clearTimeout(simSobeT);simSobeT=setTimeout(simSobe,300);}const put=()=>localStorage.setItem('eterna.sim.v1',JSON.stringify(SIM));try{put();state.simCheio=0;return true;}catch(e){try{simPodar();put();state.simCheio=0;return true;}catch(e2){state.simCheio=Date.now();return false;}}}
 function simPodar(){SIM.log=(SIM.log||[]).slice(0,20);const ed=SIM.edits||{};Object.keys(ed).forEach(id=>{if(ed[id]&&ed[id].auto===true&&!UP[id]&&!(typeof spriteOf!=='undefined'&&spriteOf[id]))delete ed[id];});}
 // v79: Checkout e Caixa em duas janelas do mesmo navegador. simFresh relê o SIM gravado pela outra janela antes de mexer no caixa.
@@ -2343,7 +2343,9 @@ setInterval(()=>{const a=state.agent;if(a&&a.on&&a.url===location.origin&&!state
 function postoNome(){const d=pontoModo()==='posto'?postoDisp():null;return d&&d.nome?String(d.nome).slice(0,30):'Caixa 1';}
 const postoTitulo=()=>TE('v_posto')+' · '+postoNome(); // v97-ux: rótulo em cima do título na vista Caixa
 // quem abriu o Checkout neste notebook (gravado por lojaJanela); vai para a venda como vendedor declarado (D17)
-function postoVendedor(){try{const v=JSON.parse(localStorage.getItem('eterna.posto.vendedor')||'null');if(v&&typeof v.email==='string'&&typeof v.nome==='string')return {nome:v.nome.replace(/[<>]/g,'').slice(0,60),email:v.email.slice(0,120)};}catch(e){}return null;}
+// 25/11 (Ronaldo): "hoje a Thais está no posto, amanhã pode ser outro". O vendedor é quem está logado no posto agora; a anotação só vale no dia
+function postoVendedorSync(){const u=state.user;if(!u||!u.email||state.assumido||!/^#(posto|caixa)/.test(location.hash))return;const v=postoVendedor();if(v&&v.email===u.email)return;try{localStorage.setItem('eterna.posto.vendedor',JSON.stringify({email:u.email,nome:u.name,dia:todayISO()}));}catch(e){}}
+function postoVendedor(){try{const v=JSON.parse(localStorage.getItem('eterna.posto.vendedor')||'null');if(v&&typeof v.email==='string'&&typeof v.nome==='string'&&v.dia===todayISO())return {nome:v.nome.replace(/[<>]/g,'').slice(0,60),email:v.email.slice(0,120)};}catch(e){}return null;}
 const ROLO_CAP=700,ROLO_ALERTA=40,ROLO_SOBRA=60,IMP_ALERTA_MIN=10,ROLO_AVISO=100; // AVISO: selo amarelo antes do vermelho (Ronaldo, 10/11)
 // v94 (ondas UX, E): rolo numa função só (Posto, Imprimir, Estoque, Venda manual): neutro de 100 para cima, amarelo abaixo de
 // 100, vermelho abaixo de 40. Nunca verde.
@@ -3395,7 +3397,7 @@ lojaTelasLer(false);
 // (preparar-posto-eterna.cmd como administrador) não há pergunta; sem ela, na primeira vez a janela abre aqui e vai para lá
 // assim que o vendedor tocar em Permitir.
 function lojaTelaCliente(){const ts=LOJA_TELAS&&LOJA_TELAS.screens||[];return ts.find(x=>LOJA_TELAS.currentScreen&&x!==LOJA_TELAS.currentScreen)||(LOJA_TELAS&&LOJA_TELAS.currentScreen)||screen;}
-function lojaJanela(){const u=state.user;if(u)try{localStorage.setItem('eterna.posto.vendedor',JSON.stringify({email:u.email,nome:u.name}));}catch(e){} // v83: vendedor declarado das vendas deste Checkout
+function lojaJanela(){const u=state.user;if(u)try{localStorage.setItem('eterna.posto.vendedor',JSON.stringify({email:u.email,nome:u.name,dia:todayISO()}));}catch(e){} // v83: vendedor declarado das vendas deste Checkout
   const t=lojaTelaCliente();
   const L=t.availLeft||0,Tp=t.availTop||0,W=t.availWidth||1280,H=t.availHeight||800;
   let w=null;try{w=window.open(location.pathname+'#loja','eterna-checkout',`popup,fullscreen,left=${L},top=${Tp},width=${W},height=${H}`);}catch(e){w=null;}
