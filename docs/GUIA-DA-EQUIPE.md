@@ -578,6 +578,26 @@ No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 
 Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Configurações › Preços e Checkout**.
 
+### Procurar sessão no Posto de venda (25/11)
+
+Para quando o cliente chega ao caixa sem o código e a selfie do Checkout não achou as fotos.
+
+1. No **Posto de venda**, role até o fim da tela e toque em **Procurar sessão**.
+2. Escolha o **fotógrafo** que atendeu a família. Se não souber, deixe **Todos**.
+3. Escolha o horário: **Últimos 30 min**, **Última 1h30** (já vem marcado), **Últimas 3 h** ou **Hoje**.
+4. Ache a família pelas miniaturas e toque no cartão. Se a lista for longa, toque em **Mostrar mais**.
+5. Siga a venda como sempre: escolha as fotos, o pacote e o pagamento.
+
+O que os avisos do cartão querem dizer:
+
+- **Carregando fotos**: a sessão acabou de chegar. Espere alguns segundos, o cartão libera sozinho.
+- **Já vendida**: essa sessão já foi paga. Para ver o recibo ou imprimir de novo, use o botão **Recibo** em Minhas vendas.
+- **Pedido em aberto**: o cliente já fez o pedido no Checkout. Atenda pela lista **Aguardando pagamento**.
+
+Se souber parte do código (LP...), digite no campo: a busca passa a valer para o dia todo. A lista mostra só as sessões de hoje.
+
+Depois da atualização, feche e abra de novo o Posto de venda em todos os caixas.
+
 ### Dar a Cortesia SAC (v99)
 
 Só quem pode dar cortesia (Galerias online, alterar) vê o botão.

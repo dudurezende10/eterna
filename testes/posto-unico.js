@@ -211,7 +211,7 @@ try{
     const p16=await pg.evaluate(()=>({item:!!document.querySelector('#nav [data-v="posto"]'),cx:!!document.querySelector('#rail-ck [data-v="caixa"]'),link:!!document.querySelector('[data-act="posto-manual"]'),v:ETERNA.state.view,menu:ETERNA.userMenu(ETERNA.state.user)}));
     ok(p16.item&&p16.cx&&!p16.link&&p16.v==='posto'&&J(p16.menu)===J(['caixa']),'16: menu só com caixa: vê o Posto e o botão amarelo, sem o link: '+J(p16));
     await abrir(pg,'#checkout');let t=await tela(pg);ok(t.v==='posto'&&!t.manual&&t.hash==='#posto','16: #checkout abre o Posto sem o bloco: '+J({v:t.v,hash:t.hash,manual:t.manual}));
-    await forcar(pg,'posto-manual');await pg.waitForTimeout(120);ok(await toastTxt(pg)==='Sem acesso à Venda manual'&&!await pg.$('#posto-manual')&&await pg.evaluate(()=>!ETERNA.state.posto.manual),'16 e risco 2: posto-manual forçado é recusado: '+await toastTxt(pg));
+    await forcar(pg,'posto-manual');await pg.waitForTimeout(120);ok(await toastTxt(pg)==='Sem acesso a esta tela'&&!await pg.$('#posto-manual')&&await pg.evaluate(()=>!ETERNA.state.posto.manual),'16 e risco 2: posto-manual forçado é recusado: '+await toastTxt(pg));
     // 17: só ver
     await personalizado(pg,VEND,{venda:{c:false,r:true,u:false,d:false}},['posto','caixa','checkout']);ok(await entrar(pg,VEND),'personalizado (só ver) não entrou');await pg.evaluate(()=>{const S=ETERNA.SIM;localStorage.setItem('eterna.sim.v1',JSON.stringify(S));});
     for(const v of ['posto','caixa']){await pg.evaluate(v=>ETERNA.go(v),v);await pg.waitForTimeout(200);
