@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.83.2 · 25/11 17:18"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.84.0 · 25/11 19:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -6180,22 +6180,26 @@ function painelRover(from,to,pdv){const ds=diasEntre(from,to);const dias=[],cob=
       DATA.payments.forEach(p=>{if(payKey(p.name)!=='cortesia')acc.addPay(p.name,p.count,p.amount);});
       DATA.products.forEach(p=>{const k=prodKey(p.name);if(k!=='cortesia')acc.addProd(k,p.units,p.photos,p.revenue,p.name);});}}
   return {modo:LIVE?'vivo':'importado',dias,cob,faltam,st,ft,acc,inteiro};}
-// Eterna: só vendas deste computador (SIM é local até a v80 multiterminal). teste, est e aguardando nunca entram na receita.
-function painelEterna(from,to,pdv,sales){const vt=venueToday();const dias={};const acc=pnAcc();const st={finalizadas:0,descartadas:0,canceladas:0};const ft={vendidas:0,impressas:0};const ag={n:0,total:0};
-  (sales||allSalesSim()).forEach(r=>{const d=r.date==='hoje'?vt:r.date;if(!ISO_DIA.test(String(d))||d<from||d>to)return;if(pdv&&r.pdv!==pdv)return;
-    if(r.teste||r.status==='teste'||r.est)return;
-    if(r.status==='aguardando'){ag.n++;ag.total+=numF(r.total);return;}
-    if(r.status==='cancelada'||r.status==='nao_paga'){st.canceladas++;return;}
-    if(r.status!=='paga')return;
-    const x=dias[d]||(dias[d]={date:d,receita:0,vendas:0,fotosVendidas:0});x.receita+=numF(r.total);x.vendas++;x.fotosVendidas+=safeN(r.photos);
-    st.finalizadas++;ft.vendidas+=safeN(r.photos);ft.impressas+=safeN(r.prints);
-    acc.addPay(r.pay||'outro',1,r.total);acc.addOrder(r.items||[],r.total,r.photos,true);});
-  Object.values(SIM.sessions||{}).forEach(s=>{if(!s||!s.lost)return;const d=s.date==='hoje'||!s.date?vt:s.date;if(d<from||d>to)return;if(pdv&&s.pdv!==pdv)return;st.descartadas++;});
-  return {dias,st,ft,acc,ag,vendas:st.finalizadas};}
+// 25/11 (Ronaldo): a parte Eterna do Painel vem só do servidor do ponto (todos os caixas, GET /metricas/dia, o mesmo das
+// Estatísticas); nada do navegador. Sem o servidor, a parte Eterna fica vazia com o aviso pn_aviso_eterna (srv:false).
+function painelEterna(from,to,pdv){const dias={};const acc=pnAcc();const st={finalizadas:0,descartadas:0,canceladas:0};const ft={vendidas:0,impressas:0};const ag={n:0,total:0};
+  const M=state.srvMet;srvMetPull();const ok=!!(state.agent&&state.agent.on)&&M.chave===from+'|'+to&&Array.isArray(M.dias);
+  (ok?M.dias:[]).forEach(d=>{const dia=d&&d.dia;if(!ISO_DIA.test(String(dia))||dia<from||dia>to)return;const on=d.online||{};let receita,vendas,fv;
+    if(pdv==='Galeria online'){receita=numF(on.faturamento);vendas=safeN(on.vendas);fv=safeN(on.fotos);}
+    else if(pdv){const pp=(d.por_posto||{})[pdv]||{};receita=numF(pp.faturamento);vendas=safeN(pp.vendas);fv=safeN(pp.fotos_vendidas);}
+    else{receita=numF(d.faturamento)+numF(on.faturamento);vendas=safeN(d.vendas)+safeN(on.vendas);fv=safeN(d.fotos_vendidas)+safeN(on.fotos);
+      st.canceladas+=safeN(d.canceladas);ft.impressas+=safeN(d.impressoes);
+      Object.entries(d.por_meio||{}).forEach(([m,v])=>{if(v&&typeof v==='object')acc.addPay(m,v.vendas,v.faturamento);});
+      if(safeN(on.vendas))acc.addPay('online',on.vendas,on.faturamento);
+      Object.entries(d.por_produto||{}).forEach(([k,v])=>{if(!v||typeof v!=='object')return;const id=k==='sem_detalhe'?'outros':String(k);acc.addProd(id,v.n,0,v.receita,id==='outros'?TE('pn_sem_detalhe_srv'):catName(id));});}
+    dias[dia]={date:dia,receita,vendas,fotosVendidas:fv,fotos:pdv?null:safeN(d.fotos),sessoes:pdv?null:safeN(d.sessoes),compraram:pdv?null:safeN(d.sessoes_com_venda)};
+    st.finalizadas+=vendas;ft.vendidas+=fv;});
+  return {dias,st,ft,acc,ag,vendas:st.finalizadas,srv:ok};}
 let PN_PONTOS=null; // pontos vistos na Roverpix: recalcula só quando o LIVE muda (revisão 1)
 function painelPontos(sales){const s=new Set();DATA.points.filter(p=>p.kind==='campo').forEach(p=>s.add(p.name));
   if(LIVE){if(!PN_PONTOS||PN_PONTOS.live!==LIVE||PN_PONTOS.upd!==LIVE.updated){const v=new Set();Object.values(LIVE.days||{}).forEach(a=>(a&&a.orders||[]).forEach(o=>{if(o&&o.pdv)v.add(String(o.pdv));}));PN_PONTOS={live:LIVE,upd:LIVE.updated,v:[...v]};}PN_PONTOS.v.forEach(x=>s.add(x));}
-  (sales||[]).forEach(r=>{if(r.pdv)s.add(String(r.pdv));});s.add('Galeria online');return [...s].slice(0,80);}
+  (sales||[]).forEach(r=>{if(r.pdv)s.add(String(r.pdv));});((state.srvMet&&state.srvMet.dias)||[]).forEach(d=>Object.keys((d&&d.por_posto)||{}).forEach(n=>{if(n!=='sem posto')s.add(n);}));   // 25/11: postos do servidor
+  s.add('Galeria online');return [...s].slice(0,80);}
 state.painel=(()=>{try{const o=JSON.parse(localStorage.getItem('eterna.painel.v1')||'null');if(o&&typeof o==='object')return {fonte:String(o.fonte||''),pdv:typeof o.pdv==='string'?o.pdv:''};}catch(e){}return {fonte:'tudo',pdv:''};})();
 function painelFiltro(pontos){const p=state.painel||{};const fonte=['tudo','roverpix','eterna'].includes(p.fonte)?p.fonte:'tudo';const pdvOn=!!LIVE||fonte==='eterna';
   let pdv=typeof p.pdv==='string'?p.pdv:'';if(pdv&&!(pontos||painelPontos()).includes(pdv))pdv='';state.painel={fonte,pdv};try{localStorage.setItem('eterna.painel.v1',JSON.stringify(state.painel))}catch(e){}
@@ -6203,12 +6207,13 @@ function painelFiltro(pontos){const p=state.painel||{};const fonte=['tudo','rove
 // contrato (o mesmo vira GET /painel no servidor): ver o plano
 function painelDados(f,sales){f=f||{};PN_PRECO={};[...PROD_CAT,'fundo','dig'].forEach(k=>{PN_PRECO[k]=numF(priceOf(k));});try{return painelDados0(f,sales);}finally{PN_PRECO=null;}}
 function painelDados0(f,sales){f=f||{};const from=ISO_DIA.test(f.from)?f.from:DMIN,to=ISO_DIA.test(f.to)?f.to:DMAX;const fonte=['tudo','roverpix','eterna'].includes(f.fonte)?f.fonte:'tudo';const pdv=typeof f.pdv==='string'?f.pdv:'';
-  const R=fonte!=='eterna'?painelRover(from,to,pdv):null;const E=fonte!=='roverpix'?painelEterna(from,to,pdv,sales):null;const nd=diasEntre(from,to).length;
+  const R=fonte!=='eterna'?painelRover(from,to,pdv):null;const E=fonte!=='roverpix'?painelEterna(from,to,pdv):null;const nd=diasEntre(from,to).length;
   const map={};(R?R.dias:[]).forEach(x=>{map[x.date]={...x};});
-  if(E)Object.values(E.dias).forEach(x=>{const m=map[x.date]||(map[x.date]={date:x.date,receita:0,vendas:0,fotos:null,fotosVendidas:0,sessoes:null,viram:null,compraram:null,pax:null});m.receita+=x.receita;m.vendas+=x.vendas;m.fotosVendidas=(m.fotosVendidas||0)+x.fotosVendidas;});
+  if(E)Object.values(E.dias).forEach(x=>{const m=map[x.date]||(map[x.date]={date:x.date,receita:0,vendas:0,fotos:null,fotosVendidas:0,sessoes:null,viram:null,compraram:null,pax:null});m.receita+=x.receita;m.vendas+=x.vendas;m.fotosVendidas=(m.fotosVendidas||0)+x.fotosVendidas;
+    for(const k of ['fotos','sessoes','compraram'])if(x[k]!=null)m[k]=numF(m[k])+x[k];});   // 25/11: fotos e sessões do servidor do ponto
   const dias=Object.values(map).sort((a,b)=>a.date.localeCompare(b.date)).map(x=>({...x,receita:safeN(x.receita)}));
-  const rc=R&&R.cob.length>0;const S=k=>dias.reduce((a,x)=>a+numF(x[k]),0);
-  const kpi={receita:safeN(S('receita')),vendas:safeN(S('vendas')),fotos:rc?safeN(S('fotos')):null,fotosVendidas:safeN(S('fotosVendidas')),sessoes:rc?safeN(S('sessoes')):null,compraram:rc?safeN(S('compraram')):null,viram:rc&&!pdv?safeN(S('viram')):null,pax:null,paxDias:0,gastoVisitante:null,captura:null};
+  const rc=(R&&R.cob.length>0)||!!(E&&E.srv&&!pdv);const S=k=>dias.reduce((a,x)=>a+numF(x[k]),0);
+  const kpi={receita:safeN(S('receita')),vendas:safeN(S('vendas')),fotos:rc?safeN(S('fotos')):null,fotosVendidas:safeN(S('fotosVendidas')),sessoes:rc?safeN(S('sessoes')):null,compraram:rc?safeN(S('compraram')):null,viram:R&&R.cob.length>0&&!pdv?safeN(S('viram')):null,pax:null,paxDias:0,gastoVisitante:null,captura:null};
   kpi.ticket=kpi.vendas?safeN(kpi.receita/kpi.vendas):0;
   if(!pdv){const pd=dias.filter(x=>x.pax>0);if(pd.length){kpi.pax=safeN(pnSum(pd,'pax'));kpi.paxDias=pd.length;kpi.gastoVisitante=safeN(pnSum(pd,'receita')/kpi.pax);kpi.captura=rc?safeN(100*pnSum(pd,'sessoes')/kpi.pax):null;}}
   // D9: comparação só com o período anterior inteiro nos dados da Roverpix e fonte diferente de Eterna
@@ -6223,16 +6228,16 @@ function painelDados0(f,sales){f=f||{};const from=ISO_DIA.test(f.from)?f.from:DM
   const vend=(R?R.ft.vendidas:0)+(E?E.ft.vendidas:0),imp=(R?R.ft.impressas:0)+(E?E.ft.impressas:0);
   const fotos={vendidas:safeN(vend),impressas:safeN(Math.min(imp,vend)),reimpressoes:R&&R.ft.reimpressoes!=null?safeN(R.ft.reimpressoes):null};
   const acc=pnAcc();if(R)pnMerge(acc,R.acc);if(E)pnMerge(acc,E.acc);
-  const prs=[...PROD_CAT,...PROD_EXTRA].map(k=>acc.prod[k]||{id:k,pacotes:0,fotos:0,receita:0,origem:[]}).filter(p=>(PROD_CAT.includes(p.id)&&!String(p.id).startsWith('cort_'))||p.pacotes>0||p.receita>0)
-    .map(p=>({id:p.id,nome:prodNome(p.id),adicional:PROD_ADIC.includes(p.id),pacotes:safeN(p.pacotes),fotos:safeN(p.fotos),receita:safeN(p.receita),origem:p.origem.slice()}));
+  const prs=[...PROD_CAT,...PROD_EXTRA,...Object.keys(acc.prod).filter(k=>!PROD_CAT.includes(k)&&!PROD_EXTRA.includes(k))].map(k=>acc.prod[k]||{id:k,pacotes:0,fotos:0,receita:0,origem:[]}).filter(p=>(PROD_CAT.includes(p.id)&&!String(p.id).startsWith('cort_'))||p.pacotes>0||p.receita>0)
+    .map(p=>({id:p.id,nome:PROD_CAT.includes(p.id)||PROD_EXTRA.includes(p.id)?prodNome(p.id):catName(p.id),adicional:PROD_ADIC.includes(p.id),pacotes:safeN(p.pacotes),fotos:safeN(p.fotos),receita:safeN(p.receita),origem:p.origem.slice()}));
   const shP=pctParts(prs.map(p=>p.receita));prs.forEach((p,i)=>p.share=shP[i]);
   const produtos=prs.sort((a,b)=>(b.receita>0)-(a.receita>0)||(b.pacotes>0)-(a.pacotes>0)||(a.id==='outros')-(b.id==='outros')||b.receita-a.receita||PROD_CAT.indexOf(a.id)-PROD_CAT.indexOf(b.id));
   const pg=Object.values(acc.pay).filter(p=>p.transacoes>0||p.recebido>0).map(p=>({id:p.id,nome:p.nome,transacoes:safeN(p.transacoes),recebido:safeN(p.recebido)})).sort((a,b)=>b.recebido-a.recebido);
   const shG=pctParts(pg.map(p=>p.recebido));pg.forEach((p,i)=>p.share=shG[i]);
-  const avisos=[];if(E)avisos.push(TE('pn_aviso_eterna'));if(R&&R.faltam.length&&R.cob.length)avisos.push(TE('pn_aviso_faltam',R.faltam.length));
+  const avisos=[];if(E&&!E.srv)avisos.push(TE('pn_aviso_eterna'));if(R&&R.faltam.length&&R.cob.length)avisos.push(TE('pn_aviso_faltam',R.faltam.length));
   const upd=LIVE&&LIVE.updated?String(LIVE.updated):'';
   return {range:{from,to,dias:nd},prev,fonte,pdv,
-    cobertura:{rover:R?{modo:R.modo,dias:R.cob,faltam:R.faltam,atualizado:upd?upd.slice(11,16):'',atualizadoEm:upd,inteiro:R.modo==='vivo'?true:R.inteiro}:null,eterna:{vendas:E?E.vendas:0,local:true}},
+    cobertura:{rover:R?{modo:R.modo,dias:R.cob,faltam:R.faltam,atualizado:upd?upd.slice(11,16):'',atualizadoEm:upd,inteiro:R.modo==='vivo'?true:R.inteiro}:null,eterna:{vendas:E?E.vendas:0,servidor:!!(E&&E.srv)}},
     kpi,prevKpi,status:st,fotos,
     funil:[{k:'sessoes',v:kpi.sessoes},{k:'viram',v:kpi.viram},{k:'compraram',v:kpi.compraram}],
     dias,produtos,pagamentos:pg,aguardandoCaixa:E?{n:E.ag.n,total:safeN(E.ag.total)}:{n:0,total:0},avisos,
@@ -6275,7 +6280,7 @@ function funnelBars(steps,o){o=o||{};const base=numF(steps[0]&&steps[0].v)||0;co
 // ranking: #, nome, pacotes e fotos, receita e barra de participação; o primeiro em amarelo com "mais vendido"
 function rankList(rows,o){o=o||{};let pos=0;const mxS=Math.max(1,...rows.filter(p=>p.id!=='outros').map(p=>numF(p.receita)));/* barra relativa ao primeiro (como na prévia); o % escrito é a participação na receita */
   return `<ol class="pn-rank" role="list">${rows.map((p,i)=>{const off=p.receita<=0&&p.pacotes<=0;const old=p.id==='outros';const cort=String(p.id).startsWith('cort_');const top=!off&&!old&&!cort&&pos===(o.hi||0);const n=off||old||cort?'':'#'+(++pos);
-    const det=old?p.origem.join(', '):cort?`${TE('pn_dadas',p.pacotes).replace(/^\d+/,fmtN(p.pacotes))} · ${TE('n_fotos',p.fotos).replace(/^\d+/,fmtN(p.fotos))}`:`${p.adicional?TE('pn_unid',fmtN(p.pacotes)):TE('pn_pacotes',p.pacotes).replace(/^\d+/,fmtN(p.pacotes))}${p.adicional?'':` · ${TE('n_fotos',p.fotos).replace(/^\d+/,fmtN(p.fotos))}`}`;
+    const det=old?p.origem.join(', '):cort?`${TE('pn_dadas',p.pacotes).replace(/^\d+/,fmtN(p.pacotes))} · ${TE('n_fotos',p.fotos).replace(/^\d+/,fmtN(p.fotos))}`:`${p.adicional?TE('pn_unid',fmtN(p.pacotes)):TE('pn_pacotes',p.pacotes).replace(/^\d+/,fmtN(p.pacotes))}${p.adicional||!(p.fotos>0)?'':` · ${TE('n_fotos',p.fotos).replace(/^\d+/,fmtN(p.fotos))}`}`;
     if(off)return `<li class="off" data-id="${esc(p.id)}"><span class="pos"></span><span class="nm">${esc(p.nome)}</span><span class="rv">${TE('pn_sem_venda')}</span></li>`;
     return `<li class="${top?'top':''}${old?' old sep':''}" data-id="${esc(p.id)}"><span class="pos">${n}</span><span class="nm">${esc(p.nome)}${top?`<span class="pn-tag">${TE('pn_mais_vendido')}</span>`:''}<small>${esc(det)}</small></span><span class="rv">${cort?TE('pn_cortesia'):fmtR(p.receita)}</span>
       <span class="bar" role="img" aria-label="${esc(p.nome+': '+TE('pn_da_receita',p.share+'%'))}" tabindex="0" data-tip="${esc(old?TE('pn_nomes_antigos')+': '+p.origem.join(', '):p.nome+': '+fmtR(p.receita).replace(' ',' ')+', '+TE('pn_da_receita',pctTxt(p.receita,p.share)))}"><i style="width:${Math.max(1,Math.min(100,Math.round(100*p.receita/mxS)))}%"></i></span><span class="sh">${pctTxt(p.receita,p.share)}</span></li>`;}).join('')}</ol>`;}
@@ -6328,7 +6333,7 @@ function srvMetPainel(){if(!state.agent||!state.agent.on)return '';srvMetPull();
 // notas do topo do Painel: a tela e o arquivo exportado (relPainel) leem a mesma lista
 function painelNotas(D,f){const notas=[];if(!LIVE&&f.fonte!=='eterna')notas.push(TE('pn_nota_sem_con'));if(!f.pdvOn)notas.push(TE('pn_nota_filtro'));
   (D.avisos||[]).forEach(a=>notas.push(a));return notas;}
-function vPainel(){const sales=allSalesSim();const pontos=painelPontos(sales);const f=painelFiltro(pontos);const r=state.range;
+function vPainel(){const sales=null;const pontos=painelPontos(sales);const f=painelFiltro(pontos);const r=state.range;
   const D=painelDados({from:r.from,to:r.to,pdv:f.pdv,fonte:f.fonte},sales);state.painelUlt=D;const K=D.kpi,cv=D.cobertura.rover;
   const per=D.range.from===D.range.to?dBR(D.range.from):TE('periodo_a',dBR(D.range.from).slice(0,5),dBR(D.range.to));
   const rvTxt=LIVE?TE('live_badge',cv&&cv.atualizado?' '+cv.atualizado:''):TE('pn_sa_importado');
@@ -12083,7 +12088,7 @@ const EQ={
   pn_ponto:["Ponto","Point","Punto","Point","Standort"],
   pn_por_meio:["Por forma de pagamento","By payment method","Por forma de pago","Par mode de paiement","Nach Zahlungsart"],
   pn_sa_importado:["Sistema anterior (importado)","Previous system (imported)","Sistema anterior (importado)","Ancien système (importé)","Bisheriges System (importiert)"],
-  pn_fonte_eterna:["Eterna (vendas deste computador)","Eterna (sales on this computer)","Eterna (ventas de este ordenador)","Eterna (ventes de cet ordinateur)","Eterna (Verkäufe dieses Computers)"],
+  pn_fonte_eterna:["Eterna (servidor do ponto)","Eterna (point server)","Eterna (servidor del punto)","Eterna (serveur du point)","Eterna (Server des Standorts)"],
   pn_desatualizado:[(h)=>`Sistema anterior desatualizado desde ${h}`,(h)=>`Previous system out of date since ${h}`,(h)=>`Sistema anterior desactualizado desde ${h}`,(h)=>`Ancien système non mis à jour depuis ${h}`,(h)=>`Bisheriges System seit ${h} nicht aktualisiert`],
   pn_ponto_off:[" (só com o sistema anterior ao vivo ou com a fonte Eterna)"," (only with the previous system live or with the Eterna source)"," (solo con el sistema anterior en vivo o con la fuente Eterna)"," (uniquement avec l'ancien système en direct ou la source Eterna)"," (nur mit dem bisherigen System live oder der Quelle Eterna)"],
   pn_todos:["Todos","All","Todos","Tous","Alle"],
@@ -12092,7 +12097,8 @@ const EQ={
   pn_sa:["Sistema anterior","Previous system","Sistema anterior","Ancien système","Bisheriges System"],
   pn_nota_sem_con:["Sem conexão com o computador do ponto: mostrando os números importados.","No connection to the point computer: showing the imported figures.","Sin conexión con el ordenador del punto: se muestran los números importados.","Pas de connexion à l'ordinateur du point : affichage des chiffres importés.","Keine Verbindung zum Standortcomputer: Die importierten Zahlen werden angezeigt."],
   pn_nota_filtro:["O filtro de ponto liga com o sistema anterior ao vivo ou com a fonte Eterna: os números importados não separam por ponto.","The point filter works with the previous system live or with the Eterna source: the imported figures are not split by point.","El filtro de punto funciona con el sistema anterior en vivo o con la fuente Eterna: los números importados no se separan por punto.","Le filtre par point fonctionne avec l'ancien système en direct ou la source Eterna : les chiffres importés ne sont pas séparés par point.","Der Standortfilter funktioniert mit dem bisherigen System live oder der Quelle Eterna: Die importierten Zahlen sind nicht nach Standort getrennt."],
-  pn_aviso_eterna:["A parte Eterna são as vendas deste computador.","The Eterna part is the sales on this computer.","La parte Eterna son las ventas de este ordenador.","La partie Eterna correspond aux ventes de cet ordinateur.","Der Eterna-Anteil sind die Verkäufe dieses Computers."],
+  pn_aviso_eterna:["Sem conexão com o servidor do ponto: as vendas da Eterna não aparecem.","No connection to the point server: Eterna sales are not shown.","Sin conexión con el servidor del punto: las ventas de Eterna no aparecen.","Pas de connexion au serveur du point : les ventes Eterna ne sont pas affichées.","Keine Verbindung zum Server des Standorts: Eterna-Verkäufe werden nicht angezeigt."],
+  pn_sem_detalhe_srv:["Vendas sem detalhe do pacote","Sales without package detail","Ventas sin detalle del paquete","Ventes sans détail du forfait","Verkäufe ohne Paketdetail"],
   pn_aviso_faltam:[(n)=>n===1?`Sem dados do sistema anterior em 1 dia do período.`:`Sem dados do sistema anterior em ${n} dias do período.`,(n)=>n===1?`No data from the previous system on 1 day of the period.`:`No data from the previous system on ${n} days of the period.`,(n)=>n===1?`Sin datos del sistema anterior en 1 día del período.`:`Sin datos del sistema anterior en ${n} días del período.`,(n)=>n===1?`Aucune donnée de l'ancien système sur 1 jour de la période.`:`Aucune donnée de l'ancien système sur ${n} jours de la période.`,(n)=>n===1?`Keine Daten des bisherigen Systems an 1 Tag des Zeitraums.`:`Keine Daten des bisherigen Systems an ${n} Tagen des Zeitraums.`],
   pn_periodo:["Período","Period","Período","Période","Zeitraum"],
   pn_csv:["Exportar CSV","Export CSV","Exportar CSV","Exporter en CSV","CSV exportieren"],
@@ -12112,7 +12118,7 @@ const EQ={
   pn_catracas_sem:["Catracas sem leitura neste período","No turnstile readings in this period","Torniquetes sin lectura en este período","Aucune lecture des tourniquets sur cette période","Keine Drehkreuzdaten in diesem Zeitraum"],
   pn_fotografados:["Fotografados","Photographed","Fotografiados","Photographiés","Fotografiert"],
   pn_imp_vao2:[(a,b)=>`Os números importados vão de ${a} a ${b}. Para ver hoje e os últimos 30 dias, conecte o sistema anterior em Repositório.`,(a,b)=>`The imported figures run from ${a} to ${b}. To see today and the last 30 days, connect the previous system in Repository.`,(a,b)=>`Los números importados van del ${a} al ${b}. Para ver hoy y los últimos 30 días, conecta el sistema anterior en Repositorio.`,(a,b)=>`Les chiffres importés vont du ${a} au ${b}. Pour voir aujourd'hui et les 30 derniers jours, connectez l'ancien système dans Dépôt.`,(a,b)=>`Die importierten Zahlen reichen vom ${a} bis ${b}. Um heute und die letzten 30 Tage zu sehen, verbinden Sie das bisherige System unter Speicher.`],
-  pn_nenhuma_eterna:[" Nenhuma venda do Eterna neste computador no período."," No Eterna sales on this computer in the period."," Ninguna venta de Eterna en este ordenador en el período."," Aucune vente Eterna sur cet ordinateur sur la période."," Keine Eterna-Verkäufe auf diesem Computer im Zeitraum."],
+  pn_nenhuma_eterna:[" Nenhuma venda do Eterna no servidor do ponto no período."," No Eterna sales on the point server in the period."," Ninguna venta de Eterna en el servidor del punto en el período."," Aucune vente Eterna sur le serveur du point sur la période."," Keine Eterna-Verkäufe auf dem Server des Standorts im Zeitraum."],
   pn_total_de:[(x)=>`total de ${x}`,(x)=>`total for ${x}`,(x)=>`total de ${x}`,(x)=>`total du ${x}`,(x)=>`Summe ${x}`],
   pn_melhor_dia:[(d,v)=>`Melhor dia ${d}, ${v}`,(d,v)=>`Best day ${d}, ${v}`,(d,v)=>`Mejor día ${d}, ${v}`,(d,v)=>`Meilleur jour ${d}, ${v}`,(d,v)=>`Bester Tag ${d}, ${v}`],
   pn_dias_media:[(n,v)=>`${n} dias · média ${v}`,(n,v)=>`${n} days · average ${v}`,(n,v)=>`${n} días · promedio ${v}`,(n,v)=>`${n} jours · moyenne ${v}`,(n,v)=>`${n} Tage · Durchschnitt ${v}`],

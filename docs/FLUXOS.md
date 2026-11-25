@@ -1822,7 +1822,7 @@ flowchart TD
 | Conversão | Sessões com venda ÷ sessões; fotos vendidas ÷ fotos | `metricas_dia` |
 | Ticket médio | Faturamento ÷ vendas | `metricas_dia` |
 | Painel, seção do servidor | Só com `state.agent.on`; cache de 60 s por período | `srvMetPull`, `srvMetPainel`, `srvMetSoma` |
-| Painel, cartões principais | Fonte `tudo`, `roverpix` ou `eterna`; a opção Eterna é rotulada "vendas deste computador" | `vPainel`, `painelFiltro`, `allSalesSim` |
+| Painel, cartões principais | Fonte `tudo`, `roverpix` ou `eterna`; a parte Eterna vem só do servidor do ponto (`GET /metricas/dia`, todos os caixas), nunca do navegador; sem o servidor fica vazia com aviso (25/11) | `vPainel`, `painelFiltro`, `painelEterna`, `srvMetPull` |
 | Roverpix | A cada 300 s, 30 dias; app recebe totais; etiqueta com mais de 15 min | `rover_loop`, `rover_data`, `applyLive`, `vPainel` |
 | Métricas técnicas | `metricas.jsonl`, relido e podado para 3 dias; rota `/metricas` traz fila de rostos e uso da máquina | `metricas_carrega`, `metrica_grava`, `do_GET` |
 | Exportar relatório (15 e 16/11) | Feito no navegador, com o mesmo dado da tela (período, filtros e ordem), sem rota no servidor e sem impressão. PDF e XLS em Painel, Estatísticas (seções a, b, e), Lista de vendas, Fotógrafos, Bandeiras e Diário do set; o CSV que já existia é o terceiro ícone no Painel e na Lista de vendas. Só exporta quem vê a tela; conferido no botão e no clique. PDF até 2.000 linhas, XLS até 20.000; uma exportação por vez. Cada arquivo gera o registro `relatorio_exportado`, sem o conteúdo | `REL`, `relBotao`, `relPode`, `relExportar`, `relAudita`, `REL_MAX_PDF`, `REL_MAX_XLSX` |
