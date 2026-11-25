@@ -9162,6 +9162,41 @@ def vendas_posto_sem_impressao(posto, agora=None):
     return {"ok": True, "vendas": [v for v in vs.values() if v.get("dados") and not v.get("fim") and (v["dados"].get("prints") or 0) > 0]}
 
 
+def vendas_do_dia(posto=None, agora=None):
+    """25/11 (Ronaldo): as vendas pagas de hoje de todos os postos (ou só de um), para a lista "Vendas de hoje" do Posto.
+    Venda = evento "criar" (o posto só manda na confirmação do pagamento); "cancelar" marca, "impressao" ok marca impressa."""
+    dia = _ev_dia(_iso(agora or time.time()))
+    sql = "select venda, tipo, em, posto, dados from evento where dia = ? and tipo in ('criar','cancelar','impressao')"
+    arg = [dia]
+    if posto:
+        sql += " and posto = ?"; arg.append(str(posto)[:40])
+    with ev_lock:
+        db = vendas_db()
+        try:
+            rows = db.execute(sql + " order by em", arg).fetchall()
+        finally:
+            db.close()
+    vs = {}
+    for venda, tipo, em, pst, dados in rows:
+        try:
+            d = json.loads(dados or "{}")
+        except ValueError:
+            d = {}
+        v = vs.setdefault(venda, {"venda": venda})
+        if tipo == "criar":
+            ven = d.get("vendedor") if isinstance(d.get("vendedor"), dict) else {}
+            v.update(em=em, posto=pst or "", saleNo=d.get("saleNo") or "", card=d.get("card") or "", meio=d.get("meio") or "",
+                     total=d.get("total"), prints=d.get("prints") or 0, vendedor=(ven or {}).get("nome") or "",
+                     cart=[{"id": x.get("id")} for x in (d.get("cart") or []) if isinstance(x, dict)][:40])
+        elif tipo == "cancelar":
+            v["cancelada"] = True
+        elif d.get("resultado") == "ok":
+            v["impressa"] = True
+    out = [v for v in vs.values() if v.get("em")]
+    out.sort(key=lambda v: v["em"], reverse=True)
+    return {"ok": True, "dia": dia, "vendas": out}
+
+
 def imp_fila_json():
     agora = time.time()
     with lock:
@@ -20150,7 +20185,8 @@ ROTAS = (
     ("POST", "/ponto/descancelar", "sessao", ("financeiro.u",)),   # 25/11: desfaz um cancelamento feito por engano
     ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
-    ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),   # vendas do posto sem impressão, para recuperar (15/11)
+    ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),
+    ("GET", "/ponto/vendas-dia", "posto_ou_sessao", VENDER),     # 25/11: vendas pagas de hoje de todos os postos (lista do Posto)   # vendas do posto sem impressão, para recuperar (15/11)
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
@@ -21004,7 +21040,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/vendas-dia", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
 
 
 # 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
@@ -23432,6 +23468,12 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "origem não autorizada"}, 403)
             ids = ",".join(parse_qs(u.query).get("vendas") or []).split(",")
             return self.js({"ok": True, "vendas": ev_impressoes(ids)}, nostore=True)
+        if u.path == "/ponto/vendas-dia":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            pa = self.posto_atual()
+            so = str(pa["nome"])[:30] if pa and not self.sessao() and pa.get("nome") else None   # aparelho sem pessoa: só o dele
+            return self.js(vendas_do_dia(so), nostore=True)
         if u.path == "/ponto/vendas-posto":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
