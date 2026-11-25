@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.85.0 · 25/11 20:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.85.1 · 25/11 20:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1715,6 +1715,7 @@ async function pedSobe(){if(!pedLigado())return;const nome=postoNome();const L=(
   try{const r=await agFetch(state.agent.url+'/ponto/pedidos',{method:'POST',headers:{'Content-Type':'application/json','X-Eterna':'1'},body:JSON.stringify({pedidos:L})});if(r.ok)L.forEach(x=>{PED_ENV[x.id]=JSON.stringify(x);});}catch(e){}}
 // 25/11 (Ronaldo): correção feita pelo admin no servidor (vendedor trocado, cancelamento desfeito) chega ao posto e vale aqui
 function pedCorrige(r,c){r.corrigido=c;const s=Object.values(SIM.sessions).find(x=>x&&x.vendaId===r.id);if(c.vendedor&&c.vendedor.nome){r.vendedor=Object.assign({},c.vendedor);if(s)s.vendedor=Object.assign({},c.vendedor);}
+  if(c.ajuste&&c.ajuste.total!=null){r.total=c.ajuste.total;r.meio=c.ajuste.meio;r.cart=(c.ajuste.cart||[]).map(x=>({id:x.id,v:x.v}));} // 25/11: venda acertada com o que foi cobrado (conferência com a Imply)
   if(c.descancelada&&s&&s.status==='cancelada'){s.status='paga';delete s.cancelada;const card=Object.keys(SIM.sessions).find(k=>SIM.sessions[k]===s);galDasSessao(card).forEach(t=>{galAtualizar(t);galPublicar(t);});}}
 async function pedDesce(){if(!pedLigado())return;try{const r=await agFetch(state.agent.url+'/ponto/pedidos?posto='+encodeURIComponent(postoNome()),{headers:{'X-Eterna':'1'}});if(!r.ok)return;const j=await r.json();
   simFresh();if(!Array.isArray(SIM.caixaDin))SIM.caixaDin=[];const L=SIM.caixaDin;let mudou=false;
