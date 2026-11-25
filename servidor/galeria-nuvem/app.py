@@ -501,6 +501,41 @@ _re_senha_prov = re.compile(r"^[a-z0-9]{8,64}$")
 _ses = boto3.client("sesv2", region_name=REGIAO)
 
 
+# 25/11 (Ronaldo): "todo e-mail que soltemos tem que ter no mínimo os 3 idiomas, não sabemos quem pode receber". Cada e-mail
+# sai com o idioma da pessoa primeiro e depois português, inglês e espanhol (os que faltarem), num corpo só.
+EMAIL_BASE = ("pt", "en", "es")
+EMAIL_ROTULO = {"pt": "Português", "en": "English", "es": "Español", "fr": "Français", "de": "Deutsch", "it": "Italiano", "zh": "中文"}
+
+
+def email_idiomas(idioma, dic):
+    """O idioma da pessoa (se o e-mail existe nele) e depois pt, en e es."""
+    primeiro = [idioma] if idioma in dic else []
+    return primeiro + [x for x in EMAIL_BASE if x not in primeiro]
+
+
+def email_assunto(ls, assuntos):
+    """Assunto com os três primeiros idiomas da lista (o corpo tem todos)."""
+    vistos = []
+    for l in ls[:3]:
+        if assuntos[l] not in vistos:
+            vistos.append(assuntos[l])
+    return " / ".join(vistos)
+
+
+def email_data(iso_dia, l):
+    """AAAA-MM-DD escrito do jeito de cada idioma."""
+    try:
+        a, m, d = (int(x) for x in iso_dia.split("-"))
+    except Exception:
+        return iso_dia
+    if l == "en":
+        return "%s %d, %d" % (("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+                               "November", "December")[m - 1], d, a)
+    if l == "zh":
+        return "%d年%d月%d日" % (a, m, d)
+    return ("%02d.%02d.%d" if l == "de" else "%02d/%02d/%d") % (d, m, a)
+
+
 EMAIL_SENHA = {
     "pt": ("Sua senha provisória", "Recebemos um pedido para redefinir sua senha do Eterna. Use esta senha provisória na tela de entrada.",
            "Ela vale por 30 minutos e só serve para criar a sua senha nova.", "Se não foi você que pediu, ignore este e-mail. Sua senha atual continua valendo."),
@@ -528,10 +563,12 @@ def senha_email(ev, corpo):
         return resp({"erro": "aguarde"}, 429)
     if not MAIL_FROM:
         return resp({"erro": "envio desligado"}, 502)
-    assunto, intro, aviso, ignore = EMAIL_SENHA.get(str(corpo.get("idioma") or ""), EMAIL_SENHA["pt"])
-    texto = "%s\n\n%s\n\n%s\n\n%s" % (intro, senha, aviso, ignore)
-    html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:480px'><p>%s</p><p style='font-family:monospace;font-size:26px;font-weight:bold;margin:18px 0'>%s</p>"
-            "<p>%s</p><p style='color:#666;font-size:13px'>%s</p></div>") % (intro, senha, aviso, ignore)
+    ls = email_idiomas(str(corpo.get("idioma") or ""), EMAIL_SENHA)
+    assunto = email_assunto(ls, {l: EMAIL_SENHA[l][0] for l in ls})
+    texto = senha + "\n\n" + "\n\n".join("%s\n%s\n%s\n%s" % (EMAIL_ROTULO[l], EMAIL_SENHA[l][1], EMAIL_SENHA[l][2], EMAIL_SENHA[l][3]) for l in ls)
+    html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:520px'><p style='font-family:monospace;font-size:26px;font-weight:bold;margin:18px 0'>%s</p>%s</div>"
+            % (senha, "".join("<hr style='border:0;border-top:1px solid #ddd;margin:18px 0'><p style='color:#888;font-size:12px;margin:0 0 6px'>%s</p><p>%s</p><p>%s</p>"
+                              "<p style='color:#666;font-size:13px'>%s</p>" % (EMAIL_ROTULO[l], EMAIL_SENHA[l][1], EMAIL_SENHA[l][2], EMAIL_SENHA[l][3]) for l in ls)))
     try:
         _ses.send_email(FromEmailAddress="%s <%s>" % (MAIL_NOME, MAIL_FROM), Destination={"ToAddresses": [email]},
                         Content={"Simple": {"Subject": {"Data": "%s · %s" % (assunto, MAIL_NOME), "Charset": "UTF-8"},
@@ -799,24 +836,39 @@ def vendas_online(ev):
     return resp({"vendas": vs, "next": its[-1]["sk"] if its else desde})
 
 
-EMAIL_PAGO = {
-    "pt": ("Suas fotos estão liberadas", "Recebemos o pagamento das suas fotos do Tour Maracanã. Abra a galeria para baixar:", "A galeria fica disponível até"),
-    "en": ("Your photos are ready", "We received the payment for your Maracanã Tour photos. Open the gallery to download them:", "The gallery is available until"),
-    "es": ("Tus fotos están liberadas", "Recibimos el pago de tus fotos del Tour Maracanã. Abre la galería para descargarlas:", "La galería está disponible hasta"),
+EMAIL_PAGO = {      # 25/11: o link vai uma vez, em cima; cada idioma diz o que fazer com ele
+    "pt": ("Suas fotos estão liberadas", "Recebemos o pagamento das suas fotos do Tour Maracanã. Abra a galeria pelo link acima para baixar.", "A galeria fica disponível até %s."),
+    "en": ("Your photos are ready", "We received the payment for your Maracanã Tour photos. Open the gallery with the link above to download them.", "The gallery is available until %s."),
+    "es": ("Tus fotos están liberadas", "Recibimos el pago de tus fotos del Tour Maracanã. Abre la galería con el enlace de arriba para descargarlas.", "La galería está disponible hasta el %s."),
+    "fr": ("Vos photos sont disponibles", "Nous avons reçu le paiement de vos photos du Tour Maracanã. Ouvrez la galerie avec le lien ci-dessus pour les télécharger.", "La galerie reste disponible jusqu'au %s."),
+    "de": ("Deine Fotos sind freigegeben", "Wir haben die Zahlung für deine Fotos der Maracanã-Tour erhalten. Öffne die Galerie über den Link oben, um sie herunterzuladen.", "Die Galerie ist bis zum %s verfügbar."),
+    "it": ("Le tue foto sono disponibili", "Abbiamo ricevuto il pagamento delle tue foto del Tour Maracanã. Apri la galleria con il link qui sopra per scaricarle.", "La galleria è disponibile fino al %s."),
+    "zh": ("您的照片已可下载", "我们已收到您马拉卡纳球场之旅照片的付款。请通过上方链接打开相册下载。", "相册有效期至%s。"),
 }
+
+
+EMAIL_GALERIA = {"pt": "Abrir a galeria", "en": "Open the gallery", "es": "Abrir la galería", "fr": "Ouvrir la galerie", "de": "Galerie öffnen",
+                 "it": "Apri la galleria", "zh": "打开相册"}
 
 
 def email_pago(it):
     if not MAIL_FROM:
         return
     m = manifesto(it["token"]) or {}
-    assunto, txt, ate = EMAIL_PAGO.get(it.get("idioma"), EMAIL_PAGO["pt"])
+    ls = email_idiomas(it.get("idioma"), EMAIL_PAGO)
+    assunto = email_assunto(ls, {l: EMAIL_PAGO[l][0] for l in ls})
     link = "https://eterna.photo/#g/" + it["token"]
     validade = str(m.get("expira") or "")[:10]
+    bloco = lambda l: EMAIL_PAGO[l][1] + ((" " + EMAIL_PAGO[l][2] % email_data(validade, l)) if validade else "")
+    texto = link + "\n\n" + "\n\n".join("%s\n%s" % (EMAIL_ROTULO[l], bloco(l)) for l in ls)
+    html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:520px'><p style='margin:18px 0'><a href='%s' style='display:inline-block;background:#0C2340;color:#fff;"
+            "padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:bold'>%s</a></p><p style='font-size:13px;word-break:break-all'><a href='%s'>%s</a></p>%s</div>"
+            % (link, " / ".join(dict.fromkeys(EMAIL_GALERIA[l] for l in ls[:3])), link, link,
+               "".join("<hr style='border:0;border-top:1px solid #ddd;margin:16px 0'><p style='color:#888;font-size:12px;margin:0 0 6px'>%s</p><p>%s</p>" % (EMAIL_ROTULO[l], bloco(l)) for l in ls)))
     try:
         _ses.send_email(FromEmailAddress="%s <%s>" % (MAIL_NOME, MAIL_FROM), Destination={"ToAddresses": [it["email"]]},
                         Content={"Simple": {"Subject": {"Data": "%s · %s" % (assunto, MAIL_NOME), "Charset": "UTF-8"},
-                                            "Body": {"Text": {"Data": "%s\n\n%s\n\n%s %s" % (txt, link, ate, validade), "Charset": "UTF-8"}}}})
+                                            "Body": {"Text": {"Data": texto, "Charset": "UTF-8"}, "Html": {"Data": html, "Charset": "UTF-8"}}}})
     except Exception as ex:
         print("pedido: e-mail de fotos liberadas falhou:", str(ex)[:160])
 

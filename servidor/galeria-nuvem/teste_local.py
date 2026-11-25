@@ -80,7 +80,8 @@ T, R = Tabela(), Rek()
 invocacoes = []
 import boto3
 boto3.resource = lambda *a, **k: types.SimpleNamespace(Table=lambda n: T)
-boto3.client = lambda svc, **k: {"rekognition": R, "s3": S3(), "lambda": types.SimpleNamespace(invoke=lambda **k: invocacoes.append(k)), "sesv2": types.SimpleNamespace(send_email=lambda **k: None)}[svc]
+emails = []
+boto3.client = lambda svc, **k: {"rekognition": R, "s3": S3(), "lambda": types.SimpleNamespace(invoke=lambda **k: invocacoes.append(k)), "sesv2": types.SimpleNamespace(send_email=lambda **k: emails.append(k))}[svc]
 import app
 
 ctx = types.SimpleNamespace(get_remaining_time_in_millis=lambda: 29000)
@@ -530,4 +531,19 @@ ok(F.get("compras") == 1 and F.get("fotos_compradas") == 2 and F.get("valor") ==
    and not C["ag_d00001"]["comprou"], "escola: a compra entra no funil e na criança, com o comprador mascarado")
 chama("POST", "/ponto/galerias", {"manifesto": dict(manS, encerrada=True)}, {"x-eterna-ponto": seg})
 ok(not [k for k in T.d if k[0] == "IDX#" + tokS], "escola: encerrar apaga o progresso de todos os lotes")
+# ---------- 25/11: todo e-mail sai com o idioma da pessoa primeiro e depois português, inglês e espanhol ----------
+mf0, ma0 = app.MAIL_FROM, app.manifesto
+app.MAIL_FROM, app.manifesto = "fotos@exemplo.com", (lambda t: {"expira": "2026-12-24T23:59:59Z"})
+for idioma, ordem in (("pt", ["Português", "English", "Español"]), ("fr", ["Français", "Português", "English", "Español"]), ("zh", ["中文", "Português", "English", "Español"]), (None, ["Português", "English", "Español"])):
+    del emails[:]
+    app.email_pago({"token": "tok-teste", "email": "cliente@exemplo.com", "idioma": idioma})
+    c = emails[-1]["Content"]["Simple"]
+    txt, html = c["Body"]["Text"]["Data"], c["Body"]["Html"]["Data"]
+    pos = [txt.find("\n" + r + "\n") for r in ordem]
+    ok(all(q >= 0 for q in pos) and pos == sorted(pos), "fotos liberadas (%s): idiomas na ordem %r" % (idioma, ordem))
+    ok(txt.count("https://eterna.photo/#g/tok-teste") == 1 and "24/12/2026" in txt and "December 24, 2026" in txt, "fotos liberadas (%s): link uma vez e data de cada idioma" % idioma)
+    ok(all(r in html for r in ordem) and "Abrir a galeria" in html, "fotos liberadas (%s): o HTML tem os mesmos idiomas" % idioma)
+s0 = emails[-1]["Content"]["Simple"]["Subject"]["Data"]
+ok("Suas fotos estão liberadas" in s0 and "Your photos are ready" in s0 and "Tus fotos están liberadas" in s0, "assunto com os três idiomas: %r" % s0)
+app.MAIL_FROM, app.manifesto = mf0, ma0
 print("\ntudo certo")

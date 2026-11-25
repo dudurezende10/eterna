@@ -323,3 +323,7 @@ As pendências operacionais e de segurança da homologação ficam fora do repos
 ## Galeria só com selfie (24/11)
 
 `GET /g/<token>/livres` responde 403: nenhuma foto sai só com o QR ou o código. As compradas e cortesias da venda aparecem depois da selfie que bate em pelo menos uma foto da venda. O `POST /g/<token>/rosto` recebe `email`; um e-mail válido fica no registro `CON#<token>` do consentimento (400 dias).
+
+## E-mails em pelo menos três idiomas (25/11)
+
+Todo e-mail que a nuvem manda (fotos liberadas depois da compra online e senha provisória da equipe) sai num corpo só com o idioma da pessoa primeiro e depois português, inglês e espanhol, os que faltarem (`email_idiomas`). Não sabemos quem vai ler. O assunto junta os três primeiros; o link da galeria vai uma vez, em cima, com botão no HTML; a validade sai escrita no formato de cada idioma (`email_data`). Fotos liberadas existe também em francês, alemão, italiano e chinês. E-mail novo segue a mesma regra.
