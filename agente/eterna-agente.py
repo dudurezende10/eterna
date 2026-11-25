@@ -4675,25 +4675,39 @@ def mtg_gal_arquivo(pid, fundo):
     return None
 
 
-def gal_ia_pagas(token):
-    """(pid, fundo) das montagens das vendas pagas e não canceladas que publicaram esta galeria (aiSel do evento criar)."""
-    if not os.path.exists(VENDAS_DB) or not token_ok(token):
+def gal_ia_pagas(token, codigo=None):
+    """(pid, fundo) das montagens das vendas pagas e não canceladas que publicaram esta galeria: aiSel do evento criar (a
+    galeria pelo token ou pelo código) e, de reserva, do pedido confirmado do posto com o mesmo token."""
+    if not token_ok(token):
         return set()
-    db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=2, check_same_thread=False)
+    rs = []
+    if os.path.exists(VENDAS_DB):
+        db = sqlite3.connect("file:%s?mode=ro" % quote(VENDAS_DB), uri=True, timeout=2, check_same_thread=False)
+        try:
+            db.execute("pragma query_only=1")
+            rs = db.execute("select dados from evento where tipo = 'criar' and (dados like ? or dados like ?)"
+                            " and venda in (select venda from evento where tipo = 'pagar')"
+                            " and venda not in (select venda from evento where tipo = 'cancelar')",
+                            ("%" + token + "%", "%" + (codigo or token) + "%")).fetchall()
+        finally:
+            db.close()
     try:
-        db.execute("pragma query_only=1")
-        rs = db.execute("select dados from evento where tipo = 'criar' and dados like ?"
-                        " and venda in (select venda from evento where tipo = 'pagar')"
-                        " and venda not in (select venda from evento where tipo = 'cancelar')", ("%" + token + "%",)).fetchall()
-    finally:
-        db.close()
+        with estado_lock:
+            db = pedidos_db()
+            try:
+                rs += db.execute("select valor from pedido where estado = 'confirmada' and valor like ?", ("%" + token + "%",)).fetchall()
+            finally:
+                db.close()
+    except Exception as ex:
+        print("  galeria: pedidos não lidos para os fundos de IA (%s)" % type(ex).__name__)
     out = set()
     for (dados,) in rs:
         try:
             d = json.loads(dados or "{}")
         except ValueError:
             continue
-        if (d.get("galeria") or {}).get("token") != token:
+        g = d.get("galeria") if isinstance(d.get("galeria"), dict) else {}
+        if not (d.get("token") == token or g.get("token") == token or (codigo and g.get("codigo") == codigo)):
             continue
         for k in d.get("aiSel") or []:
             a, _, f = re.sub(r"^ai:", "", str(k)).partition("|")
@@ -4707,7 +4721,7 @@ def gal_ia_plano(m):
     if not isinstance(m, dict) or m.get("tipo") != "sessao":
         return None
     try:
-        pagas = gal_ia_pagas(m["token"])
+        pagas = gal_ia_pagas(m["token"], m.get("codigo"))
     except Exception as ex:
         print("  galeria: fundos de IA pagos não lidos (%s)" % type(ex).__name__)
         pagas = set()
@@ -23039,7 +23053,7 @@ class H(BaseHTTPRequestHandler):
             with sess_lock:
                 c = sess_pid.get(base)
                 ok = c in (m0.get("sessoes") or []) and base in ((sess.get(c) or {}).get("ia") or ())
-            if not ok and (base, fundo) not in gal_ia_pagas(t):
+            if not ok and (base, fundo) not in gal_ia_pagas(t, m0.get("codigo")):
                 return self.js({"error": "não é base de IA desta galeria"}, 400)
             try:
                 b = base64.b64decode(str(body.get("jpeg") or "").split(",", 1)[-1])
