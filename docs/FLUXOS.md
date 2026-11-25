@@ -831,6 +831,7 @@ flowchart TD
 | Servidor de rostos fora | O Checkout só compara no navegador se houver foto de amostra. Sem elas, responde como "sem rosto". | `faceAgente`, `faceFind` |
 | Mais de uma pessoa | O 2º maior rosto tem pelo menos 0,5 vez a largura do maior. A busca não roda. | `varias_pessoas`, `VARIAS_RAZAO`, `pessoas`, `FACE_VARIAS` |
 | Janela de 90 minutos | Só sessões cuja última foto (hora do clique corrigida, senão a última chegada) está nos últimos N minutos. Padrão 90. Aceita 0 (dia todo) ou de 15 a 480; fora disso, o valor mais próximo. Valor do Painel de controle, gravado em `config/busca`, relido a cada 3 s. Vale no servidor e no navegador. | `buscar_vetor`, `busca_janela_cfg`, `busca_janela_efetiva`, `_busca_janela`, `sess_pids_janela`, `buscaJanelaMin`, `sesUltima`, `faceFind` |
+| Dia da foto na busca | O dia da chegada ao servidor, nunca o relógio da câmera: a foto do cartão vai para `inbox/<dia da chegada>/` e a leitura de rosto grava esse dia. No boot, leituras das fotos dos últimos 2 dias com outro dia passam para o da chegada. | `ingest_file`, `rosto_dia`, `rostos_dia_conserta` |
 | Quando a janela não vale | Com `ETERNA_BUSCA_DIAS` definida (dia todo dos dias da busca, 1 dia por padrão). Na galeria por QR (`todo:true`). Em código da sessão ou da galeria. No navegador, enquanto a janela está ativa, sessão sem hora fica de fora da selfie. | `busca_janela_efetiva`, `H.do_POST` em `/rostos/buscar`, `faceAgente`, `faceFind` |
 | Foto clara ou em dúvida | Clara: semelhança de 0,45 ou mais. Em dúvida: de 0,38 até menos de 0,45. Abaixo disso, descartada. | `LIMITE`, `LIMITE_TALVEZ`, `FACE_SIM`, `FACE_DUV`, `faceFind` |
 | Rosto principal | O rosto que bateu tem largura de pelo menos 0,5 vez a do maior rosto daquela foto. | `ROSTO_PRINCIPAL`, `buscar_vetor`, `faceFind` |
@@ -1904,7 +1905,7 @@ stateDiagram-v2
 | Excluída antes | Hash em `lgpd-excluidas.json`: não entra de novo | `ingest_file` |
 | Arquivo cortado | Pasta vigiada espera 10 minutos e depois ignora | `pasta_vigiada`, `jpeg_completo` |
 | Arquivo na origem | Pasta vigiada: fica onde está, sem prazo. FTP remoto: nada é apagado lá | `pasta_vigiada`, comentário de `rftp_loop` |
-| Original no servidor | `inbox/AAAA-MM-DD/`, sem prazo: as únicas remoções do arquivo estão na exclusão a pedido | `ingest_file`, `lgpd_excluir`, `galeria_loop` |
+| Original no servidor | `inbox/AAAA-MM-DD/` (dia da chegada), sem prazo: as únicas remoções do arquivo estão na exclusão a pedido | `ingest_file`, `lgpd_excluir`, `galeria_loop` |
 | Miniatura | `thumbs/`, sem prazo | `ingest_file`, `lgpd_excluir` |
 | Cópia no aparelho da equipe (16/11) | O original aberto na lupa fica 5 minutos, só no aparelho de quem pediu (`Cache-Control: private, max-age=300`); a miniatura fica 1 dia. A lupa só pede o original depois de 250 ms parada na foto | `H.file`, `zoomOriginal`, `ZOOM_HI_MS` |
 | Rostos locais | 60 dias contados pela pasta do dia; limpa ao ligar a leitura e uma vez por dia | `RETENCAO_DIAS`, `limpar_rostos`, `rostos_thread`, `galeria_loop` |
