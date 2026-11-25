@@ -338,5 +338,5 @@ Quem deixa o e-mail na galeria online (selfie, compra, vídeo da ativação, cor
 - **Gravar a chave** (CloudShell; a chave não fica no histórico nem na tela):
 
 ```bash
-read -s -p "Chave do RD: " RD && aws ssm put-parameter --name /eterna/rdstation-chave --type SecureString --overwrite --value "$RD"; unset RD
+read -s -p "Chave do RD: " RD && aws ssm put-parameter --region us-east-2 --name /eterna/rdstation-chave --type SecureString --overwrite --value "$RD"; unset RD
 ```
