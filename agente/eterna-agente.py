@@ -13005,6 +13005,10 @@ ARQUIVO_DIR = os.path.join(HOME, "arquivo")                              # NVMe:
 ARQUIVO_MIDIA = os.path.join(os.path.realpath(INBOX), ".arquivo")        # HD das fotos: o ponto esconde a pasta de quem varre a inbox
 ZERAR_PEDIDO_MAX_S = 600                 # pedido mais velho que isto na partida não executa (vira zerar-expirado.json)
 ZERAR_TENTATIVAS = 3                     # parou no meio 3 vezes: zerar-falhou.json e o agente sobe normal
+# 24/11 (Eduardo, depois de zerar): "vamos deletar esse botão, acho ele perigoso". O botão e a rota só existem quando o serviço
+# sobe com ETERNA_ZERAR_BOTAO=1 (ou nos testes, com ETERNA_MODO_TESTE=1). Sem isso a tela não mostra o cartão e o servidor recusa
+# com "desligado". O desfazer pela linha de comando e o aviso de zeragem aos navegadores (/status.zerada) continuam.
+ZERAR_BOTAO = os.environ.get("ETERNA_ZERAR_BOTAO") == "1" or os.environ.get("ETERNA_MODO_TESTE") == "1"
 ZERAR_ATE = "2026-11-25"                 # revisão de segurança (24/11): depois deste dia (data local do servidor) o botão recusa com
                                          # "prazo"; ETERNA_ZERAR_LIBERA=1 no serviço libera de novo. Pedido ou andamento já gravado retoma normal.
 ZERAR_PRAZO_DIAS = 30                    # D9 (Eduardo, 24/11): a pasta de arquivo fica 30 dias; a data vai no resumo e no console.
@@ -13187,6 +13191,8 @@ def _zerar_hoje():
 def zerar_bloqueios():
     """Códigos que impedem a zeragem agora (lista vazia = pode)."""
     b = []
+    if not ZERAR_BOTAO:
+        b.append("desligado")                            # 24/11: o botão foi tirado depois da zeragem (decisão do Eduardo)
     if _zerar_hoje() > ZERAR_ATE and os.environ.get("ETERNA_ZERAR_LIBERA") != "1":
         b.append("prazo")                                # o botão só valia até ZERAR_ATE
     if os.path.exists(ZERAR_FEITA):
@@ -22959,6 +22965,7 @@ class H(BaseHTTPRequestHandler):
                            envio={"v": 1, "max_mb": FOTO_ENVIO_MAX // (1024 * 1024), **state["envio"]},
                            pagamento="teste" if compra_online() else "desligado", treino=tr_, poses=ps_, luz=lz_,
                            galerias={"fila": gal_fila.qsize(), "total": len(codigos), "vitrine_marca": gal_info["vitrine_marca"] or (not SEM_OPENCV and bool(_cv.get("cv2")))})
+            st_["zerar_ui"] = ZERAR_BOTAO      # sem isso a tela não mostra o cartão Zerar fase de teste
             st_["lixeira"] = lx_
             if eu:
                 st_["impressora_locais"] = IMP_LOCAIS
