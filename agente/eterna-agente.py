@@ -12477,6 +12477,67 @@ def venda_trocar_vendedor(venda, nome, email, quem):
     return {"ok": True, "venda": venda, "antes": antes, "depois": nome, "eventos": len(evs), "pedido": bool(r)}, 200
 
 
+def venda_ajustar(body, quem):
+    """25/11 (Ronaldo): POST /ponto/ajustar {venda, total, cart:[{id, v}], meio, ref, motivo}: acerta a venda com o que foi
+    cobrado de fato (conferência com a Imply). Troca total, itens e meio no evento "criar" (Estatísticas, Painel) e no pedido
+    (Posto, Minhas vendas). O que era antes, quem acertou, quando, a referência (localizador) e o motivo ficam em "ajuste"."""
+    venda = str(body.get("venda") or "")
+    if not _re_pedido.match(venda):
+        return {"error": "venda inválida"}, 400
+    meio = body.get("meio")
+    if meio not in ("pix", "cartao", "dinheiro"):
+        return {"error": "meio inválido"}, 400
+    cart = []
+    for x in (body.get("cart") if isinstance(body.get("cart"), list) else [])[:50]:
+        if not isinstance(x, dict) or not isinstance(x.get("id"), str) or not 0 < len(x["id"]) <= 40:
+            return {"error": "item inválido"}, 400
+        try:
+            v = round(float(x.get("v") or 0), 2)
+        except (TypeError, ValueError):
+            return {"error": "item inválido"}, 400
+        if v < 0:
+            return {"error": "item inválido"}, 400
+        cart.append({"id": x["id"], "v": v})
+    try:
+        total = round(float(body.get("total")), 2)
+    except (TypeError, ValueError):
+        return {"error": "total inválido"}, 400
+    if not cart or abs(sum(x["v"] for x in cart) - total) > 0.009:
+        return {"error": "o total tem de ser a soma dos itens"}, 400
+    ref = str(body.get("ref") or "").strip()[:60] or None
+    motivo = str(body.get("motivo") or "").strip()[:200] or None
+    with ev_lock:
+        db = vendas_db()
+        try:
+            evs = db.execute("select idem, dados from evento where venda = ? and tipo = 'criar'", (venda,)).fetchall()
+            antes = None
+            for idem, dados in evs:
+                d = json.loads(dados or "{}")
+                antes = antes or {"total": d.get("total"), "cart": d.get("cart"), "meio": d.get("meio")}
+                d.update({"total": total, "cart": cart, "meio": meio})
+                d.setdefault("ajustes", []).append({"antes": antes, "por": quem or None, "em": _iso(), "ref": ref, "motivo": motivo})
+                db.execute("update evento set dados = ? where idem = ?", (json.dumps(d, ensure_ascii=False), idem))
+            db.commit()
+        finally:
+            db.close()
+    if not evs:
+        return {"error": "venda não encontrada"}, 404
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            r = db.execute("select valor from pedido where id = ?", (venda,)).fetchone()
+            if r:
+                j = json.loads(r[0])
+                j.update({"total": total, "meio": meio})
+                j.setdefault("corrigido", {})["ajuste"] = {"total": total, "cart": cart, "meio": meio, "ref": ref, "em": _iso()}   # o posto aplica
+                db.execute("update pedido set valor = ?, em = ? where id = ?", (json.dumps(j, ensure_ascii=False), time.time(), venda))
+                db.commit()
+        finally:
+            db.close()
+    print("  venda %s: ajustada %s -> %s %s (ref %s) · por %s" % (venda, (antes or {}).get("total"), total, meio, ref or "-", quem or "?"))
+    return {"ok": True, "venda": venda, "antes": antes, "total": total, "meio": meio, "pedido": bool(r)}, 200
+
+
 def venda_descancelar(venda, quem):
     """25/11 (Ronaldo): POST /ponto/descancelar {venda}: venda cancelada por engano (foi paga). Tira o "cancelar" da venda,
     que volta a contar como paga nas Estatísticas. Fica no registro do servidor."""
@@ -20230,6 +20291,7 @@ ROTAS = (
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
     ("POST", "/ponto/vendedor", "sessao", ("financeiro.u",)),   # 25/11: corrige o vendedor de uma venda
     ("POST", "/ponto/descancelar", "sessao", ("financeiro.u",)),   # 25/11: desfaz um cancelamento feito por engano
+    ("POST", "/ponto/ajustar", "sessao", ("financeiro.u",)),   # 25/11: acerta valor, itens e meio com o que foi cobrado
     ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),
@@ -23821,6 +23883,14 @@ class H(BaseHTTPRequestHandler):
             if err:
                 return self.js({"error": "corpo inválido"}, err)
             res, st = venda_descancelar(body.get("venda"), (self.sessao() or {}).get("usuario") or "")
+            return self.js(res, st)
+        if u.path == "/ponto/ajustar":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(8192)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            res, st = venda_ajustar(body, (self.sessao() or {}).get("usuario") or "")
             return self.js(res, st)
         if u.path == "/ponto/vendedor":
             if not self.origem_local():
