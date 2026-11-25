@@ -38,7 +38,7 @@ Regra: **acrescentar, nunca substituir**. Tudo que existe nas Estatísticas cont
 ## Leva 1: mostrar o que já é gravado (vale para os dias passados)
 
 1. **Selfies e pessoas** (v99.49.0, feita): pessoas abordadas por dia e por hora, resultado das selfies, tempo da busca.
-2. **Cliques e metas**: cliques por venda, receita por clique, meta diária de receita e cliques que faltam, evolução diária
+2. **Cliques e metas** (v99.50.0, feita; meta em `sim/metaDia`): cliques por venda, receita por clique, meta diária de receita e cliques que faltam, evolução diária
    (média móvel de 7 dias e mesmo dia da semana), por fotógrafo e por vendedor, histograma de cliques por sessão.
 3. **Tempos**: fotografia, atendimento, pagamento, impressão e escolha, com mediana e percentil 90.
 4. Fotos e sessões por hora contra visitantes por hora; vendas por canal; desfecho dos pedidos (não pagos, substituídos).

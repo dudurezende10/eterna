@@ -9627,7 +9627,7 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
            ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("bgOn2", ("configuracao",)), ("fundosModo", ("configuracao",)),
            ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
-           ("bgPodioV86", ("configuracao",)), ("bgTelaoV97", ("configuracao",)), ("bgTunelV2", ("configuracao",)), ("pagProv", ("financeiro",)), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
+           ("bgPodioV86", ("configuracao",)), ("bgTelaoV97", ("configuracao",)), ("bgTunelV2", ("configuracao",)), ("pagProv", ("financeiro",)), ("metaDia", ("configuracao", "financeiro")), ("cortesiaLog|", ("galerias",)), ("funcao", ("escala",)))
 
 
 ATIV_VENDA_CAMPOS = ("origem", "id", "tipo", "dia", "criado", "itens", "valor", "pagamento", "vendedor", "vendedor_n", "pessoas", "videos",
