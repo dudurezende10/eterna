@@ -47,6 +47,7 @@ Regra: **acrescentar, nunca substituir**. Tudo que existe nas Estatísticas cont
 - Checkout: abandono e tempo em cada passo, fotos vistas × escolhidas, troca de idioma.
 - Funil online da galeria: galeria vista, selfie, achou, foto baixada, compra tentada, pedido pago (eventos da nuvem puxados pelo servidor do ponto).
 - Sessões perdidas no envio ao servidor.
+- Leads da galeria (25/11): e-mails captados por origem (selfie, compra, vídeo, cortesia), quantos aceitaram novidades, quantos chegaram ao RD Station, quantos esperam na fila e quantos deram erro. Só contagens por dia, nunca o e-mail; a nuvem soma e o servidor do ponto puxa junto com o funil online.
 
 ## Leva 3: cruzar e precificar
 
