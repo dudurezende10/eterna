@@ -1568,7 +1568,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.84.0 · 25/11 19:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.85.0 · 25/11 20:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3352,12 +3352,17 @@ function lojaPedir(){const k=state.kiosk;if(k.code&&lojaCart(k.code).ch.length)l
 function lojaVoltarFotos(forcado){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.escolha||!k.code)return;
   lojaFresh(k.code);const r=(SIM.caixaDin||[]).find(x=>x.id===p.pend);
   if(r&&!aberta(r)){if(lojaPendCheck())render();return;} // o caixa já confirmou ou cancelou
-  if(!forcado&&lojaCaixaComecou(r)){toast(T('ljVoltarTarde'));lojaPendCheck();render();return;} // o caixa já escolheu o pacote ou o meio: a compra fica com ele
+  if(!forcado){toast(T('ljVoltarTarde'));return;} // 25/11: só o vendedor volta às fotos (Rever as fotos, no Posto)
   if(r){const antes=JSON.stringify(SIM);dinFechar(r.id,'substituida','cliente_voltou',null);SIM.log.unshift({t:`Checkout: o cliente do pedido ${r.saleNo||r.id} voltou às fotos`,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);
     if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(T('ljSaveFail'));render();return;}}
   lojaTimerOff();Object.assign(k,{paid:null,doneAt:null,minhas:false,minhasI:null,step:'review'});k.ver=Math.max(0,Math.min(lojaItems(k.code).length-1,k.i||0));render();lojaEco();}
 // o caixa já escolheu pacote ou meio no Posto: "Voltar às fotos" sai da tela (no lugar, o aviso "O atendente já está finalizando sua compra") e a função recusa (relê o SIM)
 const lojaCaixaComecou=r=>!!(r&&aberta(r)&&(r.pkg||r.meio));
+// 25/11 (Ronaldo): depois do Continuar o Checkout fica travado até o vendedor finalizar. Mexer na tela (Voltar às fotos, logo da equipe, Esc, tempo parado)
+// tirava o pedido do Posto e o caixa não conseguia fechar a venda. Só o vendedor destrava, pelo Posto: confirmar, cancelar, Rever as fotos ou Recomeçar.
+// Na trava valem só o idioma e Ver minhas fotos (não mexem no pedido)
+const lojaTravada=()=>{const k=state.kiosk,p=k.paid;return !!(state.lojaRota&&k.step==='done'&&p&&p.wait&&p.pend);};
+const LJ_TRAVA_OK={lang:1,'lj-lg':1,'kiosk-minhas':1,'kiosk-minhas-x':1,'kiosk-minhas-i':1};
 // segurança S2: tela Pronto ou do valor parada por LOJA_PRONTO_MS sem toque: volta ao início; a pendência fica no Posto com "o cliente saiu" (r.saiu)
 let LOJA_PRONTO_MS=3*60e3;
 // R3: o mesmo vale para o Esc da equipe na tela Pronto ou do valor (lojaSaiu marca r.saiu e grava; o Posto avisa). O "Voltar ao início" saiu dessas telas (11/11)
@@ -3367,6 +3372,7 @@ function lojaSaiuPed(r){if(!r||!aberta(r)||r.saiu)return false;
   if(Object.values(ECO_OUTRAS).some(o=>Date.now()-o.at<15000&&o.m.step==='done'&&o.m.pend===r.id))return false; // 15/11: o cliente está na tela Pronto de outra janela do Checkout
   r.saiu=now().toISOString();SIM.log.unshift({t:`Checkout: o cliente do pedido ${r.saleNo||r.id} saiu da tela sem pagar (a compra continua no Posto)`,at:now().toISOString()});SIM.log=SIM.log.slice(0,80);saveSim();return true;}
 function lojaProntoOcioso(){const k=state.kiosk;const p=k.paid;if(!state.lojaRota||k.step!=='done'||!p||!p.wait||!p.escolha)return false;
+  if(lojaTravada())return false; // 25/11: a tela Pronto espera o vendedor, sem prazo
   if(Date.now()-Math.max(k.toque||0,k.prontoDesde||0)<LOJA_PRONTO_MS)return false;
   lojaSaiu();lojaTimerOff();lojaReset();render();lojaEco();return true;}
 // Escolha das fotos (foto ampliada, "Ver todas" e a confirmação de sessão) parada por LOJA_ESCOLHA_MS sem toque nem arrasto volta ao Iniciar e apaga
@@ -3455,7 +3461,7 @@ function lojaJanela(){const u=state.user;if(u)try{localStorage.setItem('eterna.p
 // v79 (D7): qualquer saída do #loja (Esc, painel, endereço, voltar do navegador, #g) passa por aqui e encerra a sessão salva; a única exceção é lojaVoltarApp
 // v81: Esc na aba do Checkout (janela do cliente) sem login só volta ao início do #loja: não apaga o login salvo do admin (mesmo navegador) nem abre o login
 // Esc na tela Pronto ou do valor: o Posto vê "o cliente saiu" (lojaSaiu confere a etapa)
-function lojaEsc(){lojaEcoFim();lojaSaiu();if(LOJA_ABA_NOW()&&!state.user){lojaTimerOff();lojaReset();camStop();state.lojaToques=[];state.kiosk.equipe=false;render();return;}lojaSair();}
+function lojaEsc(){if(lojaTravada())return;lojaEcoFim();lojaSaiu();if(LOJA_ABA_NOW()&&!state.user){lojaTimerOff();lojaReset();camStop();state.lojaToques=[];state.kiosk.equipe=false;render();return;}lojaSair();}
 function lojaSair(){try{if(document.fullscreenElement&&document.exitFullscreen)document.exitFullscreen().catch(()=>{});}catch(e){}lojaEcoFim();lojaTimerOff();lojaReset();camStop();state.lojaRota=false;state.lojaToques=[];state.lojaEquipeAte=0;state.lojaDe=null;state.lojaSaidaEquipe=false;history.replaceState(null,'','#');
   try{localStorage.removeItem('eterna.session')}catch(e){}
   if(state.user){logout();return;}state.user=null;state.view='entrar';render();}
@@ -3469,7 +3475,7 @@ function lojaVoltarApp(){if(!lojaEquipeOn())return;const de=state.lojaDe;lojaTim
   state.lojaSaidaEquipe=true;state.lojaRota=false;state.lojaEquipeAte=0;state.lojaDe=null;history.replaceState(null,'','#');try{sessionStorage.removeItem('eterna.lojaTab')}catch(e){}
   go(de&&de!=='quiosque'&&canView(de)?de:homeView());state.lojaSaidaEquipe=false;}
 // 3 toques seguidos no logo abrem o painel da equipe (sessões esperando e sair); o cliente não vê nada disso.
-function lojaLogo(){const t=Date.now();state.lojaToques=(state.lojaToques||[]).filter(x=>t-x<1500);state.lojaToques.push(t);if(state.lojaToques.length>=3){state.lojaToques=[];state.kiosk.equipe=true;state.kiosk.list=false;render();}}
+function lojaLogo(){if(lojaTravada())return;const t=Date.now();state.lojaToques=(state.lojaToques||[]).filter(x=>t-x<1500);state.lojaToques.push(t);if(state.lojaToques.length>=3){state.lojaToques=[];state.kiosk.equipe=true;state.kiosk.list=false;render();}}
 function lojaEquipe(){const k=state.kiosk;if(!k.equipe)return '';const waiting=k.list?demoSessions().filter(x=>(SIM.sessions[x.card]||{}).status!=='paga').slice(0,24):[];
   return `<div class="lj-equipe" role="dialog" aria-modal="true" aria-label="Equipe"><div class="lj-eqbox"><h2>Equipe do Checkout</h2>
     <div class="lj-row"><button class="lj-ghost" data-act="loja-sair">Sair do Checkout (vai para o login)</button><button class="lj-ghost" data-act="loja-eq-fechar">Fechar</button></div>
@@ -4912,7 +4918,7 @@ function ljPronto(k,logo,photo,stripe,deco,topR){const p=k.paid;const tem=!!p.pk
   return `<div class="lj lj-full lj-done lj-pronto" lang="${lang()}">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${langs}</div>
     <div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h1">${T('ljReadyH')}</h1><p class="lj-sub">${T('ljReadySub')}</p>
       <div class="lj-qrcard lj-waitcard lj-codecard"><span>${T('ljYourCode')}</span><b class="lj-qrcode lj-codebig">${esc(p.codigo||'')}</b><span>${T('ljNChosen',p.n||0)}</span></div>
-      <div class="lj-row">${tarde?`<span class="lj-tarde" role="status">${T('ljVoltarTarde')}</span>`:`<button class="lj-ghost lj-alt lj-voltafotos" data-act="kiosk-voltar-fotos">${ICO.back} ${T('ljBackPhotos')}</button>`}</div></div></div>`;}
+      ${tarde?`<div class="lj-row"><span class="lj-tarde" role="status">${T('ljVoltarTarde')}</span></div>`:''}</div></div>`;}
 // "Ver minhas fotos": as escolhidas em miniaturas; toque amplia, fechar volta
 function ljMinhas(k){const ch=lojaCart(k.code).ch;const i=k.minhasI!=null&&ch[k.minhasI]?k.minhasI:null;
   const th=(x,cls)=>x.t==='ai'?`<div class="${cls} ai">${lojaThumb(x)}</div>`:`<div class="${cls}" style="${String(bigStyle(x.id)).replace('--bs:cover','--bs:contain')}"></div>`;
@@ -13975,6 +13981,7 @@ function toggleSel(card,id){const s=simOf(card);s.selected=s.selected||[];s.sele
 
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act;const d=el.dataset;if(el.tagName==='INPUT'&&el.type==='checkbox')return;if(!guardAct(a)){if(el.tagName==='INPUT')el.checked=!el.checked;return;}
+  if(lojaTravada()&&!LJ_TRAVA_OK[a])return; // 25/11: Checkout travado até o vendedor finalizar
   switch(a){
     case 'view':if(state.drawer)menuSet(false,true);go(d.v);break;
     case 'role-exit':logout();break;
