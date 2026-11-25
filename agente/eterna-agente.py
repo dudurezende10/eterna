@@ -4645,11 +4645,19 @@ def mtg_gal_pid(pid, fundo):
     return pid_lib(pid) + hashlib.md5(fundo.encode("utf8")).hexdigest()[:8]
 
 
+GAL_IA_DIR = os.path.join(HOME, "galerias-ia")        # montagens feitas no navegador do posto e mandadas para a galeria
+GAL_IA_MAX = 12 * 1024 * 1024
+
+
 def mtg_gal_arquivo(pid, fundo):
-    """A montagem pronta de pid naquele fundo: a de impressão (i), senão a prévia (p); a da versão de agora antes das outras."""
+    """A montagem de pid naquele fundo: a que o posto mandou para a galeria; senão a do servidor, a de impressão (i) e depois
+    a prévia (p), a da versão de agora antes das outras."""
     pid = pid_lib(pid)
     if not _re_mtg_pid.match(pid) or fundo not in MTG_FUNDOS:
         return None
+    g = os.path.join(GAL_IA_DIR, mtg_gal_pid(pid, fundo) + ".jpg")
+    if os.path.isfile(g):
+        return g
     v = mtg_versao(fundo)
     for t in ("i", "p"):
         a = mtg_arquivo(pid, fundo, t, v) if v else None
@@ -20091,7 +20099,7 @@ ROTAS = (
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
-    ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
+    ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER), ("POST", "/galerias/montagem", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
     ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
     ("GET", "/montagem/", "posto_ou_sessao", VENDER), ("POST", "/montagens/pedir", "posto_ou_sessao", VENDER),   # montagem feita no servidor
     ("GET", "/photoroom/status", "posto_ou_sessao", VENDER + ("configuracao.r",)),    # sem Painel de controle: só {configured, fundos_modo}
@@ -23012,6 +23020,46 @@ class H(BaseHTTPRequestHandler):
                                         str(body.get("vendedor") or "")[:60], str(body.get("posto") or "")[:40], str(body.get("venda_id") or "")[:80]))
             except Exception as ex:
                 return self.js({"ok": False, "error": str(ex)[:300]}, 500)
+        if p == "/galerias/montagem":
+            # 25/11 (Ronaldo): a foto com fundo de IA montada no navegador do posto (a montagem do servidor desligada) vai para a
+            # galeria: {token, base, fundo, jpeg}. Só base de IA de uma sessão da galeria (ou paga nela), num fundo conhecido.
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(GAL_IA_MAX)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            t, base, fundo = body.get("token"), str(body.get("base") or ""), str(body.get("fundo") or "")
+            if not token_ok(t) or not pid_ok(base) or fundo not in MTG_FUNDOS:
+                return self.js({"error": "pedido inválido"}, 400)
+            base = pid_lib(base)
+            with gal_lock:
+                m0 = REPO.ler_manifesto(t)
+            if not m0 or m0.get("tipo") != "sessao":
+                return self.js({"error": "not found"}, 404)
+            with sess_lock:
+                c = sess_pid.get(base)
+                ok = c in (m0.get("sessoes") or []) and base in ((sess.get(c) or {}).get("ia") or ())
+            if not ok and (base, fundo) not in gal_ia_pagas(t):
+                return self.js({"error": "não é base de IA desta galeria"}, 400)
+            try:
+                b = base64.b64decode(str(body.get("jpeg") or "").split(",", 1)[-1])
+            except Exception:
+                return self.js({"error": "imagem inválida"}, 400)
+            if b[:3] != b"\xff\xd8\xff" or len(b) < 20000:
+                return self.js({"error": "imagem inválida"}, 400)
+            os.makedirs(GAL_IA_DIR, exist_ok=True)
+            arq = os.path.join(GAL_IA_DIR, mtg_gal_pid(base, fundo) + ".jpg")
+            with open(arq + ".tmp", "wb") as fh:
+                fh.write(b)
+            os.replace(arq + ".tmp", arq)
+            plano = gal_ia_plano(m0)
+            with gal_lock:
+                m = REPO.ler_manifesto(t) or m0
+                n = gal_com_ia(m, m, plano)
+                REPO.salvar_manifesto(t, m)
+            gal_fila.put(t)
+            nuvem_galeria_enfileira(t)
+            return self.js({"ok": True, "ia": n})
         if p in ("/galerias/publicar", "/galerias/encerrar"):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -23621,7 +23669,7 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, err)
             res, st = venda_trocar_vendedor(body.get("venda"), body.get("nome"), body.get("email"), (self.sessao() or {}).get("usuario") or "")
             return self.js(res, st)
-        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
+        if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/montagem", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
             return self.recorte_post()
