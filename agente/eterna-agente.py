@@ -12171,6 +12171,44 @@ def pedidos_do_posto(posto, dias=2):
     return {"ok": True, "pedidos": [json.loads(x[0]) for x in rows]}
 
 
+def venda_trocar_vendedor(venda, nome, email, quem):
+    """25/11 (Ronaldo): POST /ponto/vendedor {venda, nome, email}: a venda ficou no nome de quem não vendeu (login de outra
+    pessoa no posto). Troca o vendedor no evento "criar" (Estatísticas) e no pedido (Minhas vendas). Fica no registro."""
+    venda, nome = str(venda or ""), _nome_pessoa(nome)
+    email = str(email or "").strip()[:120] or None
+    if not _re_pedido.match(venda) or not nome:
+        return {"error": "venda ou nome inválido"}, 400
+    with ev_lock:
+        db = vendas_db()
+        try:
+            evs = db.execute("select idem, dados from evento where venda = ? and tipo = 'criar'", (venda,)).fetchall()
+            antes = None
+            for idem, dados in evs:
+                d = json.loads(dados or "{}")
+                antes = antes or d.get("vendedor")
+                d["vendedor"] = nome
+                db.execute("update evento set dados = ? where idem = ?", (json.dumps(d, ensure_ascii=False), idem))
+            db.commit()
+        finally:
+            db.close()
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            r = db.execute("select valor from pedido where id = ?", (venda,)).fetchone()
+            if r:
+                j = json.loads(r[0])
+                antes = antes or _nome_pessoa(j.get("vendedor"))
+                j["vendedor"] = {"nome": nome, "email": email}
+                db.execute("update pedido set valor = ?, em = ? where id = ?", (json.dumps(j, ensure_ascii=False), time.time(), venda))
+                db.commit()
+        finally:
+            db.close()
+    if not evs and not r:
+        return {"error": "venda não encontrada"}, 404
+    print("  venda %s: vendedor %s -> %s · por %s" % (venda, antes or "-", nome, quem or "?"))
+    return {"ok": True, "venda": venda, "antes": antes, "depois": nome, "eventos": len(evs), "pedido": bool(r)}, 200
+
+
 def estado_gravar(body, quem=""):
     docs = body.get("docs") if isinstance(body.get("docs"), list) else []
     auditoria = []
@@ -19843,6 +19881,7 @@ ROTAS = (
     ("GET", "/ponto/docs/revs", "posto_ou_sessao", ()),
     ("POST", "/ponto/docs", "posto_ou_sessao", ()),             # permissão por documento (auth_filtrar_docs); o posto não grava
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
+    ("POST", "/ponto/vendedor", "sessao", ("financeiro.u",)),   # 25/11: corrige o vendedor de uma venda
     ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),   # vendas do posto sem impressão, para recuperar (15/11)
@@ -23353,6 +23392,14 @@ class H(BaseHTTPRequestHandler):
             return self.leitores_post(u.path)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
+        if u.path == "/ponto/vendedor":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            body, err = self.corpo(4096)
+            if err:
+                return self.js({"error": "corpo inválido"}, err)
+            res, st = venda_trocar_vendedor(body.get("venda"), body.get("nome"), body.get("email"), (self.sessao() or {}).get("usuario") or "")
+            return self.js(res, st)
         if u.path.startswith(("/g/", "/pagamento/webhook/")) or u.path in ("/galerias/publicar", "/galerias/encerrar", "/imprimir", "/impressao/acao", "/ponto/eventos", "/ponto/docs", "/ponto/pedidos", "/ponto/numero", "/nuvem/reenviar", "/lgpd/excluir"):
             return self.gal_post(u)
         if u.path == "/recorte":
