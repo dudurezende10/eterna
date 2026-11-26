@@ -2247,7 +2247,7 @@ def scan_card(vol):
 # Professional e para câmeras com FTP embutido. Só modo passivo, STOR,
 # pastas aceitas e ignoradas (tudo cai na inbox por data).
 
-PHOTOGRAPHERS = ["carlos", "marinara", "samuel", "yago", "marcio", "klassius", "sandessa", "dudu"]
+PHOTOGRAPHERS = ["carlos", "marinara", "samuel", "yago", "marcio", "klassius", "sandessa", "dudu", "hugo"]   # 25/11: Hugo Vinícius
 
 
 def load_ftp_cfg():
@@ -13235,6 +13235,107 @@ def metricas_loop():
         time.sleep(600)
 
 
+# 25/11 (Ronaldo): a Roverpix saiu e o Eterna abastece a aba Fotografia do painel de gestão (maraca-acessos) e a API de BI do
+# Caio. A cada 5 min o servidor manda o resumo de hoje (e o de ontem até as 4h) para o servidor de parceiros na VM, que guarda e
+# repassa ao painel e ao BI. Só números e nomes de fotógrafo e vendedor; nada de cliente. O envio roda numa thread à parte, com
+# tempo limite, e falha só fica registrada: nunca atrapalha venda, foto ou impressão.
+# Chave: gerada aqui na primeira vez (~/Eterna/painel-fotos-chave.txt, só o dono lê). A VM guarda só o SHA-256 dela
+# (INTEGRACAO_TOKENS, escopo "eterna"), que aparece em GET /painel-fotos/status.
+PAINEL_FOTOS_URL = os.environ.get("ETERNA_PAINEL_FOTOS_URL", "https://parceiros.vivamaracana.com.br/api/eterna/fotografia")
+PAINEL_FOTOS_CHAVE = os.path.join(HOME, "painel-fotos-chave.txt")
+PAINEL_FOTOS_SEG = 300
+painel_fotos = {"em": None, "ok": None, "erro": None, "dias": []}
+PAINEL_PRODUTOS = {"maracana": "Pacote Maracanã", "gramado": "Pacote Gramado", "zona": "Pacote Zona Mista", "tribuna": "Pacote Tribuna de Honra",
+                   "arq": "Pacote Arquibancada", "mais": "Todas as fotos", "extra": "Foto adicional", "pr3": "Porta-retrato",
+                   "cort_foto": "Foto cortesia", "cort_porta": "Porta-retrato cortesia", "sem_detalhe": "Sem detalhe"}
+PAINEL_MEIOS = {"pix": "pix", "cartao": "credit_card", "dinheiro": "money"}
+
+
+def painel_fotos_chave():
+    if not os.path.exists(PAINEL_FOTOS_CHAVE):
+        _grava_privado(PAINEL_FOTOS_CHAVE, secrets.token_urlsafe(32))
+    return open(PAINEL_FOTOS_CHAVE, encoding="utf8").read().strip()
+
+
+def painel_fotos_resumo(m):
+    """O resumo do dia do Eterna no formato da aba Fotografia (o mesmo que o painel montava da Roverpix, versão 3).
+    Cartão = sessão; foto vendida = foto da venda; valor do fotógrafo = vendas das sessões dele."""
+    nome = lambda k: k if not k or k in FOT_SEM_FOTOGRAFO else k[:1].upper() + k[1:]
+    grupo = lambda x: {"fotos": int(x.get("fotos") or 0), "fotosV": int(x.get("fotos_vendidas") or 0), "cartoes": int(x.get("sessoes") or 0),
+                       "cartoesV": int(x.get("sessoes_com_venda") or 0), "cliques": int(x.get("sessoes") or 0),
+                       "valor": round(float(x.get("faturamento") or 0), 2)}
+    hf, hv, hval = [0] * 24, [0] * 24, [0.0] * 24
+    for h, x in (m.get("por_hora") or {}).items():
+        try:
+            i = int(h)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i < 24 and isinstance(x, dict):
+            hf[i], hv[i], hval[i] = int(x.get("fotos") or 0), int(x.get("vendas") or 0), round(float(x.get("faturamento") or 0), 2)
+    canc = collections.Counter((c.get("vendedor") or "sem vendedor") for c in (m.get("cancelamentos") or []) if isinstance(c, dict))
+    vend = {}
+    for k, x in (m.get("por_vendedor") or {}).items():
+        k = k or "sem vendedor"
+        vend[k] = {"total": int(x.get("vendas") or 0) + canc.get(k, 0), "finalizadas": int(x.get("vendas") or 0), "pendentes": 0,
+                   "descartadas": 0, "canceladas": canc.get(k, 0), "fotos": int(x.get("fotos_vendidas") or 0), "impressoes": 0,
+                   "reimpressoes": 0, "valor": round(float(x.get("faturamento") or 0), 2)}
+    campo = {"fotos": m.get("fotos") or 0, "fotos_vendidas": m.get("fotos_vendidas") or 0, "sessoes": m.get("sessoes") or 0,
+             "sessoes_com_venda": m.get("sessoes_com_venda") or 0, "faturamento": m.get("faturamento") or 0}
+    on = m.get("online") or {}
+    rolo = m.get("rolo") or {}
+    return {"versao": 3, "fonte": "eterna", "gerado": m.get("gerado"),
+            "fotos": int(m.get("fotos") or 0), "fotosV": int(m.get("fotos_vendidas") or 0), "cartoes": int(m.get("sessoes") or 0),
+            "cartoesV": int(m.get("sessoes_com_venda") or 0), "horaFotos": hf,
+            "porFotografo": {nome(k): grupo(x) for k, x in (m.get("por_fotografo") or {}).items() if isinstance(x, dict)},
+            "porPdv": {}, "porRegiao": {"Campo": grupo(campo)} if m.get("fotos") else {}, "porPose": {}, "porTemplate": {},
+            "vendas": int(m.get("vendas") or 0), "valor": round(float(m.get("faturamento") or 0), 2),
+            "fotosVendidas": int(m.get("fotos_vendidas") or 0), "brindes": 0, "fotosBrinde": 0,
+            "siteVendas": int(on.get("vendas") or 0), "siteValor": round(float(on.get("faturamento") or 0), 2),
+            "siteFotos": int(on.get("fotos") or 0), "impressoes": int(m.get("impressoes") or 0),
+            "reimpressoes": sum(int(r.get("reimpressoes") or 0) for r in rolo.values() if isinstance(r, dict)),
+            "horaVendas": hv, "horaValor": hval, "porVendedor": vend,
+            "porProduto": {PAINEL_PRODUTOS.get(k, k): {"n": int(x.get("n") or 0), "valor": round(float(x.get("receita") or 0), 2)}
+                           for k, x in (m.get("por_produto") or {}).items() if isinstance(x, dict)},
+            "porPagamento": {PAINEL_MEIOS.get(k, "outro"): {"n": int(x.get("vendas") or x.get("n") or 0),
+                                                            "valor": round(float(x.get("faturamento") or x.get("receita") or 0), 2)}
+                             for k, x in (m.get("por_meio") or {}).items() if isinstance(x, dict)}}
+
+
+def painel_fotos_enviar(dias=None):
+    agora = time.time()
+    if not dias:
+        dias = ([_ff_hoje(agora - 86400)] if time.localtime(agora).tm_hour < 4 else []) + [_ff_hoje(agora)]
+    enviados, erro = [], None
+    for dia in dias:
+        try:
+            corpo = json.dumps({"dia": dia, "resumo": painel_fotos_resumo(metricas_dia(dia)), "gerado": _iso()},
+                               ensure_ascii=False).encode("utf8")
+            req = urllib.request.Request(PAINEL_FOTOS_URL, data=corpo, method="POST",
+                                         headers={"Content-Type": "application/json", "X-Api-Key": painel_fotos_chave(),
+                                                  "User-Agent": "Eterna"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                resp.read(2000)
+            enviados.append(dia)
+        except urllib.error.HTTPError as ex:
+            erro = "%s: HTTP %s" % (dia, ex.code)
+        except Exception as ex:
+            erro = "%s: %s" % (dia, str(ex)[:120])
+    painel_fotos.update({"em": _iso(), "ok": not erro, "erro": erro, "dias": enviados})
+    if erro:
+        print("  painel de fotografia:", erro)
+    return dict(painel_fotos)
+
+
+def painel_fotos_loop():
+    time.sleep(90)                                   # depois do boot e da primeira rodada das métricas
+    while True:
+        try:
+            painel_fotos_enviar()
+        except Exception as ex:
+            print("  painel de fotografia:", str(ex)[:160])
+        time.sleep(PAINEL_FOTOS_SEG)
+
+
 # Backup na nuvem (o mesmo bucket das fotos, prefixo backup/<computador>/): a cada 2 min, se mudou, uma cópia consistente
 # dos bancos de vendas e de estado da equipe (API de backup do SQLite, nunca o arquivo aberto) em backup/<pc>/<banco>.db, e
 # uma por dia em backup/<pc>/dia/AAAA-MM-DD/<banco>.db (o histórico; o servidor pode morrer sem perder um dia). Junto, o resumo do dia e as
@@ -20291,7 +20392,9 @@ ROTAS = (
     ("POST", "/ponto/eventos", "posto_ou_sessao", VENDER),
     ("POST", "/ponto/vendedor", "sessao", ("financeiro.u",)),   # 25/11: corrige o vendedor de uma venda
     ("POST", "/ponto/descancelar", "sessao", ("financeiro.u",)),   # 25/11: desfaz um cancelamento feito por engano
-    ("POST", "/ponto/ajustar", "sessao", ("financeiro.u",)),   # 25/11: acerta valor, itens e meio com o que foi cobrado
+    ("POST", "/ponto/ajustar", "sessao", ("financeiro.u",)),
+    ("GET", "/painel-fotos/status", "sessao", ("estatisticas.r",)),   # 25/11: envio ao painel de gestão e ao BI
+    ("POST", "/painel-fotos/enviar", "sessao", ("estatisticas.r",)),   # 25/11: acerta valor, itens e meio com o que foi cobrado
     ("POST", "/ponto/numero", "posto_ou_sessao", VENDER),   # 15/11: número da venda, sequência única do dia
     ("POST", "/ponto/pedidos", "posto_ou_sessao", VENDER), ("GET", "/ponto/pedidos", "posto_ou_sessao", VENDER),   # pedidos do Checkout (15/11)
     ("GET", "/ponto/vendas-posto", "posto_ou_sessao", VENDER),
@@ -23745,6 +23848,10 @@ class H(BaseHTTPRequestHandler):
             hoje = _ff_hoje()
             r = visitantes((q.get("de") or [hoje])[0], (q.get("ate") or [hoje])[0])
             return self.js(r if r is not None else {"error": "datas inválidas"}, 200 if r is not None else 400, nostore=True)
+        if u.path == "/painel-fotos/status":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js({"ok": True, "url": PAINEL_FOTOS_URL, "chave_sha256": hashlib.sha256(painel_fotos_chave().encode()).hexdigest(), **painel_fotos}, nostore=True)
         if u.path == "/metricas/dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -23892,6 +23999,10 @@ class H(BaseHTTPRequestHandler):
                 return self.js({"error": "corpo inválido"}, err)
             res, st = venda_ajustar(body, (self.sessao() or {}).get("usuario") or "")
             return self.js(res, st)
+        if u.path == "/painel-fotos/enviar":
+            if not self.origem_local():
+                return self.js({"error": "origem não autorizada"}, 403)
+            return self.js({"ok": True, **painel_fotos_enviar()})
         if u.path == "/ponto/vendedor":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -24188,6 +24299,7 @@ def main():
     print("  montagem-srv: modo=%s versao=%s" % (mtg_cfg()["modo"], MTG_VERSAO))   # com a chave ligada, o mtg_loop imprime os fundos e a pasta
     threading.Thread(target=mtg_loop, daemon=True).start()
     threading.Thread(target=metricas_loop, daemon=True).start()
+    threading.Thread(target=painel_fotos_loop, daemon=True).start()   # 25/11: aba Fotografia e BI do Caio (Roverpix saiu)
     threading.Thread(target=pessoas_loop, daemon=True).start()
     # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
     # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.
