@@ -1610,7 +1610,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.91.0 · 26/11 01:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.92.0 · 26/11 08:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2738,6 +2738,40 @@ function impPedidoLinha(p){const F=state.impFila||{};const e=(F.estados||{})[p.i
   else if(p.estado==='cancelado')t=`<span class="pill neutral">${TE('imp_ped_cancelado')}</span>`;
   else t=`<span class="pill good">${TE('imp_terminou',fotos)}</span>`;
   return `<div class="note">${t}${impAtivo(p)&&parada?` <span class="pill bad" role="alert">${TE('imp_parada',esc(parada))}</span>`:''}</div>`;}
+// 26/11 (Ronaldo): folha de teste da impressora, na marca Viva Maracanã (horizontal), pelo mesmo caminho das fotos da venda:
+// servidor com impressora, programa de impressão do posto ou Chrome. Não é venda: não grava impressão nem baixa rolo.
+let IMP_TESTE_ON=false;
+function impTesteLogo(){return new Promise(r=>{const im=new Image();im.onload=()=>r(im);im.onerror=()=>r(null);im.src='img/brand/viva-maracana-white.png';});}
+async function impTesteImagem(){
+  await Promise.all(["800 150px 'Big Shoulders Display'","700 44px 'Big Shoulders Display'","500 34px Inter","600 24px Inter"].map(f=>document.fonts.load(f).catch(()=>null)));
+  const W=1800,H=1200,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  const AZ='#134078',AM='#FFB800',VE='#005500',BR='#ffffff';const banda=880;
+  x.fillStyle=AZ;x.fillRect(0,0,W,banda);x.fillStyle=BR;x.fillRect(0,banda,W,H-banda);
+  x.fillStyle=AZ;x.fillRect(0,banda,W*0.5,18);x.fillStyle=AM;x.fillRect(W*0.5,banda,W*0.25,18);x.fillStyle=VE;x.fillRect(W*0.75,banda,W*0.25,18);
+  const logo=await impTesteLogo();if(logo){const lw=600,lh=Math.round(lw*logo.naturalHeight/logo.naturalWidth);x.drawImage(logo,120,120,lw,lh);}
+  x.fillStyle=BR;x.textBaseline='alphabetic';x.font="800 150px 'Big Shoulders Display','Arial Narrow',sans-serif";x.fillText(TE('imp_teste_titulo').toUpperCase(),112,560);
+  x.fillStyle=AM;x.font="700 44px 'Big Shoulders Display','Arial Narrow',sans-serif";
+  const agora=new Date();const quando=agora.toLocaleDateString('pt-BR')+' · '+hhmm(agora);
+  x.fillText([postoNome(),(state.user&&state.user.name)||'',quando].filter(Boolean).join('  ·  ').toUpperCase(),116,650);
+  x.fillStyle='rgba(255,255,255,.82)';x.font="500 34px Inter,system-ui,sans-serif";x.fillText(TE('imp_teste_nota'),116,730);
+  // amostras de cor e escala de cinza (qualidade e cor da DNP)
+  const am=[[AZ,'Azul'],[AM,'Amarelo'],[VE,'Verde'],['#c8102e','Vermelho'],['#e0ac8a','Pele'],['#000000','Preto']];const q=150,g0=120,y0=banda+60;
+  am.forEach(([cor,nm],i)=>{const x0=g0+i*(q+28);x.fillStyle=cor;x.fillRect(x0,y0,q,q);x.strokeStyle='#d0d6e0';x.lineWidth=2;x.strokeRect(x0+1,y0+1,q-2,q-2);x.fillStyle=AZ;x.font="600 24px Inter,system-ui,sans-serif";x.fillText(nm,x0,y0+q+38);});
+  const gx=g0+am.length*(q+28)+30,gw=W-gx-120,n=10;for(let i=0;i<n;i++){const v=Math.round(255*i/(n-1));x.fillStyle=`rgb(${v},${v},${v})`;x.fillRect(gx+i*gw/n,y0,Math.ceil(gw/n),q);}
+  x.strokeStyle='#d0d6e0';x.strokeRect(gx,y0,gw,q);x.fillStyle=AZ;x.fillText('Cinza',gx,y0+q+38);
+  // marcas nos cantos: se alguma sumir, a impressora está cortando a folha
+  x.strokeStyle=AM;x.lineWidth=8;const m=34,L=70;[[m,m,1,1],[W-m,m,-1,1],[m,H-m,1,-1],[W-m,H-m,-1,-1]].forEach(([a,b,sx,sy])=>{x.beginPath();x.moveTo(a,b+sy*L);x.lineTo(a,b);x.lineTo(a+sx*L,b);x.stroke();});
+  return c.toDataURL('image/jpeg',.94);}
+async function impTeste(){if(IMP_TESTE_ON)return;IMP_TESTE_ON=true;render();
+  try{const url=await impTesteImagem();let root=document.getElementById('print-root');if(root)root.remove();root=document.createElement('div');root.id='print-root';root.setAttribute('aria-hidden','true');
+    const pg=document.createElement('div');pg.className='pr-pg land';const bx=document.createElement('div');bx.className='pr-box';const im=document.createElement('img');im.alt='';im.src=url;bx.appendChild(im);pg.appendChild(bx);root.appendChild(pg);document.body.appendChild(root);
+    await im.decode().catch(()=>null);const nome='TESTE-'+hhmm(new Date()).replace(':','')+String(new Date().getSeconds()).padStart(2,'0');const vendedor=(state.user&&state.user.name)||'';
+    if(impNoServidor()){let rr;try{rr=await (await agFetch(state.agent.url+'/imprimir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({venda:nome,venda_id:'',vendedor,posto:String((postoDisp()||{}).nome||postoNome()).slice(0,30),imagens:impJpegs()})})).json();}catch(e){rr={error:String(e&&e.message||e)};}
+      document.getElementById('print-root')?.remove();toast(rr&&rr.ok?TE('imp_teste_ok',rr.impressora):TE('imp_teste_erro',String((rr&&rr.error)||'falha').slice(0,140)));return;}
+    if(pontoModo()==='posto'){const rl=await impLocal(impJpegs(),nome);if(rl){document.getElementById('print-root')?.remove();toast(rl.ok?TE('imp_teste_ok',rl.impressora):TE('imp_teste_erro',String(rl.erro||'falha').slice(0,140)));return;}}
+    document.body.classList.add('pr-on');const fim=()=>{document.body.classList.remove('pr-on');document.getElementById('print-root')?.remove();};window.addEventListener('afterprint',fim,{once:true});try{window.print();}catch(e){}setTimeout(fim,0);}
+  catch(e){toast(TE('imp_teste_erro',String(e&&e.message||e).slice(0,140)));}
+  finally{IMP_TESTE_ON=false;render();}}
 function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can('venda','c');const noSrv=impNoServidor();
   if(noSrv){impJobVolta();if(!impPostoTimer){impPostoTimer=setInterval(impPostoPoll,2500);setTimeout(impPostoPoll,0);}}
   if(!L.length&&cards){const s0=SIM.sessions[cards[0]]||{};return `<div class="panel" id="imp-painel"><div class="note">${s0.impressao?TE('imp_sem_fotos_pkg'):TE('imp_antes_v83')}</div></div>`;}
@@ -2782,7 +2816,7 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can
           <div class="row"><button class="btn primary" data-act="imp-reprint-ok" data-card="${esc(card)}" ${(re.sel||[]).length?'':'disabled'}>${(re.sel||[]).length?TE('imp_reimprimir_n',TE('n_fotos',(re.sel||[]).length)):TE('imp_reimprimir')}</button><button class="btn ghost" data-act="imp-reprint-no">${TE('voltar')}</button></div></div>`
           :state.impRe&&state.impRe.card===card&&state.impRe.todas?avulsa(card,s):''}`;}
     return `<div class="din-item imp-item" data-imp="${esc(card)}">${head}${body.trim()?`<div class="imp-corpo">${body}</div>`:''}</div>`;};
-  return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2>${o.semRolo?'':roloSelo('neutral',true)}</div>
+  return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2><span class="row" style="gap:8px">${rw?`<button class="btn ghost" data-act="imp-teste" ${IMP_TESTE_ON?'disabled':''}>${TE(IMP_TESTE_ON?'imp_teste_enviando':'imp_teste_btn')}</button>`:''}${o.semRolo?'':roloSelo('neutral',true)}</span></div>
     ${L.length?`<div class="din-list imp-lista"><div class="imp-linha imp-cab"><span>${TE('mv_venda')}</span><span>${TE('mv_hora')}</span><span>${TE('pacote')}</span><span>${TE('imp_col_imp')}</span><span>${TE('imp_col_sit')}</span><span></span></div>${L.map(item).join('')}</div>`:`<div class="note">${TE('imp_nenhuma')}</div>`}</div>`;}
 // "Minhas vendas de hoje" (D9): deste notebook e do e-mail de quem está logado; nenhum total.
 // 18/11 (Ronaldo): o pacote de cada venda. 25/11 (Ronaldo): o vendedor vê o valor e o total do que vendeu (só o confirmado)
@@ -12735,6 +12769,12 @@ const EQ={
   imp_col_imp:["Impressões","Prints","Impresiones","Impressions","Drucke"],
   imp_col_sit:["Situação","Status","Estado","État","Status"],
   imp_titulo:["Imprimir","Print","Imprimir","Imprimer","Drucken"],
+  imp_teste_btn:["Testar impressora","Test printer","Probar impresora","Tester l’imprimante","Drucker testen"],
+  imp_teste_enviando:["Enviando teste…","Sending test…","Enviando prueba…","Envoi du test…","Test wird gesendet…"],
+  imp_teste_titulo:["Teste de impressora","Printer test","Prueba de impresora","Test d’imprimante","Druckertest"],
+  imp_teste_nota:["Folha inteira, cantos amarelos visíveis e cores nítidas: impressora pronta.","Full sheet, yellow corners visible and sharp colors: printer ready.","Hoja completa, esquinas amarillas visibles y colores nítidos: impresora lista.","Feuille entière, coins jaunes visibles et couleurs nettes : imprimante prête.","Ganzes Blatt, gelbe Ecken sichtbar und klare Farben: Drucker bereit."],
+  imp_teste_ok:[x=>"Teste enviado para "+x+"",x=>"Test sent to "+x+"",x=>"Prueba enviada a "+x+"",x=>"Test envoyé à "+x+"",x=>"Test an "+x+" gesendet"],
+  imp_teste_erro:[x=>"A impressora não imprimiu o teste: "+x+"",x=>"The printer did not print the test: "+x+"",x=>"La impresora no imprimió la prueba: "+x+"",x=>"L’imprimante n’a pas imprimé le test : "+x+"",x=>"Der Drucker hat den Test nicht gedruckt: "+x+""],
   imp_nenhuma:["Nenhuma venda para imprimir","No sales to print","Ninguna venta para imprimir","Aucune vente à imprimer","Keine Verkäufe zum Drucken"],
   imp_conf:["Imprimindo e conferindo com a impressora...","Printing and checking with the printer...","Imprimiendo y verificando con la impresora...","Impression et vérification avec l'imprimante...","Drucken und mit dem Drucker abgleichen..."],
   imp_na_fila:[(n)=>(n?`Na fila · ${n===1?"1 pedido":n+" pedidos"} na frente`:"Na fila"),(n)=>(n?`In queue · ${n===1?"1 order":n+" orders"} ahead`:"In queue"),(n)=>(n?`En la fila · ${n===1?"1 pedido":n+" pedidos"} delante`:"En la fila"),(n)=>(n?`Dans la file · ${n===1?"1 commande":n+" commandes"} devant`:"Dans la file"),(n)=>(n?`In der Warteschlange · ${n===1?"1 Auftrag":n+" Aufträge"} davor`:"In der Warteschlange")],
@@ -14832,6 +14872,7 @@ document.addEventListener('click',e=>{
     case 'imp-pick':{const s=SIM.sessions[d.card];if(!s||!s.impressao||s.impressao.estado!=='pendente')break;const S=impSel(d.card,s);let sel=S.sel.map(x=>x.k);
       if(sel.includes(d.k))sel=sel.filter(k=>k!==d.k);else if(sel.length>=S.max){toast(`Já são ${S.max} ${S.max===1?'foto':'fotos'}. Desmarque uma antes de marcar outra.`);break;}else sel.push(d.k);state.impSel[d.card]=sel;render();break;}
     case 'imp-print':impImprimir(d.card);break;
+    case 'imp-teste':impTeste();break;
     case 'imp-ok':impOk(d.card);break;
     case 'imp-falha':impFalha(d.card);break;
     case 'imp-reprint':{const s=SIM.sessions[d.card];const feitas=new Set((s&&s.impressao&&s.impressao.feitas)||[]); // já vem com as fotos impressas marcadas (até o limite): reimprimir é um clique só (Ronaldo, 10/11)

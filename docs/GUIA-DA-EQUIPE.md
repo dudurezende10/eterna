@@ -638,6 +638,10 @@ Na confirmação ficam registrados quem deu cada cortesia, o motivo, o texto, a 
 
 O cliente faz a selfie de novo no Checkout. Se ele já comprou, aparece **Você já comprou fotos nesta visita** com dois botões: **Comprar mais fotos** começa uma venda nova, do zero, com todas as fotos dele (compradas ou não), e segue como qualquer venda; **Ver o QR das fotos compradas** mostra de novo o QR da compra anterior.
 
+### Testar a impressora (26/11)
+
+No **Posto de venda**, no painel **Imprimir**, toque em **Testar impressora**. Sai uma folha da Viva Maracanã com o nome do posto, quem testou e a hora. A impressora está pronta quando a folha sai inteira, com os quatro cantos amarelos visíveis e as cores nítidas. Pode testar quantas vezes precisar: o teste não conta como venda nem gasta do rolo no sistema.
+
 ### Fila de impressão (25/11)
 
 Abaixo do pedido, **Imprimir** mostra uma linha por venda: venda, hora, pacote e valor, quantas impressões, situação (**Aguardando**, **Impressa** ou **Só digital**) e um botão (**Reimprimir** ou **Ver fotos e imprimir**). As fotos só abrem na venda que está aguardando ou quando se toca no botão. A coluna da esquerda acompanha a rolagem.
