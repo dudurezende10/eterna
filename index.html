@@ -149,6 +149,11 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 .pr-cad input[type=text]{width:100%}.pr-foto{aspect-ratio:1;width:100%;border:2px dashed var(--line);border-radius:10px;background:var(--surface2);display:grid;place-items:center;overflow:hidden;font:inherit;cursor:pointer;padding:0}
 .pr-foto img{width:100%;height:100%;object-fit:cover}.pr-ativo{display:flex;align-items:center;gap:8px}
 .mv-tab{width:100%}
+.mv-filtro{margin:4px 0 10px}
+#ver-nova{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:18px;padding:14px 16px 14px 20px;background:#134078;color:#fff;border-bottom:4px solid #FFB800;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:calc(100vw - 32px)}
+#ver-nova .vn-txt{display:flex;flex-direction:column;gap:2px}#ver-nova .vn-txt b{font-size:17px}#ver-nova .vn-txt span{font-size:13px;opacity:.85}
+#ver-nova .btn{background:#FFB800;color:#134078;border-color:#FFB800;font-weight:700;min-height:48px;padding:0 26px;font-size:16px}
+@media print{#ver-nova{display:none}}
 .chip.at-chip{display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:600}.at-ico{flex:none;width:44px;height:44px}
 .at-ico .dr-corpo{animation:atPaira 2.6s ease-in-out infinite}@keyframes atPaira{50%{transform:translateY(-3px)}}
 .at-ico .dr-helice{transform-box:fill-box;transform-origin:center;animation:atGira .35s linear infinite}@keyframes atGira{50%{transform:scaleX(.25)}}
@@ -1610,7 +1615,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.92.2 · 26/11 09:45"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.93.0 · 26/11 09:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2854,10 +2859,14 @@ function minhasVendas(trava){const u=state.user;if(!u)return '';const val=true;c
     rows.push({t:v.em,card:null,venda:v.venda,no:v.saleNo||'',posto:v.posto||'',vend:v.vendedor||v.por||'',meio:meioNome(v.meio)||v.meio||'—',pac:mvPacote(v.cart),v:v.total,pag:v.cancelada?TE('din_cancelada'):TE('st_paga'),rec:!v.cancelada,imp:v.impressa?TE('imp_impressa'):(v.prints>0&&!v.cancelada?TE('imp_para_imprimir'):'—'),srv:true});});
   if(Date.now()-MVS.t>MVS_MS&&!MVS.busy)setTimeout(mvPull,0);
   rows.sort((a,b)=>tsOf(b.t)-tsOf(a.t)||String(b.no).localeCompare(String(a.no),'pt',{numeric:true}));
+  // 26/11 (Ronaldo): filtro por vendedor, para cada um acompanhar quanto vendeu no dia (total e quantidade no rodapé)
+  const vends=[...new Set(rows.map(r=>r.vend).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt'));const fv=vends.includes(state.mvVend)?state.mvVend:'todos';
+  const todas=rows.length;if(fv!=='todos')rows.splice(0,rows.length,...rows.filter(r=>r.vend===fv));
+  const filtro=vends.length>1?`<div class="row mv-filtro"><label class="ps-sel"><span class="eyebrow">${TE('ve_vendedor')}</span><select class="chip" data-act="mv-vend"><option value="todos">${TE('ps_todos')}</option>${vends.map(n=>`<option value="${esc(n)}" ${n===fv?'selected':''}>${esc(n)}${n===u.name?' · '+esc(TE('mv_voce')):''}</option>`).join('')}</select></label></div>`:'';
   const MVP=10,pgs=Math.max(1,Math.ceil(rows.length/MVP)),pg=Math.min(Math.max(0,state.mvPag||0),pgs-1),soma=rows.reduce((t,r)=>t+(r.rec&&r.v!=null?+r.v||0:0),0);const vis=rows.slice(pg*MVP,pg*MVP+MVP);
   const pag=pgs>1?`<div class="row mv-pag"><button class="chip" data-act="mv-pag" data-p="${pg-1}" ${pg>0?'':'disabled'}>${TE('aj_anterior')}</button><span class="note">${pg+1} / ${pgs}</span><button class="chip" data-act="mv-pag" data-p="${pg+1}" ${pg<pgs-1?'':'disabled'}>${TE('aj_proxima')}</button></div>`:'';
   // v94 (E): dentro de <details> "Minhas vendas de hoje", aberto por padrão; "Recibo" nas vendas pagas abre o recibo em cima do Posto
-  return `<details class="panel mv-det" open><summary><h2>${TE('mv_titulo')}</h2></summary><div id="minhas-vendas">${rows.length?`<div class="tablewrap"><table class="mv-tab"><thead><tr><th></th><th>${TE('mv_hora')}</th><th>${TE('mv_venda')}</th><th>${TE('sl_posto')}</th><th>${TE('ve_vendedor')}</th><th>${TE('pacote')}</th><th>${TE('pagamento')}</th>${val?`<th class="num">${TE('mv_valor')}</th>`:''}<th>${TE('mv_estado')}</th><th>${TE('mv_impressao')}</th><th></th></tr></thead><tbody>
+  return `<details class="panel mv-det" open><summary><h2>${TE('mv_titulo')}</h2></summary><div id="minhas-vendas">${todas?filtro:''}${rows.length?`<div class="tablewrap"><table class="mv-tab"><thead><tr><th></th><th>${TE('mv_hora')}</th><th>${TE('mv_venda')}</th><th>${TE('sl_posto')}</th><th>${TE('ve_vendedor')}</th><th>${TE('pacote')}</th><th>${TE('pagamento')}</th>${val?`<th class="num">${TE('mv_valor')}</th>`:''}<th>${TE('mv_estado')}</th><th>${TE('mv_impressao')}</th><th></th></tr></thead><tbody>
     ${vis.map(r=>`<tr><td class="mv-acao">${r.srv&&r.rec?`<button class="chip" data-act="mv-abrir" data-v="${esc(r.venda)}"${trava?` disabled title="${esc(TE('mv_feche_vm'))}"`:''}>${TE('po_recibo')}</button>`:r.rec&&r.card?`<button class="chip" data-act="caixa-open" data-card="${esc(r.card)}"${trava?` disabled title="${esc(TE('mv_feche_vm'))}"`:''}>${TE('po_recibo')}</button> ${vendaCancBtn(r.card)}`:''}</td><td>${hhmm(new Date(r.t))}</td><td class="name">${esc(r.no)}</td><td>${esc(r.posto||'—')}</td><td>${esc(r.vend||'—')}</td><td>${esc(r.pac||'—')}</td><td>${esc(r.meio)}</td>${val?`<td class="num">${r.v==null?`<span class="note">${TE('sem_valor')}</span>`:fmtR(r.v)}</td>`:''}<td>${esc(r.pag)}</td><td>${esc(r.imp)}</td></tr>`).join('')}</tbody><tfoot><tr><th colspan="7">${TE('total')} · ${rows.filter(r=>r.rec).length}</th><th class="num">${fmtR(soma)}</th><th colspan="2"></th></tr></tfoot></table></div>${pag}`:`<div class="note">${TE('mv_nenhuma')}</div>`}</div></details>`;}
 
 // ---------- v83 (parte E): venda acompanhada. O Checkout publica o que o cliente vê; o Posto de venda só lê (nada vai para o agente) ----------
@@ -12790,6 +12799,10 @@ const EQ={
   imp_parada:[(m)=>`Impressora parada: ${m}`,(m)=>`Printer stopped: ${m}`,(m)=>`Impresora detenida: ${m}`,(m)=>`Imprimante arrêtée : ${m}`,(m)=>`Drucker angehalten: ${m}`],
   mv_aguardando:["aguardando","waiting","esperando","en attente","wartend"],
   mv_titulo:["Vendas do Dia","Sales of the Day","Ventas del Día","Ventes du jour","Verkäufe des Tages"],
+  ver_nova_t:["Nova versão do Eterna","New Eterna version","Nueva versión de Eterna","Nouvelle version d’Eterna","Neue Eterna-Version"],
+  ver_nova_sub:["Toque em Atualizar entre uma venda e outra.","Tap Update between one sale and the next.","Toca Actualizar entre una venta y otra.","Touchez Mettre à jour entre deux ventes.","Zwischen zwei Verkäufen auf Aktualisieren tippen."],
+  ver_atualizar:["Atualizar","Update","Actualizar","Mettre à jour","Aktualisieren"],
+  mv_voce:["você","you","tú","vous","du"],
   mv_hora:["Hora","Time","Hora","Heure","Uhrzeit"],
   mv_venda:["Venda","Sale","Venta","Vente","Verkauf"],
   mv_valor:["Valor","Amount","Importe","Montant","Betrag"],
@@ -14972,6 +14985,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
 document.addEventListener('toggle',e=>{const t=e.target;if(!t||!t.classList||!t.classList.contains('perm-fino')||!state.perm)return;state.perm.fino=t.open===(t.dataset.def==='1')?null:{sel:state.perm.sel,open:t.open};},true);
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset||(t.dataset.act!=='bf-foto'&&t.dataset.act!=='bf-hc')||state.view!=='procurar')return;const p=state.procurar;const v=String(t.value);if(t.dataset.act==='bf-hc'){const h=t.value===''?null:+t.value;if(h!=null&&!(h>=0&&h<=23))return;p.hora=h;p.q='';const c=document.getElementById('bf-cod');if(c)c.value='';bfMuda();return;}p.key=!impPreso()&&v!=='todos'&&p.snap&&p.snap.fotografos.some(f=>f.key===v)?v:'todos';p.hora=null;bfMuda();}); // Procurar fotos: só fotógrafo que está na lista; o fotógrafo logado não troca
 document.addEventListener('input',e=>{const t=e.target;if(!t||!t.dataset||t.dataset.act!=='bf-cod'||state.view!=='procurar')return;state.procurar.q=String(t.value).slice(0,24);bfMuda();});
+document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset||t.dataset.act!=='mv-vend')return;state.mvVend=String(t.value);state.mvPag=0;render();});
 document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset||t.dataset.act!=='ps-foto')return;const b=state.posto.busca;const v=String(t.value);b.key=v!=='todos'&&psLista().fotografos.some(f=>f.key===v)?v:'todos';b.n=PS_PASSO;render();}); // Procurar sessão: só aceita fotógrafo que está na lista
 document.addEventListener('change',e=>{const a=e.target.dataset.act;if(/^sales-(day|seller|pay|canal|status)$/.test(a)&&e.target.tagName==='SELECT'){state.sales[a.slice(6)]=e.target.value;state.sales.page=0;render();return;} // v94-ux (parte J)
 if(a==='es-importar-totais'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(fl&&can('estatisticas','c'))esImportarTotais(fl);return;}if(a==='es-importar'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(fl&&can('estatisticas','c'))esImportar(fl);return;}if(a==='ag-importar'){const fl=e.target.files&&e.target.files[0];e.target.value='';if(!fl||!can('escala','u'))return;if(fl.size>1024*1024){toast(TE('ag_arq_1mb'));return;}fl.text().then(t=>{const r=agImportar(t);state.cal.res={titulo:TE('ag_res',fl.name.replace(/[<>]/g,'').slice(0,60),r.novos,r.atualizados,r.iguais,r.recusadas.length),recusadas:r.recusadas};render();});return;}if(a==='di-point'){state.diario.point=e.target.value;return;}if(a==='pn-pdv'){state.painel.pdv=String(e.target.value||'');try{localStorage.setItem('eterna.painel.v1',JSON.stringify(state.painel))}catch(x){}render();return;}if(a==='rev-key'){state.revFilter.key=e.target.value;render();return;}if(a==='rev-venda'){state.revFilter.venda=e.target.value;render();return;}if(a==='rev-date'){state.revFilter.date=e.target.value||'';state.revFilter.per='data';render();return;}if(a==='func-set'){if(!ESCALA_ON)return; // Escala desligada: não grava
@@ -14990,6 +15004,16 @@ document.addEventListener('dragleave',e=>{const z=envioZona(e);if(z&&!z.contains
 document.addEventListener('drop',e=>{const z=envioZona(e);if(!z){if(state.view==='importar')e.preventDefault();return;}e.preventDefault();z.classList.remove('on');
   const l=[...((e.dataTransfer&&e.dataTransfer.files)||[])];if(l.length&&guardAct('envio-files'))fotosEnviar(l);});
 document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.classList&&e.target.classList.contains('envio-drop')){e.preventDefault();e.target.click();}});
+// 26/11 (Ronaldo): aviso de versão nova. A cada 2 minutos o Eterna relê a própria página e compara a versão; se mudou, aparece
+// um botão grande "Atualizar" fixo na tela. Não recarrega sozinho: o vendedor toca entre uma venda e outra.
+const VER_ATUAL=(document.querySelector('.powered[title]')||{}).title||'';const VER_MS=120000;let VER_NOVA='';
+async function verChecar(){if(VER_NOVA||!VER_ATUAL||!/^https?:/.test(location.protocol))return;
+  try{const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'});if(!r.ok)return;const t=await r.text();
+    const m=t.match(/class="powered" title="(Eterna v[^"]+)"/);if(m&&m[1]!==VER_ATUAL){VER_NOVA=m[1];verAviso();}}catch(e){}}
+function verAviso(){if(document.getElementById('ver-nova'))return;const d=document.createElement('div');d.id='ver-nova';d.setAttribute('role','alert');
+  d.innerHTML=`<div class="vn-txt"><b>${esc(TE('ver_nova_t'))}</b><span>${esc(TE('ver_nova_sub'))}</span></div><button class="btn primary" type="button">${esc(TE('ver_atualizar'))}</button>`;
+  d.querySelector('button').addEventListener('click',()=>location.reload());document.body.appendChild(d);}
+setTimeout(verChecar,20000);setInterval(verChecar,VER_MS);
 window.addEventListener('beforeunload',e=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);if(state.imp&&state.imp.envio){e.preventDefault();e.returnValue='';return '';}});
 window.addEventListener('pagehide',()=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);}); // 23/11: escolha do Treino ainda não gravada vai para a fila local (síncrona), sem pergunta do navegador
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'&&state.train.vendo)trSaiDaFoto(state.train.vendo);}); // revisão 23/11: no iOS o pagehide nem sempre vem; o trRascNovo evita gravar de novo a mesma escolha
