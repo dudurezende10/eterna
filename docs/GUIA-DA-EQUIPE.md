@@ -644,11 +644,15 @@ No **Posto de venda**, em **Vendas do Dia**, escolha seu nome em **Vendedor** (o
 
 ### Versão nova do Eterna (26/11)
 
-Quando sai uma versão nova, aparece embaixo da tela uma faixa azul **Nova versão do Eterna** com o botão amarelo **Atualizar**. Toque nele entre uma venda e outra, nunca no meio de uma venda. Não precisa mais apertar F5.
+Quando sai uma versão nova, aparece no **Posto de venda**, ao lado de **Testar impressora**, o botão amarelo **Atualizar versão**. Toque nele entre uma venda e outra. O Checkout se atualiza sozinho quando fica parado na tela inicial, sem cliente; o cliente não vê aviso nenhum.
 
 ### Câmera do Checkout (26/11)
 
 O Checkout usa sempre a câmera Logitech espetada no USB, mesmo com a câmera do notebook disponível. Se a Logitech estiver desconectada, a selfie continua com a câmera que houver; ao ligar a Logitech de novo, ela volta a ser a usada na próxima vez que a câmera abrir.
+
+### Testar a selfie (26/11)
+
+Antes do turno, no **Posto de venda**, painel **Imprimir**, toque em **Testar selfie**. A câmera abre; olhe para ela e toque em **Tirar foto**. A foto sobe como a de um cliente. Depois de 1 minuto, abra o **Checkout** e faça a selfie como um cliente: se as suas fotos aparecerem, a selfie está funcionando.
 
 ### Testar a impressora (26/11)
 
