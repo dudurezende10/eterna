@@ -1617,7 +1617,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.9 · 26/11 11:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.10 · 26/11 12:15"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2917,7 +2917,7 @@ function lojaEcoMsg(){const k=state.kiosk;const m={tipo:'estado',em:Date.now(),s
 function lojaEco(){if(!ECO_CH||!state.lojaRota)return;const d=Date.now()-ecoUlt;if(d<300){if(!ecoTimer)ecoTimer=setTimeout(()=>{ecoTimer=null;lojaEco();},300-d);return;}
   ecoUlt=Date.now();try{ECO_CH.postMessage(lojaEcoMsg());}catch(e){}}
 function lojaEcoFim(){if(ECO_CH)try{ECO_CH.postMessage({tipo:'fim',em:Date.now(),tab:ECO_TAB});}catch(e){}}
-setInterval(()=>{if(state.lojaRota){if(lojaProntoOcioso()||lojaEscolhaOciosa()||lojaChamado())return;lojaEco();lojaVisitaAtualiza();if(lojaPendCheck())render();}},5000);
+setInterval(()=>{if(state.lojaRota){ljMemVolta();if(lojaProntoOcioso()||lojaEscolhaOciosa()||lojaChamado())return;lojaEco();lojaVisitaAtualiza();if(lojaPendCheck())render();}},5000);
 // S2: qualquer toque ou tecla no Checkout conta como cliente presente na tela Pronto e na do valor; v96: também na escolha, com roda e arrasto
 ['pointerdown','keydown','wheel','touchmove'].forEach(t=>document.addEventListener(t,()=>{if(state.lojaRota)state.kiosk.toque=Date.now();},true));
 window.addEventListener('pagehide',()=>{if(state.lojaRota)lojaEcoFim();});
@@ -3344,7 +3344,15 @@ function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=so
   const ai=ai0.map((x,i)=>i?x:{...x,edIni:true});if(!ai.length)return ph;if(!multi&&ph.length)ph[0].edFotos=true;return [...ai,...ph];}
 function lojaPick(card){const s=simOf(card);s.pick=s.pick||{};return s.pick;}
 // v96 (B2): só valem as marcas das fotos que este cliente vê (lojaItems); marca velha de outra pessoa da mesma sessão fica de fora
-function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const vale=new Set(lojaItems(card).map(x=>x.k));const ks=Object.keys(pk).filter(k=>(pk[k]==='ok'||pk[k]==='fav')&&vale.has(k));s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();}
+function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const vale=new Set(lojaItems(card).map(x=>x.k));const ks=Object.keys(pk).filter(k=>(pk[k]==='ok'||pk[k]==='fav')&&vale.has(k));s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();ljMemGrava(card);}
+// 26/11 (Ronaldo: "isso não pode acontecer"): as marcas do cliente que está no Checkout ficam também na memória desta tela.
+// Toda mudança feita pelo cliente passa pelo lojaSync e atualiza a memória; se outra coisa (outra janela, releitura do
+// navegador cheio) trocar as marcas da sessão dele enquanto ele está na escolha, a tela devolve as dele e grava de novo.
+let LJ_MEM=null;
+function ljMemGrava(card){const k=state.kiosk;if(!state.lojaRota||!k||!card||card!==k.code)return;const s=SIM.sessions[card];LJ_MEM={card,codN:k.codN,pick:JSON.parse(JSON.stringify((s&&s.pick)||{}))};}
+function ljMemVolta(){const k=state.kiosk;const m=LJ_MEM;if(!state.lojaRota||!k||!m||k.step==='code'||m.card!==k.code||m.codN!==k.codN)return false;
+  const s=SIM.sessions[m.card];if(!s||s.status==='paga'||JSON.stringify(s.pick||{})===JSON.stringify(m.pick))return false;
+  s.pick=JSON.parse(JSON.stringify(m.pick));lojaSync(m.card);return true;}
 // v79: as fotos com fundo de IA contam dentro do pacote (decisão do Eduardo, 28/10): n = fotos do campo + fotos com fundo de IA.
 // Custo de um pacote para n fotos: pacote + fotos adicionais (o "Todas" não tem adicional). Preços sempre de priceOf (valem os do Catálogo).
 // Catálogo novo (28/10, correção das 10:44): a foto adicional é digital e impressa, então impressas = min(n, impressas do pacote) + adicionais.
@@ -3452,7 +3460,7 @@ const ICO={
   list:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'};
 // v96 (B2): o Checkout voltou ao início (ou abriu por selfie): as marcas do cliente anterior saem da sessão. Sessão paga fica como está;
 // com pedido aberto, o pedido guarda as fotos dele e a sessão só perde as marcas do Checkout
-function lojaPickLimpa(card){const s=card&&SIM.sessions[card];if(!s||s.status==='paga'||!s.pick||!Object.keys(s.pick).length)return false;
+function lojaPickLimpa(card){if(LJ_MEM&&LJ_MEM.card===card)LJ_MEM=null;const s=card&&SIM.sessions[card];if(!s||s.status==='paga'||!s.pick||!Object.keys(s.pick).length)return false;
   s.pick={};if(s.status!=='aguardando'){s.selected=[];s.aiSel=[];s.fav=[];}saveSim();return true;}
 function lojaReset(){const k=state.kiosk;if(k.code)lojaPickLimpa(k.code);state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{step:'code',mais:null,grupo:false,escolhaDesde:0,sairAsk:false,t0:null,code:'',so:null,tv:null,lgOpen:false,camOn:false,minhas:false,minhasI:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null,codEsp:false,codTxt:'',codN:(k.codN||0)+1,verKs:null,verCode:null,edAbriu:0,edVistos:null,edT0:null,escDesf:null,escXEm:0});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 // relê o SIM da outra janela sem perder as escolhas desta sessão no Checkout
@@ -3535,7 +3543,7 @@ function lojaProntoOcioso(){const k=state.kiosk;const p=k.paid;if(!state.lojaRot
 // as marcas (Eduardo, 10/11; substitui o "A3 cancelado" de 27/10). Vale sempre, também com pedido aberto (cliente que voltou pelo código, pela selfie ou
 // por outro balcão): o pedido fica no Posto com "o cliente saiu" (lojaSaiuPed). A tela Pronto e a do valor seguem a regra delas (LOJA_PRONTO_MS).
 // k.escolhaDesde é marcado no desenho ao entrar na escolha; k.toque, por qualquer toque, tecla, roda ou arrasto (ouvintes junto do lojaEco)
-let LOJA_ESCOLHA_MS=90e3;
+let LOJA_ESCOLHA_MS=90e3;const LOJA_ESCOLHA_MARCADO_MS=600e3; // 26/11: 10 minutos com foto marcada
 // botão Sair da escolha (Eduardo, 10/11): o mesmo que a volta por tempo; com fotos marcadas pede confirmação (k.sairAsk); com pedido aberto avisa o Posto
 function lojaSairCli(conf){const k=state.kiosk;if(!state.lojaRota)return;lojaCliente();
   if(!conf&&k.code&&LOJA_ESCOLHA_ETAPAS[k.step]&&lojaCart(k.code).ch.length){k.sairAsk=true;render();return;}
@@ -3549,7 +3557,10 @@ function lojaAskTab(e){const bs=[...document.querySelectorAll('.lj-ask button')]
   bs[i<0?0:(i+(e.shiftKey?bs.length-1:1))%bs.length].focus();}
 const LOJA_ESCOLHA_ETAPAS={review:1,talvez:1,gallery:1,pick:1};
 function lojaEscolhaOciosa(){const k=state.kiosk;if(!state.lojaRota||!LOJA_ESCOLHA_ETAPAS[k.step]||!k.escolhaDesde)return false;
-  if(Date.now()-Math.max(k.toque||0,k.escolhaDesde)<LOJA_ESCOLHA_MS)return false;
+  // 26/11 (Ronaldo: cliente marcava fotos e as marcas sumiam): com foto marcada, o cliente pode estar só olhando ou conversando;
+  // a tela espera LOJA_ESCOLHA_MARCADO_MS sem toque antes de voltar ao início (sem marca, segue LOJA_ESCOLHA_MS)
+  const marcou=!!(k.code&&Object.keys((SIM.sessions[k.code]||{}).pick||{}).length);
+  if(Date.now()-Math.max(k.toque||0,k.escolhaDesde)<(marcou?LOJA_ESCOLHA_MARCADO_MS:LOJA_ESCOLHA_MS))return false;
   if(k.code){lojaFresh(k.code);lojaSaiuPed(dinAbertaDe(k.code));} // pedido aberto: o Posto vê "o cliente saiu" (como o Sair)
   k.sairAsk=false;lojaTimerOff();lojaReset();render();lojaEco();return true;} // lojaReset limpa as marcas (lojaPickLimpa) e leva ao Iniciar
 // Checkout esperando: o vendedor confirmou (vira a tela do QR com a contagem), cancelou (volta ao carrinho da mesma sessão com aviso) ou o dia virou
@@ -14370,6 +14381,7 @@ const escalaOn=()=>ESCALA_ON; // para os testes saberem com que chave a página 
 
 const VIEWFN={'ia-auto':vIaAuto,minhasenha:vMinhaSenha,estatisticas:()=>esDicas(vEstatisticas()),calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:()=>vPosto({filtro:'todos'}),'vendas-lista':vVendasLista,'ativ-resumo':vAtivResumo,'ativ-venda':vAtivVenda,'ativ-entrega':vAtivEntrega,importar:vImportar,repo:vRepo,fila:()=>vPosto({filtro:'todos'}),caixa:()=>vPosto({filtro:'dinheiro'}),posto:()=>vPosto({filtro:'todos'}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'chute-a-gol':vChuteAGol,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
+  if(state.lojaRota)ljMemVolta();
   document.documentElement.lang=localeTela();
   trConfere(); // 23/11: a escolha da foto do Treino que saiu da tela vai para a fila
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
@@ -15246,7 +15258,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   // nesta tela são desta janela: ficam, e a janela grava de novo para o Posto receber
   const k0=state.lojaRota&&state.kiosk&&state.kiosk.code?state.kiosk.code:null;const meus=k0?soCards(k0).map(c=>[c,SIM.sessions[c]]).filter(([c,x])=>x&&x.pick&&Object.keys(x.pick).length&&x.status!=='paga').map(([c,x])=>[c,{pick:x.pick,selected:x.selected,aiSel:x.aiSel,fav:x.fav}]):[];
   const antes=simResumo(SIM);const velhas=new Map((SIM.caixaDin||[]).map(r=>[r.id,{estado:r.estado,saiu:r.saiu||null}]));SIM=Object.assign(SIM0(),o);
-  {let volta=false;meus.forEach(([c,v])=>{const n=SIM.sessions[c];if(!n||n.status==='paga')return;if(JSON.stringify(n.pick||{})!==JSON.stringify(v.pick)){Object.assign(n,v);volta=true;}});if(volta)setTimeout(saveSim,0);}
+  {let volta=false;meus.forEach(([c,v])=>{const n=SIM.sessions[c];if(!n||n.status==='paga')return;if(JSON.stringify(n.pick||{})!==JSON.stringify(v.pick)){Object.assign(n,v);volta=true;}});if(volta)setTimeout(saveSim,0);}ljMemVolta();
   if(SIM.caixaDin.some(pendAntigaHoje)){state.janelaAntiga=Date.now();if(!state.lojaRota&&!state.pub&&SIM.caixaDin.some(r=>pendAntigaHoje(r)&&(velhas.get(r.id)||{}).estado!=='confirmada'))toast('Uma janela antiga do Eterna confirmou um pedido do Checkout sem pacote. O QR não foi mostrado ao cliente. Feche e reabra o Checkout e o Posto de venda.');} // B1 (só pedido de hoje)
   const avisou=!state.lojaRota&&!state.pub&&pendAvisos(velhas); // v96: o cliente voltou às fotos ou saiu da tela
   if(state.pub){const p=state.pub;if(p.step==='aguarda_caixa')pubLoad();return;} // v96.2: reforço, as compradas chegaram numa gravação depois da sessão paga // galeria pública: sem redesenhar no meio da selfie; sai do "esperando o caixa" quando confirmar
