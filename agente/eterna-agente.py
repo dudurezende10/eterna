@@ -6534,6 +6534,22 @@ SESS_CAND_MAX = 3               # S7: sessões candidatas por trilha (a aberta +
 SESS_RET_DIAS = 60              # S14: arquivos de sessão
 SESS_Q_SCORE, SESS_Q_LARG, SESS_Q_FRONTAL = 0.80, 60, 0.35   # S5: rosto de qualidade (vota por sessão nova)
 SESS_CLIQUE_ANTES, SESS_CLIQUE_DEPOIS = 48 * 3600, 600       # S2: clique válido em [u − 48 h, u + 10 min]
+# 25/11 (Eduardo; docs/planos/2026-11-25-fotos-vizinhas-checkout.md): fotos vizinhas na selfie do Checkout (sess_vizinhas)
+def _viz_env(nome, padrao, piso, teto):
+    """Inteiro do ambiente dentro de [piso, teto]; ausente ou ilegível vale o padrão; fora da faixa vale a ponta mais próxima."""
+    try:
+        return max(piso, min(teto, int(os.environ[nome])))
+    except (KeyError, ValueError):
+        return padrao
+
+
+# Ajustáveis sem publicar (reiniciar o agente): ETERNA_VIZ_GAP (30 a 900), ETERNA_VIZ_ALCANCE (60 a 3600), ETERNA_VIZ_MAX (1 a 200)
+VIZ_GAP = _viz_env("ETERNA_VIZ_GAP", 180, 30, 900)               # s, no máximo, entre uma foto da caminhada e a seguinte (clique)
+VIZ_ALCANCE = _viz_env("ETERNA_VIZ_ALCANCE", 1500, 60, 3600)     # s, para cada lado, desde a foto reconhecida mais próxima
+VIZ_MAX = _viz_env("ETERNA_VIZ_MAX", 80, 1, 200)                 # fotos vizinhas por busca (as mais próximas das reconhecidas)
+VIZ_LIM = SESS_LIM_FICA         # rosto de qualidade com semelhança abaixo disto contra o grupo reconhecido = outra pessoa
+VIZ_G_MAX = 400                 # rostos do grupo reconhecido usados na comparação
+VIZ_ENV = os.environ.get("ETERNA_VIZINHAS") != "0"   # ETERNA_VIZINHAS=0 desliga e vence o Painel de controle
 FF_PRONTA_MIN = 15              # D1 (Eduardo, 30/10): sai da coluna final 15 min depois de ficar pronto
 FF_PIDS = 6                     # miniaturas por grupo aberto (risco 2: o pid abre o original)
 FF_PRONTAS_MAX = 24             # cartões na coluna final
@@ -7947,12 +7963,14 @@ def sess_feed(desde=0, ontem=False):
 
 def sess_status():
     jan = busca_janela_efetiva()         # fora do sess_lock (lê o estado.db com o estado_lock)
+    vz = viz_cfg()                       # idem
     with sess_lock:
         hoje = _ff_hoje()
         return {"v": 2, "pausa": SESS_PAUSA, "rostos": bool(sess_rostos_on()), "rev": sess_rev[0], "gen": BOOT, "dias": BUSCA_DIAS,
                 "janela_min": jan, "janela_padrao": BUSCA_JANELA_MIN, "janela_fixa": BUSCA_DIAS_EXPLICITA,
                 "hoje": sum(1 for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
-                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada"), "visitas": _vis_status_mem()}
+                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada"), "visitas": _vis_status_mem(),
+                "vizinhas": {"ligada": bool(VIZ_ENV and vz.get("ligada")), "forcada": not VIZ_ENV, "em": vz.get("em")}}
 
 
 # ---------- v97: visitas (as levas da mesma família, ligadas por rosto) ----------
@@ -8678,6 +8696,233 @@ def _rosto_q_db(pids):
     except Exception as ex:
         print("  visitas: rostos de qualidade do boot indisponíveis (%s)" % str(ex)[:80])
     return out
+
+
+# ---------- 25/11: fotos vizinhas na selfie do Checkout ----------
+# Plano docs/planos/2026-11-25-fotos-vizinhas-checkout.md. A selfie devolve só as fotos em que o rosto bateu; a família de
+# costas, de perfil ou olhando longe, fotografada junto pelo mesmo fotógrafo, ficava de fora. sess_vizinhas parte das fotos
+# reconhecidas (sim >= LIMITE e rosto principal) e anda pela trilha delas, foto a foto na ordem do clique, para antes e para
+# depois. Para, naquele sentido, na primeira foto com rosto de qualidade (tabela rosto_q) que não bate com o grupo
+# reconhecido, na primeira foto ainda sem leitura de rosto, na sessão aberta ou protegida (escola ou menor), quando passa
+# mais de VIZ_GAP entre uma foto e a seguinte, ou nos tetos (VIZ_ALCANCE para cada lado da reconhecida mais próxima, VIZ_MAX
+# fotos por busca). Um ensaio longo entra inteiro enquanto as fotos vierem em sequência. Na busca em grupo, o grupo
+# reconhecido junta os rostos principais das fotos de todas as pessoas da selfie. Só o Checkout assistido usa (POST /rostos/buscar sem
+# todo); a galeria por QR e a de escola não. Chave: config/vizinhas {"ligada": bool} (só POST /vizinhas/config, Admin) e
+# ETERNA_VIZINHAS=0. Não grava nada; só lê as sessões em memória (com o sess_lock) e o rostos.db (sem o lock).
+VIZ_CFG_PADRAO = {"ligada": True}
+_viz_cfg = {"t": 0.0, "v": None}
+
+
+def viz_valida(j):
+    """config/vizinhas: só {"ligada": bool} (por e em são de auditoria). Outro formato = None."""
+    if not isinstance(j, dict) or not isinstance(j.get("ligada"), bool):
+        return None
+    return {"ligada": j["ligada"]}
+
+
+def viz_cfg():
+    """Interruptor das fotos vizinhas (estado.db config/vizinhas), relido a cada 3 s. Nunca chamar com o sess_lock na mão.
+    Sem documento: ligada. Banco ocupado ou documento ilegível: fica o último valor lido."""
+    agora = time.time()
+    if agora - _viz_cfg["t"] < 3 and _viz_cfg["v"] is not None:
+        return _viz_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'vizinhas' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                j = json.loads(r[0])
+                v = viz_valida(j)
+                v = {**v, "por": j.get("por"), "em": j.get("em")} if v is not None else _viz_cfg["v"]
+    except Exception:
+        v = _viz_cfg["v"]
+    v = v or dict(VIZ_CFG_PADRAO)
+    _viz_cfg.update(t=agora, v=v)
+    return v
+
+
+def viz_cfg_mem():
+    """O último valor lido (sem abrir o banco)."""
+    return _viz_cfg["v"] or VIZ_CFG_PADRAO
+
+
+def viz_ligada():
+    """ETERNA_VIZINHAS=0 vence; senão vale o config/vizinhas (ligada sem documento). Fora do sess_lock."""
+    return bool(VIZ_ENV and viz_cfg().get("ligada") is True)
+
+
+def viz_cfg_gravar(ligada, por=None, posto=None, quem_ip=None):
+    """POST /vizinhas/config {ligada, por, posto} (Painel de controle, só Admin). Grava config/vizinhas no estado.db (rev
+    novo) e registra no console e no visitas-log.jsonl. Vale na busca seguinte. Fora do sess_lock."""
+    de = viz_cfg().get("ligada") is True
+    v = {"ligada": bool(ligada), "por": _vis_txt(por, 60), "em": _iso()}
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "vizinhas", json.dumps(v, ensure_ascii=False), rev, _iso()))
+            db.commit()
+        finally:
+            db.close()
+    _viz_cfg.update(t=time.time(), v=dict(v))
+    print("  vizinhas: fotos vizinhas na selfie %s -> %s · por %s" % ("ligadas" if de else "desligadas", "ligadas" if v["ligada"] else "desligadas", v["por"] or "?"))
+    vis_log({"acao": "vizinhas_config", "ligada": v["ligada"], "de": de, "por": v["por"], "posto": _vis_txt(posto, 40),
+             "ip": None if quem_ip in (None, "127.0.0.1", "::1") else quem_ip, "em": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    return {"ok": True, "ligada": bool(VIZ_ENV and v["ligada"]), "forcada": not VIZ_ENV, "em": v["em"], "por": v["por"]}
+
+
+def sess_vizinhas(fotos, agora=None, info=None):
+    """[{"id", "card", "mesma"}] das fotos vizinhas das reconhecidas (fotos = o que a busca devolveu, de uma pessoa ou do
+    grupo inteiro), na ordem do clique. mesma = a foto é de uma sessão que tem foto reconhecida. info (dict, opcional) recebe
+    "corte": "alcance" ou "max" quando a caminhada parou num teto, senão None. Qualquer erro devolve [] (a busca responde
+    como sempre)."""
+    try:
+        return _viz_calc(fotos, agora, info if isinstance(info, dict) else {})
+    except Exception as ex:
+        print("  vizinhas: fora nesta busca (%s)" % type(ex).__name__)
+        return []
+
+
+def _viz_calc(fotos, agora=None, info=None):
+    info = {} if info is None else info
+    info["corte"] = None
+    hoje = _ff_hoje(agora)
+    fotos = [f for f in (fotos or []) if isinstance(f, dict) and isinstance(f.get("id"), str)]
+    rec = {f["id"] for f in fotos}                   # tudo o que a busca já devolveu (clara ou "talvez") não se repete aqui
+    anc = [f["id"] for f in sorted(fotos, key=lambda f: -_num(f.get("sim"))) if _num(f.get("sim")) >= LIMITE and f.get("principal") is True]
+    if not anc:
+        return []
+    ancs = set(anc)
+    tr = {}
+    with sess_lock:                                  # só copia; nenhuma consulta a banco aqui dentro
+        ks = set()
+        for p in anc:
+            x = sess.get(sess_pid.get(p))
+            if x and x.get("k") and x["dia"] == hoje and x["status"] == "fechada" and not x.get("removida") \
+                    and not _vis_protegida(x) and p in x["fotos"]:
+                ks.add(x["k"])
+        for x in sess.values():
+            if x.get("k") in ks and x["dia"] == hoje and not x.get("removida"):
+                ts = x.get("_t") or {}
+                tr.setdefault(x["k"], []).append({
+                    "card": x["card"], "cap0": _num(x.get("cap0")), "cap1": _num(x.get("cap1")), "fotos": list(x["fotos"]),
+                    "t": {p: _num(ts[p][0]) for p in x["fotos"] if p in ts},
+                    "ia": set(x.get("ia") or ()), "ok": x["status"] == "fechada" and not _vis_protegida(x), "n": x.get("_n") or 0})
+    if not tr or not os.path.exists(ROSTOS_DB):
+        return []
+    np = _cv.get("np")
+    db = rostos_db()
+    try:
+        # G: os rostos principais (largura >= metade do maior rosto da foto) das fotos reconhecidas de todas as pessoas da busca
+        porf = {}
+        for i in range(0, len(anc), 500):
+            parte = anc[i:i + 500]
+            for p, larg, emb in db.execute("select pid, larg, emb from rosto where pid in (%s)" % ",".join("?" * len(parte)), parte):
+                porf.setdefault(p, []).append((_num(larg), bytes(emb)))
+        G = []
+        for p in anc:
+            fs = porf.get(p) or []
+            mx = max((l for l, _ in fs), default=0)
+            G += [e for l, e in fs if l >= ROSTO_PRINCIPAL * mx and len(e) == 512]
+        G = G[:VIZ_G_MAX]
+        if np is not None:
+            Gm = np.frombuffer(b"".join(G), "float32").reshape(-1, 128) if G else None
+        else:
+            Gm = []
+            for e in G:
+                v = array.array("f")
+                v.frombytes(e)
+                Gm.append(v)
+        lidas, rq, veredito = set(), {}, {}
+
+        def carrega(pids):                           # leitura de rosto das fotos ao alcance, em lote (uma consulta por tabela)
+            for i in range(0, len(pids), 500):
+                parte = pids[i:i + 500]
+                q = ",".join("?" * len(parte))
+                lidas.update(p for (p,) in db.execute("select pid from foto where pid in (%s)" % q, parte))
+                for p, emb in db.execute("select pid, emb from rosto_q where pid in (%s)" % q, parte):
+                    rq.setdefault(p, []).append(bytes(emb))
+
+        def livre(p):                                # True = lida e sem rosto de qualidade de fora do grupo
+            v = veredito.get(p)
+            if v is None:
+                v = p in lidas
+                for e in (rq.get(p) or ()) if v else ():
+                    if len(e) != 512 or not G:
+                        v = False
+                    elif np is not None:
+                        v = float((Gm @ np.frombuffer(e, "float32")).max()) >= VIZ_LIM
+                    else:
+                        q = array.array("f")
+                        q.frombytes(e)
+                        v = max(_dot(g, q) for g in Gm) >= VIZ_LIM
+                    if not v:
+                        break
+                veredito[p] = v
+            return v
+
+        achadas = {}                                 # pid -> (distância em fotos até a reconhecida, trilha, posição, sessão)
+        mesmas = set()
+        for ki, k in enumerate(sorted(tr)):
+            # a trilha em fila única: sessões pela hora do primeiro clique, fotos na ordem da sessão. Hora da foto = o clique
+            # corrigido (em memória); sem ele (agente reiniciado), repartida entre o primeiro e o último clique da sessão.
+            # Sessão aberta ou protegida vira uma barreira (None) que a caminhada não atravessa.
+            fila = []
+            for s in sorted(tr[k], key=lambda s: (s["cap0"], s["cap1"], s["n"])):
+                if not s["ok"]:
+                    fila.append((None, 0.0, s))
+                    continue
+                n = len(s["fotos"])
+                for i, p in enumerate(s["fotos"]):
+                    t = s["t"].get(p)
+                    if not t:
+                        t = s["cap0"] + (s["cap1"] - s["cap0"]) * (i / (n - 1) if n > 1 else 0)
+                    fila.append((p, t, s))
+            pos = [i for i, e in enumerate(fila) if e[0] in ancs]
+            if not pos:
+                continue
+            t_a, t_b = min(fila[i][1] for i in pos) - VIZ_ALCANCE - 1, max(fila[i][1] for i in pos) + VIZ_ALCANCE + 1
+            carrega([e[0] for e in fila if e[0] and e[0] not in ancs and t_a <= e[1] <= t_b])
+            for i0 in pos:
+                t0 = fila[i0][1]
+                mesmas.add(fila[i0][2]["card"])
+                for passo in (1, -1):
+                    j, tp, dist, n = i0 + passo, t0, 0, 0
+                    while 0 <= j < len(fila):
+                        p, t, s = fila[j]
+                        if p is None or p in ancs:           # barreira, ou outra reconhecida (a caminhada dela continua daqui)
+                            break
+                        if abs(t - tp) > VIZ_GAP:            # mais de VIZ_GAP desde a foto anterior da caminhada
+                            break
+                        if abs(t - t0) > VIZ_ALCANCE:
+                            info["corte"] = info["corte"] or "alcance"
+                            break
+                        if not livre(p):                     # rosto de qualidade de fora do grupo, ou foto ainda sem leitura
+                            break
+                        dist += 1
+                        if p not in rec and p not in s["ia"]:
+                            if n >= VIZ_MAX:
+                                info["corte"] = "max"
+                                break
+                            n += 1
+                            o = achadas.get(p)
+                            if o is None or dist < o[0]:
+                                achadas[p] = (dist, ki, j, s["card"])
+                        tp = t
+                        j += passo
+    finally:
+        db.close()
+    if len(achadas) > VIZ_MAX:
+        info["corte"] = "max"
+    top = sorted(achadas.items(), key=lambda kv: kv[1][:3])[:VIZ_MAX]
+    top.sort(key=lambda kv: kv[1][1:3])
+    return [{"id": p, "card": v[3], "mesma": v[3] in mesmas} for p, v in top]
 
 
 def vis_protege(cards):
@@ -12591,6 +12836,9 @@ def estado_gravar(body, quem=""):
                         continue                                # teto da agenda (revisão)
                 if d["col"] == "config" and d["id"] == "visitas":   # B1: o interruptor só muda pela rota /visitas/config
                     print("  config/visitas recusada pela sincronização (só POST /visitas/config) · de %s" % (quem or "?"))
+                    continue
+                if d["col"] == "config" and d["id"] == "vizinhas":  # 25/11: as fotos vizinhas só pela rota /vizinhas/config
+                    print("  config/vizinhas recusada pela sincronização (só POST /vizinhas/config) · de %s" % (quem or "?"))
                     continue
                 if d["col"] == "config" and d["id"] == "treino":    # 16/11: o interruptor da análise só pela rota /treino/config
                     print("  config/treino recusada pela sincronização (só POST /treino/config) · de %s" % (quem or "?"))
@@ -20459,6 +20707,7 @@ ROTAS = (
     ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
+    ("POST", "/vizinhas/config", "sessao", ("configuracao.u",)),   # 25/11: fotos vizinhas na selfie do Checkout; só o Admin (vizinhas_config_post)
     ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa); 24/11: só o Admin (poses_post)
     # 23/11 (AF): números por fotógrafo só com desempenho.r (Admin e Supervisora), conferido aqui pela sessão; a calibração da luz
     # é da Medição (qualidade.r); os limites, de configuracao.u E desempenho.r (o segundo conferido no fotografos_post)
@@ -22060,6 +22309,30 @@ class H(BaseHTTPRequestHandler):
         except Exception as ex:
             print("  visitas: config %s" % str(ex)[:120])
             return self.js({"error": "erro no servidor"}, 500)
+        return self.js(r, 200, nostore=True)
+
+    def vizinhas_config_post(self):
+        """25/11: POST /vizinhas/config {ligada: bool, por, posto}: liga ou desliga as fotos vizinhas na selfie do Checkout.
+        configuracao.u pela tabela ROTAS e só o perfil Admin da sessão (o perfil vem do cadastro, nunca do pedido; "ver como"
+        não vale): 403 so_admin. Origem local, X-Eterna: 1, 6 por minuto por pessoa, corpo só com ligada booleano."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"ok": False, "error": "origem não autorizada"}, 403)
+        eu = self.sessao() or {}
+        if (eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por"):
+            return self.js({"ok": False, "error": "so_admin"}, 403)
+        quem = eu.get("usuario") or ""
+        if not limite_ok("u:" + quem, "vizinhas_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        if not isinstance(body, dict) or not isinstance(body.get("ligada"), bool):
+            return self.js({"ok": False, "error": "ligada deve ser true ou false"}, 400)
+        try:
+            r = viz_cfg_gravar(body["ligada"], quem or body.get("por"), body.get("posto"), self.client_address[0])
+        except Exception as ex:
+            print("  vizinhas: config %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
         return self.js(r, 200, nostore=True)
 
     def treino_get(self, u):
@@ -24039,6 +24312,8 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
             return self.visitas_config_post()
+        if u.path == "/vizinhas/config":
+            return self.vizinhas_config_post()
         if u.path == "/posto/lado":
             return self.posto_lado_post()
         if u.path in ("/treino/rotulo", "/treino/config"):
@@ -24200,6 +24475,16 @@ class H(BaseHTTPRequestHandler):
                         raise
                     if isinstance(r, dict) and body.get("grupo") is True:
                         r.setdefault("grupo", True)
+                    # 25/11: fotos vizinhas das reconhecidas, só no Checkout assistido (nunca com todo:true, a galeria por QR).
+                    # Desligada ou com erro, a resposta é a de sempre, sem os campos novos
+                    try:
+                        if not todo and isinstance(r, dict) and r.get("fotos") and not r.get("varias") and viz_ligada():
+                            tv, vi = time.perf_counter(), {}
+                            vz = sess_vizinhas(r["fotos"], info=vi)
+                            r["vizinhas"] = vz
+                            r["viz"] = {"ligada": True, "n": len(vz), "ms": int((time.perf_counter() - tv) * 1000), "corte": vi.get("corte")}
+                    except Exception:
+                        r.pop("vizinhas", None); r.pop("viz", None)
                     selfie_registra("qr" if todo else "checkout", r, t0, pnome)
                     return self.js(r)
                 return self.js(medir(body.get("sessoes") or {}))
