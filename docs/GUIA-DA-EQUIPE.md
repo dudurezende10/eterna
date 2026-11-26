@@ -610,17 +610,18 @@ Só quem pode dar cortesia (Galerias online, alterar) vê o botão.
 
 A venda fica com valor zero e pagamento "Cortesia", com o motivo, o texto e quem deu. As fotos saem impressas e entram na galeria do cliente com o selo Cortesia.
 
-### Dar uma foto cortesia na venda paga (17/11)
+### Montar a venda no Posto (carrinho, 25/11)
 
-Para o cliente descontente que está comprando. Só quem pode dar cortesia (Galerias online, alterar) vê o botão.
+No **Posto de venda**, ao abrir o pedido, aparece a lista fixa de itens com preço, **−** e **+**. O atendente põe a quantidade de cada item que o cliente pediu e o total é só a soma. O sistema não troca valor nem sugere pacote.
 
-1. Peça ao cliente para escolher, no Checkout, também a foto que ele vai ganhar.
-2. No **Posto de venda**, abra o pedido. No passo **Pacote**, toque em **+1 foto cortesia**.
-3. Escolha o **motivo** e escreva **o que aconteceu** (obrigatório).
-4. Toque em **Dar a foto cortesia**. O pacote passa a ser calculado com uma foto a menos.
-5. Escolha o pacote e o pagamento e confirme como sempre.
+- **Porta-retrato**: é pago. Ao tocar em **+**, escolha qual foto do cliente vai dentro; ela sai impressa junto.
+- **Foto cortesia** (cliente descontente): cada **+** acrescenta uma foto impressa sem custo. Escolha qual foto do cliente, o **motivo** (há também **Foto do porta-retrato**) e escreva **o que aconteceu**. Toque em **Adicionar**. O **−** tira a última.
 
-É uma foto por venda e só em pedido com 2 fotos ou mais. Antes de confirmar, **Retirar cortesia** desfaz. Na confirmação ficam registrados quem deu, o motivo, o texto, a venda, a hora e quanto a foto valeu (a diferença do que o cliente pagaria). Tudo aparece em **Galerias online › Cortesias**.
+Na confirmação ficam registrados quem deu cada cortesia, o motivo, o texto, a venda e a hora (**Galerias online › Cortesias**). As fotos cortesia e a do porta-retrato saem primeiro na impressão.
+
+### Fila de impressão (25/11)
+
+Abaixo do pedido, **Imprimir** mostra uma linha por venda: venda, hora, pacote e valor, quantas impressões, situação (**Aguardando**, **Impressa** ou **Só digital**) e um botão (**Reimprimir** ou **Ver fotos e imprimir**). As fotos só abrem na venda que está aguardando ou quando se toca no botão. A coluna da esquerda acompanha a rolagem.
 
 ### Sessão que já foi paga
 
