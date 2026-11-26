@@ -217,7 +217,7 @@ try:
 
     # ---------- 3: a prévia ----------
     st, b_, hs = pede("GET", "/montagens/previa/%s/telao.jpg" % a2, cookie=ver)
-    ok(st == 200 and b_ == JPEG + b"a2" and hs.get("content-type") == "image/jpeg" and hs.get("cache-control") == "private, max-age=300"
+    ok(st == 200 and b_ == JPEG + b"a2" and hs.get("content-type") == "image/jpeg" and hs.get("cache-control") == "private, no-store"
        and hs.get("x-content-type-options") == "nosniff", "3: a prévia pronta: %s %r" % (st, hs))
     ok(pede("GET", "/montagens/previa/ag_%s/telao.jpg" % a2, cookie=ver)[0] == 200, "3: aceita o id com ag_")
     nf = [pede("GET", r_, cookie=ver)[:2] for r_ in ("/montagens/previa/%s/tunel.jpg" % a2, "/montagens/previa/%s/naoexiste.jpg" % a2,
@@ -248,16 +248,21 @@ try:
     st, r, _ = pede("POST", "/montagens/nota", bruto=b"[1]", cookie=sup)
     ok(st == 400, "4: corpo que não é objeto: %s" % st)
     st, r = nota("ffffffffffff", "telao", "boa")
-    ok(st == 404 and r.get("error") == "pid", "4: foto fora da biblioteca = 404: %s %r" % (st, r))
-    st, r = nota(a2, "tunel", "boa")
-    ok(st == 404 and r.get("error") == "montagem", "4: montagem que não está pronta = 404: %s %r" % (st, r))
+    nf1 = (st, r)
+    nf2 = nota(a2, "tunel", "boa")                                     # montagem que não está pronta
+    nf3 = nota(a3, "telao", "boa")                                     # tem arquivo, mas a foto não é base de IA de nenhuma sessão
+    ok(nf1 == nf2 == nf3 == (404, {"ok": False, "error": "montagem"}), "4: foto, montagem ou base que não existe: o mesmo 404: %r %r %r" % (nf1, nf2, nf3))
+    st, r = nota(a1, "telao", "boa", fundo_v="xyz")
+    ok(st == 400 and r.get("error") == "fundo_v", "4: fundo_v fora do formato = 400: %s %r" % (st, r))
+    st, r = nota(a1, "telao", "boa", fundo_v="00000000")
+    ok(st == 409 and r.get("error") == "versao", "4: a tela viu outra versão da montagem = 409: %s %r" % (st, r))
     ok(not linhas("mtg_nota", a1) and not linhas("mtg_nota", a2), "4: nenhuma recusa gravou")
 
     out = io.StringIO()
     velho_out, sys.stdout = sys.stdout, out
     try:
         i1 = idem()
-        st, r = nota(a1, "telao", "boa", idem=i1)
+        st, r = nota(a1, "telao", "boa", idem=i1, fundo_v=V["telao"])     # com a versão que a tela viu
         st_b, r_b = nota(a1, "telao", "boa", idem=i1)                   # o mesmo idem de novo
         st_c, r_c = nota("ag_" + a1, "telao", "boa")                    # a mesma nota da mesma pessoa
     finally:
@@ -267,6 +272,10 @@ try:
        and n1.get("atual") is True and n1.get("em"), "4: boa gravada com quem e quando da sessão: %s %r" % (st, r))
     ok(st_b == 200 and r_b.get("igual") is True and st_c == 200 and r_c.get("igual") is True and len(linhas("mtg_nota_log", a1)) == 1 and len(linhas("mtg_nota", a1)) == 1,
        "4: idem repetido e nota igual não duplicam: %r %r %d" % (r_b, r_c, len(linhas("mtg_nota_log", a1))))
+    # o mesmo idem em outra foto, outro fundo ou de outra pessoa não passa por repetição
+    r_i = [nota(a2, "telao", "boa", idem=i1), nota(a1, "tunel", "boa", idem=i1), nota(a1, "telao", "boa", idem=i1, cookie=adm)]
+    ok(all(x == (409, {"ok": False, "error": "idem"}) for x in r_i) and not linhas("mtg_nota", a2) and len(linhas("mtg_nota_log", a1)) == 1,
+       "4: idem repetido com outra foto, fundo ou pessoa = 409, sem gravar: %r" % r_i)
     ok(a1 not in out.getvalue() and "supervisora-mn" in out.getvalue() and "boa" in out.getvalue(), "5: auditoria no console sem pid: %r" % out.getvalue())
     linha = linhas("mtg_nota", a1)[0]
     dd = json.loads(linha[5])
@@ -305,6 +314,41 @@ try:
     st, j, _ = pede("GET", "/montagens/dia", cookie=ver)
     por = {(x["pid"], x["fundo"]): x for x in j["itens"]}
     ok(por[(b1, "tunel")]["nota"]["atual"] is False and por[(a1, "telao")]["nota"]["atual"] is True, "5: nota de versão anterior marcada (atual false)")
+    ok(all(x.get("fundo_v") == V[x["fundo"]] for x in j["itens"]), "5: a lista leva a versão de cada montagem (fundo_v)")
+    # a mesma pessoa confirma a mesma nota na montagem refeita: grava de novo, com a versão de agora
+    n_log = len(linhas("mtg_nota_log", b1))
+    st, r = nota(b1, "tunel", "ruim", list(m.MN_MOTIVOS), fundo_v=V["tunel"])
+    ok(st == 200 and not r.get("igual") and r["nota"]["atual"] is True and len(linhas("mtg_nota_log", b1)) == n_log + 1
+       and json.loads(linhas("mtg_nota", b1)[0][5]).get("fundo_v") == V["tunel"], "5: nota de montagem refeita é confirmada de novo (não responde igual): %s %r" % (st, r))
+    st, r = nota(b1, "tunel", "ruim", list(m.MN_MOTIVOS))
+    ok(st == 200 and r.get("igual") is True and len(linhas("mtg_nota_log", b1)) == n_log + 1, "5: depois de confirmada, a mesma nota volta a ser igual")
+    # sessão de anteontem (já fora da memória): a nota lê a sessão e o fotógrafo do arquivo do dia
+    ante = m._ff_hoje(time.time() - 2 * 86400)
+    d1 = foto()
+    with open(os.path.join(m.SESS_DIR, ante + ".json"), "w", encoding="utf8") as fh:
+        json.dump({"dia": ante, "sessoes": [{"card": "LPMN09", "fotografo": "yago", "fotos": [d1], "ia": [d1], "ia_regra": {}, "cap1": agora - 2 * 86400, "removida": False}]}, fh)
+    previa(d1, "telao")
+    st, j, _ = pede("GET", "/montagens/dia?dia=" + ante, cookie=ver)
+    ok([(x["pid"], x["fundo"], x["sessao"]) for x in j.get("itens") or []] == [(d1, "telao", "LPMN09")], "2: anteontem pelo arquivo do dia: %r" % j.get("itens"))
+    st, r = nota(d1, "telao", "boa")
+    ln = linhas("mtg_nota", d1)
+    dd = json.loads(ln[0][5]) if ln else {}
+    ok(st == 200 and ln and ln[0][2] == ante and dd.get("sessao") == "LPMN09" and dd.get("fotografo") == "yago" and dd.get("pref") is True,
+       "5: nota em dia fora da memória grava o dia, a sessão e o fotógrafo do arquivo: %s %r" % (st, ln))
+    # prazo: as notas mais antigas que RETENCAO_DIAS saem na limpeza da madrugada; as outras ficam
+    antigo = m._ff_hoje(time.time() - (m.RETENCAO_DIAS + 2) * 86400)
+    limite = m._ff_hoje(time.time() - (m.RETENCAO_DIAS - 1) * 86400)
+    with m.treino_lock:
+        db = m.treino_db()
+        for p_, d_ in (("aaaaaaaaaaa1", antigo), ("aaaaaaaaaaa2", limite)):
+            db.execute("insert into mtg_nota values (?,?,?,?,?,?,?,?)", (p_, "telao", d_, "boa", "", "{}", "supervisora-mn", d_ + "T10:00:00.000"))
+            db.execute("insert into mtg_nota_log values (?,?,?,?,?,?,?,?)", (p_, "telao", "boa", "", "{}", "supervisora-mn", d_ + "T10:00:00.000", "prazo-" + p_))
+        db.commit()
+        db.close()
+    n_ap = m.mn_limpa()
+    ok(n_ap == 2 and not linhas("mtg_nota", "aaaaaaaaaaa1") and not linhas("mtg_nota_log", "aaaaaaaaaaa1") and linhas("mtg_nota", "aaaaaaaaaaa2")
+       and linhas("mtg_nota_log", "aaaaaaaaaaa2") and linhas("mtg_nota", b1) and linhas("mtg_nota_log", a1), "6: a limpeza apaga só as notas além do prazo das fotos (%r)" % n_ap)
+    ok("mn_limpa(" in __import__("inspect").getsource(m.lx_limpa_noite), "6: a limpeza das notas roda na limpeza da madrugada")
     # limite por minuto
     m._janelas.clear()
     with m.gal_lock:
@@ -333,7 +377,7 @@ try:
     with m.lock:
         m.lib.pop(a1, None)
     st, j, _ = pede("GET", "/montagens/dia", cookie=ver)
-    ok(a1 not in [x["pid"] for x in j["itens"]] and j["n"]["prontas"] == 2, "5: foto fora da biblioteca sai da lista: %r" % j["n"])
+    ok(a1 not in [x["pid"] for x in j["itens"]] and j["n"]["prontas"] == 2 and nota(a1, "telao", "boa") == (404, {"ok": False, "error": "montagem"}), "5: foto fora da biblioteca sai da lista: %r" % j["n"])
     num["notas"] = _i[0]
     srv.shutdown()
 except Exception:

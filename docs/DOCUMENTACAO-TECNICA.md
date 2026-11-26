@@ -2856,14 +2856,14 @@ A equipe vê as montagens com fundo de IA que o servidor já fez e dá a nota (B
 
 | Rota | Quem e limites | Resposta |
 | --- | --- | --- |
-| `GET /montagens/dia?dia=aaaa-mm-dd&de=N` | `qualidade.r`; 30 por minuto por pessoa | `{dia, hoje, modo, guarda_dias, fundos, motivos, itens, de, total, mais, motivo, n}`; item = `{pid, fundo, sessao, fotografo, hora, t, preferida, vendida, nota}`; `nota` = `{v, motivos, por, nome, em, atual}` ou nulo; 400 `dia` ou `de`; 429 |
-| `GET /montagens/previa/<pid>/<fundo>.jpg` | `qualidade.r`; 600 por minuto por pessoa | o JPEG da prévia pronta (`Cache-Control: private, max-age=300`); 404 igual para tudo que não existe; nunca põe montagem na fila |
-| `POST /montagens/nota {pid, fundo, v, motivos, idem}` | `qualidade.u`; `X-Eterna`; 120 por minuto; corpo até 1 KB | 200 `{ok, nota}`; 200 `igual` (mesmo `idem` ou mesma nota da mesma pessoa); 400 com o campo recusado (`pid`, `fundo`, `v`, `motivos`, `idem`, `campo`); 404 `pid` ou `montagem`; 403 `so_ver`; 429 |
+| `GET /montagens/dia?dia=aaaa-mm-dd&de=N` | `qualidade.r`; 30 por minuto por pessoa | `{dia, hoje, modo, guarda_dias, fundos, motivos, itens, de, total, mais, motivo, n}`; item = `{pid, fundo, fundo_v, sessao, fotografo, hora, t, preferida, vendida, nota}`; `nota` = `{v, motivos, por, nome, em, atual}` ou nulo; 400 `dia` ou `de`; 429 |
+| `GET /montagens/previa/<pid>/<fundo>.jpg` | `qualidade.r`; 600 por minuto por pessoa | o JPEG da prévia pronta (`Cache-Control: private, no-store`); 404 igual para tudo que não existe; nunca põe montagem na fila |
+| `POST /montagens/nota {pid, fundo, v, motivos, idem, fundo_v}` | `qualidade.u`; `X-Eterna`; 120 por minuto; corpo até 1 KB | 200 `{ok, nota}`; 200 `igual` (mesmo `idem` da mesma pessoa, foto e fundo, ou mesma nota da mesma pessoa para a mesma versão); 400 com o campo recusado (`pid`, `fundo`, `v`, `motivos`, `idem`, `fundo_v`, `campo`); 404 `montagem` (foto, base ou montagem que não existe, sempre igual); 409 `versao` (a montagem foi refeita depois que a tela a mostrou) ou `idem` (o `idem` é de outra gravação); 403 `so_ver`; 429 |
 
 - `v`: `"boa"`, `"ruim"` ou `null` (desfaz). `motivos` só com `"ruim"`: `pequena`, `recorte`, `corte`, `lugar`, `luz`, `outro` (`MN_MOTIVOS`).
 - A lista só traz base candidata (`mtg_candidatas`) em fundo ativo (`MTG_ATIVOS`) com a prévia da versão atual em disco. `vendida` vem do `mtg_pagas` e some da resposta quando as vendas não podem ser lidas naquele instante.
 - `motivo` com a lista vazia: `guarda` (dia mais antigo que `MTG_DIAS`), `futuro`, `desligada` ou `nenhuma`.
-- Dados em `treino.db`: `mtg_nota` (nota atual por foto e fundo) e `mtg_nota_log` (cada gravação, `idem` único). `dados` leva as versões da montagem, do recorte e do fundo. A exclusão LGPD apaga as duas.
+- Dados em `treino.db`: `mtg_nota` (nota atual por foto e fundo) e `mtg_nota_log` (cada gravação, `idem` único). `dados` leva as versões da montagem, do recorte e do fundo. A exclusão LGPD apaga as duas, e a limpeza da madrugada (`mn_limpa`, dentro do `lx_limpa_noite`) apaga o que passou de `RETENCAO_DIAS`. A sessão da foto vem da memória ou do arquivo do dia (`_mn_sessao_de`).
 
 **Tela** (view `montagens`, módulo `qualidade`): `vMontagens`, `mnPull` (junta os pedaços da lista), `mnSnap` (retrato do filtro), `mnCartao`, `mnNota` (mostra na hora, grava e desfaz se falhar), `mnRuim` (painel de motivos), `mnZoom` (montagem e original no zoom), `mnLote` (lotes de 24 na rolagem), `mnAtualiza` (troca só o cartão e os contadores). Ações `mn-*`; gravam `mn-boa`, `mn-grava` e `mn-desfaz` (`WRITE_OPS` em `u`, `ACT_MOD` `qualidade`). Textos `mn_*` no `EQ`. CSS com prefixo `mn-`. Nada no SIM nem no `localStorage`.
 

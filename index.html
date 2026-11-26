@@ -9344,14 +9344,14 @@ function mnDoFiltro(){const L=state.mn;return ((L.j&&L.j.itens)||[]).filter(x=>(
 function mnSnap(){const L=state.mn;L.lista=mnDoFiltro().filter(x=>L.sit==='todas'||(L.sit==='sem'?!x.nota:!!x.nota&&x.nota.v===L.sit));L.n=MN_PASSO;L.abre=null;L.rasc=[];}
 // a lista vem em pedaços (o servidor manda até 2.000 por pedido); a resposta de um dia que já não é o escolhido é descartada
 async function mnPull(o){o=o||{};const L=state.mn,u=trAg();if(!u||L.busy)return;L.busy=true;L.err=null;if(!o.quieto)render();const pedido=L.dia;
-  try{let j=null,de=0,itens=[];
+  try{let j=null,de=0,itens=[];const visto=new Set();
     for(let v=0;v<6;v++){const q=[];if(pedido)q.push('dia='+encodeURIComponent(pedido));if(de)q.push('de='+de);
       const r=await agFetch(u+'/montagens/dia'+(q.length?'?'+q.join('&'):''),{cache:'no-store'});const p=r.ok?await r.json().catch(()=>null):null;
-      if(!p||!Array.isArray(p.itens)){j=null;break;}j=p;itens=itens.concat(p.itens.filter(mnOk));if(!p.mais||!p.itens.length)break;de+=p.itens.length;}
+      if(!p||!Array.isArray(p.itens)){j=null;break;}j=p;p.itens.filter(mnOk).forEach(x=>{const k=mnK(x);if(!visto.has(k)){visto.add(k);itens.push(x);}});if(!p.mais||!p.itens.length)break;de+=p.itens.length;} // sessão nova entre um pedido e outro empurra a lista: a mesma montagem não entra duas vezes
     if(!j)L.err='mn_erro';
     else if(L.dia!==pedido||(pedido&&j.dia!==pedido)){if(L.j&&L.j.dia!==L.dia)L.j=null;}
     else{itens.forEach(x=>{x.nota=mnNotaOk(x.nota);});j.itens=itens;L.j=j;if(!L.dia)L.dia=j.dia;if(L.fot!=='todos'&&!itens.some(x=>String(x.fotografo||'')===L.fot))L.fot='todos';
-      if(L.fundo!=='todos'&&!(j.fundos||[]).includes(L.fundo))L.fundo='todos';mnSnap();}}
+      if(L.fundo!=='todos'&&!(j.fundos||[]).includes(L.fundo))L.fundo='todos';MN_IMG={};mnSnap();}}
   catch(e){L.err='mn_erro';}finally{L.busy=false;if(state.view==='montagens')render();}}
 function mnCartao(x){const L=state.mn,u=trAg()||'';const k=mnK(x),n=x.nota,pode=can('qualidade','u'),voo=!!L.voo[k],ab=L.abre===k,nome=mnFundoNome(x.fundo);
   const selo=n?`<span class="pill ${n.v==='boa'?'good':'bad'}">${TE(n.v==='boa'?'mn_boa':'mn_ruim')}</span>`:`<span class="pill neutral">${TE('mn_sem_nota')}</span>`;
@@ -9371,12 +9371,13 @@ function mnAtualiza(k){if(state.view!=='montagens')return;const x=state.mn.lista
 // a nota: a tela mostra na hora e grava no servidor; se a gravação falhar, volta ao que era e avisa
 async function mnNota(k,v,motivos){const L=state.mn,u=trAg(),x=mnItem(k);if(!u||!x||L.voo[k])return;
   if(state.assumido){toast(TE('vc_so_ver'));return;}if(!can('qualidade','u'))return;
-  const antes=x.nota||null;if((v===null&&!antes)||(v==='boa'&&antes&&antes.v==='boa'))return;
+  const antes=x.nota||null;if((v===null&&!antes)||(v==='boa'&&antes&&antes.v==='boa'&&antes.atual!==false))return; // nota de montagem refeita (atual false) pode ser confirmada de novo
   const mot=v==='ruim'?MN_MOTIVOS.filter(m=>(motivos||[]).includes(m)):[];const eu=state.user||{};
   L.voo[k]=1;x.nota=v?{v,motivos:mot,por:eu.email||'',nome:eu.name||'',em:new Date().toISOString(),atual:true}:null;if(L.abre===k){L.abre=null;L.rasc=[];}mnAtualiza(k);
   const idem='mn-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);let ok=false,msg='mn_erro_nota';
-  try{const r=await agFetch(u+'/montagens/nota',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid:x.pid,fundo:x.fundo,v,motivos:mot,idem})});const j=await r.json().catch(()=>null);
+  try{const r=await agFetch(u+'/montagens/nota',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({pid:x.pid,fundo:x.fundo,v,motivos:mot,idem},/^[0-9a-f]{8}$/.test(x.fundo_v||'')?{fundo_v:x.fundo_v}:{}))});const j=await r.json().catch(()=>null);
     if(r.ok&&j&&j.ok){ok=true;x.nota=mnNotaOk(j.nota);}
+    else if(r.status===409&&j&&j.error==='versao'){x.nota=antes;delete L.voo[k];toast(TE('mn_mudou'));L.j=null;L.lista=[];mnPull();return;}
     else if(r.status===403&&j&&j.erro==='so_ver')msg='vc_so_ver';
     else if(r.status===404)msg='mn_sumiu';}
   catch(e){}
@@ -9390,6 +9391,10 @@ function mnZoom(k){const x=mnItem(k),u=trAg();if(!x||!u||!mnOk(x))return;const p
   const pgs=[{url:mnUrl(u,x),cap:mnFundoNome(x.fundo)+' · '+pe},{url:u+'/file/'+encodeURIComponent(x.pid),cap:TE('mn_original')+' · '+pe}];let i=0;
   const show=j=>{i=(j+pgs.length)%pgs.length;openModal(`--img:url(${pgs[i].url})`,pgs[i].cap+' · '+(i+1)+'/'+pgs.length,true);$('#modal-prev').hidden=$('#modal-next').hidden=false;$('#modal-kbd').textContent=TE('zm_teclas');MODAL.comp={show,get i(){return i}};};
   MODAL.list=[];MODAL.ctx={};renderModalTools();show(0);}
+// imagem da montagem que não veio (limite por minuto ou rede): tenta de novo em 4 s, no máximo 2 vezes por imagem
+const MN_IMG_MS=4000;let MN_IMG={}; // tentativas por endereço (a conta é da imagem, não do elemento: redesenhar a tela não zera); a lista nova zera
+document.addEventListener('error',e=>{const t=e.target;if(!t||t.tagName!=='IMG'||!t.classList.contains('mn-m'))return;const base=String(t.getAttribute('src')||'').split('?')[0];const n=MN_IMG[base]||0;if(n>=2)return;MN_IMG[base]=n+1;
+  setTimeout(()=>{const el=t.isConnected?t:[...document.querySelectorAll('#mn-lista img.mn-m')].find(x=>String(x.getAttribute('src')||'').split('?')[0]===base);if(el)el.src=base+'?r='+(n+1);},MN_IMG_MS);},true); // a tela pode ter sido redesenhada: vale a imagem que está nela agora
 // rolagem contínua: perto do fim entra mais um lote de 24, sem redesenhar o que já está na tela
 function mnLote(){const L=state.mn;if(state.view!=='montagens')return;let voltas=0;
   for(;;){const fim=document.getElementById('mn-fim'),el=document.getElementById('mn-lista');if(!fim||!el||fim.getBoundingClientRect().top>innerHeight+800||++voltas>8)return;
@@ -13278,6 +13283,7 @@ const EQ={
   mn_sem_servidor:["As montagens ficam no servidor do ponto. Abra o Eterna pelo servidor para ver.","The composites live on the on-site server. Open Eterna through the server to see them.","Los montajes están en el servidor del punto. Abra Eterna por el servidor para verlos.","Les montages sont sur le serveur du site. Ouvrez Eterna par le serveur pour les voir.","Die Montagen liegen auf dem Server vor Ort. Öffnen Sie Eterna über den Server, um sie zu sehen."],
   mn_erro:["Não deu para falar com o servidor. Tente de novo.","Could not reach the server. Try again.","No se pudo conectar con el servidor. Inténtelo de nuevo.","Impossible de joindre le serveur. Réessayez.","Der Server ist nicht erreichbar. Versuchen Sie es noch einmal."],
   mn_erro_nota:["A nota não foi gravada. Tente de novo.","The rating was not saved. Try again.","La nota no se guardó. Inténtelo de nuevo.","La note n'a pas été enregistrée. Réessayez.","Die Bewertung wurde nicht gespeichert. Versuchen Sie es noch einmal."],
+  mn_mudou:["Esta montagem foi refeita. A lista foi atualizada: olhe de novo antes de dar a nota.","This composite was redone. The list was refreshed: look again before rating.","Este montaje se rehízo. La lista se actualizó: mire de nuevo antes de dar la nota.","Ce montage a été refait. La liste a été actualisée : regardez à nouveau avant de noter.","Diese Montage wurde neu erstellt. Die Liste wurde aktualisiert: Sehen Sie noch einmal hin, bevor Sie bewerten."],
   mn_sumiu:["Esta montagem não está mais no servidor. Toque em Atualizar.","This composite is no longer on the server. Tap Refresh.","Este montaje ya no está en el servidor. Toque Actualizar.","Ce montage n'est plus sur le serveur. Touchez Actualiser.","Diese Montage ist nicht mehr auf dem Server. Tippen Sie auf Aktualisieren."],
   mn_carregando:["Carregando as montagens...","Loading the composites...","Cargando los montajes...","Chargement des montages...","Montagen werden geladen..."],
   // 24/11: Lixeira da IA (Curadoria; plano docs/planos/2026-11-24-lixeira-ia.md)

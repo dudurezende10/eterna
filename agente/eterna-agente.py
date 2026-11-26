@@ -17652,6 +17652,12 @@ def lx_limpa_noite(t=None):
     lx_st["limpa_dia"] = hoje
     if n:
         print("  lixeira: %d linha(s) de fotos que saíram da biblioteca apagada(s)" % n)
+    try:
+        nm = mn_limpa(t)                               # 26/11: as notas das montagens seguem o mesmo prazo das fotos
+        if nm:
+            print("  montagens-ia: %d linha(s) de nota mais antigas que %d dias apagada(s)" % (nm, RETENCAO_DIAS))
+    except Exception as ex:
+        print("  montagens-ia: limpeza falhou (%s)" % type(ex).__name__)
     return n
 
 
@@ -17676,7 +17682,8 @@ def lx_loop():
 # lê GET /montagens/dia (só o que tem a prévia em disco; nada é montado nem posto na fila por causa da tela) e a imagem por
 # GET /montagens/previa/<pid>/<fundo>.jpg. A nota mora no treino.db: mtg_nota (uma por foto e fundo, a última) e
 # mtg_nota_log (só acrescenta; o idem não deixa repetir), com quem (da sessão de login), quando e as versões da montagem e
-# do recorte daquele momento. Vai para o backup; a exclusão LGPD apaga pelo treino_lgpd. Nenhuma foto sai do servidor.
+# do recorte daquele momento. Vai para o backup; a exclusão LGPD apaga pelo treino_lgpd e a limpeza da madrugada apaga as
+# notas mais antigas que RETENCAO_DIAS (mn_limpa), o prazo das fotos. Nenhuma foto sai do servidor.
 MN_MOTIVOS = ("pequena", "recorte", "corte", "lugar", "luz", "outro")
 MN_ITENS_MAX = 2000
 _re_mn_idem = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
@@ -17746,7 +17753,7 @@ def mn_lista(dia, de=0):
                 v = versoes.get(fundo)
                 if not v or not os.path.isfile(mtg_arquivo(pid, fundo, "p", v)):
                     continue
-                it = {"pid": pid, "fundo": fundo, "sessao": x["card"], "fotografo": x["fotografo"], "hora": hora, "t": int(x["t"]),
+                it = {"pid": pid, "fundo": fundo, "fundo_v": v, "sessao": x["card"], "fotografo": x["fotografo"], "hora": hora, "t": int(x["t"]),
                       "preferida": cands[mtg_preferida(fundo, len(cands))] == pid, "nota": None}
                 if pagas is not None:
                     it["vendida"] = (pid, fundo) in pagas
@@ -17783,9 +17790,12 @@ def mn_lista(dia, de=0):
 
 def mn_valida(corpo):
     """Formato fechado do POST /montagens/nota. -> (campos, None) ou (None, nome do campo recusado)."""
-    if not isinstance(corpo, dict) or set(corpo) - {"pid", "fundo", "v", "motivos", "idem"}:
+    if not isinstance(corpo, dict) or set(corpo) - {"pid", "fundo", "v", "motivos", "idem", "fundo_v"}:
         return None, "campo"
     pid, fundo, v, idem = corpo.get("pid"), corpo.get("fundo"), corpo.get("v"), corpo.get("idem")
+    visto = corpo.get("fundo_v")
+    if visto is not None and not (isinstance(visto, str) and re.match(r"^[0-9a-f]{8}$", visto)):
+        return None, "fundo_v"
     mot = corpo.get("motivos", [])
     if not pid_ok(pid):
         return None, "pid"
@@ -17798,28 +17808,42 @@ def mn_valida(corpo):
         return None, "motivos"
     if not isinstance(idem, str) or not _re_mn_idem.match(idem):
         return None, "idem"
-    return {"pid": pid_lib(pid), "fundo": fundo, "v": v, "motivos": [x for x in MN_MOTIVOS if x in mot], "idem": idem}, None
+    return {"pid": pid_lib(pid), "fundo": fundo, "v": v, "motivos": [x for x in MN_MOTIVOS if x in mot], "idem": idem, "fundo_v": visto}, None
+
+
+def _mn_sessao_de(pid):
+    """(dia, sessão) em que pid é base de IA, entre hoje e os dias da guarda das montagens: a memória (hoje e ontem) e, para
+    o dia que já saiu dela, o arquivo do dia (como o _mn_sessoes). (None, None) se não achar."""
+    for i in range(MTG_DIAS + 1):
+        dia = _ff_hoje(time.time() - i * 86400)
+        for x in _mn_sessoes(dia):
+            if pid in x["ia"]:
+                return dia, x
+    return None, None
 
 
 def mn_gravar(quem, corpo):
     """POST /montagens/nota. quem = usuário da sessão de login (por e em são daqui, nunca do navegador). -> (status, resposta).
-    v null desfaz a nota. O mesmo idem de novo, ou a mesma nota da mesma pessoa, responde igual sem gravar outra vez."""
+    v null desfaz a nota. O mesmo idem de novo (da mesma pessoa, foto e fundo), ou a mesma nota da mesma pessoa para a mesma
+    versão da montagem, responde igual sem gravar outra vez. fundo_v = a versão que a tela viu: se a montagem foi refeita
+    depois, 409 versao (a tela relê a lista). Foto, sessão ou montagem que não existe: o mesmo 404."""
     c, campo = mn_valida(corpo)
     if c is None:
         return 400, {"ok": False, "error": campo}
     if not isinstance(quem, str) or not _re_treino_quem.match(quem):
         return 403, {"ok": False, "error": "sem_permissao"}
+    nf = (404, {"ok": False, "error": "montagem"})
     pid, fundo = c["pid"], c["fundo"]
     with lock:
         viva = pid in lib
     if not viva:
-        return 404, {"ok": False, "error": "pid"}
+        return nf
     versao = mtg_versao(fundo)
-    with sess_lock:
-        x = sess.get(sess_pid.get(pid) or "")
-        dia, card, fot = (x.get("dia"), x.get("card"), x.get("fotografo")) if x is not None else (None, None, None)
-        cands = mtg_candidatas(x) if x is not None else []
+    dia, x = _mn_sessao_de(pid)
+    card, fot = (x["card"], x["fotografo"]) if x else (None, None)
+    cands = mtg_candidatas(x) if x else []
     pref = (cands[mtg_preferida(fundo, len(cands))] == pid) if pid in cands else None
+    pronta = bool(versao) and pid in cands and os.path.isfile(mtg_arquivo(pid, fundo, "p", versao))
     info = None
     try:
         with open(mtg_info(pid), encoding="utf8") as f:
@@ -17829,16 +17853,26 @@ def mn_gravar(quem, corpo):
     except Exception:
         pass
     dados = json.dumps({"mtg": MTG_VERSAO, "rec": REC_VERSAO, "fundo_v": versao, "pref": pref, "sessao": card,
-                        "fotografo": fot if isinstance(fot, str) else None, "info": info}, ensure_ascii=False)
+                        "fotografo": fot, "info": info}, ensure_ascii=False)
     mot = ",".join(c["motivos"])
 
+    def versao_de(r):
+        try:
+            return (json.loads(r[2] or "{}") or {}).get("fundo_v")
+        except ValueError:
+            return None
     # dentro do treino_lock só o banco; o nome de quem marcou (estado.db) é lido depois, fora dele
     with treino_lock:
         db = treino_db()
         try:
             atual = db.execute("select v, mot, dados, por, em from mtg_nota where pid = ? and fundo = ?", (pid, fundo)).fetchone()
-            if db.execute("select 1 from mtg_nota_log where idem = ?", (c["idem"],)).fetchone():
+            rep = db.execute("select pid, fundo, por from mtg_nota_log where idem = ?", (c["idem"],)).fetchone()
+            if rep:
+                if (rep[0], rep[1], rep[2]) != (pid, fundo, quem):
+                    return 409, {"ok": False, "error": "idem"}      # o idem é de outra gravação (outra foto, fundo ou pessoa)
                 fim, igual, aviso = atual, True, None
+            elif c["fundo_v"] and versao and c["fundo_v"] != versao:
+                return 409, {"ok": False, "error": "versao"}        # a montagem foi refeita depois que a tela a mostrou
             elif c["v"] is None:
                 fim, igual, aviso = None, not atual, None
                 if atual:
@@ -17846,9 +17880,9 @@ def mn_gravar(quem, corpo):
                     db.execute("insert into mtg_nota_log values (?,?,?,?,?,?,?,?)", (pid, fundo, None, "", dados, quem, _treino_em(), c["idem"]))
                     db.commit()
                     aviso = "nota desfeita (%s)" % fundo
-            elif not versao or not os.path.isfile(mtg_arquivo(pid, fundo, "p", versao)):
-                return 404, {"ok": False, "error": "montagem"}      # só se dá nota à montagem que está pronta no servidor
-            elif atual and atual[0] == c["v"] and (atual[1] or "") == mot and atual[3] == quem:
+            elif not pronta:
+                return nf                                           # só se dá nota à montagem que está pronta no servidor
+            elif atual and atual[0] == c["v"] and (atual[1] or "") == mot and atual[3] == quem and versao_de(atual) == versao:
                 fim, igual, aviso = atual, True, None
             else:
                 em = _treino_em()
@@ -17864,6 +17898,23 @@ def mn_gravar(quem, corpo):
         print("  montagens-ia: %s · por %s" % (aviso, quem))            # auditoria no console, sem o id da foto
     nota = _mn_nota(fim, versao, _lx_nomes({fim[3]} if fim[3] else set())) if fim and fim[0] in ("boa", "ruim") else None
     return 200, dict({"ok": True, "nota": nota}, **({"igual": True} if igual else {}))
+
+
+def mn_limpa(agora=None):
+    """As notas seguem o prazo das fotos (RETENCAO_DIAS): apaga do mtg_nota (pelo dia da sessão) e do mtg_nota_log (pela hora
+    da gravação) o que ficou mais antigo que isso. Roda na limpeza da madrugada (lx_limpa_noite). -> linhas apagadas"""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    corte = _ff_hoje((agora or time.time()) - RETENCAO_DIAS * 86400)
+    with treino_lock:
+        db = treino_db()
+        try:
+            n = db.execute("delete from mtg_nota where dia < ?", (corte,)).rowcount
+            n += db.execute("delete from mtg_nota_log where em < ?", (corte,)).rowcount
+            db.commit()
+        finally:
+            db.close()
+    return n
 
 
 # ---------- Alertas do fotógrafo (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md) ----------
@@ -22909,14 +22960,14 @@ class H(BaseHTTPRequestHandler):
         self.cors()
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "private, max-age=300")    # só no aparelho de quem abriu e por pouco tempo, como o /file/
+        self.send_header("Cache-Control", "private, no-store")       # sem cache no aparelho, como o /montagem/
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(data)
         return None
 
     def montagens_ia_post(self):
-        """26/11: POST /montagens/nota {pid, fundo, v: "boa"|"ruim"|null, motivos, idem} (qualidade.u, 120 por minuto por pessoa).
+        """26/11: POST /montagens/nota {pid, fundo, v: "boa"|"ruim"|null, motivos, idem, fundo_v} (qualidade.u, 120 por minuto por pessoa).
         Origem local, X-Eterna (conferido no autoriza), corpo até 1 KB. O "ver como" já parou no do_POST (403 so_ver).
         O console nunca imprime o corpo nem o pid."""
         if not self.origem_local():

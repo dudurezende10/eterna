@@ -26,15 +26,15 @@ const FUNDOS=['mirantedia','arq1950','telao','tunel'];
 const pidDe=i=>'c0ffee'+String(i).padStart(6,'0');
 // hoje: 15 bases x 4 fundos = 60 montagens (marcio nas 10 primeiras bases, yago nas outras); ontem: 1
 function base(dia){const its=[];
-  if(dia===HOJE)for(let i=0;i<15;i++)FUNDOS.forEach((f,k)=>its.push({pid:pidDe(i),fundo:f,sessao:'LP'+String(100+i),fotografo:i<10?'marcio':'yago',hora:'10:'+String(59-i).padStart(2,'0'),t:1000-i,preferida:k!==2,vendida:i===0&&k===0,nota:null}));
-  else if(dia===ONTEM)its.push({pid:pidDe(900),fundo:'telao',sessao:'LP900',fotografo:'marcio',hora:'16:20',t:10,preferida:true,vendida:false,nota:null});
+  if(dia===HOJE)for(let i=0;i<15;i++)FUNDOS.forEach((f,k)=>its.push({pid:pidDe(i),fundo:f,fundo_v:'abcd1234',sessao:'LP'+String(100+i),fotografo:i<10?'marcio':'yago',hora:'10:'+String(59-i).padStart(2,'0'),t:1000-i,preferida:k!==2,vendida:i===0&&k===0,nota:null}));
+  else if(dia===ONTEM)its.push({pid:pidDe(900),fundo:'telao',fundo_v:'abcd1234',sessao:'LP900',fotografo:'marcio',hora:'16:20',t:10,preferida:true,vendida:false,nota:null});
   return its;}
 function lista(R,dia,de){const todos=R.vazio?[]:base(dia).map(x=>Object.assign({},x,{nota:R.notas[x.pid+'|'+x.fundo]||null}));
   const b=todos.filter(x=>x.nota&&x.nota.v==='boa').length,r=todos.filter(x=>x.nota&&x.nota.v==='ruim').length;const guarda=dia<ANTE;
-  return {v:1,dia,hoje:HOJE,modo:R.modo,guarda_dias:2,fundos:FUNDOS,motivos:['pequena','recorte','corte','lugar','luz','outro'],itens:guarda?[]:todos.slice(de,de+R.max),de,total:todos.length,mais:!guarda&&de+R.max<todos.length,
+  return {v:1,dia,hoje:HOJE,modo:R.modo,guarda_dias:2,fundos:FUNDOS,motivos:['pequena','recorte','corte','lugar','luz','outro'],itens:guarda?[]:todos.slice(Math.max(0,de-(R.dup&&de?1:0)),de+R.max),de,total:todos.length,mais:!guarda&&de+R.max<todos.length,
     motivo:guarda?'guarda':todos.length?null:R.modo==='desligada'?'desligada':'nenhuma',n:{prontas:todos.length,sem_nota:todos.length-b-r,boas:b,ruins:r}};}
 async function agente(ctx,R){const js=(r,o,st)=>r.fulfill({status:st||200,contentType:'application/json',body:J(o)});
-  Object.assign(R,{listas:[],posts:[],notas:{},modo:'sombra',max:2000,vazio:false,falha:0,previas:[],erroLista:false,semAgente:false});
+  Object.assign(R,{listas:[],posts:[],notas:{},modo:'sombra',max:2000,vazio:false,falha:0,previas:[],erroLista:false,semAgente:false,dup:false,imgFalha:'',imgPedidos:[]});
   await ctx.route(ORIG+'/status',r=>R.semAgente?r.abort():js(r,{ok:true,agent:'eterna-agente',version:3,boot:'bmn',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:false},
     treino:{v:1,rotulos:0,analise:{ponto:'medir',exposicao:'medir'},modelo_ponto:null,ajuste:null},lixeira:{v:1,on:true,modo:'medir',rev:1,hoje:0,n7:0,dias:7,valendo:[],hoje_fora:0},
     montagem:{v:1,modo:R.modo,ok:true,motivo:null,versao:'m2',imprime:true,montaveis:FUNDOS,ativos:FUNDOS,fila:0,feitas:0,erros:0},
@@ -49,9 +49,9 @@ async function agente(ctx,R){const js=(r,o,st)=>r.fulfill({status:st||200,conten
   await ctx.route(ORIG+'/lixeira*',r=>js(r,{v:1,dia:HOJE,on:true,modo:'medir',valendo:[],n:0,recuperadas:0,itens:[],dias:[],mais:false}));
   await ctx.route(ORIG+'/thumb/*',r=>r.fulfill({status:200,contentType:'image/jpeg',body:FOTO}));
   await ctx.route(ORIG+'/file/*',r=>r.fulfill({status:200,contentType:'image/jpeg',body:FOTO}));
-  await ctx.route(ORIG+'/montagens/previa/**',r=>{R.previas.push(new URL(r.request().url()).pathname);r.fulfill({status:200,contentType:'image/jpeg',body:FOTO});});
+  await ctx.route(ORIG+'/montagens/previa/**',r=>{const u=new URL(r.request().url());R.previas.push(u.pathname);if(R.imgFalha&&u.pathname.endsWith(R.imgFalha)){R.imgPedidos.push(u.search);return r.fulfill({status:429,contentType:'application/json',body:'{"error":"limite"}'});}r.fulfill({status:200,contentType:'image/jpeg',body:FOTO});});
   await ctx.route(ORIG+'/montagens/nota',r=>{const b=JSON.parse(r.request().postData()||'{}');R.posts.push({h:r.request().headers(),b});
-    if(R.falha){const st=R.falha;return js(r,{ok:false,error:st===404?'montagem':'erro no servidor'},st);}
+    if(R.falha){const st=R.falha;return js(r,{ok:false,error:st===404?'montagem':st===409?'versao':'erro no servidor'},st);}
     const k=b.pid+'|'+b.fundo;if(b.v===null)delete R.notas[k];else R.notas[k]={v:b.v,motivos:b.motivos||[],por:'admin.teste@exemplo.com',nome:'Admin de teste',em:new Date().toISOString(),atual:true};
     js(r,{ok:true,nota:R.notas[k]||null});});
   await ctx.route(ORIG+'/montagens/dia*',r=>{const q=new URL(r.request().url()).searchParams;const dia=q.get('dia')||HOJE,de=+(q.get('de')||0);R.listas.push({dia,de});
@@ -101,7 +101,7 @@ try{
     const k1=K(0,'mirantedia');await pg.click(sel('mn-boa',k1));
     ok(await espera(pg,k=>{const e=document.querySelector(`.mn-item[data-k="${k}"]`);return e&&e.classList.contains('mn-boa')&&/Boa/.test(e.querySelector('.mn-nota .pill').textContent)&&!e.querySelector('.mn-boa[disabled]');},5000,k1),'4: a montagem fica como Boa e continua à vista');
     const p0=R.posts[0]||{b:{}};ok(R.posts.length===1&&p0.b.pid===pidDe(0)&&p0.b.fundo==='mirantedia'&&p0.b.v==='boa'&&J(p0.b.motivos)==='[]'&&/^[A-Za-z0-9_-]{8,64}$/.test(p0.b.idem||'')
-      &&J(Object.keys(p0.b).sort())===J(['fundo','idem','motivos','pid','v'])&&p0.h['x-eterna']==='1','4: o POST leva pid, fundo, v, motivos e idem: '+J(p0.b));
+      &&p0.b.fundo_v==='abcd1234'&&J(Object.keys(p0.b).sort())===J(['fundo','fundo_v','idem','motivos','pid','v'])&&p0.h['x-eterna']==='1','4: o POST leva pid, fundo, v, motivos, idem e a versão vista: '+J(p0.b));
     ok(/por Admin de teste às \d\d:\d\d/.test(await pg.textContent(`.mn-item[data-k="${k1}"] .mn-nota`)),'4: quem marcou e a hora');
     ok(J(await conta(pg))===J([[60,59,1,0]]),'4: os contadores mudam sem recarregar: '+J(await conta(pg)));
     ok(R.listas.length===1&&(await cartoes(pg))===24,'4: dar nota não redesenha nem pede a lista');
@@ -151,6 +151,9 @@ try{
     ok(R.listas.length===2,'3: Atualizar faz um pedido novo: '+R.listas.length);
     await pg.click('[data-act="mn-sit"][data-s="boa"]');ok(await espera(pg,k=>document.querySelectorAll('#mn-lista .mn-item').length===1&&!!document.querySelector(`.mn-item[data-k="${k}"].mn-boa`),5000,k1),'3: Boas mostra a nota que veio do servidor');
     await pg.click('[data-act="mn-sit"][data-s="sem"]');
+    // 5: a montagem foi refeita depois que a tela a mostrou (409): avisa, relê a lista e a nota não fica
+    {const k9=K(3,'telao'),l9=R.listas.length;R.falha=409;await pg.click(sel('mn-boa',k9));ok(await espera(pg,()=>/Esta montagem foi refeita\. A lista foi atualizada/.test(document.querySelector('#toast').textContent)),'5: 409 avisa que a montagem foi refeita: '+await pg.textContent('#toast'));
+      R.falha=0;ok(await espera(pg,k=>{const e=document.querySelector(`.mn-item[data-k="${k}"]`);return !!e&&!e.classList.contains('mn-boa')&&document.querySelectorAll('#mn-lista .mn-item').length===24;},8000,k9)&&R.listas.length===l9+1,'5: no 409 a lista é relida do servidor e a nota não fica: '+(R.listas.length-l9));}
     // dia: ontem vai ao servidor
     await pg.selectOption('[data-act="mn-dia"]',ONTEM);ok(await espera(pg,()=>document.querySelectorAll('#mn-lista .mn-item').length===1),'3: o filtro de dia busca o outro dia');
     ok(R.listas.some(x=>x.dia===ONTEM),'3: o dia vai para o servidor: '+J(R.listas.slice(-1)));
@@ -170,10 +173,17 @@ try{
     R.modo='sombra';R.erroLista=true;await pg.evaluate(()=>{ETERNA.mnZera();ETERNA.render();});
     ok(await espera(pg,()=>/Não deu para falar com o servidor/.test(document.querySelector('#main').textContent)&&!!document.querySelector('[data-act="mn-reler"]')),'6: erro do servidor com Tentar de novo');
     R.erroLista=false;await pg.click('[data-act="mn-reler"]');ok(await espera(pg,()=>document.querySelectorAll('#mn-lista .mn-item').length===24),'6: Tentar de novo carrega');
+    // nota de montagem refeita (atual false): a mesma nota pode ser confirmada de novo; depois de confirmada, não grava outra vez
+    {const kr=K(2,'tunel');R.notas[kr]={v:'boa',motivos:[],por:'admin.teste@exemplo.com',nome:'Admin de teste',em:new Date().toISOString(),atual:false};
+      await pg.evaluate(()=>{ETERNA.mnZera();ETERNA.state.mn.sit='boa';ETERNA.render();});ok(await espera(pg,k=>/A montagem foi refeita depois desta nota/.test((document.querySelector(`.mn-item[data-k="${k}"]`)||{}).textContent||''),8000,kr),'4: a nota de montagem refeita avisa');
+      const n9=R.posts.length;await pg.click(sel('mn-boa',kr));ok(await espera(pg,k=>{const e=document.querySelector(`.mn-item[data-k="${k}"]`);return e&&!/A montagem foi refeita/.test(e.textContent)&&!e.querySelector('.mn-boa[disabled]');},5000,kr)&&R.posts.length===n9+1&&R.posts[n9].b.v==='boa','4: Boa de novo na montagem refeita grava: '+(R.posts.length-n9));
+      await pg.click(sel('mn-boa',kr));await pg.waitForTimeout(200);ok(R.posts.length===n9+1,'4: confirmada, Boa de novo não grava outra vez');delete R.notas[kr];}
     // paginação da lista (o servidor manda em pedaços)
     R.max=25;await pg.evaluate(()=>{ETERNA.mnZera();ETERNA.render();});const l0=R.listas.length;
     ok(await espera(pg,()=>{const j=ETERNA.state.mn.j;return !!j&&j.itens.length===60;}),'2: a lista em pedaços é juntada: '+J(R.listas.slice(l0)));
-    ok(J(R.listas.slice(l0).map(x=>x.de))===J([0,25,50]),'2: os pedidos seguintes levam o "de": '+J(R.listas.slice(l0)));R.max=2000;
+    ok(J(R.listas.slice(l0).map(x=>x.de))===J([0,25,50]),'2: os pedidos seguintes levam o "de": '+J(R.listas.slice(l0)));
+    R.dup=true;await pg.evaluate(()=>{ETERNA.mnZera();ETERNA.render();});
+    ok(await espera(pg,()=>{const j=ETERNA.state.mn.j;return !!j&&j.itens.length===60&&new Set(j.itens.map(x=>x.pid+'|'+x.fundo)).size===60;}),'2: página que repete uma montagem não a põe duas vezes: '+await pg.evaluate(()=>ETERNA.state.mn.j&&ETERNA.state.mn.j.itens.length));R.dup=false;R.max=2000;
     // nada no localStorage nem no SIM
     const guard=await pg.evaluate(()=>{const s=JSON.stringify(Object.entries(localStorage));return {ls:/c0ffee0000|mn-[a-z0-9]+-/.test(s),sim:/c0ffee0000/.test(JSON.stringify(ETERNA.SIM))};});
     ok(!guard.ls&&!guard.sim,'a nota não fica no localStorage nem no SIM: '+J(guard));
@@ -195,6 +205,10 @@ try{
       bt:[...document.querySelectorAll('#main .mn-bts .btn, #main .mn-mot .chip, #main .mn-chips .chip, #main .mn-desf, #main .mn-sel select')].map(e=>Math.round(e.getBoundingClientRect().height))}));
     ok(m.sw<=m.iw,'7: 390 px sem rolagem lateral: '+J({sw:m.sw,iw:m.iw}));ok(m.cols===2,'7: duas colunas em 390 px: '+m.cols);ok(m.bt.length>60&&m.bt.every(h=>h>=44),'7: botões, chips e seletores com 44 px: '+J([...new Set(m.bt)]));
     await print(pg,'montagens-390.png',{fullPage:true});await ctx.close();}
+  // ---------- imagem da prévia que falha: tenta de novo, no máximo 2 vezes ----------
+  {const {ctx,pg,R}=await nova(null,R=>{R.imgFalha='/'+pidDe(0)+'/mirantedia.jpg';});await entra(pg,null,null,'admin');ok(await abre(pg),'a tela abre com uma prévia falhando');
+    for(let i=0;i<150&&R.imgPedidos.filter(q=>q).length<2;i++)await pg.waitForTimeout(100);await pg.waitForTimeout(5500);
+    const re=R.imgPedidos.filter(q=>q);ok(J(re)===J(['?r=1','?r=2']),'prévia que falha: 2 tentativas novas e para: '+J(R.imgPedidos));await ctx.close();}
   // ---------- 6: sem o servidor do ponto ----------
   {const {ctx,pg}=await nova(null,R=>{R.semAgente=true;});await entra(pg,null,null,'admin',null,true);await pg.evaluate(()=>ETERNA.go('montagens'));await pg.waitForTimeout(400);
     const t=await pg.textContent('#main');ok(/As montagens ficam no servidor do ponto\. Abra o Eterna pelo servidor para ver\./.test(t)&&!(await pg.$('#mn-lista')),'6: servidor do ponto fora: '+t.slice(0,200));await ctx.close();}
