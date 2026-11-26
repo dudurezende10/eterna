@@ -30,7 +30,7 @@ sp.loader.exec_module(m)
 sys.path.insert(0, AQUI)
 import _agente_sessao as S
 
-ok((m.VIZ_GAP, m.VIZ_ALCANCE, m.VIZ_MAX) == (180, 1500, 80) and m.VIZ_LIM == m.LIMITE == 0.45 and m.VIZ_G_FORTE == 0.8 and m.VIZ_ENV is True, "constantes")
+ok((m.VIZ_GAP, m.VIZ_ALCANCE, m.VIZ_MAX) == (180, 1500, 80) and m.VIZ_LIM == m.LIMITE == 0.45 and not hasattr(m, "VIZ_G_FORTE") and m.VIZ_ENV is True, "constantes")
 ok(m.viz_cfg_mem() == {"ligada": False}, "antes da primeira leitura, a cópia em memória vale desligada")
 ok(m.viz_cfg() == {"ligada": True} and m.viz_ligada() is True, "sem documento: ligada")
 rnd = random.Random(2511)
@@ -166,13 +166,13 @@ def cenarios(tag, com_vet):
     # ensaio longo: 6 sessões seguidas a 2 min 30 s uma da outra entram inteiras, com e sem a hora de cada foto
     for sem_t in (False, True):
         reset()
-        S1, p, fim = sessao("carlos", T0, [[rosto(A)], []], sem_t=sem_t)
+        S1, p, fim = sessao("carlos", T0, [[rosto(A)], [rosto(A)], []], sem_t=sem_t)
         cadeia = []
         for _ in range(6):
             c_, q_, fim = sessao("carlos", fim + 150, [[], [rosto(A)], []], sem_t=sem_t)
             cadeia += q_
-        r = viz(achou(p[0]))
-        ok(ids(r) == [p[1]] + cadeia and INFO.get("corte") is None, "%s 2: cadeia de 6 sessões a 2 min 30 s entra inteira (sem_t=%s): %d de %d %r" % (tag, sem_t, len(r), 1 + len(cadeia), INFO))
+        r = viz(achou(p[0], p[1]))
+        ok(ids(r) == [p[2]] + cadeia and INFO.get("corte") is None, "%s 2: cadeia de 6 sessões a 2 min 30 s entra inteira (sem_t=%s): %d de %d %r" % (tag, sem_t, len(r), 1 + len(cadeia), INFO))
     # o intervalo vale entre uma foto e a seguinte: 200 s depois da última aceita não entra, mesmo dentro do alcance
     reset()
     S1, p, f1 = sessao("carlos", T0, [[rosto(A)]])
@@ -208,10 +208,12 @@ def cenarios(tag, com_vet):
 
     # ---------- 4: rosto de qualidade que bate com o grupo entra ----------
     reset()
-    S1, p, f1 = sessao("carlos", T0, [[rosto(A), rosto(B)]])
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A), rosto(B)], [rosto(A), rosto(B)]])
     S2, q, _ = sessao("carlos", f1 + 120, [[rosto(B)], [], [rosto(C, q=False)], [rosto(A), rosto(B)]])
-    r = viz(achou(p[0]))
-    ok(ids(r) == q, "%s 4: rosto do grupo entra; rosto sem qualidade (perfil) não barra: %r" % (tag, r))
+    r = viz(achou(p[0], p[1]))
+    ok(ids(r) == q, "%s 4: rosto do grupo (em 2 fotos reconhecidas) entra; rosto sem qualidade (perfil) não barra: %r" % (tag, r))
+    r = viz(achou(p[0]) + achou(p[1], sim=0.40))
+    ok(r == [], "%s 4: acompanhante em 1 foto reconhecida só não é do grupo: a foto só dele barra: %r" % (tag, ids(r)))
     # B só aparece pequeno, no fundo da foto reconhecida: não é do grupo
     reset()
     S1, p, f1 = sessao("carlos", T0, [[rosto(A, 300), rosto(B, 100)], [rosto(B)], []])
@@ -280,7 +282,8 @@ def cenarios(tag, com_vet):
     r = viz(achou(p[0]))
     ok(ids(r) == [p[1]], "%s grupo: só a pessoa A: para no rosto de B: %r" % (tag, ids(r)))
     r = viz(m.grupo_juntar([{"fotos": achou(p[0])}, {"fotos": achou(q[1], sim=0.6)}]), AB)
-    ok(sorted(ids(r)) == sorted([p[1], p[2], p[3], q[0], q[2]]) and all(x["mesma"] for x in r),
+    # sem os vetores da selfie, A e B têm 1 foto reconhecida cada: nenhum entra no grupo e só as fotos sem rosto passam
+    ok(sorted(ids(r)) == sorted([p[1], p[2], p[3], q[0], q[2]] if com_vet else [p[1], q[0]]) and all(x["mesma"] for x in r),
        "%s grupo: A e B reconhecidos em fotos diferentes: vizinhas das duas trilhas, B não barra, C barra: %r" % (tag, ids(r)))
 
     # ---------- 10: erro lá dentro devolve [] ----------
@@ -311,11 +314,27 @@ def cenarios(tag, com_vet):
     S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200), rosto(C, 190, q=False)]])
     S2, q, _ = sessao("carlos", f1 + 40, [[rosto(C, 220)], []])
     ok(viz(achou(p[0])) == [], "%s S2: rosto grande sem qualidade numa foto só não entra no grupo" % tag)
-    # casal fotografado de frente uma única vez (rostos de tamanho parecido): a foto só da parceira entra
+    # o mesmo com o estranho do tamanho do cliente ou maior, de frente e de qualidade: uma foto só não põe ninguém no grupo
+    reset()
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200), rosto(C, 220)]])
+    S2, q, _ = sessao("carlos", f1 + 40, [[rosto(C, 220)], [rosto(C, 220)], [rosto(C, 210)]])
+    r = viz(achou(p[0]))
+    ok(r == [], "%s S2: estranho maior que o cliente numa foto reconhecida só não entra no grupo: %r" % (tag, ids(r)))
+    # casal fotografado de frente uma única vez: sem a parceira na selfie, a foto só dela não entra
     reset()
     S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200), rosto(B, 185)], [rosto(B, 210)], []])
     r = viz(achou(p[0]))
-    ok(ids(r) == p[1:], "%s S2: casal de frente uma vez: a foto só da parceira entra: %r" % (tag, ids(r)))
+    ok(r == [], "%s S2: casal de frente uma vez, só ele na selfie: a foto só da parceira não entra: %r" % (tag, ids(r)))
+    # com os dois na selfie (foto do grupo), entra
+    r = viz(achou(p[0]) + achou(p[1], sim=0.6), AB)
+    ok(ids(r) == [p[2]], "%s S2: casal na selfie em grupo: a foto só da parceira é reconhecida e a seguinte entra: %r" % (tag, ids(r)))
+    r = viz(achou(p[0]), AB)
+    ok(ids(r) == (p[1:] if com_vet else []), "%s S2: parceira na selfie em grupo: o rosto dela é do grupo: %r" % (tag, ids(r)))
+    # parceira em 2 fotos reconhecidas dele: a foto só dela entra
+    reset()
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200), rosto(B, 185)], [rosto(A, 190), rosto(B, 200)], [rosto(B, 210)], []])
+    r = viz(achou(p[0], p[1]))
+    ok(ids(r) == p[2:], "%s S2: parceira em 2 fotos reconhecidas: a foto só dela entra: %r" % (tag, ids(r)))
     # família com filho pequeno (60% da largura) em 2 fotos reconhecidas: a foto só do filho entra
     reset()
     S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200), rosto(B, 120)], [rosto(A, 210), rosto(B, 125)], [rosto(B, 180)], []])
@@ -331,9 +350,9 @@ def cenarios(tag, com_vet):
     # S3: a barreira usa LIMITE (0,45): rosto com semelhança 0,41 com o grupo é de fora; com 0,49 é do grupo
     reset()
     fa = rosto(A, 200)
-    S1, p, f1 = sessao("carlos", T0, [[fa], [(200, mistura(fa[1], 0.49), True)], [], [(200, mistura(fa[1], 0.41), True)], []])
-    r = viz(achou(p[0]))
-    ok(ids(r) == p[1:3], "%s S3: 0,49 passa, 0,41 barra: %r" % (tag, [p.index(x) for x in ids(r)]))
+    S1, p, f1 = sessao("carlos", T0, [[fa], [fa], [(200, mistura(fa[1], 0.49), True)], [], [(200, mistura(fa[1], 0.41), True)], []])
+    r = viz(achou(p[0], p[1]))
+    ok(ids(r) == p[2:4], "%s S3: 0,49 passa, 0,41 barra: %r" % (tag, [p.index(x) for x in ids(r)]))
     # S1: busca em grupo. Foto de outra família: A só no fundo (0,50, não principal) e um estranho em primeiro plano que parece
     # B como "talvez" (0,39, principal). Juntas não fazem âncora: ninguém da selfie, sozinho, está reconhecido em primeiro plano
     reset()

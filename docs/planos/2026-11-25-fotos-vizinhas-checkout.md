@@ -11,8 +11,8 @@ No Checkout, o cliente reconhecido pela selfie via só as fotos em que o rosto d
 - Para, naquele sentido, na primeira foto com rosto de qualidade (tabela `rosto_q`) que não bate com o grupo reconhecido (`VIZ_LIM`, igual a `LIMITE`, 0,45).
 - Grupo reconhecido:
   - o rosto de quem fez a selfie em cada foto reconhecida entra sempre (semelhança >= `LIMITE` com o vetor da selfie, que fica só na memória daquela busca);
-  - outro rosto principal só entra se o mesmo rosto for principal em pelo menos 2 fotos reconhecidas, ou se na foto tiver pelo menos 80% da largura do maior rosto (`VIZ_G_FORTE`) e for rosto de qualidade;
-  - quem aparece atrás do cliente numa foto só não entra no grupo.
+  - outro rosto principal só entra se o mesmo rosto for principal em pelo menos 2 fotos reconhecidas diferentes;
+  - quem aparece numa foto reconhecida só, de qualquer tamanho, não entra no grupo. Acompanhante reconhecido numa foto só entra pela foto do grupo ou por Adicionar outra pessoa.
 - Na busca em grupo (foto do grupo), o grupo reconhecido junta os rostos principais das fotos de todas as pessoas da selfie, e as vizinhas de todas entram.
 - Também para na foto ainda sem leitura de rosto, na sessão aberta e na sessão protegida (escola ou menor).
 - Para quando passam mais de `VIZ_GAP` segundos entre uma foto e a seguinte da caminhada. Um ensaio longo entra inteiro enquanto as fotos vierem em sequência.
@@ -58,7 +58,7 @@ No app, `lojaJuntar(res, tv, sims, viz)` soma as vizinhas só quando há foto cl
 
 ## Testes
 
-- `testes/vizinhas_agente.py`: mesma sessão, sessão vizinha a 150 s e a 200 s, cadeia de 6 sessões a 2 min 30 s, alcance de 1500 s com o corte, rosto de outra pessoa a 10 s, rosto do grupo, quem entra no grupo (estranho a 60% numa foto só, casal de frente uma vez, filho pequeno em 2 fotos), barreira em 0,45, âncora na busca em grupo, busca em grupo com duas pessoas, o que nunca entra, teto de 80 com o corte, variáveis dos limites, custo com 5.000 fotos no dia (meta abaixo de 50 ms), erro, rota com e sem `todo`, diagnóstico, chave (documento ilegível, banco ocupado, reinício), só Admin, sincronização, `/status`.
+- `testes/vizinhas_agente.py`: mesma sessão, sessão vizinha a 150 s e a 200 s, cadeia de 6 sessões a 2 min 30 s, alcance de 1500 s com o corte, rosto de outra pessoa a 10 s, rosto do grupo, quem entra no grupo (estranho numa foto só, menor ou maior que o cliente; casal de frente uma vez; parceira ou filho em 2 fotos), barreira em 0,45, âncora na busca em grupo, busca em grupo com duas pessoas, o que nunca entra, teto de 80 com o corte, variáveis dos limites, custo com 5.000 fotos no dia (meta abaixo de 50 ms), erro, rota com e sem `todo`, diagnóstico, chave (documento ilegível, banco ocupado, reinício), só Admin, sincronização, `/status`.
 - `testes/checkout-vizinhas.js`: Checkout com reconhecidas e vizinhas, pedido no Posto com todas, só "talvez", proteções, Adicionar outra pessoa (2ª e 3ª), quarta sessão "talvez", foto do grupo, interruptor do Admin.
 - Regressão: `sessoes_agente`, `visitas_agente`, `selfie_rapidez`, `seguranca_rotas_agente`, `checkout-varias-sessoes`, `visitas-checkout`, `selfie-varias`, `escola-galeria`, `posto-checkout`, `idiomas`.
 

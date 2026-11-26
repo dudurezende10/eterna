@@ -6559,7 +6559,6 @@ VIZ_GAP = _viz_env("ETERNA_VIZ_GAP", 180, 30, 900)               # s, no máximo
 VIZ_ALCANCE = _viz_env("ETERNA_VIZ_ALCANCE", 1500, 60, 3600)     # s, para cada lado, desde a foto reconhecida mais próxima
 VIZ_MAX = _viz_env("ETERNA_VIZ_MAX", 80, 1, 200)                 # fotos vizinhas por busca (as mais próximas das reconhecidas)
 VIZ_LIM = LIMITE                # rosto de qualidade com semelhança abaixo disto contra o grupo reconhecido = outra pessoa
-VIZ_G_FORTE = 0.8               # rosto de outra pessoa visto numa só foto reconhecida: só entra no grupo com esta fração do maior rosto e de qualidade
 VIZ_G_OUTROS = 300              # rostos de acompanhantes comparados entre si
 VIZ_G_MAX = 400                 # rostos do grupo reconhecido usados na comparação
 VIZ_ENV = os.environ.get("ETERNA_VIZINHAS") != "0"   # ETERNA_VIZINHAS=0 desliga e vence o Painel de controle
@@ -8851,16 +8850,13 @@ def _viz_calc(fotos, agora=None, info=None, vets=None):
         # G, o grupo reconhecido (revisão de segurança, 25/11):
         #  - o rosto de quem fez a selfie em cada foto reconhecida (semelhança >= LIMITE com um vetor da selfie) entra sempre;
         #  - outro rosto principal (largura >= metade do maior da foto) só entra se o mesmo rosto for principal em pelo menos
-        #    2 fotos reconhecidas (semelhança entre si >= LIMITE) ou se, na foto, tiver largura >= VIZ_G_FORTE do maior rosto
-        #    e for rosto de qualidade (rosto_q). Quem passa atrás do cliente numa foto só não entra no grupo.
-        porf, qa = {}, {}
+        #    2 fotos reconhecidas diferentes (semelhança entre si >= LIMITE). Quem aparece numa foto reconhecida só, de
+        #    qualquer tamanho, não entra no grupo. Sem os vetores da selfie, todo rosto segue esta segunda regra.
+        porf = {}
         for i in range(0, len(anc), 500):
             parte = anc[i:i + 500]
-            q = ",".join("?" * len(parte))
-            for p, larg, emb in db.execute("select pid, larg, emb from rosto where pid in (%s)" % q, parte):
+            for p, larg, emb in db.execute("select pid, larg, emb from rosto where pid in (%s)" % ",".join("?" * len(parte)), parte):
                 porf.setdefault(p, []).append((_num(larg), bytes(emb)))
-            for p, emb in db.execute("select pid, emb from rosto_q where pid in (%s)" % q, parte):
-                qa.setdefault(p, set()).add(bytes(emb))
 
         def vetor(e):
             if np is not None:
@@ -8880,7 +8876,7 @@ def _viz_calc(fotos, agora=None, info=None, vets=None):
                 return any(float(v @ q) >= LIMITE for v in vs)
             return any(_dot(v, q) >= LIMITE for v in vs)
 
-        G, outros = [], []                           # outros: (foto, vetor, bytes, forte)
+        G, outros = [], []                           # outros: (foto, vetor, bytes)
         for p in anc:
             fs = porf.get(p) or []
             mx = max((l for l, _ in fs), default=0)
@@ -8891,16 +8887,16 @@ def _viz_calc(fotos, agora=None, info=None, vets=None):
                 if vs and proprio(q):
                     G.append(e)
                 elif l >= ROSTO_PRINCIPAL * mx and len(outros) < (VIZ_G_OUTROS if np is not None else 60):
-                    outros.append((p, q, e, l >= VIZ_G_FORTE * mx and e in (qa.get(p) or ())))
+                    outros.append((p, q, e))
         if outros and np is not None:
             O = np.stack([o[1] for o in outros])
             S = O @ O.T
             for i, o in enumerate(outros):
-                if o[3] or any(S[i, j] >= LIMITE and outros[j][0] != o[0] for j in np.nonzero(S[i] >= LIMITE)[0]):
+                if any(S[i, j] >= LIMITE and outros[j][0] != o[0] for j in np.nonzero(S[i] >= LIMITE)[0]):
                     G.append(o[2])
         else:
             for o in outros:
-                if o[3] or any(x[0] != o[0] and _dot(x[1], o[1]) >= LIMITE for x in outros):
+                if any(x[0] != o[0] and _dot(x[1], o[1]) >= LIMITE for x in outros):
                     G.append(o[2])
         G = G[:VIZ_G_MAX]
         if np is not None:
