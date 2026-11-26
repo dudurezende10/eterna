@@ -1016,7 +1016,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 /* 17/11: a mesma marca de prova do Checkout, repetida na diagonal pela foto inteira */
 .gq-ph .wm{position:absolute;inset:-60%;font-size:0;color:transparent;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='740' height='280'%3E%3Ctext x='370' y='90' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-size='34' letter-spacing='4' fill='%23fff' fill-opacity='.28' stroke='%23000' stroke-opacity='.16' stroke-width='1.2' paint-order='stroke'%3EVIVA MARACAN%26%23195%3B%3C/text%3E%3Ctext x='0' y='230' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-size='34' letter-spacing='4' fill='%23fff' fill-opacity='.28' stroke='%23000' stroke-opacity='.16' stroke-width='1.2' paint-order='stroke'%3EVIVA MARACAN%26%23195%3B%3C/text%3E%3Ctext x='740' y='230' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-size='34' letter-spacing='4' fill='%23fff' fill-opacity='.28' stroke='%23000' stroke-opacity='.16' stroke-width='1.2' paint-order='stroke'%3EVIVA MARACAN%26%23195%3B%3C/text%3E%3C/svg%3E") center/370px 140px repeat;transform:rotate(-24deg);pointer-events:none;z-index:2}
 .gq-badge{position:absolute;left:6px;top:6px;padding:4px 10px;border-radius:999px;background:#FFB800;color:#0C2340;font-size:14px;font-weight:800;letter-spacing:.04em}
-.gq-dl{color:#134078;border-color:#c9d4e4;justify-content:center;width:100%}
+.gq-dl{color:#134078;border-color:#c9d4e4;justify-content:center;width:100%}.gq-dl.gq-dlok{color:#1d6b3a;border-color:#9fd3b0;background:#eaf7ee;font-weight:700}
 .gq-gv{display:flex;flex-direction:column;gap:12px;margin:8px 0 18px;align-items:stretch}.gq-gv .gq-spin{align-self:center}.gq-gvdl{justify-content:center;text-decoration:none}.gq-tour{border-top:1px solid rgba(255,255,255,.14);padding-top:16px}.av-tab th,.av-tab td{white-space:normal;padding-left:6px;padding-right:6px;vertical-align:top}.av-tab td:nth-child(4){min-width:130px}.av-tab .pill{white-space:normal;text-align:center} /* v99.24.1: cabe no tablet (800 px) */.gq-tour .gq-grid{gap:8px}.gq-tour a.gq-dl{text-decoration:none;justify-content:center}.gq-tourph{cursor:pointer}
 .gq-sel{position:absolute;right:-8px;top:-8px;width:46px;height:46px;border-radius:50%;border:2px solid #fff;background:rgba(12,35,64,.85);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 16px -6px rgba(0,0,0,.6)}
 .gq-sel svg{width:26px;height:26px}.gq-qrimg{display:block;margin-top:10px;color:#d6e2f3;text-decoration:underline;cursor:pointer;font-size:15px;text-align:center}
@@ -1617,7 +1617,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.10 · 26/11 12:15"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.11 · 26/11 12:25"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3945,6 +3945,13 @@ function pubPedSalvo(tok){try{const o=JSON.parse(sessionStorage.getItem(PED_KEY)
 // cada foto. Agora prepara todas com barra de progresso e salva de uma vez: no celular pelo Salvar/Compartilhar do sistema, em
 // lotes de 20 (um toque por lote); sem isso, um único .zip (sem compressão: JPEG já é comprimido).
 const DL_LOTE=20;
+// 26/11 (Ronaldo): o .zip dava problema no celular e o cliente não sabia o que já tinha baixado. Sem compartilhar do sistema,
+// as fotos descem uma a uma (sem .zip); cada foto baixada ganha a marca "Baixada" (neste aparelho; o servidor já registra foto_baixada)
+const pubBxKey=()=>'eterna.gq.baixadas.'+((state.pub&&state.pub.token)||'');
+function pubBx(){const p=state.pub;if(!p)return {};if(!p.bx){p.bx={};try{Object.assign(p.bx,JSON.parse(localStorage.getItem(pubBxKey())||'{}')||{});}catch(e){}}return p.bx;}
+function pubBxMarca(pids){const b=pubBx();(pids||[]).forEach(x=>{if(x)b[x]=1;});try{localStorage.setItem(pubBxKey(),JSON.stringify(b));}catch(e){}}
+async function pubSoltas(files,pids){for(let i=0;i<files.length;i++){const u=URL.createObjectURL(files[i]);const a=document.createElement('a');a.href=u;a.download=files[i].name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u),60000);pubBxMarca([pids&&pids[i]]);render();await new Promise(r=>setTimeout(r,700));}}
 async function pubBlobFoto(p,f){
   if(p.modo!=='agente'){const c=await photoCanvas(f.pid);return c?await new Promise(r=>c.toBlob(r,'image/jpeg',.92)):null;}
   const pega=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');return r.blob();};
@@ -3957,18 +3964,18 @@ async function pubBaixarTodas(){const p=state.pub;if(!p||(p.dl&&p.dl.fase==='pre
   if(mine.length===1){pubBaixar(mine[0].pid,1);return;}
   p.dl={fase:'prep',n:0,tot:mine.length};render();
   if(p.modo==='agente'&&(!p.galAt||Date.now()-p.galAt>12*60000))await pubRenovar(p);
-  const files=[];let falhas=0;
+  const files=[],pids=[];let falhas=0;
   for(let i=0;i<mine.length;i++){const b=await pubBlobFoto(p,mine[i]);
-    if(b){files.push(new File([b],`viva-maracana-${i+1}.jpg`,{type:'image/jpeg'}));
+    if(b){files.push(new File([b],`viva-maracana-${i+1}.jpg`,{type:'image/jpeg'}));pids.push(mine[i].pid);
       if(p.modo==='agente'&&p.acesso)fetch(galApi()+'/g/'+p.token+'/evento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,tipo:'foto_baixada',foto:mine[i].pid})}).catch(()=>{});}
     else falhas++;
     p.dl.n=i+1;pubDlBarra();}
   if(!files.length){p.dl={fase:'erro'};render();return;}
   let share=false;try{share=!!(navigator.canShare&&navigator.canShare({files:files.slice(0,1)}));}catch(e){}
-  p.dl={fase:'pronto',files,lote:0,share,falhas};render();
-  if(!share)pubZip(files);}
+  p.dl={fase:'pronto',files,pids,lote:0,share,falhas};render();
+  if(!share)pubSoltas(files,pids);}
 async function pubDlSalvar(){const d=state.pub&&state.pub.dl;if(!d||d.fase!=='pronto')return;const lote=d.files.slice(d.lote*DL_LOTE,(d.lote+1)*DL_LOTE);if(!lote.length)return;
-  try{await navigator.share({files:lote});d.lote++;}catch(e){if(e&&e.name==='AbortError')return;d.share=false;pubZip(d.files);}
+  try{await navigator.share({files:lote});pubBxMarca((d.pids||[]).slice(d.lote*DL_LOTE,(d.lote+1)*DL_LOTE));d.lote++;}catch(e){if(e&&e.name==='AbortError')return;d.share=false;pubSoltas(d.files,d.pids);}
   render();}
 const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
 function crc32(u){let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRC_T[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
@@ -3993,11 +4000,11 @@ async function pubBaixar(pid,i){const p=state.pub;const g=pubGaleria();const f=g
   const nome=`viva-maracana-${i||1}.jpg`;const salva=href=>{const a=document.createElement('a');a.href=href;a.download=nome;document.body.appendChild(a);a.click();a.remove();};
   if(p.modo==='agente'){
     // links assinados valem 15 min: com mais de 12 min de galeria, ou se o download falhar, pede links novos e tenta de novo uma vez
-    const baixa=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');const u=URL.createObjectURL(await r.blob());salva(u);setTimeout(()=>URL.revokeObjectURL(u),4000);};
+    const baixa=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');const u=URL.createObjectURL(await r.blob());salva(u);setTimeout(()=>URL.revokeObjectURL(u),4000);pubBxMarca([pid]);render();};
     let ff=f;if(!p.galAt||Date.now()-p.galAt>12*60000){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid)||f;}
     try{await baixa(ff);}catch(e){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid);try{if(!ff||!ff.original)throw new Error('x');await baixa(ff);}catch(e2){if(ff&&ff.original)window.open(galUrl(ff.original),'_blank','noopener');}}
     return;}
-  const c=await photoCanvas(pid);if(c)salva(c.toDataURL('image/jpeg',.92));}
+  const c=await photoCanvas(pid);if(c){salva(c.toDataURL('image/jpeg',.92));pubBxMarca([pid]);render();}}
 const pubUUID=()=>{const u=galRand(16);u[6]=u[6]&15|64;u[8]=u[8]&63|128;const h=[...u].map(b=>b.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;};
 async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGaleria();const venda=new Set(g.fotos.filter(f=>f.direito==='venda').map(f=>f.pid));const pids=Object.keys(p.sel).filter(k=>p.sel[k]&&venda.has(k));if(!pids.length)return;
   const v=id=>(($('#'+id)||{}).value||'').trim();const cli={nome:v('gq-nome').replace(/\s+/g,' '),email:v('gq-email').toLowerCase()};p.cli={...cli,estr:!!p.estr,mkt:!!(($('#gq-mkt')||{}).checked)};
@@ -4153,7 +4160,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   // 18/11 (Ronaldo): na escola o responsável sai e recomeça (outra criança, outro responsável) pelo Sair, que volta ao código
   return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`,esc0?`<button class="lj-ghost sm gq-sair" data-act="gq-back" data-to="codigo">${ICO.sair} ${T('ljSair')}</button>`:'')}
     <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${esc0&&esc0.nome?esc(esc0.nome)+(esc0.dia?' · '+fmtD(esc0.dia+'T12:00:00'):'')+' · ':''}${T('gq_kidFound',g.fotos.length)}</div>`:''}${mine.length?`<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${T('gq_yoursD',mine.length)}</p>${pubDlHtml(mine.length)}`:''}
-      ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>`:''}</section>
+      ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div>${pubBx()[f.pid]?`<button class="lj-ghost sm gq-dl gq-dlok" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">✓ ${T('gq_dlOk')}</button>`:`<button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button>`}</figure>`).join('')}</div>`:''}</section>
     ${more.length?`<section class="gq-sec">${podeGr?`<div class="gq-grtopo"><h2 class="lj-h2">${T('gq_gratisH')}</h2><p class="lj-sub">${T('gq_gratisD')}</p></div>`:''}<h2 class="lj-h2">${T('gq_more')}</h2>${compra?`<p class="lj-sub">${T('gq_moreD')} ${pubOferta(g)}</p>`:''}
       <div class="gq-grid">${more.map(f=>{const on=compra&&!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>${compra?`<button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button>`:''}${podeGr?`<button class="lj-ghost sm gq-grbtn" data-act="gq-gratis" data-pid="${esc(f.pid)}">${T('gq_gratisBtn')}</button>`:''}</figure>`;}).join('')}</div>
       ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(pubTotal(more.length,g)))}</button>`:`<p class="lj-sub gq-buyoff">${T('gq_buyOffEsc')} <a href="mailto:${GQ_SUPORTE}">${GQ_SUPORTE}</a></p>`}</section>`:''}
@@ -4413,13 +4420,14 @@ const I18N={
  gq_none:['Nenhuma foto liberada ainda.','No photos unlocked yet.','Todavía no hay fotos liberadas.','Aucune photo débloquée pour l’instant.','Noch keine Fotos freigeschaltet.'],
  gq_gift:['Cortesia','Complimentary','Cortesía','Offerte','Gratis'],
  gq_dl:['Baixar','Download','Descargar','Télécharger','Herunterladen'],
+ gq_dlOk:['Baixada','Downloaded','Descargada','Téléchargée','Heruntergeladen'],
  gq_dlAll:['Baixar todas','Download all','Descargar todas','Tout télécharger','Alle herunterladen'],
  gq_dlPrep:[(a,b)=>`Preparando ${a} de ${b} fotos…`,(a,b)=>`Preparing ${a} of ${b} photos…`,(a,b)=>`Preparando ${a} de ${b} fotos…`,(a,b)=>`Préparation de ${a} sur ${b} photos…`,(a,b)=>`${a} von ${b} Fotos werden vorbereitet…`],
  gq_dlSave:[(a,b,c)=>`Salvar fotos ${a} a ${b} de ${c}`,(a,b,c)=>`Save photos ${a}–${b} of ${c}`,(a,b,c)=>`Guardar fotos ${a} a ${b} de ${c}`,(a,b,c)=>`Enregistrer les photos ${a} à ${b} sur ${c}`,(a,b,c)=>`Fotos ${a}–${b} von ${c} speichern`],
- gq_dlZip:['Baixar tudo em .zip','Download all as .zip','Descargar todo en .zip','Tout télécharger en .zip','Alles als .zip herunterladen'],
+ gq_dlZip:['Baixar uma por uma','Download one by one','Descargar una por una','Télécharger une par une','Einzeln herunterladen'],
  gq_dlFeito:[n=>`Pronto: ${n} fotos salvas.`,n=>`Done: ${n} photos saved.`,n=>`Listo: ${n} fotos guardadas.`,n=>`Terminé : ${n} photos enregistrées.`,n=>`Fertig: ${n} Fotos gespeichert.`],
- gq_dlZipOk:[n=>`${n} fotos baixadas em um arquivo .zip.`,n=>`${n} photos downloaded in one .zip file.`,n=>`${n} fotos descargadas en un archivo .zip.`,n=>`${n} photos téléchargées dans un fichier .zip.`,n=>`${n} Fotos als eine .zip-Datei heruntergeladen.`],
- gq_dlZipDe:['Baixar o .zip de novo','Download the .zip again','Descargar el .zip de nuevo','Retélécharger le .zip','.zip erneut herunterladen'],
+ gq_dlZipOk:[n=>`${n} fotos baixadas. Elas estão na galeria ou na pasta Downloads do celular.`,n=>`${n} photos downloaded. Find them in your gallery or Downloads folder.`,n=>`${n} fotos descargadas. Están en la galería o en la carpeta Descargas.`,n=>`${n} photos téléchargées. Elles sont dans la galerie ou le dossier Téléchargements.`,n=>`${n} Fotos heruntergeladen. Sie sind in der Galerie oder im Download-Ordner.`],
+ gq_dlZipDe:['Baixar de novo','Download again','Descargar de nuevo','Télécharger à nouveau','Erneut herunterladen'],
  gq_dlErro:['Não deu para baixar agora. Tente de novo.','Could not download now. Please try again.','No se pudo descargar ahora. Inténtalo de nuevo.','Téléchargement impossible pour le moment. Réessayez.','Download gerade nicht möglich. Bitte erneut versuchen.'],
  gq_dlFalhas:[n=>`${n} ${PL(n,'foto não baixou','fotos não baixaram')}: use o Baixar de cada uma.`,n=>`${n} ${PL(n,'photo','photos')} failed: use Download on each one.`,n=>`${n} ${PL(n,'foto no se descargó','fotos no se descargaron')}: usa Descargar en cada una.`,n=>`${n} ${PL(n,'photo non téléchargée','photos non téléchargées')} : utilisez Télécharger sur chacune.`,n=>`${n} ${PL(n,'Foto','Fotos')} fehlgeschlagen: einzeln herunterladen.`],
  gq_more:['Mais fotos da sua visita','More photos from your visit','Más fotos de tu visita','Plus de photos de votre visite','Mehr Fotos von deinem Besuch'],
@@ -4663,13 +4671,14 @@ const I18N_ZH={
  gq_none:"暂无可下载的照片。",
  gq_gift:"赠送",
  gq_dl:"下载",
+ gq_dlOk:"已下载",
  gq_dlAll:"全部下载",
  gq_dlPrep:(a,b)=>`正在准备 ${a}/${b} 张照片…`,
  gq_dlSave:(a,b,c)=>`保存第 ${a}–${b} 张（共 ${c} 张）`,
- gq_dlZip:"全部下载为 .zip",
+ gq_dlZip:"逐张下载",
  gq_dlFeito:(n)=>`完成：已保存 ${n} 张照片。`,
- gq_dlZipOk:(n)=>`已将 ${n} 张照片下载为一个 .zip 文件。`,
- gq_dlZipDe:"重新下载 .zip",
+ gq_dlZipOk:(n)=>`已下载 ${n} 张照片，请在相册或下载文件夹中查看。`,
+ gq_dlZipDe:"重新下载",
  gq_dlErro:"暂时无法下载，请重试。",
  gq_dlFalhas:(n)=>`${n} 张未下载成功：请逐张点击下载。`,
  gq_more:"本次游览的更多照片",
@@ -4901,13 +4910,14 @@ const I18N_IT={
  gq_none:"Nessuna foto ancora sbloccata.",
  gq_gift:"Omaggio",
  gq_dl:"Scarica",
+ gq_dlOk:"Scaricata",
  gq_dlAll:"Scarica tutte",
  gq_dlPrep:(a,b)=>`Preparazione di ${a} foto su ${b}…`,
  gq_dlSave:(a,b,c)=>`Salva le foto da ${a} a ${b} di ${c}`,
- gq_dlZip:"Scarica tutto in .zip",
+ gq_dlZip:"Scarica una per una",
  gq_dlFeito:n=>`Fatto: ${n} foto salvate.`,
- gq_dlZipOk:n=>`${n} foto scaricate in un unico file .zip.`,
- gq_dlZipDe:"Scarica di nuovo il .zip",
+ gq_dlZipOk:n=>`${n} foto scaricate. Le trovi nella galleria o nella cartella Download.`,
+ gq_dlZipDe:"Scarica di nuovo",
  gq_dlErro:"Impossibile scaricare ora. Riprova.",
  gq_dlFalhas:n=>`${n} foto non ${PL(n,'scaricata','scaricate')}: usa Scarica su ognuna.`,
  gq_more:"Altre foto della tua visita",
@@ -14876,7 +14886,7 @@ document.addEventListener('click',e=>{
     case 'gq-gratis-ok':{const p=state.pub;if(p&&p.gratis)pubGratis(p);break;}
     case 'gq-dlall':pubBaixarTodas();break;
     case 'gq-dlsave':pubDlSalvar();break;
-    case 'gq-dlzip':{const dd=state.pub&&state.pub.dl;if(dd&&dd.files)pubZip(dd.files);break;}
+    case 'gq-dlzip':{const dd=state.pub&&state.pub.dl;if(dd&&dd.files)pubSoltas(dd.files,dd.pids);break;}
     case 'gq-back':{const p=state.pub;if(!p)break;if(d.to==='codigo'){location.hash='#g';break;}p.step=d.to||'galeria';render();break;}
     // galerias online (administração)
     case 'gal-tab':state.gal.tab=d.v;state.gal.ev=null;render();break;
