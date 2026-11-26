@@ -16,6 +16,7 @@ try{execFileSync('python3',['-I','-c','import cv2,numpy']);}catch(e){console.log
 (async()=>{const b=await chromium.launch();const errs=[];const home=fs.mkdtempSync(path.join(os.tmpdir(),'v9944-lx-'));const E=path.join(home,'Eterna');let ag=null,log='';
   const porta=await livre(),ftpP=await livre();const UA=`http://127.0.0.1:${porta}/index.html`;const senha='t'+crypto.randomBytes(9).toString('hex');
   const env={...process.env,HOME:home,USERPROFILE:home,USER:'v9944-sem-cartao',ETERNA_PORTA:String(porta),ETERNA_FTP_PORTA:String(ftpP),ETERNA_FTP_PASV:`${ftpP+1}-${ftpP+3}`,ETERNA_APP_ORIGIN:ORIG,
+    ETERNA_SESSAO_PAUSA:'60', // 26/11: a pausa de verdade passou a 3 min; este teste é da Lixeira e segue com a de 60 s para não esperar 3 min pela leva no Checkout
     ETERNA_SEM_RECORTE:'1',INVOCATION_ID:'v9944',NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost'};delete env.ETERNA_MODO_TESTE;delete env.ETERNA_SEM_OPENCV;delete env.ETERNA_LIXEIRA;
   const req=(metodo,p,corpo,ck)=>new Promise(res=>{const d=corpo?Buffer.from(J(corpo)):null;const r=http.request({host:'127.0.0.1',port:porta,method:metodo,path:p,headers:Object.assign({Host:'127.0.0.1:'+porta},ck?{Cookie:ck}:{},d?{'Content-Type':'application/json','Content-Length':d.length,'X-Eterna':'1'}:{})},
     rs=>{const ch=[];rs.on('data',c=>ch.push(c));rs.on('end',()=>{let j=null;try{j=JSON.parse(Buffer.concat(ch).toString())}catch(e){}res({s:rs.statusCode,j});});});r.on('error',()=>res({s:0}));if(d)r.write(d);r.end();});

@@ -24,6 +24,18 @@ Parameters:
     Type: String
     Default: "/eterna/rdstation-chave"
     Description: parâmetro SecureString do SSM com a chave da API de conversões do RD Station (25/11). Sem o parâmetro no SSM, os leads esperam na fila; vazio desliga. A chave nunca vai no template
+  RdAppParametro:
+    Type: String
+    Default: "/eterna/rd-app"
+    Description: SecureString do SSM com o aplicativo Eterna do RD Station, JSON {"client_id", "client_secret"} (26/11, OAuth para saber se o lead é novo); vazio desliga a consulta
+  RdRefreshParametro:
+    Type: String
+    Default: "/eterna/rd-oauth-refresh"
+    Description: SecureString do SSM onde a nuvem guarda o refresh_token do RD (gravado por /rd/callback)
+  RdEstadoParametro:
+    Type: String
+    Default: "/eterna/rd-oauth-estado"
+    Description: SecureString do SSM com o state do link de autorização (gravado à mão antes de autorizar; a nuvem troca por "usado")
   ImplyChaveParametro:
     Type: String
     Default: ""
@@ -142,6 +154,9 @@ Resources:
           COMPRA_ONLINE: !Ref CompraOnline
           IMPLY_CHAVE_SSM: !Ref ImplyChaveParametro
           RD_CHAVE_PARAMETRO: !Ref RdChaveParametro
+          RD_APP_PARAMETRO: !Ref RdAppParametro
+          RD_REFRESH_PARAMETRO: !Ref RdRefreshParametro
+          RD_ESTADO_PARAMETRO: !Ref RdEstadoParametro
           IMPLY_TIPO_PESSOA: !Ref ImplyTipoPessoa
           IMPLY_CONSULTA: !Ref ImplyConsulta
           IMPLY_PRODUTO_CAMPO: !Ref ImplyProdutoCampo
@@ -186,6 +201,12 @@ Resources:
               Effect: Allow
               Action: [ssm:GetParameter]
               Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eterna/*"
+            - Sid: TokenDoRd                                  # 26/11: só a nuvem grava o refresh_token e queima o state
+              Effect: Allow
+              Action: [ssm:PutParameter]
+              Resource:
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eterna/rd-oauth-refresh"
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/eterna/rd-oauth-estado"
             - Sid: LeituraEmSegundoPlano
               Effect: Allow
               Action: [lambda:InvokeFunction]
@@ -260,6 +281,18 @@ Resources:
           Properties:
             ApiId: !Ref Api
             Path: /ponto/escolas
+            Method: GET
+        LeadsPonto:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/leads
+            Method: GET
+        RdCallback:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /rd/callback
             Method: GET
         Acoes:
           Type: HttpApi

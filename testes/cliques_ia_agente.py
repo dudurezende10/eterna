@@ -115,7 +115,7 @@ resto = [add("carlos", T + 10 + i * 3, cap=T + 9 + i * 3) for i in range(6)]
 x1 = de(pa)
 ok(x1 is de(pb) and x1["status"] == "aberta" and x1["ia"] == [] and x1["ia_regra"] is None, "contrato: aberta tem ia [] e ia_regra None")
 ok({p for p, _ in novos()} == {pa, pb} and all(pr == 1 for _, pr in novos()), "5: as 2 bases vão para a fila de IA na chegada (prio 1): %r" % novos())
-m.sess_tick(T + 200)
+m.sess_tick(T + 250)                            # 26/11: a pausa passou a 3 min (a última chegada é em T + 25)
 ok(x1["status"] == "fechada" and x1["ia"] == [pa, pb] and x1["ia_regra"] == {"n": 2, "motivo": None},
    "1: ia = os 2 menores cliques: %r %r" % (x1["ia"], x1["ia_regra"]))
 ok(x1["fotos"][2:] == resto, "1: as outras 6 seguem na sessão")

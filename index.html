@@ -1016,7 +1016,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 /* 17/11: a mesma marca de prova do Checkout, repetida na diagonal pela foto inteira */
 .gq-ph .wm{position:absolute;inset:-60%;font-size:0;color:transparent;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='740' height='280'%3E%3Ctext x='370' y='90' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-size='34' letter-spacing='4' fill='%23fff' fill-opacity='.28' stroke='%23000' stroke-opacity='.16' stroke-width='1.2' paint-order='stroke'%3EVIVA MARACAN%26%23195%3B%3C/text%3E%3Ctext x='0' y='230' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-size='34' letter-spacing='4' fill='%23fff' fill-opacity='.28' stroke='%23000' stroke-opacity='.16' stroke-width='1.2' paint-order='stroke'%3EVIVA MARACAN%26%23195%3B%3C/text%3E%3Ctext x='740' y='230' text-anchor='middle' font-family='Arial Black,Arial,sans-serif' font-weight='900' font-size='34' letter-spacing='4' fill='%23fff' fill-opacity='.28' stroke='%23000' stroke-opacity='.16' stroke-width='1.2' paint-order='stroke'%3EVIVA MARACAN%26%23195%3B%3C/text%3E%3C/svg%3E") center/370px 140px repeat;transform:rotate(-24deg);pointer-events:none;z-index:2}
 .gq-badge{position:absolute;left:6px;top:6px;padding:4px 10px;border-radius:999px;background:#FFB800;color:#0C2340;font-size:14px;font-weight:800;letter-spacing:.04em}
-.gq-dl{color:#134078;border-color:#c9d4e4;justify-content:center;width:100%}
+.gq-dl{color:#134078;border-color:#c9d4e4;justify-content:center;width:100%}.gq-dl.gq-dlok{color:#1d6b3a;border-color:#9fd3b0;background:#eaf7ee;font-weight:700}
 .gq-gv{display:flex;flex-direction:column;gap:12px;margin:8px 0 18px;align-items:stretch}.gq-gv .gq-spin{align-self:center}.gq-gvdl{justify-content:center;text-decoration:none}.gq-tour{border-top:1px solid rgba(255,255,255,.14);padding-top:16px}.av-tab th,.av-tab td{white-space:normal;padding-left:6px;padding-right:6px;vertical-align:top}.av-tab td:nth-child(4){min-width:130px}.av-tab .pill{white-space:normal;text-align:center} /* v99.24.1: cabe no tablet (800 px) */.gq-tour .gq-grid{gap:8px}.gq-tour a.gq-dl{text-decoration:none;justify-content:center}.gq-tourph{cursor:pointer}
 .gq-sel{position:absolute;right:-8px;top:-8px;width:46px;height:46px;border-radius:50%;border:2px solid #fff;background:rgba(12,35,64,.85);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 16px -6px rgba(0,0,0,.6)}
 .gq-sel svg{width:26px;height:26px}.gq-qrimg{display:block;margin-top:10px;color:#d6e2f3;text-decoration:underline;cursor:pointer;font-size:15px;text-align:center}
@@ -1617,7 +1617,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.9 · 26/11 11:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.97.0 · 26/11 19:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2354,10 +2354,13 @@ function pendItens(r,o){const id=esc(r.id);const QM=r.pkgs||(r.pkg?{[r.pkg]:r.pk
   const pk=state.pend.pick&&state.pend.pick.id===r.id?state.pend.pick:null;
   const qb=(mais,menos,q)=>o.rw?`<span class="pend-q"><button ${menos} ${q>0?'':'disabled'} aria-label="−1">−</button><b>${q}</b><button ${mais} aria-label="+1">+</button></span>`:`<b class="pi-qro">${q}×</b>`;
   const linha=(nome,desc,preco,q,mais,menos)=>`<li class="${q?'on':''}"><span class="pi-n"><b>${esc(nome)}</b>${desc?`<small>${esc(desc)}</small>`:''}</span><span class="pi-p">${fmtR(preco)}</span>${qb(mais,menos,q)}<b class="pc-v">${q?fmtR(q*preco):'—'}</b></li>`;
-  const escolha=t=>`<li class="pi-pick"><span class="eyebrow">${TE(t==='cort'?'po_qual_cort':'po_qual_porta')}</span>
-    <div class="pi-ths">${F.map((x,i)=>`<button class="pi-th${pk.foto===x.k?' sel':''}" ${x.t==='ph'?`style="${phStyle(x.id)}"${fotoReal(x.id)}`:''} data-act="pend-pick-foto" data-k="${esc(x.k)}" aria-pressed="${pk.foto===x.k}" aria-label="${esc(TE('foto_n',i+1))}">${x.t==='ai'?lojaThumb(x):''}<span>${i+1}</span></button>`).join('')}</div>
-    ${t==='cort'?`<div class="pi-mot"><select id="pend-cort-mot" aria-label="${esc(TE('po_motivo_cort'))}">${cortOpcoes(pk.mot||'')}</select><input type="text" id="pend-cort-nota" maxlength="200" value="${esc(pk.nota||'')}" placeholder="${esc(TE('po_o_que_houve_ph'))}"></div>`:''}
-    <div class="row"><button class="btn primary" data-act="pend-pick-ok" data-id="${id}">${TE('po_pick_ok')}</button><button class="btn ghost" data-act="pend-pick-x">${TE('cancelar')}</button></div></li>`;
+  // 26/11 (Ronaldo: "justificar uma por uma está muito burocrático"): na cortesia o vendedor marca de uma vez quantas fotos quiser
+  // e justifica uma vez só; com cortesia já dada neste pedido, o motivo dela vale para as novas e não é pedido de novo
+  const pkSel=x=>pk.t==='cort'?(pk.fotos||[]).includes(x.k):pk.foto===x.k;const jaMot=!!(r.cortFoto&&(r.cortFoto.motivo||r.cortFoto.nota));
+  const escolha=t=>`<li class="pi-pick"><span class="eyebrow">${TE(t==='cort'?'po_qual_cort_n':'po_qual_porta')}</span>
+    <div class="pi-ths">${F.map((x,i)=>`<button class="pi-th${pkSel(x)?' sel':''}" ${x.t==='ph'?`style="${phStyle(x.id)}"${fotoReal(x.id)}`:''} data-act="pend-pick-foto" data-k="${esc(x.k)}" aria-pressed="${pkSel(x)}" aria-label="${esc(TE('foto_n',i+1))}">${x.t==='ai'?lojaThumb(x):''}<span>${i+1}</span></button>`).join('')}</div>
+    ${t==='cort'&&!jaMot?`<div class="pi-mot"><select id="pend-cort-mot" aria-label="${esc(TE('po_motivo_cort'))}">${cortOpcoes(pk.mot||'')}</select><input type="text" id="pend-cort-nota" maxlength="200" value="${esc(pk.nota||'')}" placeholder="${esc(TE('po_o_que_houve_ph'))}"></div>`:''}
+    <div class="row"><button class="btn primary" data-act="pend-pick-ok" data-id="${id}">${t==='cort'&&(pk.fotos||[]).length>1?TE('po_pick_ok_n',(pk.fotos||[]).length):TE('po_pick_ok')}</button><button class="btn ghost" data-act="pend-pick-x">${TE('cancelar')}</button></div></li>`;
   const L=[];
   DATA.catalog.filter(c=>pkgEscolhivel(c.id)).forEach(p=>{const q=QM[p.id]||0;const nd=p.digital==='todas'?0:(+p.digital||1);const desc=p.digital==='todas'?(+p.prints?TE('po_todas_imp',+p.prints):TE('po_todas_fotos')):TE('n_fotos',nd)+', '+TE(p.prints?'po_dig_imp':'po_so_dig',nd); // 25/11 (Eduardo): Maracanã Mais = todas as digitais e 1 impressa
     L.push(linha(p.name,desc,priceOf(p.id),q,`data-act="pend-pkg-q" data-id="${id}" data-p="${esc(p.id)}" data-q="${q+1}"`,`data-act="pend-pkg-q" data-id="${id}" data-p="${esc(p.id)}" data-q="${q-1}"`));});
@@ -2376,9 +2379,10 @@ function pendItens(r,o){const id=esc(r.id);const QM=r.pkgs||(r.pkg?{[r.pkg]:r.pk
 function pendCortesia(id,dar,foto,mot,nota){if(!can('venda','c')){toast(TE('po_so_cortesia'));return false;}const r=dinPegar(id);if(!r)return false;
   if(!r.escolha){toast('Esta compra já veio com o pacote escolhido');return false;}const n=pendN(r);if(!n||n!==r.n){toast('As fotos deste pedido não conferem. Cancele e peça ao cliente para escolher de novo.');render();return false;}
   const antes=JSON.stringify(SIM);const de=r.total;const k0=cortN(r);
-  if(dar){if(!foto)return false;const m=cortMotivos().some(x=>x.id===mot)?mot:null;nota=String(nota||'').trim().slice(0,200);
+  if(dar){const fs=(Array.isArray(foto)?foto:[foto]).filter(Boolean);if(!fs.length)return false;let m=cortMotivos().some(x=>x.id===mot)?mot:null;nota=String(nota||'').trim().slice(0,200);
     const c=r.cortFoto||{n:0,fotos:[],itens:[],motivo:m,nota,por:state.user.email,porNome:state.user.name,em:now().toISOString()};
-    c.fotos=(c.fotos||[]).concat(foto);c.itens=(c.itens||[]).concat({foto,motivo:m,nota});c.n=k0+1;if(!c.motivo&&m)c.motivo=m;if(!c.nota&&nota)c.nota=nota;r.cortFoto=c;}
+    if(!m&&!nota){m=c.motivo||null;nota=c.nota||'';} // 26/11: as novas herdam o motivo da cortesia já dada
+    c.fotos=(c.fotos||[]).concat(fs);c.itens=(c.itens||[]).concat(fs.map(f=>({foto:f,motivo:m,nota})));c.n=k0+fs.length;if(!c.motivo&&m)c.motivo=m;if(!c.nota&&nota)c.nota=nota;r.cortFoto=c;}
   else{if(!r.cortFoto)return false;const c=r.cortFoto;if(k0<=1)delete r.cortFoto;else{c.n=k0-1;c.fotos=(c.fotos||[]).slice(0,c.n);c.itens=(c.itens||[]).slice(0,c.n);}}
   pendRecalc(r,n);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return false;}
@@ -2917,7 +2921,7 @@ function lojaEcoMsg(){const k=state.kiosk;const m={tipo:'estado',em:Date.now(),s
 function lojaEco(){if(!ECO_CH||!state.lojaRota)return;const d=Date.now()-ecoUlt;if(d<300){if(!ecoTimer)ecoTimer=setTimeout(()=>{ecoTimer=null;lojaEco();},300-d);return;}
   ecoUlt=Date.now();try{ECO_CH.postMessage(lojaEcoMsg());}catch(e){}}
 function lojaEcoFim(){if(ECO_CH)try{ECO_CH.postMessage({tipo:'fim',em:Date.now(),tab:ECO_TAB});}catch(e){}}
-setInterval(()=>{if(state.lojaRota){if(lojaProntoOcioso()||lojaEscolhaOciosa()||lojaChamado())return;lojaEco();lojaVisitaAtualiza();if(lojaPendCheck())render();}},5000);
+setInterval(()=>{if(state.lojaRota){ljMemVolta();if(lojaProntoOcioso()||lojaEscolhaOciosa()||lojaChamado())return;lojaEco();lojaVisitaAtualiza();if(lojaPendCheck())render();}},5000);
 // S2: qualquer toque ou tecla no Checkout conta como cliente presente na tela Pronto e na do valor; v96: também na escolha, com roda e arrasto
 ['pointerdown','keydown','wheel','touchmove'].forEach(t=>document.addEventListener(t,()=>{if(state.lojaRota)state.kiosk.toque=Date.now();},true));
 window.addEventListener('pagehide',()=>{if(state.lojaRota)lojaEcoFim();});
@@ -3344,7 +3348,15 @@ function lojaItems(card){const s=sessionObj(card);if(!s)return [];const multi=so
   const ai=ai0.map((x,i)=>i?x:{...x,edIni:true});if(!ai.length)return ph;if(!multi&&ph.length)ph[0].edFotos=true;return [...ai,...ph];}
 function lojaPick(card){const s=simOf(card);s.pick=s.pick||{};return s.pick;}
 // v96 (B2): só valem as marcas das fotos que este cliente vê (lojaItems); marca velha de outra pessoa da mesma sessão fica de fora
-function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const vale=new Set(lojaItems(card).map(x=>x.k));const ks=Object.keys(pk).filter(k=>(pk[k]==='ok'||pk[k]==='fav')&&vale.has(k));s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();}
+function lojaSync(card){const s=simOf(card);const pk=s.pick||{};const vale=new Set(lojaItems(card).map(x=>x.k));const ks=Object.keys(pk).filter(k=>(pk[k]==='ok'||pk[k]==='fav')&&vale.has(k));s.selected=ks.filter(k=>!/^ai:/.test(k));s.aiSel=ks.filter(k=>/^ai:/.test(k)).map(k=>k.slice(3));s.fav=ks.filter(k=>pk[k]==='fav');saveSim();ljMemGrava(card);}
+// 26/11 (Ronaldo: "isso não pode acontecer"): as marcas do cliente que está no Checkout ficam também na memória desta tela.
+// Toda mudança feita pelo cliente passa pelo lojaSync e atualiza a memória; se outra coisa (outra janela, releitura do
+// navegador cheio) trocar as marcas da sessão dele enquanto ele está na escolha, a tela devolve as dele e grava de novo.
+let LJ_MEM=null;
+function ljMemGrava(card){const k=state.kiosk;if(!state.lojaRota||!k||!card||card!==k.code)return;const s=SIM.sessions[card];LJ_MEM={card,codN:k.codN,pick:JSON.parse(JSON.stringify((s&&s.pick)||{}))};}
+function ljMemVolta(){const k=state.kiosk;const m=LJ_MEM;if(!state.lojaRota||!k||!m||k.step==='code'||m.card!==k.code||m.codN!==k.codN)return false;
+  const s=SIM.sessions[m.card];if(!s||s.status==='paga'||JSON.stringify(s.pick||{})===JSON.stringify(m.pick))return false;
+  s.pick=JSON.parse(JSON.stringify(m.pick));lojaSync(m.card);return true;}
 // v79: as fotos com fundo de IA contam dentro do pacote (decisão do Eduardo, 28/10): n = fotos do campo + fotos com fundo de IA.
 // Custo de um pacote para n fotos: pacote + fotos adicionais (o "Todas" não tem adicional). Preços sempre de priceOf (valem os do Catálogo).
 // Catálogo novo (28/10, correção das 10:44): a foto adicional é digital e impressa, então impressas = min(n, impressas do pacote) + adicionais.
@@ -3452,7 +3464,7 @@ const ICO={
   list:'<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>'};
 // v96 (B2): o Checkout voltou ao início (ou abriu por selfie): as marcas do cliente anterior saem da sessão. Sessão paga fica como está;
 // com pedido aberto, o pedido guarda as fotos dele e a sessão só perde as marcas do Checkout
-function lojaPickLimpa(card){const s=card&&SIM.sessions[card];if(!s||s.status==='paga'||!s.pick||!Object.keys(s.pick).length)return false;
+function lojaPickLimpa(card){if(LJ_MEM&&LJ_MEM.card===card)LJ_MEM=null;const s=card&&SIM.sessions[card];if(!s||s.status==='paga'||!s.pick||!Object.keys(s.pick).length)return false;
   s.pick={};if(s.status!=='aguardando'){s.selected=[];s.aiSel=[];s.fav=[];}saveSim();return true;}
 function lojaReset(){const k=state.kiosk;if(k.code)lojaPickLimpa(k.code);state.lang='pt';if(k.timer){clearInterval(k.timer);k.timer=null;}if(k.camT){clearTimeout(k.camT);k.camT=null;}Object.assign(k,{step:'code',mais:null,grupo:false,escolhaDesde:0,sairAsk:false,t0:null,code:'',so:null,tv:null,lgOpen:false,camOn:false,minhas:false,minhasI:null,i:0,pkg:null,pay:null,list:false,paid:null,doneAt:null,equipe:false,inicioArmado:0,aviso:null,codEsp:false,codTxt:'',codN:(k.codN||0)+1,verKs:null,verCode:null,edAbriu:0,edVistos:null,edT0:null,escDesf:null,escXEm:0});const c=state.cam;if(c){c.status='idle';c.cands=null;c.busy=false;}}
 // relê o SIM da outra janela sem perder as escolhas desta sessão no Checkout
@@ -3535,7 +3547,7 @@ function lojaProntoOcioso(){const k=state.kiosk;const p=k.paid;if(!state.lojaRot
 // as marcas (Eduardo, 10/11; substitui o "A3 cancelado" de 27/10). Vale sempre, também com pedido aberto (cliente que voltou pelo código, pela selfie ou
 // por outro balcão): o pedido fica no Posto com "o cliente saiu" (lojaSaiuPed). A tela Pronto e a do valor seguem a regra delas (LOJA_PRONTO_MS).
 // k.escolhaDesde é marcado no desenho ao entrar na escolha; k.toque, por qualquer toque, tecla, roda ou arrasto (ouvintes junto do lojaEco)
-let LOJA_ESCOLHA_MS=90e3;
+let LOJA_ESCOLHA_MS=90e3;const LOJA_ESCOLHA_MARCADO_MS=600e3; // 26/11: 10 minutos com foto marcada
 // botão Sair da escolha (Eduardo, 10/11): o mesmo que a volta por tempo; com fotos marcadas pede confirmação (k.sairAsk); com pedido aberto avisa o Posto
 function lojaSairCli(conf){const k=state.kiosk;if(!state.lojaRota)return;lojaCliente();
   if(!conf&&k.code&&LOJA_ESCOLHA_ETAPAS[k.step]&&lojaCart(k.code).ch.length){k.sairAsk=true;render();return;}
@@ -3549,7 +3561,10 @@ function lojaAskTab(e){const bs=[...document.querySelectorAll('.lj-ask button')]
   bs[i<0?0:(i+(e.shiftKey?bs.length-1:1))%bs.length].focus();}
 const LOJA_ESCOLHA_ETAPAS={review:1,talvez:1,gallery:1,pick:1};
 function lojaEscolhaOciosa(){const k=state.kiosk;if(!state.lojaRota||!LOJA_ESCOLHA_ETAPAS[k.step]||!k.escolhaDesde)return false;
-  if(Date.now()-Math.max(k.toque||0,k.escolhaDesde)<LOJA_ESCOLHA_MS)return false;
+  // 26/11 (Ronaldo: cliente marcava fotos e as marcas sumiam): com foto marcada, o cliente pode estar só olhando ou conversando;
+  // a tela espera LOJA_ESCOLHA_MARCADO_MS sem toque antes de voltar ao início (sem marca, segue LOJA_ESCOLHA_MS)
+  const marcou=!!(k.code&&Object.keys((SIM.sessions[k.code]||{}).pick||{}).length);
+  if(Date.now()-Math.max(k.toque||0,k.escolhaDesde)<(marcou?LOJA_ESCOLHA_MARCADO_MS:LOJA_ESCOLHA_MS))return false;
   if(k.code){lojaFresh(k.code);lojaSaiuPed(dinAbertaDe(k.code));} // pedido aberto: o Posto vê "o cliente saiu" (como o Sair)
   k.sairAsk=false;lojaTimerOff();lojaReset();render();lojaEco();return true;} // lojaReset limpa as marcas (lojaPickLimpa) e leva ao Iniciar
 // Checkout esperando: o vendedor confirmou (vira a tela do QR com a contagem), cancelou (volta ao carrinho da mesma sessão com aviso) ou o dia virou
@@ -3934,6 +3949,13 @@ function pubPedSalvo(tok){try{const o=JSON.parse(sessionStorage.getItem(PED_KEY)
 // cada foto. Agora prepara todas com barra de progresso e salva de uma vez: no celular pelo Salvar/Compartilhar do sistema, em
 // lotes de 20 (um toque por lote); sem isso, um único .zip (sem compressão: JPEG já é comprimido).
 const DL_LOTE=20;
+// 26/11 (Ronaldo): o .zip dava problema no celular e o cliente não sabia o que já tinha baixado. Sem compartilhar do sistema,
+// as fotos descem uma a uma (sem .zip); cada foto baixada ganha a marca "Baixada" (neste aparelho; o servidor já registra foto_baixada)
+const pubBxKey=()=>'eterna.gq.baixadas.'+((state.pub&&state.pub.token)||'');
+function pubBx(){const p=state.pub;if(!p)return {};if(!p.bx){p.bx={};try{Object.assign(p.bx,JSON.parse(localStorage.getItem(pubBxKey())||'{}')||{});}catch(e){}}return p.bx;}
+function pubBxMarca(pids){const b=pubBx();(pids||[]).forEach(x=>{if(x)b[x]=1;});try{localStorage.setItem(pubBxKey(),JSON.stringify(b));}catch(e){}}
+async function pubSoltas(files,pids){for(let i=0;i<files.length;i++){const u=URL.createObjectURL(files[i]);const a=document.createElement('a');a.href=u;a.download=files[i].name;document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u),60000);pubBxMarca([pids&&pids[i]]);render();await new Promise(r=>setTimeout(r,700));}}
 async function pubBlobFoto(p,f){
   if(p.modo!=='agente'){const c=await photoCanvas(f.pid);return c?await new Promise(r=>c.toBlob(r,'image/jpeg',.92)):null;}
   const pega=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');return r.blob();};
@@ -3946,18 +3968,18 @@ async function pubBaixarTodas(){const p=state.pub;if(!p||(p.dl&&p.dl.fase==='pre
   if(mine.length===1){pubBaixar(mine[0].pid,1);return;}
   p.dl={fase:'prep',n:0,tot:mine.length};render();
   if(p.modo==='agente'&&(!p.galAt||Date.now()-p.galAt>12*60000))await pubRenovar(p);
-  const files=[];let falhas=0;
+  const files=[],pids=[];let falhas=0;
   for(let i=0;i<mine.length;i++){const b=await pubBlobFoto(p,mine[i]);
-    if(b){files.push(new File([b],`viva-maracana-${i+1}.jpg`,{type:'image/jpeg'}));
+    if(b){files.push(new File([b],`viva-maracana-${i+1}.jpg`,{type:'image/jpeg'}));pids.push(mine[i].pid);
       if(p.modo==='agente'&&p.acesso)fetch(galApi()+'/g/'+p.token+'/evento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acesso:p.acesso,tipo:'foto_baixada',foto:mine[i].pid})}).catch(()=>{});}
     else falhas++;
     p.dl.n=i+1;pubDlBarra();}
   if(!files.length){p.dl={fase:'erro'};render();return;}
   let share=false;try{share=!!(navigator.canShare&&navigator.canShare({files:files.slice(0,1)}));}catch(e){}
-  p.dl={fase:'pronto',files,lote:0,share,falhas};render();
-  if(!share)pubZip(files);}
+  p.dl={fase:'pronto',files,pids,lote:0,share,falhas};render();
+  if(!share)pubSoltas(files,pids);}
 async function pubDlSalvar(){const d=state.pub&&state.pub.dl;if(!d||d.fase!=='pronto')return;const lote=d.files.slice(d.lote*DL_LOTE,(d.lote+1)*DL_LOTE);if(!lote.length)return;
-  try{await navigator.share({files:lote});d.lote++;}catch(e){if(e&&e.name==='AbortError')return;d.share=false;pubZip(d.files);}
+  try{await navigator.share({files:lote});pubBxMarca((d.pids||[]).slice(d.lote*DL_LOTE,(d.lote+1)*DL_LOTE));d.lote++;}catch(e){if(e&&e.name==='AbortError')return;d.share=false;pubSoltas(d.files,d.pids);}
   render();}
 const CRC_T=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
 function crc32(u){let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRC_T[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
@@ -3982,11 +4004,11 @@ async function pubBaixar(pid,i){const p=state.pub;const g=pubGaleria();const f=g
   const nome=`viva-maracana-${i||1}.jpg`;const salva=href=>{const a=document.createElement('a');a.href=href;a.download=nome;document.body.appendChild(a);a.click();a.remove();};
   if(p.modo==='agente'){
     // links assinados valem 15 min: com mais de 12 min de galeria, ou se o download falhar, pede links novos e tenta de novo uma vez
-    const baixa=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');const u=URL.createObjectURL(await r.blob());salva(u);setTimeout(()=>URL.revokeObjectURL(u),4000);};
+    const baixa=async ff=>{const r=await fetch(galUrl(ff.original));if(!r.ok)throw new Error('x');const u=URL.createObjectURL(await r.blob());salva(u);setTimeout(()=>URL.revokeObjectURL(u),4000);pubBxMarca([pid]);render();};
     let ff=f;if(!p.galAt||Date.now()-p.galAt>12*60000){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid)||f;}
     try{await baixa(ff);}catch(e){if(!(await pubRenovar(p)))return;ff=(p.gal.fotos||[]).find(x=>x.pid===pid);try{if(!ff||!ff.original)throw new Error('x');await baixa(ff);}catch(e2){if(ff&&ff.original)window.open(galUrl(ff.original),'_blank','noopener');}}
     return;}
-  const c=await photoCanvas(pid);if(c)salva(c.toDataURL('image/jpeg',.92));}
+  const c=await photoCanvas(pid);if(c){salva(c.toDataURL('image/jpeg',.92));pubBxMarca([pid]);render();}}
 const pubUUID=()=>{const u=galRand(16);u[6]=u[6]&15|64;u[8]=u[8]&63|128;const h=[...u].map(b=>b.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;};
 async function pubPagar(){const p=state.pub;if(!p||p.paying)return;const g=pubGaleria();const venda=new Set(g.fotos.filter(f=>f.direito==='venda').map(f=>f.pid));const pids=Object.keys(p.sel).filter(k=>p.sel[k]&&venda.has(k));if(!pids.length)return;
   const v=id=>(($('#'+id)||{}).value||'').trim();const cli={nome:v('gq-nome').replace(/\s+/g,' '),email:v('gq-email').toLowerCase()};p.cli={...cli,estr:!!p.estr,mkt:!!(($('#gq-mkt')||{}).checked)};
@@ -4142,7 +4164,7 @@ function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   // 18/11 (Ronaldo): na escola o responsável sai e recomeça (outra criança, outro responsável) pelo Sair, que volta ao código
   return `<div class="gq gq-gal">${deco}${top(`<div class="gq-until">${T('gq_until',fmtD(g.expira||p.info.expira))}</div>`,esc0?`<button class="lj-ghost sm gq-sair" data-act="gq-back" data-to="codigo">${ICO.sair} ${T('ljSair')}</button>`:'')}
     <section class="gq-sec">${g.tipo==='evento'?`<div class="lj-eyebrow">${esc0&&esc0.nome?esc(esc0.nome)+(esc0.dia?' · '+fmtD(esc0.dia+'T12:00:00'):'')+' · ':''}${T('gq_kidFound',g.fotos.length)}</div>`:''}${mine.length?`<h1 class="lj-h2">${T('gq_yours')}</h1><p class="lj-sub">${T('gq_yoursD',mine.length)}</p>${pubDlHtml(mine.length)}`:''}
-      ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div><button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button></figure>`).join('')}</div>`:''}</section>
+      ${mine.length?`<div class="gq-grid">${mine.map((f,i)=>`<figure class="gq-item"><div class="gq-ph" style="${pubImg(f)}">${f.direito==='cortesia'?`<span class="gq-badge">${T('gq_gift')}</span>`:''}</div>${pubBx()[f.pid]?`<button class="lj-ghost sm gq-dl gq-dlok" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">✓ ${T('gq_dlOk')}</button>`:`<button class="lj-ghost sm gq-dl" data-act="gq-dl" data-pid="${esc(f.pid)}" data-i="${i+1}">${ICO.cloud} ${T('gq_dl')}</button>`}</figure>`).join('')}</div>`:''}</section>
     ${more.length?`<section class="gq-sec">${podeGr?`<div class="gq-grtopo"><h2 class="lj-h2">${T('gq_gratisH')}</h2><p class="lj-sub">${T('gq_gratisD')}</p></div>`:''}<h2 class="lj-h2">${T('gq_more')}</h2>${compra?`<p class="lj-sub">${T('gq_moreD')} ${pubOferta(g)}</p>`:''}
       <div class="gq-grid">${more.map(f=>{const on=compra&&!!p.sel[f.pid];return `<figure class="gq-item ${on?'on':''}"><div class="gq-ph" style="${pubImg(f)}"><span class="wm">VIVA MARACANÃ</span></div>${compra?`<button class="gq-sel ${on?'on':''}" data-act="gq-sel" data-pid="${esc(f.pid)}" aria-pressed="${on}" aria-label="✓">${ICO.ok}</button>`:''}${podeGr?`<button class="lj-ghost sm gq-grbtn" data-act="gq-gratis" data-pid="${esc(f.pid)}">${T('gq_gratisBtn')}</button>`:''}</figure>`;}).join('')}</div>
       ${compra?`<button class="lj-ghost gq-allbtn" data-act="gq-all">${T('gq_all',fmtR(pubTotal(more.length,g)))}</button>`:`<p class="lj-sub gq-buyoff">${T('gq_buyOffEsc')} <a href="mailto:${GQ_SUPORTE}">${GQ_SUPORTE}</a></p>`}</section>`:''}
@@ -4402,13 +4424,14 @@ const I18N={
  gq_none:['Nenhuma foto liberada ainda.','No photos unlocked yet.','Todavía no hay fotos liberadas.','Aucune photo débloquée pour l’instant.','Noch keine Fotos freigeschaltet.'],
  gq_gift:['Cortesia','Complimentary','Cortesía','Offerte','Gratis'],
  gq_dl:['Baixar','Download','Descargar','Télécharger','Herunterladen'],
+ gq_dlOk:['Baixada','Downloaded','Descargada','Téléchargée','Heruntergeladen'],
  gq_dlAll:['Baixar todas','Download all','Descargar todas','Tout télécharger','Alle herunterladen'],
  gq_dlPrep:[(a,b)=>`Preparando ${a} de ${b} fotos…`,(a,b)=>`Preparing ${a} of ${b} photos…`,(a,b)=>`Preparando ${a} de ${b} fotos…`,(a,b)=>`Préparation de ${a} sur ${b} photos…`,(a,b)=>`${a} von ${b} Fotos werden vorbereitet…`],
  gq_dlSave:[(a,b,c)=>`Salvar fotos ${a} a ${b} de ${c}`,(a,b,c)=>`Save photos ${a}–${b} of ${c}`,(a,b,c)=>`Guardar fotos ${a} a ${b} de ${c}`,(a,b,c)=>`Enregistrer les photos ${a} à ${b} sur ${c}`,(a,b,c)=>`Fotos ${a}–${b} von ${c} speichern`],
- gq_dlZip:['Baixar tudo em .zip','Download all as .zip','Descargar todo en .zip','Tout télécharger en .zip','Alles als .zip herunterladen'],
+ gq_dlZip:['Baixar uma por uma','Download one by one','Descargar una por una','Télécharger une par une','Einzeln herunterladen'],
  gq_dlFeito:[n=>`Pronto: ${n} fotos salvas.`,n=>`Done: ${n} photos saved.`,n=>`Listo: ${n} fotos guardadas.`,n=>`Terminé : ${n} photos enregistrées.`,n=>`Fertig: ${n} Fotos gespeichert.`],
- gq_dlZipOk:[n=>`${n} fotos baixadas em um arquivo .zip.`,n=>`${n} photos downloaded in one .zip file.`,n=>`${n} fotos descargadas en un archivo .zip.`,n=>`${n} photos téléchargées dans un fichier .zip.`,n=>`${n} Fotos als eine .zip-Datei heruntergeladen.`],
- gq_dlZipDe:['Baixar o .zip de novo','Download the .zip again','Descargar el .zip de nuevo','Retélécharger le .zip','.zip erneut herunterladen'],
+ gq_dlZipOk:[n=>`${n} fotos baixadas. Elas estão na galeria ou na pasta Downloads do celular.`,n=>`${n} photos downloaded. Find them in your gallery or Downloads folder.`,n=>`${n} fotos descargadas. Están en la galería o en la carpeta Descargas.`,n=>`${n} photos téléchargées. Elles sont dans la galerie ou le dossier Téléchargements.`,n=>`${n} Fotos heruntergeladen. Sie sind in der Galerie oder im Download-Ordner.`],
+ gq_dlZipDe:['Baixar de novo','Download again','Descargar de nuevo','Télécharger à nouveau','Erneut herunterladen'],
  gq_dlErro:['Não deu para baixar agora. Tente de novo.','Could not download now. Please try again.','No se pudo descargar ahora. Inténtalo de nuevo.','Téléchargement impossible pour le moment. Réessayez.','Download gerade nicht möglich. Bitte erneut versuchen.'],
  gq_dlFalhas:[n=>`${n} ${PL(n,'foto não baixou','fotos não baixaram')}: use o Baixar de cada uma.`,n=>`${n} ${PL(n,'photo','photos')} failed: use Download on each one.`,n=>`${n} ${PL(n,'foto no se descargó','fotos no se descargaron')}: usa Descargar en cada una.`,n=>`${n} ${PL(n,'photo non téléchargée','photos non téléchargées')} : utilisez Télécharger sur chacune.`,n=>`${n} ${PL(n,'Foto','Fotos')} fehlgeschlagen: einzeln herunterladen.`],
  gq_more:['Mais fotos da sua visita','More photos from your visit','Más fotos de tu visita','Plus de photos de votre visite','Mehr Fotos von deinem Besuch'],
@@ -4652,13 +4675,14 @@ const I18N_ZH={
  gq_none:"暂无可下载的照片。",
  gq_gift:"赠送",
  gq_dl:"下载",
+ gq_dlOk:"已下载",
  gq_dlAll:"全部下载",
  gq_dlPrep:(a,b)=>`正在准备 ${a}/${b} 张照片…`,
  gq_dlSave:(a,b,c)=>`保存第 ${a}–${b} 张（共 ${c} 张）`,
- gq_dlZip:"全部下载为 .zip",
+ gq_dlZip:"逐张下载",
  gq_dlFeito:(n)=>`完成：已保存 ${n} 张照片。`,
- gq_dlZipOk:(n)=>`已将 ${n} 张照片下载为一个 .zip 文件。`,
- gq_dlZipDe:"重新下载 .zip",
+ gq_dlZipOk:(n)=>`已下载 ${n} 张照片，请在相册或下载文件夹中查看。`,
+ gq_dlZipDe:"重新下载",
  gq_dlErro:"暂时无法下载，请重试。",
  gq_dlFalhas:(n)=>`${n} 张未下载成功：请逐张点击下载。`,
  gq_more:"本次游览的更多照片",
@@ -4890,13 +4914,14 @@ const I18N_IT={
  gq_none:"Nessuna foto ancora sbloccata.",
  gq_gift:"Omaggio",
  gq_dl:"Scarica",
+ gq_dlOk:"Scaricata",
  gq_dlAll:"Scarica tutte",
  gq_dlPrep:(a,b)=>`Preparazione di ${a} foto su ${b}…`,
  gq_dlSave:(a,b,c)=>`Salva le foto da ${a} a ${b} di ${c}`,
- gq_dlZip:"Scarica tutto in .zip",
+ gq_dlZip:"Scarica una per una",
  gq_dlFeito:n=>`Fatto: ${n} foto salvate.`,
- gq_dlZipOk:n=>`${n} foto scaricate in un unico file .zip.`,
- gq_dlZipDe:"Scarica di nuovo il .zip",
+ gq_dlZipOk:n=>`${n} foto scaricate. Le trovi nella galleria o nella cartella Download.`,
+ gq_dlZipDe:"Scarica di nuovo",
  gq_dlErro:"Impossibile scaricare ora. Riprova.",
  gq_dlFalhas:n=>`${n} foto non ${PL(n,'scaricata','scaricate')}: usa Scarica su ognuna.`,
  gq_more:"Altre foto della tua visita",
@@ -5929,7 +5954,11 @@ function libPanel(){if(!state.agent.on)return '';const F=state.libF;const nowS=D
     <div class="libf"><span class="eyebrow">${TE('lb_venda')}</span>${chip('venda','todas',TE('lb_todas'))}${chip('venda','vendidas',TE('lb_vendidas'))}${chip('venda','nao',TE('lb_nao_vendidas'))}</div>
     ${ph.length?`<div class="photos small">${ph.slice(0,400).map(f=>{const v=ix.sold.has('ag_'+f.id);return photoBtn({id:'ag_'+f.id},{label:f.name,tag:(v?TE('lb_vendida')+' · ':'')+new Date(f.t*1000).toLocaleTimeString(localeEq(),{hour:'2-digit',minute:'2-digit'})});}).join('')}</div>${ph.length>400?`<div class="note">${TE('lb_400f')}</div>`:''}`:`<div class="note">${TE('rv_nenhuma_foto')}</div>`}
     <div class="note">${TE('lb_nota',isAdminUser(state.user))}</div></div>`;}
-const SESSAO_PAUSA_S=60; // v91 (S1, Eduardo 30/10): 1 minuto sem clique fecha a sessão, a mesma regra do agente (SESS_PAUSA) e da Fila do fotógrafo; com o agente, as sessões vêm prontas dele (pausa + rostos)
+const SESSAO_PAUSA_S=180; // 26/11 (Eduardo): 3 minutos sem clique fecham a sessão (era 1 minuto desde a v91), a mesma regra do agente (SESS_PAUSA), da Fila do fotógrafo e das fotos vizinhas do Checkout; com o agente, as sessões vêm prontas dele (pausa + rostos)
+// A pausa que vale é a que o servidor informa (/status.sessoes.pausa e /sessoes.pausa); sem servidor, a constante. Todo texto de tela sai
+// daqui ("3 min"), nunca de número escrito no texto.
+function sessPausaS(){const s=state.agent&&state.agent.sessoes;const p=s&&+s.pausa;return p>0?p:SESSAO_PAUSA_S;}
+function sessPausaTxt(p,un){p=+p>0?+p:sessPausaS();return p%60===0?(p/60)+' '+(un||'min'):p+' s';}
 // v94 (ondas UX, C): faixa de conexão. Sem conexão nunca fica verde: vermelha com a hora do último dado; cinza na demonstração.
 function faixaConexao(o){o=o||{};const onde=o.onde==='servidor de impressão'?TE('conn_srv_imp'):o.onde||TE('conn_ponto');
   if(o.estado==='demo')return `<div class="conn-demo" role="status">${esc(TE('conn_demo',onde))}</div>`;
@@ -5950,7 +5979,7 @@ async function agentPoll(){const a=state.agent;await a.sonda;if(!AGENT_VIEWS.inc
       // foto que já estava no computador (reabriu o agente ou recarregou a página) não entra de novo como chegada
       if(e.src==='inbox'||known.has(id)||was||a.sessoes)return;items.push({id,kind:'photo',flag:null,conf:0,t:e.t,size:e.size,real:true,src:e.src||'cartao',who:e.card});}else if(e.type==='dup'){if(!UP[id])UP[id]={src:a.url+'/thumb/'+e.id,name:e.name};dups++;}});a.cursor=ev.next;try{localStorage.setItem('eterna.agcur',JSON.stringify({boot:a.boot,cursor:a.cursor,url:a.url}))}catch(e){}
       if(dups&&!state.pub&&!state.lojaRota)toast(dups+(dups>1?' fotos já estavam':' foto já estava')+' no computador. Não baixei de novo.');if(items.length){ingPush(items);state.ing.lastReal=Date.now();}render();}
-    else if(state.ing.cur&&state.ing.lastReal&&!state.ing.running&&Date.now()-state.ing.lastReal>SESSAO_PAUSA_S*1000){state.ing.n.auto++;ingClose(`pausa de ${SESSAO_PAUSA_S} s sem foto nova`);state.ing.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:`pausa de ${SESSAO_PAUSA_S} s sem foto nova no cartão`});render();}
+    else if(state.ing.cur&&state.ing.lastReal&&!state.ing.running&&Date.now()-state.ing.lastReal>SESSAO_PAUSA_S*1000){state.ing.n.auto++;ingClose(`pausa de ${sessPausaTxt(SESSAO_PAUSA_S)} sem foto nova`);state.ing.feed.unshift({k:'auto',t:'Grupo fechado pelo servidor',s:`pausa de ${sessPausaTxt(SESSAO_PAUSA_S)} sem foto nova no cartão`});render();}
     if(a.card!==(st.card||null)){a.card=st.card;render();}
     if(a.sessoes)srvPull();
     a.falhas=0;a.proxima=0;
@@ -5961,7 +5990,7 @@ async function agentPoll(){const a=state.agent;await a.sonda;if(!AGENT_VIEWS.inc
 }
 setInterval(agentPoll,2500);
 setTimeout(livePoll,800);setInterval(livePoll,60000);setTimeout(upLoad,300);
-// v85 A / v91: sessões montadas no agente (pausa de 1 min pela hora do clique + rostos novos). Cada sessão fechada vira a
+// v85 A / v91: sessões montadas no agente (pausa de SESSAO_PAUSA_S, 3 min, pela hora do clique + rostos novos). Cada sessão fechada vira a
 // mesma sessão (mesmo código LP) em qualquer navegador: posto, Checkout, PC pelo Tailscale, Mac do curador. SRV.sess guarda
 // as de hoje (aberta, separada e fechada) para o painel "Sessões de hoje" do Upload; só a fechada entra no SIM. Foto que já
 // está numa sessão deste navegador (montada aqui antes desta versão) não duplica.
@@ -6010,7 +6039,7 @@ function srvMaterializa(){const cards=Object.keys(SRV.mat);if(!cards.length)retu
     state.ing.feed.unshift({k:'auto',t:'Sessão '+x.card+' montada no servidor',s:fotos.length+(fotos.length===1?' foto':' fotos')+(x.fotografo?' · '+x.fotografo:'')});n++;}
   if(n)setTimeout(galFilaTick,0); // galeria que esperava a sessão chegar
   return n;}
-function srvComo(x,pausa){const p=pausa||SESSAO_PAUSA_S;const m=p===60?'1 min':p+' s';return x.fechada_por==='pausa_clique'?`pausa de ${m} entre cliques (servidor)`:x.fechada_por==='virada_do_dia'?'virada do dia (servidor)':x.fechada_por==='reinicio'?'agente reiniciado (servidor)':`pausa de ${m} sem foto nova (servidor)`;}
+function srvComo(x,pausa){const m=sessPausaTxt(pausa);return x.fechada_por==='pausa_clique'?`pausa de ${m} entre cliques (servidor)`:x.fechada_por==='virada_do_dia'?'virada do dia (servidor)':x.fechada_por==='reinicio'?'agente reiniciado (servidor)':`pausa de ${m} sem foto nova (servidor)`;}
 // v93 (segurança): sessão fechada que um navegador antigo materializou sem ia ganha as bases do servidor (saem da venda aqui)
 function srvIaCompleta(x){const s=SIM.sessions[x.card];if(!s||!s.srv||s.status==='paga'||!Array.isArray(x.ia)||!x.ia.length)return;
   // v97 (Segurança, item 6): leva sem bases porque a visita já tinha (visita_ja_tem) e que o servidor reabriu (Separar, escola
@@ -6250,8 +6279,8 @@ async function fotosEnviar(lista){const im=state.imp;if(im.envio)return;const p=
 // Tela da equipe (só português, S13). Lê SRV.sess (feed /sessoes do agente): a aberta em destaque, a separada "fechando"
 // (ainda pode juntar com o grupo), a fechada neutra. Miniaturas com loading="lazy" (até 48 por sessão, 30 sessões por vez).
 state.upSessN=30;state.upSessAll={};
-const UP_MOTIVO={rostos_novos:'rostos novos',pausa:'pausa de 1 min',inicio:'primeira do dia',reinicio:'agente reiniciado',reagrupada:'reagrupada'};
-const UP_FECHADA={pausa:'fechada · 1 min sem foto',pausa_clique:'fechada · pausa entre cliques',virada_do_dia:'fechada · virada do dia',reinicio:'fechada · agente reiniciado'};
+const UP_MOTIVO={rostos_novos:'rostos novos',pausa:'pausa de '+sessPausaTxt(SESSAO_PAUSA_S),inicio:'primeira do dia',reinicio:'agente reiniciado',reagrupada:'reagrupada'};
+const UP_FECHADA={pausa:'fechada · '+sessPausaTxt(SESSAO_PAUSA_S)+' sem foto',pausa_clique:'fechada · pausa entre cliques',virada_do_dia:'fechada · virada do dia',reinicio:'fechada · agente reiniciado'};
 // 18/11: só o filtro por fotógrafo; sessão sem ponto (Escala desligada) aparece
 function upSessLista(){const im=state.imp;return Object.values(SRV.sess).filter(x=>!x.removida&&(im.key==='todos'||x.fotografo===im.key)).sort((a,b)=>(b.aberta_em||0)-(a.aberta_em||0)||(b.rev||0)-(a.rev||0));}
 function upSessDe(id){if(!/^ag_/.test(id))return null;const pid=id.slice(3);return Object.values(SRV.sess).find(x=>!x.removida&&((x.fotos||[]).includes(pid)||(x.pend||[]).includes(pid)))||null;}
@@ -6355,11 +6384,11 @@ function upSessBloco(x){const on=x.status==='aberta',sep=x.status==='separada',f
   const iat=p=>{const j=iaL.indexOf(p);return j<0?'':fech?(UP_IA_TAG[j]?TEk('up_iat_'+j,UP_IA_TAG[j]):TE('up_fundo_n',j+1)):TE('up_fundo_q');};
   const iaN=fech?iaL.length:(rg&&+rg.n)||0;const iaPr=sv?sv.prontas:null;
   const iaPill=!rg?'':rg.motivo?(UP_IA_MOTIVO[rg.motivo]?`<span class="pill neutral up-ia">${rg.motivo==='sem_funcao'&&!ESCALA_ON?TE('up_iam_sem_ponto'):TEk('up_iam_'+rg.motivo,UP_IA_MOTIVO[rg.motivo])}</span>`:''):iaN?`<span class="pill up-ia">${TE('up_fundos_ia')}: ${iaPr!=null?TE('up_prontas',Math.min(iaPr,iaN),iaN):TE('n_fotos',iaN)}</span>`:'';
-  return `<div class="up-sess${on?' on':''}" data-card="${esc(x.card)}"><div class="up-sess-h"><b class="up-lp">${esc(x.card)}</b><span class="up-nome">${esc(upNome(x))}</span><span>${esc(pt)}</span><span>${upHora(x.cap0)}–${upHora(x.cap1)}${x.fonte_t==='u'?' '+TE('up_chegada'):''}</span><span>${TE('n_fotos',n)}</span>${UP_MOTIVO[x.motivo]?`<span class="pill neutral">${TEk('up_m_'+x.motivo,UP_MOTIVO[x.motivo])}</span>`:''}${x.atrasada?`<span class="pill warn">${TE('up_atrasada')}</span>`:''}${iaPill}${on?`<span class="pill up-on">${TE('up_aberta')}</span>`:sep?`<span class="pill warn">${TE('up_fechando')}</span>`:''}${fech&&UP_FECHADA[x.fechada_por]?`<span class="note">${TEk('up_f_'+x.fechada_por,UP_FECHADA[x.fechada_por])}</span>`:''}${abrir?`<button class="chip" data-act="up-sess-abrir" data-card="${esc(x.card)}">${TE('up_abrir')}</button>`:''}</div>
+  return `<div class="up-sess${on?' on':''}" data-card="${esc(x.card)}"><div class="up-sess-h"><b class="up-lp">${esc(x.card)}</b><span class="up-nome">${esc(upNome(x))}</span><span>${esc(pt)}</span><span>${upHora(x.cap0)}–${upHora(x.cap1)}${x.fonte_t==='u'?' '+TE('up_chegada'):''}</span><span>${TE('n_fotos',n)}</span>${UP_MOTIVO[x.motivo]?`<span class="pill neutral">${TEk('up_m_'+x.motivo,UP_MOTIVO[x.motivo],sessPausaS())}</span>`:''}${x.atrasada?`<span class="pill warn">${TE('up_atrasada')}</span>`:''}${iaPill}${on?`<span class="pill up-on">${TE('up_aberta')}</span>`:sep?`<span class="pill warn">${TE('up_fechando')}</span>`:''}${fech&&UP_FECHADA[x.fechada_por]?`<span class="note">${TEk('up_f_'+x.fechada_por,UP_FECHADA[x.fechada_por],sessPausaS())}</span>`:''}${abrir?`<button class="chip" data-act="up-sess-abrir" data-card="${esc(x.card)}">${TE('up_abrir')}</button>`:''}</div>
     <div class="photos small">${todas.slice(0,lim).map((p,i)=>upThumb(p,i,pend.has(p),iat(p))).join('')}${todas.length>lim?`<button class="chip up-mais" data-act="up-sess-tudo" data-card="${esc(x.card)}">+${todas.length-lim}</button>`:''}</div></div>`;}
 function upSessoes(L0){const a=state.agent;upIaPoll();const L=L0||upSessLista();const N=state.upSessN||30;const abertas=L.filter(x=>x.status!=='fechada').length;
-  return `<div class="panel" id="up-sessoes"><div class="head"><div><div class="eyebrow">${TE('up_montadas')}</div><h2>${TE('up_hoje')}</h2></div><span class="note">${TE('rv_n_sess',L.length)}${abertas?' · '+TE('up_rec_fech',abertas):''}</span></div>
-    ${a.sessoes&&a.sessoes.rostos===false?`<div class="note up-aviso"><span class="pill warn">${TE('up_rostos_off')}</span></div>`:''}
+  return `<div class="panel" id="up-sessoes"><div class="head"><div><div class="eyebrow">${TE('up_montadas',sessPausaS())}</div><h2>${TE('up_hoje')}</h2></div><span class="note">${TE('rv_n_sess',L.length)}${abertas?' · '+TE('up_rec_fech',abertas):''}</span></div>
+    ${a.sessoes&&a.sessoes.rostos===false?`<div class="note up-aviso"><span class="pill warn">${TE('up_rostos_off',sessPausaS())}</span></div>`:''}
     ${L.length?L.slice(0,N).map(upSessBloco).join(''):`<div class="note">${TE('up_nenhuma')}</div>`}
     ${L.length>N?`<div class="row"><button class="btn ghost" data-act="up-sess-mais">${TE('up_ver_mais')}</button><span class="note">${TE('up_mostrando',N,L.length)}</span></div>`:''}</div>`;}
 // ---------- Painel (v80; plano docs/planos/2026-10-28-v83-painel.md) ----------
@@ -11026,11 +11055,11 @@ const EQ={
   en_nao_entraram:["Fotos que não entraram:","Photos not accepted:","Fotos que no entraron:","Photos non acceptées :","Nicht angenommene Fotos:"],
   en_h:["Enviar fotos do cartão","Upload card photos","Enviar fotos de la tarjeta","Envoyer les photos de la carte","Kartenfotos hochladen"],
   up_m_rostos_novos:["rostos novos","new faces","rostros nuevos","nouveaux visages","neue Gesichter"],
-  up_m_pausa:["pausa de 1 min","1 min pause","pausa de 1 min","pause d'1 min","1 Min. Pause"],
+  up_m_pausa:[(p)=>`pausa de ${sessPausaTxt(p)}`,(p)=>`${sessPausaTxt(p)} pause`,(p)=>`pausa de ${sessPausaTxt(p)}`,(p)=>`pause de ${sessPausaTxt(p)}`,(p)=>`${sessPausaTxt(p,"Min.")} Pause`],
   up_m_inicio:["primeira do dia","first of the day","primera del día","première du jour","erste des Tages"],
   up_m_reinicio:["agente reiniciado","agent restarted","agente reiniciado","agent redémarré","Agent neu gestartet"],
   up_m_reagrupada:["reagrupada","regrouped","reagrupada","regroupée","neu gruppiert"],
-  up_f_pausa:["fechada · 1 min sem foto","closed · 1 min without photos","cerrada · 1 min sin foto","clôturée · 1 min sans photo","geschlossen · 1 Min. ohne Foto"],
+  up_f_pausa:[(p)=>`fechada · ${sessPausaTxt(p)} sem foto`,(p)=>`closed · ${sessPausaTxt(p)} without photos`,(p)=>`cerrada · ${sessPausaTxt(p)} sin foto`,(p)=>`clôturée · ${sessPausaTxt(p)} sans photo`,(p)=>`geschlossen · ${sessPausaTxt(p,"Min.")} ohne Foto`],
   up_f_pausa_clique:["fechada · pausa entre cliques","closed · pause between shots","cerrada · pausa entre disparos","clôturée · pause entre les prises","geschlossen · Pause zwischen Aufnahmen"],
   up_f_virada_do_dia:["fechada · virada do dia","closed · end of day","cerrada · cambio de día","clôturée · changement de jour","geschlossen · Tageswechsel"],
   up_f_reinicio:["fechada · agente reiniciado","closed · agent restarted","cerrada · agente reiniciado","clôturée · agent redémarré","geschlossen · Agent neu gestartet"],
@@ -11059,9 +11088,9 @@ const EQ={
   up_abrir:["Abrir sessão","Open session","Abrir sesión","Ouvrir la séance","Sitzung öffnen"],
   up_sem_foto:["Sem fotógrafo","No photographer","Sin fotógrafo","Sans photographe","Kein Fotograf"],
   up_lendo:["lendo rostos","reading faces","leyendo rostros","lecture des visages","Gesichter werden gelesen"],
-  up_montadas:["Montadas pelo servidor do ponto · pausa de 1 min e rostos novos","Built by the point server · 1 min pause and new faces","Armadas por el servidor del punto · pausa de 1 min y rostros nuevos","Formées par le serveur du point · pause d'1 min et nouveaux visages","Vom Standort-Server gebildet · 1 Min. Pause und neue Gesichter"],
+  up_montadas:[(p)=>`Montadas pelo servidor do ponto · pausa de ${sessPausaTxt(p)} e rostos novos`,(p)=>`Built by the point server · ${sessPausaTxt(p)} pause and new faces`,(p)=>`Armadas por el servidor del punto · pausa de ${sessPausaTxt(p)} y rostros nuevos`,(p)=>`Formées par le serveur du point · pause de ${sessPausaTxt(p)} et nouveaux visages`,(p)=>`Vom Standort-Server gebildet · ${sessPausaTxt(p,"Min.")} Pause und neue Gesichter`],
   up_hoje:["Sessões de hoje","Today's sessions","Sesiones de hoy","Séances du jour","Heutige Sitzungen"],
-  up_rostos_off:["Rostos desligados neste computador: as sessões estão sendo separadas só por tempo (1 minuto).","Faces off on this computer: sessions are being split by time only (1 minute).","Rostros desactivados en esta computadora: las sesiones se separan solo por tiempo (1 minuto).","Visages désactivés sur cet ordinateur : les séances sont séparées uniquement par le temps (1 minute).","Gesichter auf diesem Computer aus: Sitzungen werden nur nach Zeit getrennt (1 Minute)."],
+  up_rostos_off:[(p)=>`Rostos desligados neste computador: as sessões estão sendo separadas só por tempo (${sessPausaTxt(p)}).`,(p)=>`Faces off on this computer: sessions are being split by time only (${sessPausaTxt(p)}).`,(p)=>`Rostros desactivados en esta computadora: las sesiones se separan solo por tiempo (${sessPausaTxt(p)}).`,(p)=>`Visages désactivés sur cet ordinateur : les séances sont séparées uniquement par le temps (${sessPausaTxt(p)}).`,(p)=>`Gesichter auf diesem Computer aus: Sitzungen werden nur nach Zeit getrennt (${sessPausaTxt(p,"Min.")}).`],
   up_nenhuma:["Nenhuma sessão neste filtro ainda. As fotos que chegarem aparecem aqui, agrupadas por sessão.","No sessions in this filter yet. Incoming photos show up here, grouped by session.","Ninguna sesión en este filtro todavía. Las fotos que lleguen aparecen aquí, agrupadas por sesión.","Aucune séance avec ce filtre pour l'instant. Les photos qui arrivent s'affichent ici, regroupées par séance.","Noch keine Sitzungen in diesem Filter. Eingehende Fotos erscheinen hier, nach Sitzung gruppiert."],
   up_ver_mais:["Ver mais 30","See 30 more","Ver 30 más","Voir 30 de plus","30 weitere ansehen"],
   lb_guardadas:["Guardadas neste computador","Stored on this computer","Guardadas en esta computadora","Stockées sur cet ordinateur","Auf diesem Computer gespeichert"],
@@ -12704,6 +12733,8 @@ const EQ={
   po_qual_cort:["Qual foto vai de cortesia?","Which photo is complimentary?","¿Qué foto va de cortesía?","Quelle photo est offerte ?","Welches Foto ist gratis?"],
   po_qual_porta:["Qual foto vai no porta-retrato?","Which photo goes in the frame?","¿Qué foto va en el portarretrato?","Quelle photo va dans le cadre ?","Welches Foto kommt in den Rahmen?"],
   po_pick_ok:["Adicionar","Add","Agregar","Ajouter","Hinzufügen"],
+  po_pick_ok_n:[n=>`Adicionar ${n} cortesias`,n=>`Add ${n} complimentary photos`,n=>`Agregar ${n} cortesías`,n=>`Ajouter ${n} photos offertes`,n=>`${n} Gratisfotos hinzufügen`],
+  po_qual_cort_n:["Toque nas fotos que serão cortesia (quantas quiser)","Tap the photos that will be complimentary (as many as you like)","Toca las fotos que serán cortesía (las que quieras)","Touchez les photos offertes (autant que vous voulez)","Die Gratisfotos antippen (beliebig viele)"],
   po_pick_sem_foto:["Toque na foto que vai impressa","Tap the photo to print","Toca la foto que se imprime","Touchez la photo à imprimer","Tippen Sie auf das Foto zum Drucken"],
   po_nada_carrinho:["Nada no carrinho","Cart is empty","Carrito vacío","Panier vide","Warenkorb leer"],
   po_dig_imp:[(n)=>n===1?"digital e impressa":"digitais e impressas",(n)=>"digital and printed",(n)=>n===1?"digital e impresa":"digitales e impresas",(n)=>n===1?"numérique et imprimée":"numériques et imprimées",(n)=>"digital und gedruckt"],
@@ -13451,7 +13482,7 @@ const EQ={
   lx_cfg_so_admin:["Só o Admin muda a Lixeira da IA.","Only the Admin changes the AI bin.","Solo el Admin cambia la Papelera de la IA.","Seul l'Admin modifie la corbeille de l'IA.","Nur der Admin ändert den KI-Papierkorb."],
 };
 // chave montada na hora (prefixo + código): o texto do dicionário ou, sem chave, o de antes
-const TEk=(k,alt)=>EQ[k]?TE(k):alt;
+const TEk=(k,alt,...a)=>EQ[k]?TE(k,...a):alt;
 function TE(k,...a){const e=EQ[k];if(!e)return k;const i=Math.max(0,LANGS.findIndex(x=>x[0]===langEq()));const v=e[i]!=null?e[i]:e[0];return typeof v==='function'?v(...a):v;}
 // igual a parceiros.vivamaracana.com.br: ?lang= no endereço, depois o escolhido neste aparelho, depois o idioma do navegador, depois português
 (function(){let salvo=null;try{salvo=localStorage.getItem('eterna.equipe.idioma')}catch(e){}const c=[new URLSearchParams(location.search).get('lang'),salvo,...(navigator.languages||[navigator.language])];state.langEq=c.map(x=>String(x||'').toLowerCase().slice(0,2)).find(idiomaEqOk)||'pt';})();
@@ -13888,7 +13919,7 @@ const lojaSesProtegida=c=>!!((SIM.sessions[c]||{}).menor)||Object.values(SIM.gal
 // v97 (Eduardo, 10/11; plano docs/planos/2026-11-10-recorte-birefnet-sessoes.md, E5a): VISITA = as levas (sessões LP) da mesma
 // família no dia, ligadas pelo agente por rosto em corrente ou pelo Juntar do Posto (SIM.visitas é cópia do GET /visitas).
 // A selfie e o código abrem a visita inteira no Checkout (muda a regra da v95 só no Checkout): uma leva nova por falta de
-// disparo (60 s) não separa a família. Leva de menor ou de escola segue a v77 (nunca abre a visita, nem entra pela visita).
+// disparo (SESSAO_PAUSA_S) não separa a família. Leva de menor ou de escola segue a v77 (nunca abre a visita, nem entra pela visita).
 function visitaDe(card){if(!card||lojaSesProtegida(card))return [card];const v=((SIM.visitas||{}).levas||{})[card];if(!Array.isArray(v)||v.length<2)return [card];
   const out=v.filter(c=>c===card||(sessionObj(c)&&!lojaSesProtegida(c)));return out.includes(card)?out:[card,...out];}
 const lojaTodas=c=>{const s=sessionObj(c);return s?[...s.photos.map(p=>p.id),...(((SIM.sessions[c]||{}).ia)||[])]:[];}; // as bases entram em ids (liberam as montagens), nunca como foto
@@ -14394,6 +14425,7 @@ const escalaOn=()=>ESCALA_ON; // para os testes saberem com que chave a página 
 
 const VIEWFN={'ia-auto':vIaAuto,minhasenha:vMinhaSenha,estatisticas:()=>esDicas(vEstatisticas()),calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:()=>vPosto({filtro:'todos'}),'vendas-lista':vVendasLista,'ativ-resumo':vAtivResumo,'ativ-venda':vAtivVenda,'ativ-entrega':vAtivEntrega,importar:vImportar,repo:vRepo,fila:()=>vPosto({filtro:'todos'}),caixa:()=>vPosto({filtro:'dinheiro'}),posto:()=>vPosto({filtro:'todos'}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'chute-a-gol':vChuteAGol,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
 function render(){
+  if(state.lojaRota)ljMemVolta();
   document.documentElement.lang=localeTela();
   trConfere(); // 23/11: a escolha da foto do Treino que saiu da tela vai para a fila
   if(state.pub){lojaTimerOff();if(state.cam&&state.cam.stream)camStop();document.body.setAttribute('data-bare','');document.body.setAttribute('data-pub','');document.body.removeAttribute('data-loja');
@@ -14837,11 +14869,11 @@ document.addEventListener('click',e=>{
     case 'pend-porta-rm':state.pend.passo={id:d.id,p:1};pendPorta(d.id,d.p,false);break;
     case 'porta-salvar':portaSalvar(+d.i);break;
     case 'porta-foto':portaFotoEscolher(+d.i);break;
-    case 'pend-pick':state.pend.pick={id:d.id,t:d.t,p:d.p||null,foto:null};state.pend.passo={id:d.id,p:1};render();break; // 25/11: + na cortesia ou no porta-retrato abre a escolha da foto
-    case 'pend-pick-foto':{const pk=state.pend.pick;if(pk){pk.mot=($('#pend-cort-mot')||{}).value||pk.mot||'';pk.nota=($('#pend-cort-nota')||{}).value||pk.nota||'';pk.foto=d.k;render();}break;}
+    case 'pend-pick':state.pend.pick={id:d.id,t:d.t,p:d.p||null,foto:null,fotos:[]};state.pend.passo={id:d.id,p:1};render();break; // 25/11: + na cortesia ou no porta-retrato abre a escolha da foto
+    case 'pend-pick-foto':{const pk=state.pend.pick;if(pk){pk.mot=($('#pend-cort-mot')||{}).value||pk.mot||'';pk.nota=($('#pend-cort-nota')||{}).value||pk.nota||'';if(pk.t==='cort'){const a=pk.fotos||(pk.fotos=[]);const j=a.indexOf(d.k);if(j<0)a.push(d.k);else a.splice(j,1);}else pk.foto=d.k;render();}break;}
     case 'pend-pick-x':state.pend.pick=null;render();break;
-    case 'pend-pick-ok':{const pk=state.pend.pick;if(!pk||pk.id!==d.id)break;if(!pk.foto){toast(TE('po_pick_sem_foto'));break;}
-      const ok=pk.t==='cort'?pendCortesia(d.id,true,pk.foto,($('#pend-cort-mot')||{}).value||pk.mot,($('#pend-cort-nota')||{}).value||pk.nota):pendPorta(d.id,pk.p,true,pk.foto);
+    case 'pend-pick-ok':{const pk=state.pend.pick;if(!pk||pk.id!==d.id)break;if(pk.t==='cort'?!(pk.fotos||[]).length:!pk.foto){toast(TE('po_pick_sem_foto'));break;}
+      const ok=pk.t==='cort'?pendCortesia(d.id,true,pk.fotos,($('#pend-cort-mot')||{}).value||pk.mot,($('#pend-cort-nota')||{}).value||pk.nota):pendPorta(d.id,pk.p,true,pk.foto);
       if(ok){state.pend.pick=null;render();}break;}
     case 'pend-cort-rm':pendCortesia(d.id,false);break;
     case 'pend-sel':state.pend.sel=d.id;state.pend.passo=null;state.caixa.dinCancel=null;render();break;
@@ -14888,7 +14920,7 @@ document.addEventListener('click',e=>{
     case 'gq-gratis-ok':{const p=state.pub;if(p&&p.gratis)pubGratis(p);break;}
     case 'gq-dlall':pubBaixarTodas();break;
     case 'gq-dlsave':pubDlSalvar();break;
-    case 'gq-dlzip':{const dd=state.pub&&state.pub.dl;if(dd&&dd.files)pubZip(dd.files);break;}
+    case 'gq-dlzip':{const dd=state.pub&&state.pub.dl;if(dd&&dd.files)pubSoltas(dd.files,dd.pids);break;}
     case 'gq-back':{const p=state.pub;if(!p)break;if(d.to==='codigo'){location.hash='#g';break;}p.step=d.to||'galeria';render();break;}
     // galerias online (administração)
     case 'gal-tab':state.gal.tab=d.v;state.gal.ev=null;render();break;
@@ -15270,7 +15302,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   // nesta tela são desta janela: ficam, e a janela grava de novo para o Posto receber
   const k0=state.lojaRota&&state.kiosk&&state.kiosk.code?state.kiosk.code:null;const meus=k0?soCards(k0).map(c=>[c,SIM.sessions[c]]).filter(([c,x])=>x&&x.pick&&Object.keys(x.pick).length&&x.status!=='paga').map(([c,x])=>[c,{pick:x.pick,selected:x.selected,aiSel:x.aiSel,fav:x.fav}]):[];
   const antes=simResumo(SIM);const velhas=new Map((SIM.caixaDin||[]).map(r=>[r.id,{estado:r.estado,saiu:r.saiu||null}]));SIM=Object.assign(SIM0(),o);
-  {let volta=false;meus.forEach(([c,v])=>{const n=SIM.sessions[c];if(!n||n.status==='paga')return;if(JSON.stringify(n.pick||{})!==JSON.stringify(v.pick)){Object.assign(n,v);volta=true;}});if(volta)setTimeout(saveSim,0);}
+  {let volta=false;meus.forEach(([c,v])=>{const n=SIM.sessions[c];if(!n||n.status==='paga')return;if(JSON.stringify(n.pick||{})!==JSON.stringify(v.pick)){Object.assign(n,v);volta=true;}});if(volta)setTimeout(saveSim,0);}ljMemVolta();
   if(SIM.caixaDin.some(pendAntigaHoje)){state.janelaAntiga=Date.now();if(!state.lojaRota&&!state.pub&&SIM.caixaDin.some(r=>pendAntigaHoje(r)&&(velhas.get(r.id)||{}).estado!=='confirmada'))toast('Uma janela antiga do Eterna confirmou um pedido do Checkout sem pacote. O QR não foi mostrado ao cliente. Feche e reabra o Checkout e o Posto de venda.');} // B1 (só pedido de hoje)
   const avisou=!state.lojaRota&&!state.pub&&pendAvisos(velhas); // v96: o cliente voltou às fotos ou saiu da tela
   if(state.pub){const p=state.pub;if(p.step==='aguarda_caixa')pubLoad();return;} // v96.2: reforço, as compradas chegaram numa gravação depois da sessão paga // galeria pública: sem redesenhar no meio da selfie; sai do "esperando o caixa" quando confirmar
@@ -15280,7 +15312,7 @@ window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue=
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='posto'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
-window.ETERNA={bfBase,bfNovas,fgIndiceDados,FG_ETERNA_DESDE,fgIndiceRef:()=>({de:DMIN,ate:DMAX,humans,stats:buildStats(rangeDays())})/* teste: a conta de antes, só com o histórico */,galIaEnvia,checkoutPick,psLista,psEstado,psOn,ajT:{ajAuto,ajQueue,ajChute,ajSet,editOf,isEdited,editStyleObj,ajTag,UP,get state(){return state},get SIM(){return SIM}},trCfgMuda,TR_IA_MOTIVOS,fgFotoAgrega,fgEstTela,esSecBVai,fotAlertas,fotLinhas,fotPull,fotPeriodo,trLuzPull,trLuzPassa,FG_ABAS,get FIA_ANTIGO_ON(){return FIA_ANTIGO_ON},set FIA_ANTIGO_ON(v){FIA_ANTIGO_ON=!!v;},leitoresPoll,leitoresPanel,leitoresFaixa,I18N_ZH,gqQrNorm,vendaPodeCancelar,simOf,LEG_PT,LANGS_CLI,vendaCalc,vendaCalcCort,trainLista,trainOut,trFila,trEnviar,trCorpo,trCarregar,trDias,trAtual,migraTreino16,trainAssina,TR_FILA,escalaOn,modNome,iaCfgPanel,diarioLista,salesFiltradas,esTela,esFotoOrd,relAba,relNovo,relOcupado,painelNotas,escCobertura,relExportar,relPode,relBotao,relNome,relCab,REL,xlsxBlob,pdfBlob,pdfTxt,pdfWin,xmlTxt,zipStore,crc32,flagLinhas,auditText,qrLeitor,ingNorm,pubVideoRenova,ativOps,ativLista,impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,priceOf,lojaMaisIds,EQ,TE,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais,pubGaleria,selfieVarias,ynDetect,esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,vizPanel,vizSalva,fiaTelao,fiaHomog,fiaPB,fiaSemFiltro:v=>{FIA_SEM_FILTRO=!!v;FIA_FILTRO_OK=null;},bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},I18N,T,ecoUpd,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,FLAG_FIX_V83,flagMigraV83,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,camWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,fiaJoelho,fiaPngInfo,FIA_ESTREITO_DE,FIA_ESTREITO_ATE,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,compBases,compGrid,fiaBaseBoa,vCheckoutCorpo,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,lgpdPlano,saveSim,pendMontSemImp,pendRecomecar,ecoEsperaId,fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},ATIV_PADRAO,ativPreco,ativOk,ativForaHoje,ativVendavel,ativLista,ativChovendo,ativChuvaDe,idiomaEquipe,asLer,asCarrega,asEnviar,asJunta,avCodigo,avNumero,avDemoCopia,avDemoNome,arEquipe,aePull,aeQrLido,aeSolta,arPeriodo,arGrupo,arServicos,arPull};
+window.ETERNA={sessPausaTxt,SESSAO_PAUSA_S,srvComo,bfBase,bfNovas,fgIndiceDados,FG_ETERNA_DESDE,fgIndiceRef:()=>({de:DMIN,ate:DMAX,humans,stats:buildStats(rangeDays())})/* teste: a conta de antes, só com o histórico */,galIaEnvia,checkoutPick,psLista,psEstado,psOn,ajT:{ajAuto,ajQueue,ajChute,ajSet,editOf,isEdited,editStyleObj,ajTag,UP,get state(){return state},get SIM(){return SIM}},trCfgMuda,TR_IA_MOTIVOS,fgFotoAgrega,fgEstTela,esSecBVai,fotAlertas,fotLinhas,fotPull,fotPeriodo,trLuzPull,trLuzPassa,FG_ABAS,get FIA_ANTIGO_ON(){return FIA_ANTIGO_ON},set FIA_ANTIGO_ON(v){FIA_ANTIGO_ON=!!v;},leitoresPoll,leitoresPanel,leitoresFaixa,I18N_ZH,gqQrNorm,vendaPodeCancelar,simOf,LEG_PT,LANGS_CLI,vendaCalc,vendaCalcCort,trainLista,trainOut,trFila,trEnviar,trCorpo,trCarregar,trDias,trAtual,migraTreino16,trainAssina,TR_FILA,escalaOn,modNome,iaCfgPanel,diarioLista,salesFiltradas,esTela,esFotoOrd,relAba,relNovo,relOcupado,painelNotas,escCobertura,relExportar,relPode,relBotao,relNome,relCab,REL,xlsxBlob,pdfBlob,pdfTxt,pdfWin,xmlTxt,zipStore,crc32,flagLinhas,auditText,qrLeitor,ingNorm,pubVideoRenova,ativOps,ativLista,impRefaz,impDeEv,IMP_SRV,roloFaixa,roloSelo,dnpGuarda,dnpLimpa,dnpLer,dnpUlt,impOk,priceOf,lojaMaisIds,EQ,TE,LANGS,IDIOMAS_EQ,fmtR,localeTela,authErro,postoDisp,postoCarregar,agFetch,lojaCodEspera,vendaMais,pubGaleria,selfieVarias,ynDetect,esSecoes,esPorTipo,esPareado,esMesAMes,esTendencia,esDiasLimpa,esDiasCSV,esTotaisParse,esSecG,agBlocoFontes,agFontesTxt,agStatusPull,esDiasPull,srvIaCompleta,pendTiraLeva,visRostoPanel,visRostoSalva,vizPanel,vizSalva,fiaTelao,fiaHomog,fiaPB,fiaSemFiltro:v=>{FIA_SEM_FILTRO=!!v;FIA_FILTRO_OK=null;},bgNomeCli,lojaSync,fiaRecDeNovoMs:v=>{FIA_REC_DE_NOVO_MS=v;},visitaDe,lojaVisitaAtualiza,lojaSoVisita,visPull,fundosModoTeste:v=>{FUNDOS_TESTE=v==='photoroom'?v:null;},I18N,T,ecoUpd,ingClose,logout,viewLabel,homeView,presetPerms,presetMenu,accExtra,ALL_VIEWS,PRESETS,demoOn,demoSet,pendEscolher,vendaCalc,lojaPedir,lojaCamMs:v=>{LOJA_CAM_MS=v;},lojaCamTeto:v=>{LOJA_CAM_TETO=v;},faceBuscaMs:v=>{FACE_BUSCA_MS=v;},faceAgente,lojaProntoMs:v=>{LOJA_PRONTO_MS=v;},lojaProntoOcioso,lojaEscolhaMs:v=>{LOJA_ESCOLHA_MS=v;},lojaEscolhaOciosa,lojaSairCli,lojaVoltarFotos,SIM_V,lojaCamLigar,camWanted,pubMatch,agAplicaSnap,agGrava,agApagar,esQuando,esImpEspera:v=>{ES_IMP_ESPERA_MS=v;},venueOffsetMin,kioskT0,pvDados,lojaReset,esDados,esGrupoDia,esFaixas,agClube,agImportar,agFeriados,feriadosDe,esEntradasParse,sessaoVencida,get AGENDA(){return AGENDA},srvMetSoma,esPull,ACT_MOD,bgAtivo,bgMover,FLAGS,FLAG_FIX_V81,flagMigraV81,FLAG_WEB_V82,flagMigraV82,FLAG_FIX_V83,flagMigraV83,flagSrc,bgOpts,bgOn,aiBgs,bgOf,bgFor,BGS:DATA.backgrounds,libWho,camWho,painelDados,painelPontos,painelRover,painelEterna,allSalesSim,painelFiltro,painelCSV,applyLive,prodKey,go,venueToday,vPainel,permCopia,get state(){return state},render,canView,can,permValidate,permDiff,MODULE_INFO,MODULES,MODULE_OF,WRITE_OPS,VIEWS,userMenu,adminCount,migrateUsers,presetMatch,permNorm,auditRead,get USERS(){return USERS},revSessions,liveMatch,get live(){return LIVE},get humans(){return humans},get stats(){return stats},P,camStatus,camFound,faceLoad,faceRead,faceFind,faceMeasure,faceIndexAll,get faceq(){return FACEQ},FACEIDX,demoSessions,photoCanvas,galDaSessao,galDaVenda,galAtualizar,galPublicar,pubRead,qrDraw,get pub(){return state.pub},get SIM(){return SIM},lojaIdeal,lojaCart,lojaItems,lojaPick,UP,ajQueue,dinVirada,dinConfirmar,dinCancelar,simFresh,ajAutoSet,lojaEquipeOn,alerts,allSales,salesCSV,pendConfirmar,impFotos,impSel,printMontar,compHi,compose,fiaMontar,fiaLayout,fiaJoelho,fiaPngInfo,FIA_ESTREITO_DE,FIA_ESTREITO_ATE,bgPad,fiaMedir,fundosModo,FIA_REGRAS,FIA_RUIM,compHydrate,pvFila,pvEvento,pvSaleNo,pvId,postoNome,pontoModo,lojaPendCheck,PAG_PROV,SRV,srvPull,upSessoes,upSessLista,SESSAO_PAUSA_S,lojaJuntar,lojaAbrirSo,lojaFotos,soCards,galAtualizar,vendidasTodas,pvDados,galDaVendaJunta,lojaCodReset,lojaReset,lojaCodigo,LJ_COD,lojaIdsSo,lojaAbrirSo,validateReal,valLivre,valOcup:v=>{if(v!==undefined)VAL_OCUP=v;return VAL_OCUP;},VAL_TETO,buscaJanelaMin,buscaJanelaSalva,sesUltima,LJ_AR,iaSet,lojaAI,lojaAIBase,FIA_BASE,compBases,compGrid,fiaBaseBoa,vCheckoutCorpo,iaAquecer,iaCfg,iaCfgSalva,ffIa,get COMP(){return COMP},UP_IA_MOTIVO,lgpdPlano,saveSim,pendMontSemImp,pendRecomecar,ecoEsperaId,fotosEnviar,envioPode,envioResumo,impPreso,todayKey,libLoad,envioEspera:v=>{ENVIO_ESPERA=v;},envioEsperaOcupado:v=>{ENVIO_ESPERA_OCUPADO=v;},ATIV_PADRAO,ativPreco,ativOk,ativForaHoje,ativVendavel,ativLista,ativChovendo,ativChuvaDe,idiomaEquipe,asLer,asCarrega,asEnviar,asJunta,avCodigo,avNumero,avDemoCopia,avDemoNome,arEquipe,aePull,aeQrLido,aeSolta,arPeriodo,arGrupo,arServicos,arPull};
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 Object.assign(window.ETERNA,{FIA_PADRAO,IMP_PX,FIA_ROSTOS,BG_DEF,mtgPanel,mtgModoSalva,MTG_MODOS,posesPanel,psModoSalva,PS_MODOS,mtgSrv,mtgFundo,mtgPedir,MTG,mtgCanvasOk,mtgConhecido,mtgGer:()=>MTG_GER,fiaMontagens:FIA_CONTA,mtgTempos:(e,p,d,h,t,n)=>{if(e!=null)MTG_ESPERA_MS=e;if(p!=null)MTG_PASSO_MS=p;if(d!=null)MTG_DE_NOVO_MS=d;if(h!=null)MTG_HI_ESPERA_MS=h;if(t!=null)MTG_PASSO_TETO_MS=t;if(n!=null)MTG_FALHAS_MAX=n;}}); // montagem no servidor (E1): tabelas para o teste de paridade com o agente/eterna-montagem.py e a chave do modo
 Object.assign(window.ETERNA,{ljEscolhidas,ljEscUpd,ljFsUpd,ljDesfMs:v=>{LJ_DESF_MS=v;}}); // 17/11: barra das escolhidas (testes/checkout-barra-escolhidas.js)

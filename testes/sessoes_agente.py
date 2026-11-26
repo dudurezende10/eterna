@@ -30,7 +30,9 @@ json.dump({"users": {"carlos": "x" * 12, "samuel": "y" * 12, "marinara": "z" * 1
 sp = importlib.util.spec_from_file_location("ag", AG)
 m = importlib.util.module_from_spec(sp)
 sp.loader.exec_module(m)
-ok(m.SESS_PAUSA == 60 and m.FF_PAUSA == 60, "S1: pausa de 60 s (%r)" % m.SESS_PAUSA)
+ok(m.SESS_PAUSA == 180 and m.FF_PAUSA == 180, "S1: pausa de 180 s, 3 min (%r)" % m.SESS_PAUSA)   # 26/11: era 60
+ok(m.SESS_PAUSA == m.VIZ_GAP, "S1: a pausa é a mesma das fotos vizinhas do Checkout (%r, %r)" % (m.SESS_PAUSA, m.VIZ_GAP))
+PZ = m.SESS_PAUSA                   # os cenários saem do valor, não de 60 nem de 180 escrito
 ok((m.SESS_LIM_FICA, m.SESS_LIM_NOVO, m.SESS_LIM_FUNDE) == (0.38, 0.25, 0.45) and m.SESS_ROSTO_ESPERA == 20, "limiares")
 LIG = [True]
 m.sess_rostos_on = lambda: LIG[0]          # rostos "ligados" sem OpenCV: as leituras são injetadas aqui
@@ -104,18 +106,18 @@ def vivas():
 
 T = time.time()            # hoje; o relógio dos cenários anda a partir daqui (sess_feed só é chamado no fim)
 
-# 1: pausa de 60 s (sem rosto, rostos desligados)
+# 1: pausa de 3 min (sem rosto, rostos desligados)
 reset(); LIG[0] = False
 a = [add("carlos", T + i * 10, cap=T + i * 10 - 3) for i in range(3)]
-a4 = add("carlos", T + 20 + 70, cap=T + 20 + 70 - 3)
+a4 = add("carlos", T + 20 + PZ + 10, cap=T + 20 + PZ + 10 - 3)
 ok(len(vivas()) == 2 and de(a4)["motivo"] == "pausa" and de(a[0])["motivo"] == "inicio" and de(a[0])["fechada_por"] == "pausa_clique",
-   "1: 70 s depois = 2 sessões, a segunda por pausa: %r" % [(x["motivo"], len(x["fotos"]), x["fechada_por"]) for x in vivas()])
+   "1: pausa + 10 s depois = 2 sessões, a segunda por pausa: %r" % [(x["motivo"], len(x["fotos"]), x["fechada_por"]) for x in vivas()])
 reset()
 a = [add("carlos", T + i * 10, cap=T + i * 10 - 3) for i in range(3)]
-add("carlos", T + 20 + 59, cap=T + 20 + 59 - 3)
-ok(len(vivas()) == 1 and len(vivas()[0]["fotos"]) == 4, "1: 59 s depois = 1 sessão")
+add("carlos", T + 20 + PZ - 1, cap=T + 20 + PZ - 1 - 3)
+ok(len(vivas()) == 1 and len(vivas()[0]["fotos"]) == 4, "1: pausa - 1 s depois = 1 sessão")
 ok(not m.sess_espera and not vivas()[0]["pend"], "10: rostos desligados, nada pendente")
-ok(m.sess_status()["rostos"] is False and m.sess_status()["pausa"] == 60 and m.sess_status()["v"] == 2, "10: /status.sessoes.rostos false: %r" % m.sess_status())
+ok(m.sess_status()["rostos"] is False and m.sess_status()["pausa"] == PZ and m.sess_status()["v"] == 2, "10: /status.sessoes.rostos false: %r" % m.sess_status())
 LIG[0] = True
 
 
@@ -145,7 +147,10 @@ ok(s1 and s1["status"] == "separada" and s2["status"] == "aberta", "2: a primeir
 ok(s1 and s1["dec"][f[1]] == "r" and s2["dec"][g[1]] == "r", "3: individual/grupo da mesma família = r")
 cards2 = {s1["card"], s2["card"]}
 tick(T + 9 + 2 + 61)
-ok(s1["status"] == "fechada" and s2["status"] == "fechada" and s1["fechada_por"] == "pausa", "2: depois de 60 s sem chegada, fechadas")
+ok(s1["status"] == "separada" and s2["status"] == "aberta", "2: 61 s sem chegada ainda não fecham (era o prazo antigo)")
+tick(T + 9 + 2 + PZ + 1)
+ok(s1["status"] == "fechada" and s2["status"] == "fechada" and s1["fechada_por"] == "pausa", "2: depois da pausa sem chegada, fechadas")
+ok(abs(s2["fechada_em"] - (T + 9 + 2 + PZ)) < 1e-6, "2: fechada_em = última chegada + pausa: %r" % (s2["fechada_em"] - T,))
 ok(not m.sess_rostos_mem, "S9: vetores somem quando a sessão fecha")
 
 # 8: leituras fora de ordem dão o mesmo resultado
@@ -224,24 +229,24 @@ ok(de(w2)["dec"].get(w2) == "t" and de(w3)["pend"] == [w3], "9: depois do prazo 
 tick(T + 2705 + 21)
 ok(not m.sess_espera and de(w3)["dec"].get(w3) == "t", "9: a fila da trilha esvazia")
 
-# 11: cartão com cliques em 3 blocos separados por 2 min, chegando em 5 s
+# 11: cartão com cliques em 3 blocos separados pela pausa + 1 min, chegando em 5 s
 reset()
 u0 = T + 3000
-c11 = [add("samuel", u0 + i * 5 / 30, cap=u0 - 3600 + (i // 10) * 120 + (i % 10) * 2, s="cartao", serie="400000004444") for i in range(30)]
+c11 = [add("samuel", u0 + i * 5 / 30, cap=u0 - 3600 + (i // 10) * (PZ + 60) + (i % 10) * 2, s="cartao", serie="400000004444") for i in range(30)]
 ss = sorted({de(p)["card"]: de(p) for p in c11}.values(), key=lambda x: x["cap0"])
 ok(len(ss) == 3 and all(x["atrasada"] and x["trilha"] == "atrasada" for x in ss) and [len(x["fotos"]) + len(x["pend"]) for x in ss] == [10, 10, 10],
    "11: 3 sessões atrasadas de 10: %r" % [(len(x["fotos"]), len(x["pend"]), x["atrasada"]) for x in ss])
 ok([x["fechada_por"] for x in ss[:2]] == ["pausa_clique", "pausa_clique"] and ss[2]["status"] == "aberta", "11: as duas primeiras fecham durante a leitura")
 ok(ss[1]["motivo"] == "pausa" and ss[0]["fonte_t"] == "cap", "11: motivo pausa e hora do clique")
-tick(u0 + 5 + 61)
-ok(ss[2]["status"] == "fechada" and ss[2]["fechada_por"] == "pausa", "11: a última fecha 60 s depois")
+tick(u0 + 5 + PZ + 1)
+ok(ss[2]["status"] == "fechada" and ss[2]["fechada_por"] == "pausa", "11: a última fecha depois da pausa")
 
 # C1 (revisão): câmera com o relógio 1 h ADIANTADO. A foto ao vivo ensina o desvio; o cartão da mesma câmera, com 3 blocos de
 # cliques separados por 2 min, vira 3 sessões atrasadas pela hora corrigida (antes caía tudo na chegada: uma sessão só)
 reset(); LIG[0] = False
 uc = T + 3150
 add("samuel", uc, cap=uc + 3600, s="ftp", serie="990000009999")
-cc = [add("samuel", uc + 30 + i * 5 / 30, cap=uc + 3600 - 3000 + (i // 10) * 120 + (i % 10) * 2, s="cartao", serie="990000009999") for i in range(30)]
+cc = [add("samuel", uc + 30 + i * 5 / 30, cap=uc + 3600 - 3000 + (i // 10) * (PZ + 60) + (i % 10) * 2, s="cartao", serie="990000009999") for i in range(30)]
 sc = sorted({de(p)["card"]: de(p) for p in cc}.values(), key=lambda x: x["cap0"])
 ok(len(sc) == 3 and all(x["atrasada"] and x["fonte_t"] == "cap" for x in sc) and abs(sc[0]["cap0"] - (uc - 3000)) < 1,
    "C1: cartão da câmera adiantada = 3 sessões pela hora corrigida: %r" % [(len(x["fotos"]), x["fonte_t"], round(x["cap0"] - uc)) for x in sc])
@@ -286,12 +291,64 @@ ok(len(vivas()) == 2 and all(len({w for w, p in v14 if p in x["fotos"]}) == 1 fo
 reset()
 h1 = add("carlos", T + 4200, cap=T + 4196)
 lido(h1, [rosto(P1)], T + 4200.5)
-tick(T + 4200 + 61)
+tick(T + 4200 + PZ + 1)
 sf = de(h1)
 antes = (list(sf["fotos"]), sf["rev"])
-h2 = add("carlos", T + 4262, cap=T + 4210)                     # chegou atrasada, clique 14 s depois do da fechada
-lido(h2, [rosto(P1)], T + 4262.5)
+h2 = add("carlos", T + 4200 + PZ + 2, cap=T + 4210)            # chegou atrasada, clique 14 s depois do da fechada
+lido(h2, [rosto(P1)], T + 4200 + PZ + 2.5)
+# 26/11: comportamento conhecido e mantido. A sessão fechou por falta de CHEGADA; a foto que sobe depois, mesmo com a hora do
+# clique dentro da pausa e o mesmo rosto, não volta para ela: abre outra sessão (a fechada nunca muda, S8)
+ok(de(h2)["motivo"] == "pausa", "15: a atrasada abre sessão por pausa: %r" % (de(h2)["motivo"],))
 ok(de(h2) is not sf and (list(sf["fotos"]), sf["rev"]) == antes and sf["status"] == "fechada", "15: a fechada mantém fotos e rev")
+
+# 26/11 (Eduardo): pausa de 3 min. Caso real: cliente no gramado até 09:39:04 e no troféu a partir de 09:40:13 (69 s). Com a
+# pausa de 60 s virava duas sessões e a segunda ficava sem fundo de IA; agora é uma só.
+reset()
+gr = [add("carlos", T + 4500 + i * 4, cap=T + 4497 + i * 4) for i in range(4)]            # gramado: último clique em +4509
+for i, p in enumerate(gr):
+    lido(p, [rosto(P1), rosto(P2)], T + 4513 + i * 0.1)
+c1 = de(gr[0])["cap1"]
+tr = [add("carlos", T + 4581 + i * 4, cap=T + 4578 + i * 4) for i in range(3)]            # troféu: primeiro clique 69 s depois
+ok(abs(de(tr[0])["_t"][tr[0]][0] - c1 - 69) < 1e-3, "3min: cenário com 69 s entre o gramado e o troféu: %r" % (de(tr[0])["_t"][tr[0]][0] - c1,))
+for i, p in enumerate(tr):
+    lido(p, [rosto(P1), rosto(P2)], T + 4590 + i * 0.1)
+s3 = de(gr[0])
+ok(len(vivas()) == 1 and all(de(p) is s3 for p in gr + tr) and s3["status"] == "aberta" and s3["dec"].get(tr[0]) == "r",
+   "3min: 69 s entre gramado e troféu, mesmo rosto = uma sessão só: %r" % [(x["card"], len(x["fotos"]), x["motivo"]) for x in vivas()])
+# cliente novo, de frente, 90 s depois do último clique: abre sessão nova pelos rostos, sem esperar a pausa
+n1 = add("carlos", T + 4589 + 90, cap=T + 4586 + 90)
+lido(n1, [rosto(G1), rosto(G2)], T + 4589 + 91)
+sn = de(n1)
+ok(sn is not s3 and sn["motivo"] == "rostos_novos" and sn["dec"].get(n1) == "n" and s3["status"] == "separada" and s3["fotos"] == gr + tr,
+   "3min: cliente novo de frente em 90 s = sessão nova: %r" % [(x["card"], len(x["fotos"]), x["motivo"], x["status"]) for x in vivas()])
+# a foto seguinte dele, de costas (sem rosto), fica com ele, não volta para a família anterior
+n2 = add("carlos", T + 4589 + 95, cap=T + 4586 + 95)
+lido(n2, [], T + 4589 + 96)
+ok(de(n2) is sn and sn["dec"].get(n2) == "s", "3min: de costas depois da de frente fica na sessão nova")
+tick(T + 4589 + PZ + 1)
+ok(s3["status"] == "fechada" and sn["status"] == "aberta", "3min: a anterior fecha 3 min depois da última chegada dela; a nova segue aberta")
+# limite conhecido: cliente novo em 90 s cuja PRIMEIRA foto é de costas ou sem rosto cai na sessão do anterior; a primeira de frente
+# abre a sessão dele dali em diante (a de costas fica para trás, na sessão do outro)
+reset()
+k1 = [add("carlos", T + 4900 + i * 4, cap=T + 4897 + i * 4) for i in range(2)]
+for i, p in enumerate(k1):
+    lido(p, [rosto(P1)], T + 4906 + i * 0.1)
+k2 = add("carlos", T + 4904 + 90, cap=T + 4901 + 90)
+lido(k2, [], T + 4904 + 91)                                                             # de costas
+k3 = add("carlos", T + 4904 + 94, cap=T + 4901 + 94)
+lido(k3, [rosto(G1, frontal=False)], T + 4904 + 95)                                     # de perfil
+k4 = add("carlos", T + 4904 + 98, cap=T + 4901 + 98)
+lido(k4, [rosto(G1)], T + 4904 + 99)                                                    # de frente
+sk = de(k1[0])
+ok(de(k2) is sk and de(k3) is sk and sk["dec"].get(k2) == "s" and sk["dec"].get(k3) == "s",
+   "3min: cliente novo de costas ou de perfil em 90 s fica na sessão do anterior: %r" % (sk["dec"],))
+ok(de(k4) is not sk and de(k4)["motivo"] == "rostos_novos", "3min: a primeira foto de frente dele abre a sessão nova")
+# rostos desligados: só o tempo separa, então o cliente novo em 90 s entra na sessão do anterior
+reset(); LIG[0] = False
+q1 = add("carlos", T + 5200, cap=T + 5197)
+q2 = add("carlos", T + 5290, cap=T + 5287)
+ok(de(q2) is de(q1), "3min: com os rostos desligados, 90 s depois é a mesma sessão")
+LIG[0] = True
 
 # 19: prioridade na fila de rostos
 while not m.fila_rostos.empty():
@@ -316,16 +373,16 @@ for p in f + g[:1]:
     m.ff_rosto_lido(p)
 fj = m.ff_json(T2 + 12)
 cards = {de(f[0])["card"], de(g[0])["card"]}
-ok({x["id"] for x in fj["grupos"]} == cards and fj["pausa"] == 60, "20: a Fila mostra as 2 sessões com o código LP: %r %r" % ([x["id"] for x in fj["grupos"]], cards))
+ok({x["id"] for x in fj["grupos"]} == cards and fj["pausa"] == PZ, "20: a Fila mostra as 2 sessões com o código LP: %r %r" % ([x["id"] for x in fj["grupos"]], cards))
 ok({x["id"]: x["n"] for x in fj["grupos"]} == {de(f[0])["card"]: 3, de(g[0])["card"]: 2}, "20: n de cada grupo")
-fj = m.ff_json(T2 + 9 + 2 + 62)
+fj = m.ff_json(T2 + 9 + 2 + PZ + 2)
 gg = {x["id"]: x["estado"] for x in fj["grupos"]}
 ok(gg.get(de(f[0])["card"]) == "pronta" and gg.get(de(g[0])["card"]) == "subindo", "20: pronta só fechada e com os rostos lidos: %r" % gg)
 m.ff_rosto_lido(g[1])
-gg = {x["id"]: x["estado"] for x in m.ff_json(T2 + 9 + 2 + 63)["grupos"]}
+gg = {x["id"]: x["estado"] for x in m.ff_json(T2 + 9 + 2 + PZ + 3)["grupos"]}
 ok(gg.get(de(g[0])["card"]) == "pronta", "20: leitura terminada = pronta: %r" % gg)
 feed = m.sess_feed(0)
-ok(cards <= {x["card"] for x in feed["sessoes"]} and feed["rostos"] is True and feed["pausa"] == 60, "20: os mesmos códigos no /sessoes")
+ok(cards <= {x["card"] for x in feed["sessoes"]} and feed["rostos"] is True and feed["pausa"] == PZ, "20: os mesmos códigos no /sessoes")
 campos = {"card", "dia", "fotografo", "fonte", "ponto", "trilha", "atrasada", "status", "motivo", "aberta_em", "ultima_chegada", "cap0",
           "cap1", "fonte_t", "fechada_em", "fechada_por", "fotos", "pend", "dec", "sim_abertura", "fundida_em", "removida", "rev"}
 x0 = [x for x in feed["sessoes"] if x["card"] in cards][0]

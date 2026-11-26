@@ -18,6 +18,8 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   POST /g/<token>/evento          o cliente deu play (registro com data e hora)
   GET  /g/<token>/baixar?v=&a=    registra o download e manda para o link assinado do arquivo (attachment)
   GET  /ponto/eventos?tokens=     o agente busca quando o cliente abriu, deu play e baixou (segredo do ponto)
+  GET  /ponto/leads?de=&ate=      leads por dia para o painel de gestão: só números, nenhum e-mail (segredo do ponto) (26/11)
+  GET  /rd/callback?code=&state=  volta da autorização do aplicativo Eterna no RD Station (OAuth, 26/11)
   Escola pelo voucher (17/11, plano docs/planos/2026-11-17-escola-pelo-voucher.md):
   GET  /g/codigo/<localizador>    o localizador do voucher de escola abre a galeria da visita (mesma rota do código)
   POST /g/<token>/cortesia        {acesso, foto, email}: a foto grátis da criança (uma por criança, até as pessoas do voucher)
@@ -741,7 +743,13 @@ def lead(email, idioma, token, marketing, versao, ref=None, origem="compra"):
     for k2 in ("rd_em", "rd_origens"):
         if k2 in velho:
             novo[k2] = velho[k2]
+    for k2 in ("rd_primeiro", "rd_novo"):
+        if k2 in velho:
+            novo[k2] = velho[k2]
     TABELA.put_item(Item=novo)
+    conta_leads(["captados"] if not velho else [], "cap")
+    if marketing and not velho.get("marketing"):
+        conta_leads(["aceite"])
     if novo.get("marketing") and origem not in json.loads(novo.get("rd_origens") or "[]"):
         rd_enfileira(k["pk"], email, idioma, origem)
 
@@ -755,6 +763,95 @@ def rd_enfileira(lead_pk, email, idioma, origem):
 
 
 RD_LOTE = 40
+LEADDIA_DIAS = 800
+
+
+def dia_hora(t=None):
+    """Dia (AAAA-MM-DD) e hora (0-23) do venue."""
+    x = datetime.fromtimestamp((t if t is not None else time.time()) + FUSO_H * 3600, timezone.utc)
+    return x.strftime("%Y-%m-%d"), x.hour
+
+
+def conta_leads(campos, hora_de=None, t=None):
+    """26/11 (Ronaldo): contagem de leads por dia para o painel de gestão e o BI (LEADDIA/<dia>). Só números, nenhum e-mail.
+    hora_de: soma também a hora (h_cap_HH ou h_rd_HH). Falha aqui nunca derruba o lead nem o envio."""
+    if not campos:
+        return
+    dia, h = dia_hora(t)
+    cs = list(campos) + (["h_%s_%02d" % (hora_de, h)] if hora_de else [])
+    try:
+        TABELA.update_item(Key={"pk": "LEADDIA", "sk": dia},
+                           UpdateExpression="ADD " + ", ".join("#c%d :um" % i for i in range(len(cs))) + " SET #ttl = :ttl",
+                           ExpressionAttributeNames={**{"#c%d" % i: c for i, c in enumerate(cs)}, "#ttl": "ttl"},
+                           ExpressionAttributeValues={":um": 1, ":ttl": int(time.time() + LEADDIA_DIAS * 86400)})
+    except Exception as ex:
+        print("leads do dia: %s" % type(ex).__name__)
+
+
+def leads_ponto(ev):
+    """O agente leva ao painel de gestão os leads por dia (de/ate, até 62 dias). Campos de cada dia:
+    captados (e-mail novo no Eterna), aceite (marcou novidades), rd (primeiro envio do lead ao RD), rd_novo / rd_existente
+    (o contato não existia / já existia no RD; com OAuth), rd_sem_consulta (sem OAuth ou consulta falhou), o_<origem>
+    (conversões enviadas por origem), h_cap_HH e h_rd_HH (por hora)."""
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    q = ev.get("queryStringParameters") or {}
+    hoje = dia_hora()[0]
+    de, ate = str(q.get("de") or hoje), str(q.get("ate") or q.get("de") or hoje)
+    if not (_re_dia.match(de) and _re_dia.match(ate)) or de > ate or epoch(ate + "T00:00:00") - epoch(de + "T00:00:00") > 62 * 86400:
+        return resp({"error": "período inválido"}, 400)
+    its = TABELA.query(KeyConditionExpression=Key("pk").eq("LEADDIA") & Key("sk").between(de, ate)).get("Items", [])
+    dias = {x["sk"]: {k: int(v) for k, v in x.items() if k not in ("pk", "sk", "ttl")} for x in its}
+    return resp({"de": de, "ate": ate, "oauth": rdstation.oauth_ligado(), "dias": dias})
+
+
+def leads_recalcular():
+    """Uma vez, no deploy de 26/11: monta LEADDIA dos dias passados a partir dos leads (primeiro, marketing_em, rd_em).
+    Antes da consulta ao RD não se sabe novo/existente: esses dias ficam com rd_sem_consulta."""
+    por, ini = {}, None
+    while True:
+        r = TABELA.scan(FilterExpression=Attr("pk").begins_with("LEAD#"), **({"ExclusiveStartKey": ini} if ini else {}))
+        for it in r.get("Items", []):
+            for campo, quando, h in (("captados", it.get("primeiro"), "cap"),
+                                     ("aceite", it.get("marketing_em") if it.get("marketing") else None, None),
+                                     ("rd", it.get("rd_primeiro") or it.get("rd_em"), "rd")):
+                t = epoch(quando) if quando else 0
+                if not t:
+                    continue
+                dia, hh = dia_hora(t)
+                d = por.setdefault(dia, {})
+                d[campo] = d.get(campo, 0) + 1
+                if h:
+                    d["h_%s_%02d" % (h, hh)] = d.get("h_%s_%02d" % (h, hh), 0) + 1
+                if campo == "rd":
+                    m = {True: "rd_novo", False: "rd_existente"}.get(it.get("rd_novo"), "rd_sem_consulta")
+                    d[m] = d.get(m, 0) + 1
+                    for o in json.loads(it.get("rd_origens") or "[]"):
+                        d["o_" + o] = d.get("o_" + o, 0) + 1
+        ini = r.get("LastEvaluatedKey")
+        if not ini:
+            break
+    for dia, d in por.items():
+        TABELA.put_item(Item={"pk": "LEADDIA", "sk": dia, "ttl": int(time.time() + LEADDIA_DIAS * 86400), **d})
+    return {"dias": len(por), "leads": sum(d.get("captados", 0) for d in por.values())}
+
+
+def rd_callback(ev):
+    """Volta da autorização do aplicativo Eterna no RD. Página simples, sem token nenhum."""
+    q = ev.get("queryStringParameters") or {}
+    try:
+        motivo = rdstation.conectar(q.get("code"), q.get("state"))
+    except Exception as ex:
+        motivo = type(ex).__name__
+    ok_ = not motivo
+    print("rd: autorização %s" % ("ok" if ok_ else "recusada (%s)" % motivo))
+    txt = ("RD Station conectado ao Eterna. Pode fechar esta página." if ok_ else
+           "Não foi possível conectar o RD Station (%s). Gere um link novo de autorização." % motivo)
+    html = ('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>Eterna · RD Station</title><body style="font:18px system-ui;margin:40px auto;max-width:560px;padding:0 16px">'
+            '<h1 style="font-size:22px">%s</h1><p>%s</p></body>' % ("Pronto" if ok_ else "Não conectou", txt))
+    return {"statusCode": 200 if ok_ else 400, "headers": {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer"}, "body": html}
 
 
 def rd_fila():
@@ -764,6 +861,13 @@ def rd_fila():
         return {"rd": "desligado"}
     ok_, erro = 0, 0
     for p in TABELA.query(KeyConditionExpression=Key("pk").eq("RDPEND"), Limit=RD_LOTE).get("Items", []):
+        it = item(p["lead"]) or {}
+        existia = None
+        if rdstation.oauth_ligado() and not it.get("rd_primeiro") and not it.get("rd_em") and "rd_novo" not in it:
+            try:
+                existia = rdstation.contato_existe(p["email"])       # antes do envio: depois dele o contato sempre existe
+            except Exception as ex:
+                print("rd: consulta do contato falhou (%s)" % str(ex)[:40])
         try:
             rdstation.enviar(p["email"], p.get("idioma"), p.get("origem") or "galeria")
         except rdstation.RdErro as ex:
@@ -781,11 +885,18 @@ def rd_fila():
             break
         ok_ += 1
         TABELA.delete_item(Key={"pk": "RDPEND", "sk": p["sk"]})
-        it = item(p["lead"]) or {}
+        it = item(p["lead"]) or it
         orig = sorted(set(json.loads(it.get("rd_origens") or "[]")) | {p.get("origem") or "galeria"})
+        primeiro = not it.get("rd_primeiro") and not it.get("rd_em")
         if it:
-            TABELA.update_item(Key={"pk": p["lead"], "sk": "M"}, UpdateExpression="SET rd_em = :t, rd_origens = :o",
-                               ExpressionAttributeValues={":t": iso(), ":o": json.dumps(orig)})
+            sets, vals = "SET rd_em = :t, rd_origens = :o", {":t": iso(), ":o": json.dumps(orig)}
+            if primeiro:
+                sets, vals[":p"] = sets + ", rd_primeiro = :p", iso()
+                if existia is not None:
+                    sets, vals[":n"] = sets + ", rd_novo = :n", not existia
+            TABELA.update_item(Key={"pk": p["lead"], "sk": "M"}, UpdateExpression=sets, ExpressionAttributeValues=vals)
+        marca = {True: "rd_existente", False: "rd_novo", None: "rd_sem_consulta"}[existia]
+        conta_leads(["o_" + (p.get("origem") or "galeria")] + (["rd", marca] if primeiro else []), "rd" if primeiro else None)
     if ok_ or erro:
         print("rd: %d enviados, %d com erro" % (ok_, erro))
     return {"rd": ok_, "rd_erro": erro}
@@ -1338,6 +1449,8 @@ def handler(ev, ctx):
         except Exception as ex:
             print("rd: fila falhou (%s)" % type(ex).__name__)
         return r
+    if ev.get("leads_recalcular"):                        # uma vez, à mão (aws lambda invoke), no deploy de 26/11
+        return leads_recalcular()
     if ev.get("indexar"):                                 # chamada interna em segundo plano
         t = ev["indexar"]
         m = manifesto(t)
@@ -1376,6 +1489,10 @@ def handler(ev, ctx):
         return eventos_ponto(ev)
     if caminho == "/ponto/escolas" and metodo == "GET":
         return escolas_ponto(ev)
+    if caminho == "/ponto/leads" and metodo == "GET":
+        return leads_ponto(ev)
+    if caminho == "/rd/callback" and metodo == "GET":
+        return rd_callback(ev)
     partes = caminho.split("/")                           # ['', 'g', token, ação]
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "codigo" and metodo == "GET":
         if not contar("COD#" + ip_hash(ip), 60, 30):
