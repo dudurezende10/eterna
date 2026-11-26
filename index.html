@@ -1,6 +1,7 @@
 <!doctype html><html lang="pt-BR"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}.facepick{margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:10px}
 .facecand{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--card,#fff);border:1px solid var(--line,#ddd);border-radius:12px;padding:8px;cursor:pointer;font:inherit;color:inherit}
 .facecand .ph{width:120px;height:90px;border-radius:8px}
+.facepick .facecand,.facepick .facecand span{color:#0c2340!important;font-weight:600}.facepick .chip{background:#fff!important;color:#0c2340!important;border:1px solid #fff!important;font-weight:600;min-height:44px;padding:0 20px}
 .ae-fila-lista{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .ae-fl{display:grid;grid-template-columns:88px minmax(120px,1.2fr) minmax(160px,2.4fr) minmax(90px,.8fr) minmax(130px,1fr);gap:14px;align-items:center;text-align:left;width:100%;min-height:64px;padding:8px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg,#fff);color:inherit;font:inherit;cursor:default}
 .ae-fl.sel{outline:3px solid var(--accent,#134078);outline-offset:-1px}
@@ -150,10 +151,11 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 .pr-foto img{width:100%;height:100%;object-fit:cover}.pr-ativo{display:flex;align-items:center;gap:8px}
 .mv-tab{width:100%}
 .mv-filtro{margin:4px 0 10px}
-#ver-nova{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:18px;padding:14px 16px 14px 20px;background:#134078;color:#fff;border-bottom:4px solid #FFB800;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:calc(100vw - 32px)}
-#ver-nova .vn-txt{display:flex;flex-direction:column;gap:2px}#ver-nova .vn-txt b{font-size:17px}#ver-nova .vn-txt span{font-size:13px;opacity:.85}
-#ver-nova .btn{background:#FFB800;color:#134078;border-color:#FFB800;font-weight:700;min-height:48px;padding:0 26px;font-size:16px}
-@media print{#ver-nova{display:none}}
+#st-modal{position:fixed;inset:0;z-index:9998;background:rgba(12,35,64,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+#st-modal .st-box{background:var(--surface,#fff);color:var(--fg,#0c2340);border-radius:10px;padding:20px;width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto;display:flex;flex-direction:column;gap:12px}
+#st-modal video{width:100%;aspect-ratio:4/3;object-fit:cover;background:#000;border-radius:8px;transform:scaleX(-1)}
+#st-modal .st-acoes{gap:8px;flex-wrap:wrap}
+.btn.ver-btn{background:#FFB800;color:#134078;border-color:#FFB800;font-weight:700}
 .chip.at-chip{display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:600}.at-ico{flex:none;width:44px;height:44px}
 .at-ico .dr-corpo{animation:atPaira 2.6s ease-in-out infinite}@keyframes atPaira{50%{transform:translateY(-3px)}}
 .at-ico .dr-helice{transform-box:fill-box;transform-origin:center;animation:atGira .35s linear infinite}@keyframes atGira{50%{transform:scaleX(.25)}}
@@ -1615,7 +1617,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.93.0 · 26/11 09:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.9 · 26/11 11:30"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1778,7 +1780,15 @@ async function impRecupera(){if(!pedLigado()||pontoModo()!=='posto')return;try{c
       vendedor:d.vendedor?{nome:d.vendedor}:null,payment:d.meio==='cortesia'?'Cortesia':PAG_NOME[d.meio]||PAG_NOME.cartao,recuperada:true});if(Array.isArray(d.sessoes)&&d.sessoes.length>1)s.sessoes=d.sessoes.slice();impIniciar(s);n++;});
   if(n){saveSim();toast(TE('po_recuperadas',n));render();}}catch(e){}}
 setInterval(()=>{postoVendedorSync();pedDesce();},15000);setTimeout(()=>{postoVendedorSync();pedDesce();},4000);window.addEventListener('hashchange',()=>postoVendedorSync());setInterval(()=>{impRecupera();},60000);setTimeout(()=>{impRecupera();},6000);
-function saveSim(){if(ZERADA_SAINDO)return false;pedAgenda();if(state.db&&SIM_SRV){clearTimeout(simSobeT);simSobeT=setTimeout(simSobe,300);}const put=()=>localStorage.setItem('eterna.sim.v1',JSON.stringify(SIM));try{put();state.simCheio=0;return true;}catch(e){try{simPodar();put();state.simCheio=0;return true;}catch(e2){state.simCheio=Date.now();return false;}}}
+// 26/11 (Ronaldo: venda não pode deixar de gravar): o navegador tem ~5 MB por site. Se encher, a gravação da venda apaga primeiro o
+// que é só cópia de apoio (o servidor tem o original ou é refeito sozinho) e tenta de novo. Nunca apaga venda, fila de envio nem login.
+function lsApoio(){return [['eterna.faces.v3','eterna.users.log.v1','eterna.db.recusados.v1','eterna.treino.v1','eterna.es.v1','eterna.fg.v1','eterna.painel.v1','eterna.fotofila.boot','eterna-if-mini-tv'],['eterna.porta.v1','eterna.ia.v1','eterna.busca.v1','eterna.range']];}
+function lsLibera(n){(lsApoio()[n]||[]).forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});}
+function lsGrava(k,v){for(let i=0;;i++){try{localStorage.setItem(k,v);return true;}catch(e){if(i>=lsApoio().length)throw e;lsLibera(i);}}}
+function saveSim(){if(ZERADA_SAINDO)return false;pedAgenda();if(state.db&&SIM_SRV){clearTimeout(simSobeT);simSobeT=setTimeout(simSobe,300);}const put=()=>lsGrava('eterna.sim.v1',JSON.stringify(SIM));try{put();state.simCheio=0;return true;}catch(e){try{simPodar();put();state.simCheio=0;return true;}catch(e2){
+  // 26/11 (Ronaldo: "Não gravou" no Pago na maquininha, notebook com o navegador cheio): antes de desistir, apaga o que é só cópia de
+  // apoio (rostos lidos no navegador, que o servidor do ponto faz; registro de recusas) e tenta de novo
+  state.simCheio=Date.now();return false;}}}
 function simPodar(){SIM.log=(SIM.log||[]).slice(0,20);const ed=SIM.edits||{};Object.keys(ed).forEach(id=>{if(ed[id]&&ed[id].auto===true&&!UP[id]&&!(typeof spriteOf!=='undefined'&&spriteOf[id]))delete ed[id];});}
 // v79: Checkout e Caixa em duas janelas do mesmo navegador. simFresh relê o SIM gravado pela outra janela antes de mexer no caixa.
 function simFresh(){try{const s=localStorage.getItem('eterna.sim.v1');if(s)SIM=Object.assign(SIM0(),JSON.parse(s));}catch(e){}if(!Array.isArray(SIM.caixaDin))SIM.caixaDin=[];
@@ -2509,17 +2519,18 @@ function pvEvento(tipo,venda,dados,o){if(!venda||state.assumido)return null;o=o|
   const grava=()=>{let sq={};try{sq=JSON.parse(localStorage.getItem(PV_SEQV)||'{}')||{};}catch(e){sq={};}
     const seq=(+sq[venda]||0)+1;sq[venda]=seq;const ks=Object.keys(sq);if(ks.length>3000)ks.slice(0,ks.length-3000).forEach(k=>delete sq[k]);
     const ev={idem:venda+':'+seq,venda,seq,tipo,em,por,dados:dados||{}};const l=pvPoda(pvFila().concat([ev]));
-    try{localStorage.setItem(PV_FILA,JSON.stringify(l));localStorage.setItem(PV_SEQV,JSON.stringify(sq));}catch(e){state.simCheio=Date.now();}setTimeout(pontoFlush,0);return ev;};
+    try{lsGrava(PV_FILA,JSON.stringify(l));lsGrava(PV_SEQV,JSON.stringify(sq));}catch(e){state.simCheio=Date.now();PV_MEM.push(ev);}setTimeout(pontoFlush,0);return ev;}; // 26/11: sem espaço, o evento fica na memória e sobe assim mesmo
   try{if(navigator.locks&&typeof navigator.locks.request==='function'){navigator.locks.request('eterna-ponto-fila',grava).catch(e=>console.warn('fila local',e));return {venda,tipo,em};}}catch(e){}
   return grava();}
 // Etapa 2 (v90): a venda mora no banco do servidor. Cada evento sobe na hora (POST /ponto/eventos, até 50 por vez; e a cada 5 s
 // o que ficou para trás). Só sai da fila o que o servidor confirmou gravado (ok ou ja); recusado vai para
 // eterna.ponto.conflitos.v1. Sem servidor (rede caiu), a fila do navegador segura e manda quando voltar: nunca descarta.
-const PV_CONF='eterna.ponto.conflitos.v1';let PV_ENV=false;
-async function pontoFlush(){if(PV_ENV||!state.agent||!state.agent.on)return;const lote=pvFila().slice(0,50);if(!lote.length)return;PV_ENV=true;
+const PV_CONF='eterna.ponto.conflitos.v1';let PV_ENV=false;const PV_MEM=[];
+async function pontoFlush(){if(PV_ENV||!state.agent||!state.agent.on)return;const fl=pvFila();const lote=fl.concat(PV_MEM.filter(e=>!fl.some(x=>x.idem===e.idem))).slice(0,50);if(!lote.length)return;PV_ENV=true;
   try{const r=await agFetch(state.agent.url+'/ponto/eventos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({posto:postoNome(),eventos:lote})});if(!r.ok)return;
     const res=(await r.json()).resultados||[];const sai=new Set(res.filter(x=>x.s==='ok'||x.s==='ja'||x.s==='recusado').map(x=>x.idem));const rec=lote.filter(e=>res.some(x=>x.idem===e.idem&&x.s==='recusado'));
-    const tira=()=>{try{localStorage.setItem(PV_FILA,JSON.stringify(pvFila().filter(e=>!sai.has(e.idem))));
+    for(let i=PV_MEM.length-1;i>=0;i--)if(sai.has(PV_MEM[i].idem))PV_MEM.splice(i,1);
+    const tira=()=>{try{lsGrava(PV_FILA,JSON.stringify(pvFila().filter(e=>!sai.has(e.idem))));
       if(rec.length){let c=[];try{c=JSON.parse(localStorage.getItem(PV_CONF)||'[]');if(!Array.isArray(c))c=[];}catch(e){c=[];}localStorage.setItem(PV_CONF,JSON.stringify(c.concat(rec).slice(-500)));}}catch(e){}};
     if(navigator.locks&&typeof navigator.locks.request==='function')await navigator.locks.request('eterna-ponto-fila',tira);else tira();}
   catch(e){}finally{PV_ENV=false;}}
@@ -2780,6 +2791,29 @@ async function impTeste(){if(IMP_TESTE_ON)return;IMP_TESTE_ON=true;render();
     document.body.classList.add('pr-on');const fim=()=>{document.body.classList.remove('pr-on');document.getElementById('print-root')?.remove();};window.addEventListener('afterprint',fim,{once:true});try{window.print();}catch(e){}setTimeout(fim,0);}
   catch(e){toast(TE('imp_teste_erro',String(e&&e.message||e).slice(0,140)));}
   finally{IMP_TESTE_ON=false;render();}}
+// 26/11 (Ronaldo): teste de selfie do vendedor, ao lado do teste de impressora. Ele tira uma foto dele na câmera do posto
+// (Logitech primeiro, como o Checkout) e ela sobe ao servidor como a foto de um cliente (/fotos/teste). Depois ele abre o
+// Checkout e faz a selfie como um cliente normal. O botão fica só no Posto, nunca na tela do cliente.
+const ST={el:null,stream:null,envia:false};
+function stFecha(){if(ST.stream)ST.stream.getTracks().forEach(t=>t.stop());ST.stream=null;if(ST.el)ST.el.remove();ST.el=null;ST.envia=false;}
+async function stEnviar(){const v=ST.el&&ST.el.querySelector('video');if(ST.envia||!v||!v.videoWidth){if(!ST.envia)toast(TE('st_sem_camera'));return;}
+  const c=mkc(v.videoWidth,v.videoHeight);c.getContext('2d').drawImage(v,0,0);const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.92));if(!b)return;
+  const a=state.agent;if(!a||!a.on){toast(TE('st_sem_servidor'));return;}ST.envia=true;const bt=ST.el.querySelector('[data-st="foto"]');if(bt){bt.disabled=true;bt.textContent=TE('st_enviando');}
+  const nome='TESTE-'+hhmm(new Date()).replace(':','')+String(new Date().getSeconds()).padStart(2,'0')+'.jpg';let r;
+  try{const x=await agFetch(`${a.url}/fotos/teste?nome=${encodeURIComponent(nome)}`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'image/jpeg','X-Eterna':'1'},body:b});r=await x.json().catch(()=>({}));if(!x.ok&&!r.erro)r.erro=String(x.status);}catch(e){r={erro:String(e&&e.message||e)};}
+  if(r&&r.ok){stFecha();toast(TE('st_ok'));return;}
+  ST.envia=false;if(bt){bt.disabled=false;bt.textContent=TE('st_tirar_foto');}toast(TE('st_erro',String((r&&r.erro)||'falha').slice(0,80)));}
+async function selfieTeste(){if(ST.el)return;const d=document.createElement('div');d.id='st-modal';d.setAttribute('role','dialog');
+  d.innerHTML=`<div class="st-box"><h2>${esc(TE('st_titulo'))}</h2><video autoplay muted playsinline></video><div class="row st-acoes"><button class="btn primary" data-st="foto">${esc(TE('st_tirar_foto'))}</button><button class="btn ghost" data-st="fechar">${esc(TE('st_fechar'))}</button></div></div>`;
+  document.body.appendChild(d);ST.el=d;
+  d.addEventListener('click',e=>{const x=e.target.closest('[data-st]');if(!x)return;if(x.dataset.st==='fechar')stFecha();else stEnviar();});
+  try{const tam={width:{ideal:1920},height:{ideal:1080}};const id=await camEscolhe();let st=null;
+    if(id){try{st=await navigator.mediaDevices.getUserMedia({video:Object.assign({deviceId:{exact:id}},tam),audio:false});}catch(e1){st=null;}}
+    if(!st)st=await navigator.mediaDevices.getUserMedia({video:Object.assign({facingMode:'user'},tam),audio:false});
+    if(!id){const id2=await camEscolhe();const tr=st.getVideoTracks()[0];const at=tr&&tr.getSettings?tr.getSettings().deviceId:null;
+      if(id2&&at&&id2!==at){try{const st2=await navigator.mediaDevices.getUserMedia({video:Object.assign({deviceId:{exact:id2}},tam),audio:false});st.getTracks().forEach(t=>t.stop());st=st2;}catch(e2){}}}
+    if(!ST.el){st.getTracks().forEach(t=>t.stop());return;}ST.stream=st;d.querySelector('video').srcObject=st;}
+  catch(e){stFecha();toast(TE('st_sem_camera'));}}
 function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can('venda','c');const noSrv=impNoServidor();
   if(noSrv){impJobVolta();if(!impPostoTimer){impPostoTimer=setInterval(impPostoPoll,2500);setTimeout(impPostoPoll,0);}}
   if(!L.length&&cards){const s0=SIM.sessions[cards[0]]||{};return `<div class="panel" id="imp-painel"><div class="note">${s0.impressao?TE('imp_sem_fotos_pkg'):TE('imp_antes_v83')}</div></div>`;}
@@ -2824,7 +2858,7 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can
           <div class="row"><button class="btn primary" data-act="imp-reprint-ok" data-card="${esc(card)}" ${(re.sel||[]).length?'':'disabled'}>${(re.sel||[]).length?TE('imp_reimprimir_n',TE('n_fotos',(re.sel||[]).length)):TE('imp_reimprimir')}</button><button class="btn ghost" data-act="imp-reprint-no">${TE('voltar')}</button></div></div>`
           :state.impRe&&state.impRe.card===card&&state.impRe.todas?avulsa(card,s):''}`;}
     return `<div class="din-item imp-item" data-imp="${esc(card)}">${head}${body.trim()?`<div class="imp-corpo">${body}</div>`:''}</div>`;};
-  return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2><span class="row" style="gap:8px">${rw?`<button class="btn ghost" data-act="imp-teste" ${IMP_TESTE_ON?'disabled':''}>${TE(IMP_TESTE_ON?'imp_teste_enviando':'imp_teste_btn')}</button>`:''}${o.semRolo?'':roloSelo('neutral',true)}</span></div>
+  return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2><span class="row" style="gap:8px">${VER_NOVA?`<button class="btn ver-btn" data-act="ver-atualizar">${TE('ver_atualizar_btn')}</button>`:''}${rw?`<button class="btn ghost" data-act="selfie-teste">${TE('st_btn')}</button><button class="btn ghost" data-act="imp-teste" ${IMP_TESTE_ON?'disabled':''}>${TE(IMP_TESTE_ON?'imp_teste_enviando':'imp_teste_btn')}</button>`:''}${o.semRolo?'':roloSelo('neutral',true)}</span></div>
     ${L.length?`<div class="din-list imp-lista"><div class="imp-linha imp-cab"><span>${TE('mv_venda')}</span><span>${TE('mv_hora')}</span><span>${TE('pacote')}</span><span>${TE('imp_col_imp')}</span><span>${TE('imp_col_sit')}</span><span></span></div>${L.map(item).join('')}</div>`:`<div class="note">${TE('imp_nenhuma')}</div>`}</div>`;}
 // "Minhas vendas de hoje" (D9): deste notebook e do e-mail de quem está logado; nenhum total.
 // 18/11 (Ronaldo): o pacote de cada venda. 25/11 (Ronaldo): o vendedor vê o valor e o total do que vendeu (só o confirmado)
@@ -2862,7 +2896,7 @@ function minhasVendas(trava){const u=state.user;if(!u)return '';const val=true;c
   // 26/11 (Ronaldo): filtro por vendedor, para cada um acompanhar quanto vendeu no dia (total e quantidade no rodapé)
   const vends=[...new Set(rows.map(r=>r.vend).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt'));const fv=vends.includes(state.mvVend)?state.mvVend:'todos';
   const todas=rows.length;if(fv!=='todos')rows.splice(0,rows.length,...rows.filter(r=>r.vend===fv));
-  const filtro=vends.length>1?`<div class="row mv-filtro"><label class="ps-sel"><span class="eyebrow">${TE('ve_vendedor')}</span><select class="chip" data-act="mv-vend"><option value="todos">${TE('ps_todos')}</option>${vends.map(n=>`<option value="${esc(n)}" ${n===fv?'selected':''}>${esc(n)}${n===u.name?' · '+esc(TE('mv_voce')):''}</option>`).join('')}</select></label></div>`:'';
+  const filtro=vends.length?`<div class="row mv-filtro"><label class="ps-sel"><span class="eyebrow">${TE('ve_vendedor')}</span><select class="chip" data-act="mv-vend"><option value="todos">${TE('ps_todos')}</option>${vends.map(n=>`<option value="${esc(n)}" ${n===fv?'selected':''}>${esc(n)}${n===u.name?' · '+esc(TE('mv_voce')):''}</option>`).join('')}</select></label></div>`:'';
   const MVP=10,pgs=Math.max(1,Math.ceil(rows.length/MVP)),pg=Math.min(Math.max(0,state.mvPag||0),pgs-1),soma=rows.reduce((t,r)=>t+(r.rec&&r.v!=null?+r.v||0:0),0);const vis=rows.slice(pg*MVP,pg*MVP+MVP);
   const pag=pgs>1?`<div class="row mv-pag"><button class="chip" data-act="mv-pag" data-p="${pg-1}" ${pg>0?'':'disabled'}>${TE('aj_anterior')}</button><span class="note">${pg+1} / ${pgs}</span><button class="chip" data-act="mv-pag" data-p="${pg+1}" ${pg<pgs-1?'':'disabled'}>${TE('aj_proxima')}</button></div>`:'';
   // v94 (E): dentro de <details> "Minhas vendas de hoje", aberto por padrão; "Recibo" nas vendas pagas abre o recibo em cima do Posto
@@ -5222,8 +5256,9 @@ let FACE=null;const FACEIDX={};const FACE_SIM=.45,FACE_DUV=.38,FACE_LIM=Math.sqr
 state.face={done:0,total:0,busy:false,err:null};
 const f2b=a=>{const u=new Uint8Array(new Float32Array(a).buffer);let t='';for(let i=0;i<u.length;i++)t+=String.fromCharCode(u[i]);return btoa(t)};
 const b2f=t=>{const b=atob(t);const u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return new Float32Array(u.buffer)};
+try{const r=localStorage.getItem('eterna.faces.v3');if(r&&r.length>1e6)localStorage.removeItem('eterna.faces.v3');let t=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);t+=k.length+(localStorage.getItem(k)||'').length;}if(t>3.5e6)lsLibera(0);}catch(e){} // 26/11: ao abrir, libera o espaço das vendas (acima de ~3,5 MB usados, sai a cópia de apoio)
 try{const j=JSON.parse(localStorage.getItem('eterna.faces.v3')||'{}');for(const [id,l] of Object.entries(j))FACEIDX[id]=l.map(b2f);}catch(e){}
-let faceSaveT=null;function faceSave(){clearTimeout(faceSaveT);faceSaveT=setTimeout(()=>{try{const o={};for(const [id,l] of Object.entries(FACEIDX))o[id]=l.map(f2b);localStorage.setItem('eterna.faces.v3',JSON.stringify(o))}catch(e){}},1500)}
+let faceSaveT=null;function faceSave(){clearTimeout(faceSaveT);faceSaveT=setTimeout(()=>{try{const o={};for(const [id,l] of Object.entries(FACEIDX))o[id]=l.map(f2b);const j=JSON.stringify(o);if(j.length>1e6){localStorage.removeItem('eterna.faces.v3');return;}localStorage.setItem('eterna.faces.v3',j)}catch(e){}},1500)} // 26/11: no máximo ~1 MB, para nunca tirar o espaço das vendas
 function faceLoad(){if(FACE)return FACE;FACE=new Promise((res,rej)=>{const go=async()=>{try{const f=window.faceapi;await f.tf.ready();const u='vendor/faceapi/model';await Promise.all([f.nets.ssdMobilenetv1.loadFromUri(u),f.nets.faceLandmark68Net.loadFromUri(u),f.nets.faceRecognitionNet.loadFromUri(u)]);res(f);}catch(e){FACE=null;rej(e)}};
   if(window.faceapi){go();return;}const sc=document.createElement('script');sc.src='vendor/faceapi/face-api.js';sc.onload=go;sc.onerror=()=>{FACE=null;rej(new Error('sem reconhecimento'))};document.head.appendChild(sc);});return FACE;}
 // Reconhecimento: SFace (OpenCV Zoo, Apache 2.0) rodando no navegador pelo ONNX Runtime Web (MIT), o mesmo modelo do servidor do ponto.
@@ -5286,7 +5321,10 @@ const buscaJanelaOk=v=>{v=Math.round(+v);if(!isFinite(v))return null;if(v<=0)ret
 function buscaJanelaMin(){const a=state.agent;const ag=a&&a.on&&a.sessoes&&a.sessoes.janela_min!=null?a.sessoes:null;if(ag&&ag.janela_fixa)return 0; // ETERNA_BUSCA_DIAS no servidor: dia todo
   const c=state.buscaCfg;const v=c?buscaJanelaOk(c.janela_min):null;if(v!=null)return v;return ag?+ag.janela_min:BUSCA_JANELA_PADRAO;}
 // hora da última foto da sessão (ms): clique corrigido do servidor (cap1), senão o fechamento; null = sem hora (amostra)
-function sesUltima(c){const s=SIM.sessions[c];if(!s)return null;if(s.cap1)return s.cap1*1000;const t=s.closedAt?Date.parse(s.closedAt):NaN;return isNaN(t)?null:t;}
+// 26/11 (Ronaldo: subi a foto hoje e a selfie não achou): a mesma regra do servidor desde 18/11, o mais recente entre o clique e a
+// chegada ao servidor. Antes valia só o clique, e foto antiga subida hoje (ou câmera com relógio atrasado) ficava fora da janela aqui,
+// mesmo o servidor tendo devolvido a pessoa.
+function sesUltima(c){const s=SIM.sessions[c];if(!s)return null;const v=SRV.sess&&SRV.sess[c];const h=Math.max(+(v&&v.cap1)||+s.cap1||0,+(v&&v.ultima_chegada)||0);if(h)return h*1000;const t=s.closedAt?Date.parse(s.closedAt):NaN;return isNaN(t)?null:t;}
 async function faceAgente(srcs,todo,grupo){const a=state.agent;if(!a.on||!a.rostos||!a.rostos.ligado)return null;
   // v96 (segurança S1): a busca desiste em 9 s (agente travado não segura a câmera ligada nem o balcão em "Procurando")
   const ab=typeof AbortController==='function'?new AbortController():null;const tm=ab?setTimeout(()=>ab.abort(),FACE_BUSCA_MS):null;
@@ -5916,7 +5954,9 @@ async function agentPoll(){const a=state.agent;await a.sonda;if(!AGENT_VIEWS.inc
     if(a.card!==(st.card||null)){a.card=st.card;render();}
     if(a.sessoes)srvPull();
     a.falhas=0;a.proxima=0;
-  }catch(e){if(a.on){a.on=false;a.offAt=Date.now();render();}a.err=String(e&&e.message||e);if(!a.tried){a.tried=true;if(state.view==='posto'||state.view==='caixa')render();}
+  // 26/11 (Ronaldo: aviso de sem conexão com o ping respondendo, estressando a operação): uma checagem lenta ou falha solta não
+  // derruba mais a conexão; só depois de 3 falhas seguidas e 20 s sem resposta boa
+  }catch(e){if(a.on&&(a.falhas||0)+1>=3&&Date.now()-(a.lastOk||0)>20000){a.on=false;a.offAt=Date.now();render();}a.err=String(e&&e.message||e);if(!a.tried){a.tried=true;if(state.view==='posto'||state.view==='caixa')render();}
     a.falhas=(a.falhas||0)+1;a.proxima=Date.now()+Math.min(30000,5000*2**(a.falhas-1));}
 }
 setInterval(agentPoll,2500);
@@ -9780,7 +9820,7 @@ const AUDIT_KEY='eterna.users.log.v1';
 function auditRead(){try{const l=JSON.parse(localStorage.getItem(AUDIT_KEY)||'[]');return Array.isArray(l)?l:[];}catch(e){return [];}}
 function auditLog(acao,alvo,mudancas,extra){if(!mudancas||!mudancas.length)return null;
   const e=Object.assign({id:'L'+Date.now()+'-'+Math.random().toString(36).slice(2,6),em:now().toISOString(),por:(state.user&&state.user.email)||'sistema',alvo,acao,mudancas,venue:(typeof VENUE_CFG!=='undefined'&&VENUE_CFG&&VENUE_CFG.id)||'maracana',origem:'app-v78'},extra||{});
-  const l=auditRead();l.unshift(e);try{localStorage.setItem(AUDIT_KEY,JSON.stringify(l.slice(0,1000)))}catch(x){}
+  const l=auditRead();l.unshift(e);try{localStorage.setItem(AUDIT_KEY,JSON.stringify(l.slice(0,300)))}catch(x){}
   if(state.db){try{state.db.doc('usuarios_log/'+e.id).set(e)}catch(x){console.warn('db usuarios_log',x)}}return e;}
 function permDiff(a,b){a=a||{};b=b||{};const out=[];
   ['name','email','contato','idioma','key','active','preset','inicio'].forEach(k=>{const x=a[k]==null?null:a[k],y=b[k]==null?null:b[k];if(x!==y)out.push({campo:k,de:x,para:y});});
@@ -12816,9 +12856,16 @@ const EQ={
   imp_parada:[(m)=>`Impressora parada: ${m}`,(m)=>`Printer stopped: ${m}`,(m)=>`Impresora detenida: ${m}`,(m)=>`Imprimante arrêtée : ${m}`,(m)=>`Drucker angehalten: ${m}`],
   mv_aguardando:["aguardando","waiting","esperando","en attente","wartend"],
   mv_titulo:["Vendas do Dia","Sales of the Day","Ventas del Día","Ventes du jour","Verkäufe des Tages"],
-  ver_nova_t:["Nova versão do Eterna","New Eterna version","Nueva versión de Eterna","Nouvelle version d’Eterna","Neue Eterna-Version"],
-  ver_nova_sub:["Toque em Atualizar entre uma venda e outra.","Tap Update between one sale and the next.","Toca Actualizar entre una venta y otra.","Touchez Mettre à jour entre deux ventes.","Zwischen zwei Verkäufen auf Aktualisieren tippen."],
-  ver_atualizar:["Atualizar","Update","Actualizar","Mettre à jour","Aktualisieren"],
+  st_btn:["Testar selfie","Test selfie","Probar selfie","Tester le selfie","Selfie testen"],
+  st_titulo:["Teste de selfie","Selfie test","Prueba de selfie","Test du selfie","Selfie-Test"],
+  st_tirar_foto:["Tirar foto","Take photo","Tomar foto","Prendre la photo","Foto aufnehmen"],
+  st_enviando:["Enviando…","Sending…","Enviando…","Envoi…","Wird gesendet…"],
+  st_fechar:["Fechar","Close","Cerrar","Fermer","Schließen"],
+  st_ok:["Foto enviada. Em 1 minuto, faça a selfie no Checkout como um cliente.","Photo sent. In 1 minute, take the selfie at Checkout like a customer.","Foto enviada. En 1 minuto, haz el selfie en el Checkout como un cliente.","Photo envoyée. Dans 1 minute, faites le selfie au Checkout comme un client.","Foto gesendet. In 1 Minute das Selfie am Checkout wie ein Kunde machen."],
+  st_sem_camera:["A câmera não abriu. Confira a Logitech no USB e a permissão de câmera do Chrome.","The camera did not open. Check the Logitech on USB and Chrome camera permission.","La cámara no abrió. Revisa la Logitech en el USB y el permiso de cámara de Chrome.","La caméra ne s’est pas ouverte. Vérifiez la Logitech en USB et l’autorisation caméra de Chrome.","Die Kamera hat nicht geöffnet. Logitech am USB und Kamerazugriff in Chrome prüfen."],
+  st_sem_servidor:["Sem conexão com o servidor do ponto.","No connection to the venue server.","Sin conexión con el servidor del punto.","Pas de connexion au serveur du site.","Keine Verbindung zum Server vor Ort."],
+  st_erro:[e=>`A foto não subiu: ${e}`,e=>`The photo was not sent: ${e}`,e=>`La foto no se envió: ${e}`,e=>`La photo n’a pas été envoyée : ${e}`,e=>`Das Foto wurde nicht gesendet: ${e}`],
+  ver_atualizar_btn:["Atualizar versão","Update version","Actualizar versión","Mettre à jour la version","Version aktualisieren"],
   mv_voce:["você","you","tú","vous","du"],
   mv_hora:["Hora","Time","Hora","Heure","Uhrzeit"],
   mv_venda:["Venda","Sale","Venta","Vente","Verkauf"],
@@ -14926,6 +14973,8 @@ document.addEventListener('click',e=>{
       if(sel.includes(d.k))sel=sel.filter(k=>k!==d.k);else if(sel.length>=S.max){toast(`Já são ${S.max} ${S.max===1?'foto':'fotos'}. Desmarque uma antes de marcar outra.`);break;}else sel.push(d.k);state.impSel[d.card]=sel;render();break;}
     case 'imp-print':impImprimir(d.card);break;
     case 'imp-teste':impTeste();break;
+    case 'selfie-teste':selfieTeste();break;
+    case 'ver-atualizar':location.reload();break;
     case 'imp-ok':impOk(d.card);break;
     case 'imp-falha':impFalha(d.card);break;
     case 'imp-reprint':{const s=SIM.sessions[d.card];const feitas=new Set((s&&s.impressao&&s.impressao.feitas)||[]); // já vem com as fotos impressas marcadas (até o limite): reimprimir é um clique só (Ronaldo, 10/11)
@@ -15034,9 +15083,11 @@ const VER_ATUAL=(document.querySelector('.powered[title]')||{}).title||'';const 
 async function verChecar(){if(VER_NOVA||!VER_ATUAL||!/^https?:/.test(location.protocol))return;
   try{const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'});if(!r.ok)return;const t=await r.text();
     const m=t.match(/class="powered" title="(Eterna v[^"]+)"/);if(m&&m[1]!==VER_ATUAL){VER_NOVA=m[1];verAviso();}}catch(e){}}
-function verAviso(){if(document.getElementById('ver-nova'))return;const d=document.createElement('div');d.id='ver-nova';d.setAttribute('role','alert');
-  d.innerHTML=`<div class="vn-txt"><b>${esc(TE('ver_nova_t'))}</b><span>${esc(TE('ver_nova_sub'))}</span></div><button class="btn primary" type="button">${esc(TE('ver_atualizar'))}</button>`;
-  d.querySelector('button').addEventListener('click',()=>location.reload());document.body.appendChild(d);}
+// 26/11 (Ronaldo: a faixa aparecia para o cliente): nada aparece na tela do cliente. Nas telas da equipe, o botão Atualizar versão
+// fica no Posto, ao lado de Testar impressora. O Checkout se atualiza sozinho quando está parado no início há 30 s, sem cliente.
+const verCliente=()=>!!(state.lojaRota||state.view==='quiosque'||state.pub);
+function verLojaParada(){const k=state.kiosk;return !!(k&&k.step==='code'&&!k.code&&!k.camOn&&!(state.cam&&state.cam.busy)&&k.codeDesde&&Date.now()-k.codeDesde>30000);}
+function verAviso(){if(state.pub)return;const tenta=()=>{if(!verCliente()){render();return;}if(verLojaParada())location.reload();else setTimeout(tenta,15000);};tenta();}
 setTimeout(verChecar,20000);setInterval(verChecar,VER_MS);
 window.addEventListener('beforeunload',e=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);if(state.imp&&state.imp.envio){e.preventDefault();e.returnValue='';return '';}});
 window.addEventListener('pagehide',()=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);}); // 23/11: escolha do Treino ainda não gravada vai para a fila local (síncrona), sem pergunta do navegador
@@ -15113,7 +15164,8 @@ const DBQ='eterna.db.fila.v1',DBREC='eterna.db.recusados.v1';
 // gravação que o servidor recusou (sem permissão do módulo): fica registrada e a equipe vê o aviso; o servidor manda o valor dele de volta
 function dbRecusados(n,lote){const reg={em:now().toISOString(),n,cols:[...new Set(lote.map(x=>x.col))],por:state.user?state.user.email:null,posto:(postoDisp()||{}).id||null};
   console.warn('Eterna: '+n+' alterações recusadas pelo servidor do ponto',reg);try{let l=JSON.parse(localStorage.getItem(DBREC)||'[]');if(!Array.isArray(l))l=[];l.unshift(reg);localStorage.setItem(DBREC,JSON.stringify(l.slice(0,50)));}catch(e){}
-  if(state.user&&!state.lojaRota&&!state.pub&&Date.now()-(dbRecusados.t||0)>10000){dbRecusados.t=Date.now();toast(n+(n===1?' alteração não foi aceita':' alterações não foram aceitas')+' (sem permissão)');}}
+  // 26/11 (Ronaldo: "não posso deixar ele aparecendo"): sem aviso na tela para ninguém; fica no console e no registro deste aparelho
+}
 function agenteDb(){const subs={},dsubs={},revs={};let sobindo=false,descendo=false;
   const fila=()=>{try{const l=JSON.parse(localStorage.getItem(DBQ)||'[]');return Array.isArray(l)?l:[];}catch(e){return [];}};
   const guarda=l=>{try{localStorage.setItem(DBQ,JSON.stringify(l));}catch(e){state.simCheio=Date.now();}};
@@ -15186,7 +15238,7 @@ async function dbLigar(){if(state.db)return;let db=null;
     db.collection('perfis').onSnapshot(snap=>{let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!perfilOk(x))return;
       if(x.deleted){if(PERFIS[x.id]){delete PERFIS[x.id];ch=true;}return;}if(JSON.stringify(PERFIS[x.id])!==JSON.stringify(x)){PERFIS[x.id]=x;ch=true;}});if(ch){perfisGuarda();perfisAplica();render();}},err=>{console.warn('db',err)});
     db.collection('usuarios_login').onSnapshot(snap=>{snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||typeof x.email!=='string'||!usuarioOk(x.email)||typeof x.lastLogin!=='string')return;const u=Object.prototype.hasOwnProperty.call(USERS,x.email)&&USERS[x.email];if(u&&(!u.lastLogin||x.lastLogin>u.lastLogin))u.lastLogin=x.lastLogin;});},err=>{console.warn('db',err)});
-    db.collection('usuarios_log').onSnapshot(snap=>{const l=auditRead();const ids=new Set(l.map(e=>e.id));let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.id||ids.has(x.id))return;l.push(x);ids.add(x.id);ch=true;});if(ch){l.sort((p,q)=>String(q.em).localeCompare(String(p.em)));try{localStorage.setItem(AUDIT_KEY,JSON.stringify(l.slice(0,1000)))}catch(e){}if(state.view==='permissoes')render();}},err=>{console.warn('db',err)});
+    db.collection('usuarios_log').onSnapshot(snap=>{const l=auditRead();const ids=new Set(l.map(e=>e.id));let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.id||ids.has(x.id))return;l.push(x);ids.add(x.id);ch=true;});if(ch){l.sort((p,q)=>String(q.em).localeCompare(String(p.em)));try{localStorage.setItem(AUDIT_KEY,JSON.stringify(l.slice(0,300)))}catch(e){}if(state.view==='permissoes')render();}},err=>{console.warn('db',err)});
     db.collection('diario').onSnapshot(snap=>{SIM.diario=SIM.diario||[];let ch=false;snap.docs.forEach(d=>{if(!d.exists)return;const x=d.data();if(!x||!x.id)return;const i=SIM.diario.findIndex(y=>y.id===x.id);if(i<0)SIM.diario.unshift(x);else SIM.diario[i]=x;ch=true;});if(ch){SIM.diario.sort((a,b)=>b.at.localeCompare(a.at));saveSim();render();}},err=>{console.warn('db',err)});
     db.doc('config/postos-lado').onSnapshot(d=>{const x=d&&d.exists?d.data():null;if(x&&x.lados&&typeof x.lados==='object'&&(!state.postosLado||String(x.em||'')>=String(state.postosLado.em||''))){state.postosLado=x;render();}});
     db.doc('config/porta-retratos').onSnapshot(d=>{const x=d&&d.exists?d.data():null;if(x&&Array.isArray(x.itens)&&(!state.portaCfg||String(x.em||'')>=String(state.portaCfg.em||''))){portaAplica(x);render();}});
@@ -15213,12 +15265,18 @@ function simResumo(S){const ses=S.sessions||{};const st={};Object.values(ses).fo
 window.addEventListener('storage',ev=>{if(ev.key!=='eterna.sim.v1'||ev.newValue==null)return;let o=null;try{o=JSON.parse(ev.newValue);}catch(x){return;}if(!o||typeof o!=='object')return;
   // I2: SIM sem caixaDin ou sem catalogoV veio de uma janela antiga (v78): não adota, avisa. v96: a marca é SIM_V (3)
   if(!Array.isArray(o.caixaDin)||o.catalogoV!==SIM_V){state.janelaAntiga=Date.now();if(!state.lojaRota&&!state.pub)toast('Há uma janela antiga do Eterna aberta. Recarregue as outras janelas.');return;}
+  // 26/11 (Ronaldo: cliente com 63 fotos marcou várias e elas sumiram): o Posto, aberto no mesmo navegador, às vezes grava uma cópia
+  // de um instante antes e esta janela do Checkout a adotava inteira, levando junto as marcas do cliente. As marcas do cliente que está
+  // nesta tela são desta janela: ficam, e a janela grava de novo para o Posto receber
+  const k0=state.lojaRota&&state.kiosk&&state.kiosk.code?state.kiosk.code:null;const meus=k0?soCards(k0).map(c=>[c,SIM.sessions[c]]).filter(([c,x])=>x&&x.pick&&Object.keys(x.pick).length&&x.status!=='paga').map(([c,x])=>[c,{pick:x.pick,selected:x.selected,aiSel:x.aiSel,fav:x.fav}]):[];
   const antes=simResumo(SIM);const velhas=new Map((SIM.caixaDin||[]).map(r=>[r.id,{estado:r.estado,saiu:r.saiu||null}]));SIM=Object.assign(SIM0(),o);
+  {let volta=false;meus.forEach(([c,v])=>{const n=SIM.sessions[c];if(!n||n.status==='paga')return;if(JSON.stringify(n.pick||{})!==JSON.stringify(v.pick)){Object.assign(n,v);volta=true;}});if(volta)setTimeout(saveSim,0);}
   if(SIM.caixaDin.some(pendAntigaHoje)){state.janelaAntiga=Date.now();if(!state.lojaRota&&!state.pub&&SIM.caixaDin.some(r=>pendAntigaHoje(r)&&(velhas.get(r.id)||{}).estado!=='confirmada'))toast('Uma janela antiga do Eterna confirmou um pedido do Checkout sem pacote. O QR não foi mostrado ao cliente. Feche e reabra o Checkout e o Posto de venda.');} // B1 (só pedido de hoje)
   const avisou=!state.lojaRota&&!state.pub&&pendAvisos(velhas); // v96: o cliente voltou às fotos ou saiu da tela
   if(state.pub){const p=state.pub;if(p.step==='aguarda_caixa')pubLoad();return;} // v96.2: reforço, as compradas chegaram numa gravação depois da sessão paga // galeria pública: sem redesenhar no meio da selfie; sai do "esperando o caixa" quando confirmar
   const pc=lojaPendCheck(); // v83: o vendedor confirmou ou cancelou a pendência que esta janela do Checkout mostra
   dinVirada();railCk();if(simResumo(SIM)===antes&&!pc&&!avisou)return; // I6: só redesenha quando muda algo que aparece
+  if(state.lojaRota&&LOJA_ESCOLHA_ETAPAS[state.kiosk.step]&&!pc)return; // 26/11 (Ronaldo): cliente escolhendo fotos: a tela não se redesenha pelo que o Posto grava
   const f=document.activeElement;if(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;render();});
 // a cada minuto: virada do dia e o "há N min" do Caixa
 setInterval(()=>{dinVirada();if(!state.lojaRota&&!state.pub&&sessaoVirada())return;const f=document.activeElement;if(state.pub||state.lojaRota||(f&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))){if(!state.lojaRota&&!state.pub)railCk();return;}if(state.view==='caixa'||state.view==='posto'||state.view==='alertas'||state.view==='perfis')render();else railCk();},60000);
