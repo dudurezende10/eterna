@@ -640,7 +640,7 @@ O cliente faz a selfie de novo no Checkout. Se ele já comprou, aparece **Você 
 
 ### Testar a impressora (26/11)
 
-No **Posto de venda**, no painel **Imprimir**, toque em **Testar impressora**. Sai uma folha da Viva Maracanã com o nome do posto, quem testou e a hora. A impressora está pronta quando a folha sai inteira, com os quatro cantos amarelos visíveis e as cores nítidas. Pode testar quantas vezes precisar: o teste não conta como venda nem gasta do rolo no sistema.
+No **Posto de venda**, no painel **Imprimir**, toque em **Testar impressora**. Sai uma folha da Viva Maracanã com **Testado por** (nome e usuário de quem está logado), o posto e a hora. A impressora está pronta quando a folha sai inteira, com os quatro cantos amarelos visíveis e as cores nítidas. Pode testar quantas vezes precisar: o teste não conta como venda nem gasta do rolo no sistema.
 
 ### Fila de impressão (25/11)
 

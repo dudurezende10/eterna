@@ -1610,7 +1610,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.92.0 · 26/11 08:50"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.92.1 · 26/11 09:15"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2743,17 +2743,20 @@ function impPedidoLinha(p){const F=state.impFila||{};const e=(F.estados||{})[p.i
 let IMP_TESTE_ON=false;
 function impTesteLogo(){return new Promise(r=>{const im=new Image();im.onload=()=>r(im);im.onerror=()=>r(null);im.src='img/brand/viva-maracana-white.png';});}
 async function impTesteImagem(){
-  await Promise.all(["800 150px 'Big Shoulders Display'","700 44px 'Big Shoulders Display'","500 34px Inter","600 24px Inter"].map(f=>document.fonts.load(f).catch(()=>null)));
+  await Promise.all(["800 150px 'Big Shoulders Display'","700 64px 'Big Shoulders Display'","700 40px 'Big Shoulders Display'","500 34px Inter","600 24px Inter"].map(f=>document.fonts.load(f).catch(()=>null)));
   const W=1800,H=1200,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
   const AZ='#134078',AM='#FFB800',VE='#005500',BR='#ffffff';const banda=880;
   x.fillStyle=AZ;x.fillRect(0,0,W,banda);x.fillStyle=BR;x.fillRect(0,banda,W,H-banda);
   x.fillStyle=AZ;x.fillRect(0,banda,W*0.5,18);x.fillStyle=AM;x.fillRect(W*0.5,banda,W*0.25,18);x.fillStyle=VE;x.fillRect(W*0.75,banda,W*0.25,18);
   const logo=await impTesteLogo();if(logo){const lw=600,lh=Math.round(lw*logo.naturalHeight/logo.naturalWidth);x.drawImage(logo,120,120,lw,lh);}
-  x.fillStyle=BR;x.textBaseline='alphabetic';x.font="800 150px 'Big Shoulders Display','Arial Narrow',sans-serif";x.fillText(TE('imp_teste_titulo').toUpperCase(),112,560);
-  x.fillStyle=AM;x.font="700 44px 'Big Shoulders Display','Arial Narrow',sans-serif";
+  x.fillStyle=BR;x.textBaseline='alphabetic';x.font="800 150px 'Big Shoulders Display','Arial Narrow',sans-serif";x.fillText(TE('imp_teste_titulo').toUpperCase(),112,540);
+  // 26/11 (Ronaldo): quem testou em destaque (nome e usuário de quem está logado)
+  const u=state.user||{};const quem=u.name?u.name+(u.email?' ('+u.email+')':''):TE('imp_teste_sem_pessoa');
+  x.fillStyle=AM;x.font="700 40px 'Big Shoulders Display','Arial Narrow',sans-serif";x.fillText(TE('imp_teste_por').toUpperCase(),116,640);
+  x.fillStyle=BR;x.font="700 64px 'Big Shoulders Display','Arial Narrow',sans-serif";x.fillText(quem.toUpperCase(),116,705);
   const agora=new Date();const quando=agora.toLocaleDateString('pt-BR')+' · '+hhmm(agora);
-  x.fillText([postoNome(),(state.user&&state.user.name)||'',quando].filter(Boolean).join('  ·  ').toUpperCase(),116,650);
-  x.fillStyle='rgba(255,255,255,.82)';x.font="500 34px Inter,system-ui,sans-serif";x.fillText(TE('imp_teste_nota'),116,730);
+  x.fillStyle=AM;x.font="700 40px 'Big Shoulders Display','Arial Narrow',sans-serif";x.fillText([postoNome(),quando].join('  ·  ').toUpperCase(),116,770);
+  x.fillStyle='rgba(255,255,255,.82)';x.font="500 30px Inter,system-ui,sans-serif";x.fillText(TE('imp_teste_nota'),116,830);
   // amostras de cor e escala de cinza (qualidade e cor da DNP)
   const am=[[AZ,'Azul'],[AM,'Amarelo'],[VE,'Verde'],['#c8102e','Vermelho'],['#e0ac8a','Pele'],['#000000','Preto']];const q=150,g0=120,y0=banda+60;
   am.forEach(([cor,nm],i)=>{const x0=g0+i*(q+28);x.fillStyle=cor;x.fillRect(x0,y0,q,q);x.strokeStyle='#d0d6e0';x.lineWidth=2;x.strokeRect(x0+1,y0+1,q-2,q-2);x.fillStyle=AZ;x.font="600 24px Inter,system-ui,sans-serif";x.fillText(nm,x0,y0+q+38);});
@@ -12772,6 +12775,8 @@ const EQ={
   imp_teste_btn:["Testar impressora","Test printer","Probar impresora","Tester l’imprimante","Drucker testen"],
   imp_teste_enviando:["Enviando teste…","Sending test…","Enviando prueba…","Envoi du test…","Test wird gesendet…"],
   imp_teste_titulo:["Teste de impressora","Printer test","Prueba de impresora","Test d’imprimante","Druckertest"],
+  imp_teste_por:["Testado por","Tested by","Probado por","Testé par","Getestet von"],
+  imp_teste_sem_pessoa:["Ninguém logado (só o aparelho)","Nobody logged in (device only)","Nadie conectado (solo el equipo)","Personne de connecté (appareil seul)","Niemand angemeldet (nur Gerät)"],
   imp_teste_nota:["Folha inteira, cantos amarelos visíveis e cores nítidas: impressora pronta.","Full sheet, yellow corners visible and sharp colors: printer ready.","Hoja completa, esquinas amarillas visibles y colores nítidos: impresora lista.","Feuille entière, coins jaunes visibles et couleurs nettes : imprimante prête.","Ganzes Blatt, gelbe Ecken sichtbar und klare Farben: Drucker bereit."],
   imp_teste_ok:[x=>"Teste enviado para "+x+"",x=>"Test sent to "+x+"",x=>"Prueba enviada a "+x+"",x=>"Test envoyé à "+x+"",x=>"Test an "+x+" gesendet"],
   imp_teste_erro:[x=>"A impressora não imprimiu o teste: "+x+"",x=>"The printer did not print the test: "+x+"",x=>"La impresora no imprimió la prueba: "+x+"",x=>"L’imprimante n’a pas imprimé le test : "+x+"",x=>"Der Drucker hat den Test nicht gedruckt: "+x+""],
