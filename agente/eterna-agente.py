@@ -1246,12 +1246,17 @@ def grupo_juntar(resultados):
     melhor = {}
     for r in resultados:
         for f in r.get("fotos") or []:
+            # 25/11 (fotos vizinhas): ancora = ALGUMA pessoa, sozinha, tem nesta foto sim >= LIMITE e rosto principal. O maior
+            # sim e o principal abaixo podem vir de pessoas diferentes e, juntos, não provam que alguém da selfie está na frente
+            anc = bool(f.get("sim", 0) >= LIMITE and f.get("principal"))
             o = melhor.get(f["id"])
             if o is None:
-                melhor[f["id"]] = dict(f)
+                o = melhor[f["id"]] = dict(f)
+                o["ancora"] = anc
             else:
                 o["sim"] = max(o["sim"], f["sim"])
                 o["principal"] = bool(o.get("principal") or f.get("principal"))
+                o["ancora"] = bool(o.get("ancora") or anc)
     return sorted(melhor.values(), key=lambda x: -x["sim"])[:500]
 
 
@@ -1399,12 +1404,18 @@ def busca_janela_efetiva(janela=None):
     return BUSCA_JANELA_MIN if v is None else v
 
 
+_viz_tl = threading.local()   # 25/11 (fotos vizinhas): os vetores da selfie desta busca, só nesta thread e só até a resposta sair
+
+
 def buscar_vetor(me, dias=1, janela=None, agora=None):
     """Fotos com o rosto do vetor me (128, normalizado), nos dias da busca. Separada de _buscar para medir (v91 parte B:
     selfie até a primeira foto ampliada em menos de 2 s; testes/selfie_rapidez.py). Cada foto vem com principal: o rosto que
     bateu tem largura >= ROSTO_PRINCIPAL x a do maior rosto daquela foto (B5: quem só aparece no fundo não abre a sessão
     inteira no Checkout). Com janela (minutos) > 0, só as fotos de sessões com a última foto dentro da janela."""
     np = _cv["np"]
+    vets = getattr(_viz_tl, "vets", None)
+    if vets is not None:
+        vets.append(me)
     hoje = time.time() if agora is None else agora
     M, ps, L, mx = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
     jan = busca_janela_efetiva(janela)
@@ -6547,7 +6558,9 @@ def _viz_env(nome, padrao, piso, teto):
 VIZ_GAP = _viz_env("ETERNA_VIZ_GAP", 180, 30, 900)               # s, no máximo, entre uma foto da caminhada e a seguinte (clique)
 VIZ_ALCANCE = _viz_env("ETERNA_VIZ_ALCANCE", 1500, 60, 3600)     # s, para cada lado, desde a foto reconhecida mais próxima
 VIZ_MAX = _viz_env("ETERNA_VIZ_MAX", 80, 1, 200)                 # fotos vizinhas por busca (as mais próximas das reconhecidas)
-VIZ_LIM = SESS_LIM_FICA         # rosto de qualidade com semelhança abaixo disto contra o grupo reconhecido = outra pessoa
+VIZ_LIM = LIMITE                # rosto de qualidade com semelhança abaixo disto contra o grupo reconhecido = outra pessoa
+VIZ_G_FORTE = 0.8               # rosto de outra pessoa visto numa só foto reconhecida: só entra no grupo com esta fração do maior rosto e de qualidade
+VIZ_G_OUTROS = 300              # rostos de acompanhantes comparados entre si
 VIZ_G_MAX = 400                 # rostos do grupo reconhecido usados na comparação
 VIZ_ENV = os.environ.get("ETERNA_VIZINHAS") != "0"   # ETERNA_VIZINHAS=0 desliga e vence o Painel de controle
 FF_PRONTA_MIN = 15              # D1 (Eduardo, 30/10): sai da coluna final 15 min depois de ficar pronto
@@ -8703,7 +8716,7 @@ def _rosto_q_db(pids):
 # costas, de perfil ou olhando longe, fotografada junto pelo mesmo fotógrafo, ficava de fora. sess_vizinhas parte das fotos
 # reconhecidas (sim >= LIMITE e rosto principal) e anda pela trilha delas, foto a foto na ordem do clique, para antes e para
 # depois. Para, naquele sentido, na primeira foto com rosto de qualidade (tabela rosto_q) que não bate com o grupo
-# reconhecido, na primeira foto ainda sem leitura de rosto, na sessão aberta ou protegida (escola ou menor), quando passa
+# reconhecido (semelhança abaixo de LIMITE), na primeira foto ainda sem leitura de rosto, na sessão aberta ou protegida (escola ou menor), quando passa
 # mais de VIZ_GAP entre uma foto e a seguinte, ou nos tetos (VIZ_ALCANCE para cada lado da reconhecida mais próxima, VIZ_MAX
 # fotos por busca). Um ensaio longo entra inteiro enquanto as fotos vierem em sequência. Na busca em grupo, o grupo
 # reconhecido junta os rostos principais das fotos de todas as pessoas da selfie. Só o Checkout assistido usa (POST /rostos/buscar sem
@@ -8722,7 +8735,8 @@ def viz_valida(j):
 
 def viz_cfg():
     """Interruptor das fotos vizinhas (estado.db config/vizinhas), relido a cada 3 s. Nunca chamar com o sess_lock na mão.
-    Sem documento: ligada. Banco ocupado ou documento ilegível: fica o último valor lido."""
+    Só vale "ligada" por padrão quando o documento não existe. Documento que existe e não pôde ser lido (banco ocupado,
+    formato ruim) vale desligada até a próxima leitura boa."""
     agora = time.time()
     if agora - _viz_cfg["t"] < 3 and _viz_cfg["v"] is not None:
         return _viz_cfg["v"]
@@ -8736,19 +8750,28 @@ def viz_cfg():
                 finally:
                     db.close()
             if r:
+                v = {"ligada": False, "ilegivel": True}
                 j = json.loads(r[0])
-                v = viz_valida(j)
-                v = {**v, "por": j.get("por"), "em": j.get("em")} if v is not None else _viz_cfg["v"]
+                ok_ = viz_valida(j)
+                if ok_ is not None:
+                    v = {**ok_, "por": j.get("por"), "em": j.get("em")}
     except Exception:
-        v = _viz_cfg["v"]
+        v = v or {"ligada": False, "ilegivel": True}
     v = v or dict(VIZ_CFG_PADRAO)
     _viz_cfg.update(t=agora, v=v)
     return v
 
 
 def viz_cfg_mem():
-    """O último valor lido (sem abrir o banco)."""
-    return _viz_cfg["v"] or VIZ_CFG_PADRAO
+    """O último valor lido (sem abrir o banco). Antes da primeira leitura (agente acabou de subir) vale desligada: quem
+    decide é sempre o viz_cfg, que lê o banco na primeira chamada."""
+    return _viz_cfg["v"] or {"ligada": False}
+
+
+def _viz_db():
+    """Leitura do rostos.db só para as vizinhas: espera no máximo 1 s por banco ocupado (o rostos_db espera 30 s e a selfie
+    do cliente ficaria parada); não cria tabela nem muda o modo do banco."""
+    return sqlite3.connect(ROSTOS_DB, timeout=1, check_same_thread=False)
 
 
 def viz_ligada():
@@ -8777,25 +8800,29 @@ def viz_cfg_gravar(ligada, por=None, posto=None, quem_ip=None):
     return {"ok": True, "ligada": bool(VIZ_ENV and v["ligada"]), "forcada": not VIZ_ENV, "em": v["em"], "por": v["por"]}
 
 
-def sess_vizinhas(fotos, agora=None, info=None):
+def sess_vizinhas(fotos, agora=None, info=None, vets=None):
     """[{"id", "card", "mesma"}] das fotos vizinhas das reconhecidas (fotos = o que a busca devolveu, de uma pessoa ou do
     grupo inteiro), na ordem do clique. mesma = a foto é de uma sessão que tem foto reconhecida. info (dict, opcional) recebe
-    "corte": "alcance" ou "max" quando a caminhada parou num teto, senão None. Qualquer erro devolve [] (a busca responde
-    como sempre)."""
+    "corte": "alcance" ou "max" quando a caminhada parou num teto, senão None. vets = os vetores da selfie (um por pessoa
+    buscada), para saber qual rosto de cada foto reconhecida é de quem fez a selfie. Qualquer erro devolve [] (a busca
+    responde como sempre)."""
     try:
-        return _viz_calc(fotos, agora, info if isinstance(info, dict) else {})
+        return _viz_calc(fotos, agora, info if isinstance(info, dict) else {}, vets)
     except Exception as ex:
         print("  vizinhas: fora nesta busca (%s)" % type(ex).__name__)
         return []
 
 
-def _viz_calc(fotos, agora=None, info=None):
+def _viz_calc(fotos, agora=None, info=None, vets=None):
     info = {} if info is None else info
     info["corte"] = None
     hoje = _ff_hoje(agora)
     fotos = [f for f in (fotos or []) if isinstance(f, dict) and isinstance(f.get("id"), str)]
     rec = {f["id"] for f in fotos}                   # tudo o que a busca já devolveu (clara ou "talvez") não se repete aqui
-    anc = [f["id"] for f in sorted(fotos, key=lambda f: -_num(f.get("sim"))) if _num(f.get("sim")) >= LIMITE and f.get("principal") is True]
+    # reconhecida que puxa vizinha: sim >= LIMITE e rosto principal da MESMA pessoa. Na busca em grupo quem diz é o campo
+    # ancora do grupo_juntar (o maior sim e o principal da foto podem ser de pessoas diferentes)
+    anc = [f["id"] for f in sorted(fotos, key=lambda f: -_num(f.get("sim")))
+           if (f["ancora"] is True if "ancora" in f else (_num(f.get("sim")) >= LIMITE and f.get("principal") is True))]
     if not anc:
         return []
     ancs = set(anc)
@@ -8805,7 +8832,7 @@ def _viz_calc(fotos, agora=None, info=None):
         for p in anc:
             x = sess.get(sess_pid.get(p))
             if x and x.get("k") and x["dia"] == hoje and x["status"] == "fechada" and not x.get("removida") \
-                    and not _vis_protegida(x) and p in x["fotos"]:
+                    and not _vis_protegida(x) and _num(x.get("cap0")) > 0 and p in x["fotos"]:
                 ks.add(x["k"])
         for x in sess.values():
             if x.get("k") in ks and x["dia"] == hoje and not x.get("removida"):
@@ -8813,32 +8840,73 @@ def _viz_calc(fotos, agora=None, info=None):
                 tr.setdefault(x["k"], []).append({
                     "card": x["card"], "cap0": _num(x.get("cap0")), "cap1": _num(x.get("cap1")), "fotos": list(x["fotos"]),
                     "t": {p: _num(ts[p][0]) for p in x["fotos"] if p in ts},
-                    "ia": set(x.get("ia") or ()), "ok": x["status"] == "fechada" and not _vis_protegida(x), "n": x.get("_n") or 0})
+                    "ia": set(x.get("ia") or ()), "n": x.get("_n") or 0,
+                    # sessão aberta, protegida ou sem hora do primeiro clique (não dá para medir o intervalo): barreira
+                    "ok": x["status"] == "fechada" and not _vis_protegida(x) and _num(x.get("cap0")) > 0})
     if not tr or not os.path.exists(ROSTOS_DB):
         return []
     np = _cv.get("np")
-    db = rostos_db()
+    db = _viz_db()
     try:
-        # G: os rostos principais (largura >= metade do maior rosto da foto) das fotos reconhecidas de todas as pessoas da busca
-        porf = {}
+        # G, o grupo reconhecido (revisão de segurança, 25/11):
+        #  - o rosto de quem fez a selfie em cada foto reconhecida (semelhança >= LIMITE com um vetor da selfie) entra sempre;
+        #  - outro rosto principal (largura >= metade do maior da foto) só entra se o mesmo rosto for principal em pelo menos
+        #    2 fotos reconhecidas (semelhança entre si >= LIMITE) ou se, na foto, tiver largura >= VIZ_G_FORTE do maior rosto
+        #    e for rosto de qualidade (rosto_q). Quem passa atrás do cliente numa foto só não entra no grupo.
+        porf, qa = {}, {}
         for i in range(0, len(anc), 500):
             parte = anc[i:i + 500]
-            for p, larg, emb in db.execute("select pid, larg, emb from rosto where pid in (%s)" % ",".join("?" * len(parte)), parte):
+            q = ",".join("?" * len(parte))
+            for p, larg, emb in db.execute("select pid, larg, emb from rosto where pid in (%s)" % q, parte):
                 porf.setdefault(p, []).append((_num(larg), bytes(emb)))
-        G = []
+            for p, emb in db.execute("select pid, emb from rosto_q where pid in (%s)" % q, parte):
+                qa.setdefault(p, set()).add(bytes(emb))
+
+        def vetor(e):
+            if np is not None:
+                return np.frombuffer(e, "float32")
+            v = array.array("f")
+            v.frombytes(e)
+            return v
+
+        vs = []
+        for v in (vets or [])[:GRUPO_MAX]:
+            v = [float(a) for a in v]
+            if len(v) == 128:
+                vs.append(np.asarray(v, "float32") if np is not None else v)
+
+        def proprio(q):                              # o rosto é de alguém da selfie
+            if np is not None:
+                return any(float(v @ q) >= LIMITE for v in vs)
+            return any(_dot(v, q) >= LIMITE for v in vs)
+
+        G, outros = [], []                           # outros: (foto, vetor, bytes, forte)
         for p in anc:
             fs = porf.get(p) or []
             mx = max((l for l, _ in fs), default=0)
-            G += [e for l, e in fs if l >= ROSTO_PRINCIPAL * mx and len(e) == 512]
+            for l, e in fs:
+                if len(e) != 512:
+                    continue
+                q = vetor(e)
+                if vs and proprio(q):
+                    G.append(e)
+                elif l >= ROSTO_PRINCIPAL * mx and len(outros) < (VIZ_G_OUTROS if np is not None else 60):
+                    outros.append((p, q, e, l >= VIZ_G_FORTE * mx and e in (qa.get(p) or ())))
+        if outros and np is not None:
+            O = np.stack([o[1] for o in outros])
+            S = O @ O.T
+            for i, o in enumerate(outros):
+                if o[3] or any(S[i, j] >= LIMITE and outros[j][0] != o[0] for j in np.nonzero(S[i] >= LIMITE)[0]):
+                    G.append(o[2])
+        else:
+            for o in outros:
+                if o[3] or any(x[0] != o[0] and _dot(x[1], o[1]) >= LIMITE for x in outros):
+                    G.append(o[2])
         G = G[:VIZ_G_MAX]
         if np is not None:
             Gm = np.frombuffer(b"".join(G), "float32").reshape(-1, 128) if G else None
         else:
-            Gm = []
-            for e in G:
-                v = array.array("f")
-                v.frombytes(e)
-                Gm.append(v)
+            Gm = [vetor(e) for e in G]
         lidas, rq, veredito = set(), {}, {}
 
         def carrega(pids):                           # leitura de rosto das fotos ao alcance, em lote (uma consulta por tabela)
@@ -13031,7 +13099,9 @@ def selfie_diagnostico(origem, r, t0, res, posto=None):
                  "janela_min": r.get("janela_min"), "fila": r.get("fila"), "erro": r.get("error"),
                  "top": [{"id": f.get("id"), "sim": f.get("sim")} for f in fotos[:10]],
                  # 25/11: posto e todas as fotos devolvidas (id e semelhança, até 400), para conferir cada reclamação de selfie
-                 "posto": posto, "grupo": bool(r.get("grupo")), "ids": [[f.get("id"), f.get("sim")] for f in fotos[:400]]}
+                 "posto": posto, "grupo": bool(r.get("grupo")), "ids": [[f.get("id"), f.get("sim")] for f in fotos[:400]],
+                 # 25/11: fotos vizinhas devolvidas junto (só a quantidade e o teto que cortou; nunca id de foto nem de sessão)
+                 "viz_n": (r.get("viz") or {}).get("n"), "viz_corte": (r.get("viz") or {}).get("corte")}
         os.makedirs(SELFIE_LOG_DIR, exist_ok=True)
         with open(os.path.join(SELFIE_LOG_DIR, time.strftime("%Y-%m-%d", time.localtime(agora)) + ".jsonl"), "a", encoding="utf-8") as fh:
             fh.write(json.dumps(linha, ensure_ascii=False) + "\n")
@@ -24468,11 +24538,14 @@ class H(BaseHTTPRequestHandler):
                     todo, t0 = body.get("todo") is True, time.time()
                     pa = self.posto_atual()
                     pnome = str(pa.get("nome") or "")[:30] if pa else None
+                    _viz_tl.vets = None if todo else []        # 25/11: os vetores desta selfie, só para as fotos vizinhas (nunca saem daqui)
                     try:
                         r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None, grupo=body.get("grupo") is True)
                     except Exception as ex:
+                        _viz_tl.vets = None
                         selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0, pnome)
                         raise
+                    vets, _viz_tl.vets = _viz_tl.vets, None
                     if isinstance(r, dict) and body.get("grupo") is True:
                         r.setdefault("grupo", True)
                     # 25/11: fotos vizinhas das reconhecidas, só no Checkout assistido (nunca com todo:true, a galeria por QR).
@@ -24480,7 +24553,7 @@ class H(BaseHTTPRequestHandler):
                     try:
                         if not todo and isinstance(r, dict) and r.get("fotos") and not r.get("varias") and viz_ligada():
                             tv, vi = time.perf_counter(), {}
-                            vz = sess_vizinhas(r["fotos"], info=vi)
+                            vz = sess_vizinhas(r["fotos"], info=vi, vets=vets)
                             r["vizinhas"] = vz
                             r["viz"] = {"ligada": True, "n": len(vz), "ms": int((time.perf_counter() - tv) * 1000), "corte": vi.get("corte")}
                     except Exception:

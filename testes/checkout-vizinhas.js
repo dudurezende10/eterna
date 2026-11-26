@@ -19,9 +19,9 @@ const ids=(p,n)=>Array.from({length:n},(_,i)=>p+String(i+1).padStart(9,'0'));
 // R: sessão reconhecida do Carlos (R1 e R2 claras, R3 talvez, R4 e R5 de costas); N: a sessão seguinte do Carlos, 200 s depois
 // (N1 e N2 vizinhas; N3 tem o rosto de outra pessoa e o servidor não devolve); T: sessão de outro fotógrafo só com "talvez";
 // M: sessão de menor; P: sessão já paga
-const R=ids('aaa',5),N=ids('bbb',3),T=ids('ccc',3),M=ids('ddd',2),P=ids('eee',2);
+const R=ids('aaa',5),N=ids('bbb',3),T=ids('ccc',3),M=ids('ddd',2),P=ids('eee',2),Q=ids('fff',2); // Q: quarta sessão só com "talvez"
 const ses=(card,fotos,who,ponto,t0,rev)=>({card,dia:hoje,fotografo:who,fonte:'ftp',ponto,trilha:'vivo',atrasada:false,status:'fechada',motivo:'pausa',aberta_em:t0,ultima_chegada:t0+50,cap0:t0-2,cap1:t0+48,fonte_t:'cap',fechada_em:t0+110,fechada_por:'pausa',fotos,pend:[],dec:{},sim_abertura:null,fundida_em:null,removida:false,rev});
-const FEED=[ses('LPVZREC01',R,'carlos','terminal',a-1500,1),ses('LPVZNEI02',N,'carlos','terminal',a-1250,2),ses('LPVZTAL03',T,'yago','campo2',a-900,3),ses('LPVZMEN04',M,'carlos','terminal',a-800,4),ses('LPVZPAG05',P,'carlos','terminal',a-700,5)];
+const FEED=[ses('LPVZREC01',R,'carlos','terminal',a-1500,1),ses('LPVZNEI02',N,'carlos','terminal',a-1250,2),ses('LPVZTAL03',T,'yago','campo2',a-900,3),ses('LPVZMEN04',M,'carlos','terminal',a-800,4),ses('LPVZPAG05',P,'carlos','terminal',a-700,5),ses('LPVZQUA06',Q,'yago','campo2',a-600,6)];
 const VIZ_PADRAO=[{id:R[3],card:'LPVZREC01',mesma:true},{id:R[4],card:'LPVZREC01',mesma:true},{id:N[0],card:'LPVZNEI02',mesma:false},{id:N[1],card:'LPVZNEI02',mesma:false}];
 let SIMS={[R[0]]:.71,[R[1]]:.66,[R[2]]:.41};let VIZ=VIZ_PADRAO;const BUSCAS=[];const EVENTOS=[];const POSTS=[];
 let CHAVE={ligada:true,forcada:false,em:null};let COM_CHAVE=true;
@@ -49,7 +49,7 @@ try{
   pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|404/.test(m.text()))errs.push(m.text());});
   await pg.goto(U+'#loja');
   const espera=async(fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||10000)){if(await pg.evaluate(fn,arg))return true;await pg.waitForTimeout(150);}return false;};
-  ok(await espera(()=>{const S=ETERNA.SIM.sessions;return ['LPVZREC01','LPVZNEI02','LPVZTAL03','LPVZMEN04','LPVZPAG05'].every(c=>S[c]);},20000),'as sessões do servidor chegaram ao SIM');
+  ok(await espera(()=>{const S=ETERNA.SIM.sessions;return ['LPVZREC01','LPVZNEI02','LPVZTAL03','LPVZMEN04','LPVZPAG05','LPVZQUA06'].every(c=>S[c]);},20000),'as sessões do servidor chegaram ao SIM');
   await pg.evaluate(()=>{const S=ETERNA.SIM;S.invalid={};Object.values(S.sessions).forEach(s=>(s.photos||[]).forEach(p=>delete p.invalid));S.sessions.LPVZMEN04.menor=true;S.sessions.LPVZPAG05.status='paga';});
   const selfie=(comViz)=>pg.evaluate(async(comViz)=>{ETERNA.lojaReset();const c=document.createElement('canvas');c.width=64;c.height=64;const r=await ETERNA.faceFind([c],x=>!x.demo);
     const okj=comViz?ETERNA.lojaJuntar(r.res,r.talvez,r.sims,r.viz):ETERNA.lojaJuntar(r.res,r.talvez,r.sims);const k=ETERNA.state.kiosk;
@@ -133,6 +133,14 @@ try{
   // pessoa 3: reconhecida em P1 com a vizinha P2; nada das duas primeiras some
   let s3=await outra([{card:'LPVZPAG05',fotos:['ag_'+P[0]],sc:.7,pri:1}],[{id:P[1],card:'LPVZPAG05',mesma:true}]);
   ok(s3.code==='LPVZREC01'&&s3.fotos==='aaa1,aaa2,aaa4,bbb1,bbb2,ccc1,ccc2,eee1,eee2'&&s3.unicas,'pessoa 3: reconhecidas e vizinhas das três pessoas: '+J(s3));
+  // só as 3 primeiras sessões "talvez" são perguntadas: a quarta não entra, nem pelas vizinhas (revisão de código)
+  {const tv4=[{card:'LPVZNEI02',fotos:['ag_'+N[2]],sc:.44},{card:'LPVZTAL03',fotos:['ag_'+T[0]],sc:.43},{card:'LPVZPAG05',fotos:['ag_'+P[0]],sc:.42},{card:'LPVZQUA06',fotos:['ag_'+Q[0]],sc:.40}];
+    const viz4=[{id:R[3],card:'LPVZREC01',mesma:true},{id:N[0],card:'LPVZNEI02',mesma:false},{id:Q[1],card:'LPVZQUA06',mesma:false}];
+    r=await junta(clara,tv4,viz4);
+    ok(r.step==='talvez'&&r.ask.map(x=>x.split(':')[0]).join()==='LPVZNEI02,LPVZTAL03,LPVZPAG05','4 sessões "talvez": pergunta só pelas 3 primeiras: '+J(r.ask));
+    await pg.waitForTimeout(150);await pg.click('[data-act="kiosk-tv-sim"]');await pg.waitForTimeout(200);await pg.click('[data-act="kiosk-tv-nao"]');await pg.waitForTimeout(200);await pg.click('[data-act="kiosk-tv-nao"]');await pg.waitForTimeout(300);
+    const f4=await pg.evaluate(()=>ETERNA.lojaFotos(ETERNA.state.kiosk.code).map(p=>p.id.slice(3,6)+p.id.slice(-1)).join());
+    ok(f4==='aaa1,aaa2,aaa4,bbb1,bbb3','a quarta sessão "talvez", sem pergunta, não entra pelas vizinhas; a do Sim entra com a vizinha dela: '+f4);}
   // foto do grupo: uma busca só (grupo:true) com duas pessoas em fotos diferentes traz as vizinhas das duas
   SIMS={[R[0]]:.71,[T[0]]:.64};VIZ=[{id:R[3],card:'LPVZREC01',mesma:true},{id:N[0],card:'LPVZNEI02',mesma:false},{id:T[1],card:'LPVZTAL03',mesma:true}];
   const grp=await pg.evaluate(async()=>{ETERNA.lojaReset();const c=document.createElement('canvas');c.width=64;c.height=64;const r=await ETERNA.faceFind([c],x=>!x.demo,true);ETERNA.lojaJuntar(r.res,r.talvez,r.sims,r.viz);const k=ETERNA.state.kiosk;

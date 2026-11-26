@@ -30,7 +30,8 @@ sp.loader.exec_module(m)
 sys.path.insert(0, AQUI)
 import _agente_sessao as S
 
-ok((m.VIZ_GAP, m.VIZ_ALCANCE, m.VIZ_MAX) == (180, 1500, 80) and m.VIZ_LIM == m.SESS_LIM_FICA and m.VIZ_ENV is True, "constantes")
+ok((m.VIZ_GAP, m.VIZ_ALCANCE, m.VIZ_MAX) == (180, 1500, 80) and m.VIZ_LIM == m.LIMITE == 0.45 and m.VIZ_G_FORTE == 0.8 and m.VIZ_ENV is True, "constantes")
+ok(m.viz_cfg_mem() == {"ligada": False}, "antes da primeira leitura, a cópia em memória vale desligada")
 ok(m.viz_cfg() == {"ligada": True} and m.viz_ligada() is True, "sem documento: ligada")
 rnd = random.Random(2511)
 HOJE = m._ff_hoje()
@@ -109,17 +110,32 @@ def achou(*pids, sim=0.7, principal=True):
 INFO = {}
 
 
-def viz(fotos):
+VETS = [None]                      # vetores da selfie do cenário (None = a busca não informou: regra mais fechada)
+
+
+def viz(fotos, vets=0):
     INFO.clear()
-    return m.sess_vizinhas(fotos, info=INFO)
+    return m.sess_vizinhas(fotos, info=INFO, vets=VETS[0] if vets == 0 else vets)
+
+
+def mistura(v, sim):
+    """Vetor unitário com semelhança exata sim com v (v unitário)."""
+    u = unit()
+    d = sum(a * b for a, b in zip(u, v))
+    u = [a - d * b for a, b in zip(u, v)]
+    n = sum(a * a for a in u) ** 0.5
+    k = (1 - sim * sim) ** 0.5
+    return [sim * b + k * a / n for a, b in zip(u, v)]
 
 
 def ids(r):
     return [x["id"] for x in r]
 
 
-def cenarios(tag):
+def cenarios(tag, com_vet):
     A, B, C = unit(), unit(), unit()            # A e B: a família reconhecida; C: outra pessoa
+    VETS[0] = [A] if com_vet else None          # quem fez a selfie foi A
+    AB = [A, B] if com_vet else None
     # ---------- 1: mesma sessão ----------
     reset()
     S1, p, _ = sessao("carlos", T0, [[rosto(A)], [rosto(A), rosto(B)], []])
@@ -263,7 +279,7 @@ def cenarios(tag):
     S2, q, _ = sessao("samuel", T0 + 700, [[], [rosto(B)], [rosto(A), rosto(B)], [rosto(C)], []])
     r = viz(achou(p[0]))
     ok(ids(r) == [p[1]], "%s grupo: só a pessoa A: para no rosto de B: %r" % (tag, ids(r)))
-    r = viz(m.grupo_juntar([{"fotos": achou(p[0])}, {"fotos": achou(q[1], sim=0.6)}]))
+    r = viz(m.grupo_juntar([{"fotos": achou(p[0])}, {"fotos": achou(q[1], sim=0.6)}]), AB)
     ok(sorted(ids(r)) == sorted([p[1], p[2], p[3], q[0], q[2]]) and all(x["mesma"] for x in r),
        "%s grupo: A e B reconhecidos em fotos diferentes: vizinhas das duas trilhas, B não barra, C barra: %r" % (tag, ids(r)))
 
@@ -272,23 +288,84 @@ def cenarios(tag):
     m._viz_calc = lambda *a, **k: 1 / 0
     ok(viz(achou(p[0])) == [], "%s 10: erro devolve lista vazia" % tag)
     m._viz_calc = orig
-    orig = m.rostos_db
-    m.rostos_db = lambda: (_ for _ in ()).throw(OSError("banco"))
+    orig = m._viz_db
+    m._viz_db = lambda: (_ for _ in ()).throw(OSError("banco"))
     ok(viz(achou(p[0])) == [], "%s 10: banco fora devolve lista vazia" % tag)
-    m.rostos_db = orig
+    m._viz_db = orig
     ok(ids(viz(achou(p[0]))) == [p[1]], "%s 10: e volta ao normal na busca seguinte" % tag)
+    # a leitura das vizinhas usa conexão própria, com espera de 1 s (a de 30 s do rostos_db seguraria a selfie)
+    orig = m.rostos_db
+    m.rostos_db = lambda: (_ for _ in ()).throw(OSError("não é para usar"))
+    ok(ids(viz(achou(p[0]))) == [p[1]] and "timeout=1," in open(AG, encoding="utf-8").read().split("def _viz_db():")[1][:500], "%s 10: conexão própria com espera de 1 s" % tag)
     m.rostos_db = orig
+
+    # ---------- revisão de segurança ----------
+    # S2: a família seguinte da fila aparece atrás do cliente (60% da largura) numa foto só; as fotos de frente dela não voltam
+    reset()
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200)], [rosto(A, 200), rosto(C, 120)]])
+    S2, q, _ = sessao("carlos", f1 + 40, [[rosto(C, 220)], [rosto(C, 220)], [rosto(C, 210)]])
+    r = viz(achou(*p))
+    ok(r == [], "%s S2: estranho a 60%% numa foto reconhecida só não entra no grupo: %r" % (tag, ids(r)))
+    # mesmo com tamanho parecido, sem qualidade (score baixo ou de lado) numa foto só, não entra
+    reset()
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200), rosto(C, 190, q=False)]])
+    S2, q, _ = sessao("carlos", f1 + 40, [[rosto(C, 220)], []])
+    ok(viz(achou(p[0])) == [], "%s S2: rosto grande sem qualidade numa foto só não entra no grupo" % tag)
+    # casal fotografado de frente uma única vez (rostos de tamanho parecido): a foto só da parceira entra
+    reset()
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200), rosto(B, 185)], [rosto(B, 210)], []])
+    r = viz(achou(p[0]))
+    ok(ids(r) == p[1:], "%s S2: casal de frente uma vez: a foto só da parceira entra: %r" % (tag, ids(r)))
+    # família com filho pequeno (60% da largura) em 2 fotos reconhecidas: a foto só do filho entra
+    reset()
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200), rosto(B, 120)], [rosto(A, 210), rosto(B, 125)], [rosto(B, 180)], []])
+    r = viz(achou(p[0], p[1]))
+    ok(ids(r) == p[2:], "%s S2: filho pequeno em 2 fotos reconhecidas: a foto só dele entra: %r" % (tag, ids(r)))
+    r = viz(achou(p[0]) + achou(p[1], sim=0.40))
+    ok(r == [], "%s S2: o mesmo filho em 1 foto reconhecida só: não entra: %r" % (tag, ids(r)))
+    # o rosto de quem fez a selfie entra sempre, mesmo sem qualidade; sem os vetores da selfie vale a regra dos outros rostos
+    reset()
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A, 200, q=False)], [rosto(A, 180)], []])
+    r = viz(achou(p[0]))
+    ok(ids(r) == (p[1:] if com_vet else []), "%s S2: rosto de quem fez a selfie sempre no grupo (com os vetores): %r" % (tag, ids(r)))
+    # S3: a barreira usa LIMITE (0,45): rosto com semelhança 0,41 com o grupo é de fora; com 0,49 é do grupo
+    reset()
+    fa = rosto(A, 200)
+    S1, p, f1 = sessao("carlos", T0, [[fa], [(200, mistura(fa[1], 0.49), True)], [], [(200, mistura(fa[1], 0.41), True)], []])
+    r = viz(achou(p[0]))
+    ok(ids(r) == p[1:3], "%s S3: 0,49 passa, 0,41 barra: %r" % (tag, [p.index(x) for x in ids(r)]))
+    # S1: busca em grupo. Foto de outra família: A só no fundo (0,50, não principal) e um estranho em primeiro plano que parece
+    # B como "talvez" (0,39, principal). Juntas não fazem âncora: ninguém da selfie, sozinho, está reconhecido em primeiro plano
+    reset()
+    S1, p, _ = sessao("samuel", T0, [[rosto(C, 220), rosto(A, 60)], [rosto(C, 220)], [rosto(C, 220)], []])
+    j = m.grupo_juntar([{"fotos": [{"id": p[0], "sim": 0.5, "principal": False}]}, {"fotos": [{"id": p[0], "sim": 0.39, "principal": True}]}])
+    ok(j == [{"id": p[0], "sim": 0.5, "principal": True, "ancora": False}], "%s S1: grupo_juntar marca ancora por pessoa: %r" % (tag, j))
+    ok(viz(j, AB) == [], "%s S1: sim de uma pessoa e principal de outra não fazem âncora: %r" % (tag, ids(viz(j, AB))))
+    j = m.grupo_juntar([{"fotos": [{"id": p[0], "sim": 0.5, "principal": False}, {"id": p[3], "sim": 0.3, "principal": True}]},
+                        {"fotos": [{"id": p[0], "sim": 0.6, "principal": True}]}])
+    ok(j[0]["ancora"] is True and j[0]["sim"] == 0.6 and j[1]["ancora"] is False, "%s S1: ancora quando uma pessoa sozinha tem os dois: %r" % (tag, j))
+    # sessão sem a hora do primeiro clique: barreira (não dá para medir o intervalo)
+    reset()
+    S1, p, f1 = sessao("carlos", T0, [[rosto(A)], []])
+    S2, q, _ = sessao("carlos", f1 + 60, [[], []])
+    with m.sess_lock:
+        m.sess[S2].update(cap0=0, cap1=0)
+        m.sess[S2]["_t"] = {}
+    ok(ids(viz(achou(p[0]))) == [p[1]], "%s sessão sem hora do clique é barreira: %r" % (tag, ids(viz(achou(p[0])))))
 
 
 m._cv.pop("np", None)
-cenarios("sem numpy")
+cenarios("sem numpy, sem vetor", False)
+cenarios("sem numpy", True)
 try:
     import numpy as np
 except Exception:
     np = None
 if np is not None:
     m._cv["np"] = np
-    cenarios("numpy")
+    cenarios("numpy, sem vetor", False)
+    cenarios("numpy", True)
+VETS[0] = None
 
 # ---------- 9: custo com 5.000 fotos no dia (8 fotógrafos, sessões de 10 fotos, 2 rostos por foto com rosto) ----------
 if np is not None:
@@ -331,17 +408,31 @@ if np is not None:
     num["viz_pior_max_ms"] = round(max(ts), 2)
     ok(num["viz_pior_max_ms"] < 50, "9: pior caso abaixo de 50 ms: %r" % num)
 
+# o buscar_vetor de verdade entrega o vetor da selfie à thread da busca (e só quando a rota pede)
+if np is not None:
+    v_ = np.asarray(unit(), "float32")
+    m.buscar_vetor(v_, 1)
+    ok(getattr(m._viz_tl, "vets", None) is None, "sem a rota pedir, o vetor da selfie não é guardado")
+    m._viz_tl.vets = []
+    m.buscar_vetor(v_, 1)
+    ok(len(m._viz_tl.vets) == 1 and m._viz_tl.vets[0] is v_, "o buscar_vetor entrega o vetor da selfie à busca")
+    m._viz_tl.vets = None
+
 # ---------- 6, 7, 8 e 10 pela rota ----------
 reset()
 A, C = unit(), unit()
 S1, p, f1 = sessao("carlos", T0, [[rosto(A)], [rosto(A)], []])
 S2, q, _ = sessao("carlos", f1 + 150, [[], [rosto(C)], []])
 RESP = {"rosto": True, "fotos": achou(p[0], p[1]), "limite": m.LIMITE, "janela_min": 150, "fila": 0}
-chamadas = []
+chamadas, vetores = [], []
+m.SELFIE_LOG_DIR = os.path.join(tempfile.mkdtemp(), "diagnostico", "selfie")
 
 
 def buscar_falso(imagens, dias=1, janela=None, grupo=False):
     chamadas.append(janela)
+    vetores.append(getattr(m._viz_tl, "vets", "sem"))
+    if isinstance(vetores[-1], list):
+        vetores[-1].append(A)                    # como o buscar_vetor: o vetor da selfie fica só nesta thread
     return json.loads(json.dumps(RESP))
 
 
@@ -380,6 +471,13 @@ ok(st == 200 and r.get("fotos") == RESP["fotos"] and r.get("vizinhas") == [{"id"
    and r.get("viz", {}).get("ligada") is True and r["viz"].get("n") == 2 and isinstance(r["viz"].get("ms"), int)
    and set(r["viz"]) == {"ligada", "n", "ms", "corte"} and r["viz"]["corte"] is None, "rota: vizinhas e viz na resposta: %s %r" % (st, r))
 ok(chamadas[-1] is None, "rota: a janela da busca não muda")
+ok(vetores[-1] == [A] and getattr(m._viz_tl, "vets", None) is None, "rota: os vetores da selfie chegam ao cálculo e não ficam guardados")
+# o diagnóstico da selfie guarda só a quantidade de vizinhas e o corte, nunca o id delas
+_arq = os.path.join(m.SELFIE_LOG_DIR, time.strftime("%Y-%m-%d") + ".jsonl")
+_txt = open(_arq, encoding="utf-8").read() if os.path.exists(_arq) else ""
+_l = json.loads(_txt.strip().splitlines()[-1]) if _txt.strip() else {}
+ok(_l.get("viz_n") == 2 and "viz_corte" in _l and _l["viz_corte"] is None and p[2] not in _txt and q[0] not in _txt and S2 not in _txt,
+   "diagnóstico da selfie: viz_n e viz_corte, sem id de vizinha: %r" % ({k: _l.get(k) for k in ("viz_n", "viz_corte")},))
 # a contagem da selfie continua só com as reconhecidas
 db = m.vendas_db()
 try:
@@ -393,6 +491,7 @@ ok(st == 200 and r.get("grupo") is True and len(r.get("vizinhas") or []) == 2, "
 # 6: galeria por QR (todo:true) nunca tem vizinhas
 st, r = pede("POST", "/rostos/buscar", {"imagens": [], "todo": True}, cookie=adm)
 ok(st == 200 and r.get("fotos") == RESP["fotos"] and "vizinhas" not in r and "viz" not in r and chamadas[-1] == 0, "6: todo:true sem vizinhas: %r" % (r,))
+ok(vetores[-1] is None, "6: com todo:true os vetores da selfie nem são guardados")
 # sem foto achada, várias pessoas ou sem rosto: resposta igual à de hoje
 for resp in ({"rosto": False, "fotos": []}, {"rosto": True, "varias": True, "fotos": []}, {"rosto": True, "fotos": [], "limite": 0.45, "janela_min": 150, "fila": 0}):
     RESP_ = RESP
@@ -469,14 +568,39 @@ for _ in range(7):
     cx.close()
 ok(c7[:6] == [200] * 6 and c7[6] == 429, "8: o 7º pedido no minuto dá 429: %r" % c7)
 m._janelas.clear()
-# documento ilegível gravado por fora: fica o último valor lido
+# documento que existe e não pôde ser lido (formato ruim, banco ocupado): desligada, nunca "ligada por padrão"
 with m.estado_lock:
     db = m.estado_db()
     db.execute("update doc set valor = ? where col = 'config' and id = 'vizinhas'", (json.dumps({"ligada": "talvez"}),))
     db.commit()
     db.close()
 m._viz_cfg["t"] = 0.0
-ok(m.viz_cfg()["ligada"] is True, "7: documento ilegível: fica o último valor")
+ok(m.viz_cfg()["ligada"] is False and m.viz_ligada() is False, "4: documento ilegível: desligada")
+st, r = pede("POST", "/rostos/buscar", {"imagens": []}, cookie=adm)
+ok(st == 200 and r == RESP, "4: documento ilegível: a busca responde sem vizinhas")
+with m.estado_lock:
+    db = m.estado_db()
+    db.execute("update doc set valor = ? where col = 'config' and id = 'vizinhas'", ("{isto não é json",))
+    db.commit()
+    db.close()
+m._viz_cfg["t"] = 0.0
+ok(m.viz_ligada() is False, "4: JSON ruim: desligada")
+m.viz_cfg_gravar(True, "teste")
+ok(m.viz_ligada() is True, "4: gravada de novo pela rota: ligada")
+orig = m.estado_db
+m.estado_db = lambda: (_ for _ in ()).throw(OSError("database is locked"))
+m._viz_cfg["t"] = 0.0
+ok(m.viz_ligada() is False, "4: banco ocupado: desligada")
+m.estado_db = orig
+m._viz_cfg["t"] = 0.0
+ok(m.viz_ligada() is True, "4: banco de volta: ligada")
+# agente reiniciado com a chave gravada desligada: a primeira leitura já vale desligada (sem janela de 3 s ligada)
+m.viz_cfg_gravar(False, "teste")
+sp4 = importlib.util.spec_from_file_location("ag4", AG)
+m4 = importlib.util.module_from_spec(sp4)
+sp4.loader.exec_module(m4)
+ok(m4.viz_cfg_mem()["ligada"] is False and m4.viz_ligada() is False and m4.sess_status()["vizinhas"]["ligada"] is False, "5: depois do reinício, desligada desde a primeira leitura")
+del m4
 # ETERNA_VIZINHAS=0 vence o documento ligado
 m.viz_cfg_gravar(True, "teste")
 os.environ["ETERNA_VIZINHAS"] = "0"
