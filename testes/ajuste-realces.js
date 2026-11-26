@@ -4,7 +4,7 @@
 // usa Realces, o nome nas 5 línguas, a impressão e o pedido guardado levam o mesmo filtro, cabe no celular de 390 px, e a curva num
 // canvas com a mesma string do filtro (claro desce, escuro e médio não mudam, branco puro fica branco).
 const {chromium}=require('playwright');const entrarTeste=require('./_entrar');
-(async()=>{const U=process.env.U||'http://127.0.0.1:8823/index.html';const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});const falhas=[];const ok=(c,m)=>{if(!c)falhas.push(m);return !!c;};const J=JSON.stringify;
+(async()=>{const U=process.env.U||'http://127.0.0.1:8823/index.html';const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900},locale:'pt-BR'});const falhas=[];const ok=(c,m)=>{if(!c)falhas.push(m);return !!c;};const J=JSON.stringify;
   await p.goto(U);await p.waitForTimeout(600);const email=await entrarTeste.adminFicticio(p);ok(await entrarTeste(p,email),'entrou');
   await p.evaluate(()=>{ETERNA.state.view='ajustes';ETERNA.state.ajustes.card=null;ETERNA.state.ajustes.photo=null;ETERNA.render();});await p.waitForTimeout(200);
   await p.click('[data-act="aj-sess"]');await p.waitForTimeout(200);await p.click('[data-act="aj-open"]');await p.waitForTimeout(250);
@@ -60,6 +60,27 @@ const {chromium}=require('playwright');const entrarTeste=require('./_entrar');
   ok(J(nomes)===J({pt:'Realces',en:'Highlights',es:'Altas luces',fr:'Hautes lumières'}),'nome nas línguas da equipe: '+J(nomes));
   // o alemão não é idioma de tela da equipe hoje; o texto fica na tabela, como o de Sombras
   ok(require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8').includes('aj_realces:["Realces","Highlights","Altas luces","Hautes lumières","Lichter"]'),'texto nas 5 línguas na tabela');
+  // 9. campo do ajuste que não é número vale o padrão: nada do texto chega ao estilo nem ao HTML do editor; ajuste válido sai igual
+  const nn=await p.evaluate(id=>{const T=ETERNA.ajT;const o={};const mal='zzq"><i id=inj>';
+    // a conta de antes, copiada aqui, para comparar a string do ajuste válido
+    const antes=e=>{const t=Math.round((e.t||0)/5)*5;const h=Math.max(0,Math.min(100,Math.round((e.h||0)/10)*10));const r=Math.max(0,Math.min(100,Math.round((e.r||0)/10)*10));return `;--flt:${h?`url(#sh${h}) `:''}${r?`url(#hl${r}) `:''}${t?`url(#wb${t<0?'m':'p'}${Math.abs(t)}) `:''}brightness(${(e.b||100)/100}) contrast(${(e.c||100)/100}) saturate(${(e.s!=null?e.s:100)/100});--tf:scale(${(e.z||100)/100}) translate(${e.x||0}%,${e.y||0}%)`;};
+    const validos=[{},{b:100,h:0,r:0,c:100,s:100,t:0,z:100,x:0,y:0},{b:120,h:40,r:60,c:110,s:90,t:10,z:150,x:-12,y:7},{b:85,c:95,s:0,t:-25,z:250,x:30,y:-30},{b:115,h:44,r:96,t:7},{b:40,h:100,r:100,c:160,s:200,t:40,z:105,x:1,y:0}];
+    o.dif=validos.filter(e=>T.editStyleObj(e)!==antes(e)).map(e=>[JSON.stringify(e),T.editStyleObj(e),antes(e)]);
+    o.padrao=T.editStyleObj({});o.ruim=T.editStyleObj({b:mal,h:mal,r:mal,c:mal,s:mal,t:mal,z:mal,x:mal,y:mal});o.xyb=T.editStyleObj({b:mal,h:20,r:30,c:110,s:100,t:5,z:120,x:mal,y:mal});o.xybOk=T.editStyleObj({b:100,h:20,r:30,c:110,s:100,t:5,z:120,x:0,y:0});
+    o.outros=[T.editStyleObj({b:NaN,x:Infinity,y:-Infinity,t:Infinity,z:[mal]}),T.editStyleObj({b:{a:mal},s:mal,x:[mal],y:{}})];
+    const e0=T.SIM.edits[id];T.SIM.edits[id]={b:mal,h:mal,r:mal,c:mal,s:mal,t:mal,z:mal,x:mal,y:mal,auto:false};ETERNA.render();
+    const main=document.getElementById('main');o.html=main.innerHTML.includes('zzq');o.inj=!!document.getElementById('inj');o.pv=document.getElementById('aj-pv').getAttribute('style');
+    o.vals=[...document.querySelectorAll('[data-act="aj-range"]')].map(r=>r.dataset.k+'='+r.getAttribute('value')).join(' ');o.labs=[...document.querySelectorAll('[data-ajv]')].map(b=>b.dataset.ajv+'='+b.textContent).join(' ');
+    if(e0)T.SIM.edits[id]=e0;else delete T.SIM.edits[id];ETERNA.render();return o;},id);
+  ok(nn.dif.length===0,'ajuste válido gera a mesma string de antes: '+J(nn.dif));
+  ok(nn.ruim===nn.padrao&&nn.xyb===nn.xybOk&&[nn.ruim,nn.xyb,...nn.outros].every(s=>!/zzq|[<>"]|NaN|Infinity|inj/.test(s))&&nn.outros.every(s=>s===nn.padrao),'campo não numérico vale o padrão no estilo: '+J([nn.ruim,nn.xyb,nn.outros]));
+  ok(!nn.html&&!nn.inj&&!/zzq|[<>]/.test(nn.pv||''),'o editor não leva o texto do campo: '+J([nn.html,nn.inj,nn.pv]));
+  ok(nn.vals==='b=100 h=0 r=0 c=100 s=100 t=0 z=100'&&nn.labs==='b=100% h=0% r=0% c=100% s=100% t=0 z=100%','o editor mostra o padrão de cada controle: '+J([nn.vals,nn.labs]));
+  // 10. limpeza por falta de espaço: ajuste automático com Sombras ou Realces postos à mão fica; o automático puro de foto que saiu vai embora
+  const pod=await p.evaluate(()=>{const T=ETERNA.ajT;const E=T.SIM.edits=T.SIM.edits||{};const base={b:110,h:0,r:0,c:100,s:100,t:0,z:100,x:0,y:0,auto:true,v:3};
+    E.tst_p1={...base,r:30};E.tst_p2={...base,h:20};E.tst_p3={...base};E.tst_p4={...base,auto:false};const sim0=JSON.stringify(T.SIM);T.simPodar();
+    const o={p1:E.tst_p1&&E.tst_p1.r,p2:E.tst_p2&&E.tst_p2.h,p3:!!E.tst_p3,p4:!!E.tst_p4};const S=JSON.parse(sim0);T.SIM.log=S.log;Object.keys(E).forEach(k=>delete E[k]);Object.assign(E,S.edits);['tst_p1','tst_p2','tst_p3','tst_p4'].forEach(k=>delete E[k]);return o;});
+  ok(pod.p1===30&&pod.p2===20&&pod.p3===false&&pod.p4===true,'a limpeza guarda o automático com Sombras ou Realces: '+J(pod));
   // 8. celular de 390 px: o controle cabe, sem rolagem lateral, com botões de 44 px
   await p.setViewportSize({width:390,height:844});await p.evaluate(()=>ETERNA.render());await p.waitForTimeout(250);
   const cel=await p.evaluate(()=>{const row=document.querySelector('[data-act="aj-range"][data-k="r"]').closest('.ajrow');const bts=[...row.querySelectorAll('.btn')].map(b=>b.getBoundingClientRect());const rg=row.querySelector('input').getBoundingClientRect();const rr=row.getBoundingClientRect();
