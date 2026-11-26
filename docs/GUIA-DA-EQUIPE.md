@@ -236,6 +236,13 @@ Logo abaixo do título, uma faixa diz como estão as suas fotos:
 
 O ajuste automático da IA clareia a foto escura e segura a estourada em toda foto que chega. Desde 24/11 ele só mexe na exposição, e só quando a foto está claramente escura ou clara demais. A maioria das fotos fica como saiu da câmera. Na exposição: contraste e temperatura ficam como saíram da câmera, e quem quiser muda à mão em Configurações › Ajuste automático.
 
+**Ajuste à mão, foto por foto.** Em Configurações › Ajuste automático, abra a sessão e toque na foto. Os controles, na ordem da tela: Exposição, Sombras, Realces, Contraste, Saturação, Temperatura e Corte. Cada um tem os botões de menos e de mais e uma barra.
+
+- **Sombras** (24/11): clareia só as partes escuras da foto. De 0 a 100; em 0 não faz nada.
+- **Realces** (26/11): escurece só as partes claras, para recuperar céu, camisa branca e pele com flash. De 0 a 100; em 0 não faz nada. As partes médias e escuras não mudam. O que estourou em branco puro continua branco: o controle não traz de volta detalhe que a câmera não gravou.
+- **Restaurar original** zera tudo. O ajuste automático não usa Sombras nem Realces.
+- O ajuste vale nas telas da equipe, no Checkout e na impressão pelo Chrome. O arquivo enviado ao programa de impressão do posto, a galeria online e as fotos com fundo de IA saem sem os ajustes (exposição, sombras, realces e os demais).
+
 As fotos do **chute a gol** não recebem ajuste automático (24/11): ficam como saíram da câmera. O servidor reconhece o chute a gol sozinho, pelas marcações do Treino da IA. Por isso a foto nova pode levar até um minuto e meio para ser ajustada, enquanto o servidor confere de onde ela é. Quem quiser ainda pode ajustar uma foto do chute à mão.
 
 Desde 24/11 essa chave não fica mais em Minhas fotos. Só o Admin liga e desliga, em **Configurações › IA automática**, linha **Ajuste automático das fotos**.

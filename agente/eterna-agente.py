@@ -11893,6 +11893,12 @@ def doc_recusa(db, quem, d):
     # O perfil vem do cadastro da sessão, nunca do pedido; o "ver como" também é recusado. O resto da coleção sim segue a tabela DOC_SIM.
     if col == "sim" and id_doc in SIM_SO_ADMIN and ((quem.get("cadastro") or {}).get("preset") != "admin" or quem.get("assumido_por")):
         return "so_admin"
+    # 26/11 (Eduardo): Realces do ajuste à mão (campo r de sim/edits|<foto>): inteiro de 0 a 100 em passos de 10. Ajuste sem o campo
+    # (todos os antigos) segue valendo 0; os outros campos do ajuste seguem como sempre foram gravados.
+    if col == "sim" and id_doc.startswith("edits|") and not apaga and isinstance(d.get("valor"), dict) and "r" in d["valor"]:
+        r = d["valor"]["r"]
+        if type(r) is not int or not 0 <= r <= 100 or r % 10:
+            return "invalido"
     letras = ("d", "u") if apaga else ("u",) if existe else ("c", "u")
     return None if any(auth_pode(quem["cadastro"], mo, le) for mo in mods for le in letras) else "sem_permissao"
 
