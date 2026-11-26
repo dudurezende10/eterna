@@ -2836,3 +2836,14 @@ Pedido do Ronaldo: tirar a foto do cliente da venda (tablet) e passar para quem 
 - **Entrega (`aeAtend`):** bloco `aeFotoBloco(v, podeC)`. Drone e Snap Pop no passo "4. Foto do cliente"; Chute a Gol em "Foto do cliente (opcional)", depois de Chutou. Câmera de frente (`facingMode: user`, `aeFcAbre`/`aeFcTira`/`aeFcFecha`, 3 tentativas com câmera ocupada, igual à venda antes). Sem câmera ou sem permissão: escolhe arquivo (`ae-fc-arq`). A foto é reduzida a 480 px JPEG e vai por `POST /ativ/cliente-foto`; a imagem da fila ganha `&v=` para trocar na hora. A câmera do QR e a da foto não abrem juntas. `pronto` exige `v.foto` quando `aeFotoObrig(v)` (drone, snap).
 - **Agente:** `ATIV_FOTO_OBRIGATORIA = ("drone", "snap")`; `ativ_video_checa` devolve `sem_foto` (409) sem o arquivo da foto. `ativ_foto_jpeg` confere o data URL (venda e entrega). `ativ_cliente_foto_entrega`: venda ativa (404 `nao_achou`, 409 `cancelada`, 400 `dados`), grava por cima, marca `foto_busca=1` e procura as fotos do Tour numa thread. A foto some com a limpeza de sempre (`ativ_clientes_limpa`).
 - **Testes:** `ativacoes_entrega_agente.py` (sem foto não entrega, permissão, formato, venda inexistente, com foto entrega), `pulseira.js` (Entregar desligado sem foto, câmera abre, foto vai ao servidor, Entregar libera), `ativacoes_venda.js` (venda sem a foto).
+
+## Carrinho do Posto (v99.87.0, 25/11)
+
+Pedido no passo Pacote (`pendItens(r,o)`): uma linha por item de `pkgEscolhivel`, mais porta-retratos e Foto cortesia; total = soma de `preço × quantidade`, sem regra que troque item ou valor.
+
+- `r.pkgs{id:q}`: quantidade por pacote ou item.
+- `r.portas[]` e `r.portaFotos[]` (mesma posição): modelo do porta-retrato e a foto que vai dentro (`pendPorta(id,pid,poe,foto)`).
+- `r.cortFoto = {n, fotos[], itens[{foto,motivo,nota}], motivo, nota, por, porNome, em}`; `cortN(r)` = quantidade. `pendCortesia(id,dar,foto,mot,nota)` acrescenta ou tira a última. Motivo `porta` = foto do porta-retrato.
+- Escolha da foto: `<li class="pi-pick">` com ações `pend-pick`, `pend-pick-foto`, `pend-pick-ok` (gravação, `venda.c`), `pend-pick-x`.
+- `vendaCalcCort`: cada cortesia e cada porta-retrato soma uma impressão. Em `pendConfirmar`, `s.brinde` guarda essas fotos e `impFotos` as imprime primeiro; o `cortesiaLog` recebe `n: cortN(r)` e uma entrada com motivo `porta` por porta-retrato.
+- Fila de impressão (`impPainel`): linha `.imp-linha` (venda, hora, pacote, impressões, situação, um botão); corpo `.imp-corpo` só com venda aguardando, trabalho aberto ou reimpressão escolhida.
