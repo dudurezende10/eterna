@@ -156,7 +156,7 @@ try{
   await clica(pg,'[data-act="bf-voltar"]');await pg.setViewportSize({width:1280,height:800});await pg.waitForTimeout(250);
   if(process.env.BF_PRINTS)await pg.screenshot({path:path.join(process.env.BF_PRINTS,'bf-1280.png')});
   // textos nas línguas da equipe, sem chave crua nem travessão
-  for(const l of ['pt','en','es','fr','de']){const t=await pg.evaluate(l=>{ETERNA.state.langEq=l;if(ETERNA.state.user)ETERNA.state.user.idioma=l;ETERNA.render();return {h:document.querySelector('#main h1').textContent,p:document.querySelector('#bf').innerText};},l);
+  for(const l of ['pt','en','es','fr']){const t=await pg.evaluate(l=>{ETERNA.state.langEq=l;if(ETERNA.state.user)ETERNA.state.user.idioma=l;ETERNA.render();return {h:document.querySelector('#main h1').textContent,p:document.querySelector('#bf').innerText};},l);
     ok(t.h&&!/\b(bf|ps|v|up)_[a-z0-9_]+/.test(t.p+t.h)&&!/[–—]/.test(t.p),l+': sem chave crua nem travessão: '+t.h);}
   await pg.evaluate(()=>{ETERNA.state.langEq='pt';ETERNA.state.user.idioma='pt';ETERNA.render();});
   ok(await pg.evaluate(()=>window.__xss===undefined),'nada do servidor virou HTML');
@@ -172,6 +172,25 @@ try{
     ok(!r.sel&&/Samuel/.test(r.fixo)&&r.base&&e.hora==='dia'&&cs.length===r.n&&cs.length>=120&&cs.every(c=>c.fot==='Samuel'),'fotógrafo vê só as próprias sessões, sem seletor, no dia todo: '+cs.length+' '+J(r));
     await pg.evaluate(()=>{window.scrollTo(0,0);const x=document.createElement('button');x.dataset.act='bf-abrir';x.dataset.card='LPBF00006';document.querySelector('#bf').appendChild(x);x.click();x.remove();const s=document.createElement('select');s.dataset.act='bf-foto';s.innerHTML='<option value="carlos">c</option>';document.querySelector('#bf').appendChild(s);s.dispatchEvent(new Event('change',{bubbles:true}));});await pg.waitForTimeout(250);
     ok(await pg.evaluate(()=>!document.querySelector('.bf-sess')&&ETERNA.state.procurar.key==='todos'&&!document.querySelector('#bf-lista [data-card="LPBF00006"]')&&[...document.querySelectorAll('#bf-lista .ps-fot')].every(x=>x.textContent==='Samuel')),'clique e filtro forjados não mostram sessão de outro fotógrafo');
+    await ctx.close();}
+  // fotógrafo cujo cadastro não está na base histórica P (Hugo): preso à própria chave nas duas telas, como qualquer fotógrafo
+  {const {ctx,pg}=await novo(1280,800);ok(await entrar(pg,HUGO),'login do Hugo (fora da base histórica)');
+    ok(await pg.evaluate(()=>!ETERNA.P.hugo&&ETERNA.impPreso()==='hugo'),'Hugo não está na base histórica e fica preso à própria chave');
+    await abrir(pg,'#importar');ok(await espera(pg,()=>Object.keys(ETERNA.SRV.sess).length>=180,20000),'feed chegou ao Hugo');
+    ok(await espera(pg,()=>document.querySelectorAll('#up-sessoes .up-sess[data-card]').length>0,8000),'Minhas fotos do Hugo mostrou sessões');
+    {const r=await pg.evaluate(()=>{const cs=[...document.querySelectorAll('#up-sessoes .up-sess[data-card]')].map(x=>x.dataset.card);const L=ETERNA.upSessLista();
+        return {sel:!!document.querySelector('#main [data-act="imp-key"]'),key:ETERNA.state.imp.key,fixo:(document.querySelector('#main .imp-fixo')||{}).textContent||'',n:cs.length,total:L.length,
+          dele:cs.every(c=>(ETERNA.SRV.sess[c]||{}).fotografo==='hugo'),lista:L.every(x=>x.fotografo==='hugo'),outro:!!document.querySelector('#main [data-card="LPBF00001"],#main [data-card="LPBF00006"]')};});
+      ok(!r.sel&&r.key==='hugo'&&/Hugo de Teste/.test(r.fixo)&&r.n>0&&r.total===30&&r.dele&&r.lista&&!r.outro,'Minhas fotos do Hugo: só as sessões dele, no próprio nome, sem seletor: '+J(r));}
+    await clica(pg,'#nav button[data-v="procurar"]');await pg.waitForTimeout(300);await fundo(pg);await fundo(pg);await fundo(pg);const cs=await cartoes(pg);const e=await est(pg);
+    const r=await pg.evaluate(()=>({sel:!!document.querySelector('#bf-foto'),fixo:(document.querySelector('#bf .imp-fixo')||{}).textContent||'',base:ETERNA.bfBase().every(x=>x.fotografo==='hugo'),n:ETERNA.bfBase().length}));
+    ok(!r.sel&&/Hugo de Teste/.test(r.fixo)&&r.base&&r.n===30&&e.hora==='dia'&&cs.length===30&&cs.every(c=>c.fot==='Hugo de Teste'),'Hugo vê só as próprias sessões, sem seletor, no dia todo: '+cs.length+' '+J(r)+' '+J(e));
+    // LPBF00001 é do Samuel e LPBF00006 é do Carlos
+    await pg.evaluate(()=>{window.scrollTo(0,0);for(const c of ['LPBF00001','LPBF00006']){const x=document.createElement('button');x.dataset.act='bf-abrir';x.dataset.card=c;document.querySelector('#bf').appendChild(x);x.click();x.remove();}
+      for(const v of ['samuel','carlos','todos']){const s=document.createElement('select');s.dataset.act='bf-foto';s.innerHTML='<option value="'+v+'">x</option>';document.querySelector('#bf').appendChild(s);s.dispatchEvent(new Event('change',{bubbles:true}));}});await pg.waitForTimeout(250);
+    {const f=await pg.evaluate(()=>({sess:!!document.querySelector('.bf-sess'),key:ETERNA.state.procurar.key,sel:!!document.querySelector('#bf-foto'),n:document.querySelectorAll('#bf-lista .bf-card').length,
+        fots:[...new Set([...document.querySelectorAll('#bf-lista .ps-fot')].map(x=>x.textContent))],base:ETERNA.bfBase().every(x=>x.fotografo==='hugo'),itens:ETERNA.state.procurar.snap.itens.every(x=>x.fotografo==='hugo'),outro:!!document.querySelector('#bf-lista [data-card="LPBF00001"],#bf-lista [data-card="LPBF00006"]')}));
+      ok(!f.sess&&f.key==='todos'&&!f.sel&&f.n>0&&f.fots.length===1&&f.fots[0]==='Hugo de Teste'&&f.base&&f.itens&&!f.outro,'Hugo: clique e bf-foto forjados não mostram sessão de outro fotógrafo: '+J(f));}
     await ctx.close();}
   // perfil de venda e Checkout do cliente não veem a tela
   for(const [email,nome] of [[CAIXA,'Atendimento e venda'],[QUIOSQUE,'Checkout']]){const {ctx,pg}=await novo(1280,800);ok(await entrar(pg,email),'login: '+nome);
