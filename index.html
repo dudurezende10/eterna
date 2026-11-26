@@ -155,10 +155,7 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 #st-modal .st-box{background:var(--surface,#fff);color:var(--fg,#0c2340);border-radius:10px;padding:20px;width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto;display:flex;flex-direction:column;gap:12px}
 #st-modal video{width:100%;aspect-ratio:4/3;object-fit:cover;background:#000;border-radius:8px;transform:scaleX(-1)}
 #st-modal .st-acoes{gap:8px;flex-wrap:wrap}
-#ver-nova{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:18px;padding:14px 16px 14px 20px;background:#134078;color:#fff;border-bottom:4px solid #FFB800;border-radius:8px;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:calc(100vw - 32px)}
-#ver-nova .vn-txt{display:flex;flex-direction:column;gap:2px}#ver-nova .vn-txt b{font-size:17px}#ver-nova .vn-txt span{font-size:13px;opacity:.85}
-#ver-nova .btn{background:#FFB800;color:#134078;border-color:#FFB800;font-weight:700;min-height:48px;padding:0 26px;font-size:16px}
-@media print{#ver-nova{display:none}}
+.btn.ver-btn{background:#FFB800;color:#134078;border-color:#FFB800;font-weight:700}
 .chip.at-chip{display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:600}.at-ico{flex:none;width:44px;height:44px}
 .at-ico .dr-corpo{animation:atPaira 2.6s ease-in-out infinite}@keyframes atPaira{50%{transform:translateY(-3px)}}
 .at-ico .dr-helice{transform-box:fill-box;transform-origin:center;animation:atGira .35s linear infinite}@keyframes atGira{50%{transform:scaleX(.25)}}
@@ -1620,7 +1617,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.1 · 26/11 11:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.2 · 26/11 11:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2852,7 +2849,7 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can
           <div class="row"><button class="btn primary" data-act="imp-reprint-ok" data-card="${esc(card)}" ${(re.sel||[]).length?'':'disabled'}>${(re.sel||[]).length?TE('imp_reimprimir_n',TE('n_fotos',(re.sel||[]).length)):TE('imp_reimprimir')}</button><button class="btn ghost" data-act="imp-reprint-no">${TE('voltar')}</button></div></div>`
           :state.impRe&&state.impRe.card===card&&state.impRe.todas?avulsa(card,s):''}`;}
     return `<div class="din-item imp-item" data-imp="${esc(card)}">${head}${body.trim()?`<div class="imp-corpo">${body}</div>`:''}</div>`;};
-  return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2><span class="row" style="gap:8px">${rw?`<button class="btn ghost" data-act="selfie-teste">${TE('st_btn')}</button><button class="btn ghost" data-act="imp-teste" ${IMP_TESTE_ON?'disabled':''}>${TE(IMP_TESTE_ON?'imp_teste_enviando':'imp_teste_btn')}</button>`:''}${o.semRolo?'':roloSelo('neutral',true)}</span></div>
+  return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2><span class="row" style="gap:8px">${VER_NOVA?`<button class="btn ver-btn" data-act="ver-atualizar">${TE('ver_atualizar_btn')}</button>`:''}${rw?`<button class="btn ghost" data-act="selfie-teste">${TE('st_btn')}</button><button class="btn ghost" data-act="imp-teste" ${IMP_TESTE_ON?'disabled':''}>${TE(IMP_TESTE_ON?'imp_teste_enviando':'imp_teste_btn')}</button>`:''}${o.semRolo?'':roloSelo('neutral',true)}</span></div>
     ${L.length?`<div class="din-list imp-lista"><div class="imp-linha imp-cab"><span>${TE('mv_venda')}</span><span>${TE('mv_hora')}</span><span>${TE('pacote')}</span><span>${TE('imp_col_imp')}</span><span>${TE('imp_col_sit')}</span><span></span></div>${L.map(item).join('')}</div>`:`<div class="note">${TE('imp_nenhuma')}</div>`}</div>`;}
 // "Minhas vendas de hoje" (D9): deste notebook e do e-mail de quem está logado; nenhum total.
 // 18/11 (Ronaldo): o pacote de cada venda. 25/11 (Ronaldo): o vendedor vê o valor e o total do que vendeu (só o confirmado)
@@ -12839,9 +12836,7 @@ const EQ={
   st_sem_camera:["A câmera não abriu. Confira a Logitech no USB e a permissão de câmera do Chrome.","The camera did not open. Check the Logitech on USB and Chrome camera permission.","La cámara no abrió. Revisa la Logitech en el USB y el permiso de cámara de Chrome.","La caméra ne s’est pas ouverte. Vérifiez la Logitech en USB et l’autorisation caméra de Chrome.","Die Kamera hat nicht geöffnet. Logitech am USB und Kamerazugriff in Chrome prüfen."],
   st_sem_servidor:["Sem conexão com o servidor do ponto.","No connection to the venue server.","Sin conexión con el servidor del punto.","Pas de connexion au serveur du site.","Keine Verbindung zum Server vor Ort."],
   st_erro:[e=>`A foto não subiu: ${e}`,e=>`The photo was not sent: ${e}`,e=>`La foto no se envió: ${e}`,e=>`La photo n’a pas été envoyée : ${e}`,e=>`Das Foto wurde nicht gesendet: ${e}`],
-  ver_nova_t:["Nova versão do Eterna","New Eterna version","Nueva versión de Eterna","Nouvelle version d’Eterna","Neue Eterna-Version"],
-  ver_nova_sub:["Toque em Atualizar entre uma venda e outra.","Tap Update between one sale and the next.","Toca Actualizar entre una venta y otra.","Touchez Mettre à jour entre deux ventes.","Zwischen zwei Verkäufen auf Aktualisieren tippen."],
-  ver_atualizar:["Atualizar","Update","Actualizar","Mettre à jour","Aktualisieren"],
+  ver_atualizar_btn:["Atualizar versão","Update version","Actualizar versión","Mettre à jour la version","Version aktualisieren"],
   mv_voce:["você","you","tú","vous","du"],
   mv_hora:["Hora","Time","Hora","Heure","Uhrzeit"],
   mv_venda:["Venda","Sale","Venta","Vente","Verkauf"],
@@ -14943,6 +14938,7 @@ document.addEventListener('click',e=>{
     case 'imp-print':impImprimir(d.card);break;
     case 'imp-teste':impTeste();break;
     case 'selfie-teste':selfieTeste();break;
+    case 'ver-atualizar':location.reload();break;
     case 'imp-ok':impOk(d.card);break;
     case 'imp-falha':impFalha(d.card);break;
     case 'imp-reprint':{const s=SIM.sessions[d.card];const feitas=new Set((s&&s.impressao&&s.impressao.feitas)||[]); // já vem com as fotos impressas marcadas (até o limite): reimprimir é um clique só (Ronaldo, 10/11)
@@ -15051,9 +15047,11 @@ const VER_ATUAL=(document.querySelector('.powered[title]')||{}).title||'';const 
 async function verChecar(){if(VER_NOVA||!VER_ATUAL||!/^https?:/.test(location.protocol))return;
   try{const r=await fetch(location.pathname+'?v='+Date.now(),{cache:'no-store'});if(!r.ok)return;const t=await r.text();
     const m=t.match(/class="powered" title="(Eterna v[^"]+)"/);if(m&&m[1]!==VER_ATUAL){VER_NOVA=m[1];verAviso();}}catch(e){}}
-function verAviso(){if(document.getElementById('ver-nova'))return;const d=document.createElement('div');d.id='ver-nova';d.setAttribute('role','alert');
-  d.innerHTML=`<div class="vn-txt"><b>${esc(TE('ver_nova_t'))}</b><span>${esc(TE('ver_nova_sub'))}</span></div><button class="btn primary" type="button">${esc(TE('ver_atualizar'))}</button>`;
-  d.querySelector('button').addEventListener('click',()=>location.reload());document.body.appendChild(d);}
+// 26/11 (Ronaldo: a faixa aparecia para o cliente): nada aparece na tela do cliente. Nas telas da equipe, o botão Atualizar versão
+// fica no Posto, ao lado de Testar impressora. O Checkout se atualiza sozinho quando está parado no início há 30 s, sem cliente.
+const verCliente=()=>!!(state.lojaRota||state.view==='quiosque'||state.pub);
+function verLojaParada(){const k=state.kiosk;return !!(k&&k.step==='code'&&!k.code&&!k.camOn&&!(state.cam&&state.cam.busy)&&k.codeDesde&&Date.now()-k.codeDesde>30000);}
+function verAviso(){if(state.pub)return;const tenta=()=>{if(!verCliente()){render();return;}if(verLojaParada())location.reload();else setTimeout(tenta,15000);};tenta();}
 setTimeout(verChecar,20000);setInterval(verChecar,VER_MS);
 window.addEventListener('beforeunload',e=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);if(state.imp&&state.imp.envio){e.preventDefault();e.returnValue='';return '';}});
 window.addEventListener('pagehide',()=>{if(state.train.vendo)trSaiDaFoto(state.train.vendo);}); // 23/11: escolha do Treino ainda não gravada vai para a fila local (síncrona), sem pergunta do navegador

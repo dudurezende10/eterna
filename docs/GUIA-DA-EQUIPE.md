@@ -644,7 +644,7 @@ No **Posto de venda**, em **Vendas do Dia**, escolha seu nome em **Vendedor** (o
 
 ### Versão nova do Eterna (26/11)
 
-Quando sai uma versão nova, aparece embaixo da tela uma faixa azul **Nova versão do Eterna** com o botão amarelo **Atualizar**. Toque nele entre uma venda e outra, nunca no meio de uma venda. Não precisa mais apertar F5.
+Quando sai uma versão nova, aparece no **Posto de venda**, ao lado de **Testar impressora**, o botão amarelo **Atualizar versão**. Toque nele entre uma venda e outra. O Checkout se atualiza sozinho quando fica parado na tela inicial, sem cliente; o cliente não vê aviso nenhum.
 
 ### Câmera do Checkout (26/11)
 
