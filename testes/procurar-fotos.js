@@ -16,7 +16,7 @@ function sessao(o){const t=AGORA-(o.min||5)*60;const fotos=o.fotos||pids(o.n==nu
   aberta_em:t-50,ultima_chegada:t,cap0:t-45,cap1:t-2,fonte_t:'cap',fechada_em:t+60,fechada_por:'pausa',fotos,pend:[],dec:{},ia:[],sim_abertura:null,fundida_em:null,removida:false,rev:1},o,{fotos});}
 const hora=x=>Math.max(x.cap1,x.ultima_chegada);const hCheia=x=>new Date(hora(x)*1000).getHours();
 const XSS='<img src=x onerror=window.__xss=1>';
-const ADMIN='admin.teste@exemplo.com',FOTO='fotografo.teste@exemplo.com',CAIXA='caixa.teste@exemplo.com',QUIOSQUE='quiosque.teste@exemplo.com',HUGO='hugo.teste@exemplo.com',VKEY='vendedor.vinculo@exemplo.com',ANTIGO='caixa.antigo@exemplo.com',PERSO='caixa.personalizado@exemplo.com';
+const ADMIN='admin.teste@exemplo.com',FOTO='fotografo.teste@exemplo.com',CAIXA='caixa.teste@exemplo.com',QUIOSQUE='quiosque.teste@exemplo.com',HUGO='hugo.teste@exemplo.com',VKEY='vendedor.vinculo@exemplo.com',FOTOPOSTO='fotografo.posto@exemplo.com',VALIDA='validador.teste@exemplo.com',CAMPO='campo.teste@exemplo.com',ATIV='ativ.teste@exemplo.com',ANTIGO='caixa.antigo@exemplo.com',PERSO='caixa.personalizado@exemplo.com';
 (async()=>{
 const b=await chromium.launch();const errs=[];
 const FEED={gen:'bf1',rev:0,sessoes:[]};const poe=x=>{x.rev=++FEED.rev;const i=FEED.sessoes.findIndex(y=>y.card===x.card);if(i>=0)FEED.sessoes[i]=x;else FEED.sessoes.push(x);return x;};
@@ -34,16 +34,18 @@ const novo=async(w,h,comAgente)=>{const ctx=await b.newContext({viewport:{width:
   const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime/.test(m.text()))errs.push(m.text());});return {ctx,pg};};
 const espera=async(pg,fn,ms,arg)=>{const t0=Date.now();while(Date.now()-t0<(ms||12000)){if(await pg.evaluate(fn,arg))return true;await pg.waitForTimeout(150);}return false;};
 async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);
-  await pg.evaluate(([a,f,c,q,h,vk,an,pe])=>{const U0=JSON.parse(localStorage.getItem('eterna.users.v1')||'null')||JSON.parse(JSON.stringify(ETERNA.USERS));
+  await pg.evaluate(([a,f,c,q,h,vk,an,pe,fp,va,ca,at])=>{const U0=JSON.parse(localStorage.getItem('eterna.users.v1')||'null')||JSON.parse(JSON.stringify(ETERNA.USERS));
     const novo=(e,n,pr,key)=>({v:2,email:e,name:n,preset:pr,key:key||null,active:true,perms:ETERNA.presetPerms(pr),menu:ETERNA.presetMenu(pr),inicio:ETERNA.PRESETS[pr].inicio||'',createdAt:'2026-11-25'});
     const adm=Object.values(U0).find(u=>u&&u.preset==='admin');U0[a]={...adm,email:a,name:'Admin de teste',key:null};
     U0[f]=novo(f,'Fotógrafo de teste','foto','samuel');U0[c]=novo(c,'Caixa de teste','venda');U0[q]=novo(q,'Checkout de teste','quiosque');U0[h]=novo(h,'Hugo de Teste','foto','hugo');
     // 26/11: vendedor com vínculo de fotógrafo; atendente gravado antes (menu antigo, sem a marca da migração); personalizado com o Posto e sem a tela (já migrado)
-    const semBf=m=>m.filter(v=>v!=='procurar');U0[vk]=novo(vk,'Vendedor com vínculo','venda','samuel');
+    const semBf=m=>m.filter(v=>v!=='procurar');U0[vk]=novo(vk,'Vendedor com vínculo','venda','samuel');U0[va]=novo(va,'Validador de teste','valida');U0[ca]=novo(ca,'Campo de teste','campo');U0[at]=novo(at,'Vendedor de ativações','ativ');
+    {const pf=ETERNA.presetPerms('foto'),pv=ETERNA.presetPerms('venda');const perms={};Object.keys(pf).forEach(m=>{perms[m]={};['c','r','u','d'].forEach(k=>{perms[m][k]=!!(pf[m][k]||pv[m][k]);});});
+      U0[fp]=Object.assign(novo(fp,'Fotógrafo com Posto','foto','samuel'),{preset:'custom',perms,menu:[...new Set([...ETERNA.presetMenu('foto'),...ETERNA.presetMenu('venda')])]});}
     const JA={mv:83,mfl81:1,mcg97:1,mpv83:1,mst92:1,mav100:1,mav101:1,mae1511:1,mae102:1,mar100:1,mff87:1,msis94:1,menv96:1,mtr16:1,mlx24:1,mmn26:1,msup98:1}; // as migrações de antes já feitas, como no cadastro de verdade
     if(!U0[an])U0[an]=Object.assign(novo(an,'Atendente antigo','venda'),JA,{menu:semBf(ETERNA.presetMenu('venda'))});
     U0[pe]=Object.assign(novo(pe,'Personalizado de teste','venda'),{preset:'custom',menu:semBf(ETERNA.presetMenu('venda')),mpf26:1});
-    localStorage.setItem('eterna.users.v1',JSON.stringify(U0));},[ADMIN,FOTO,CAIXA,QUIOSQUE,HUGO,VKEY,ANTIGO,PERSO]);
+    localStorage.setItem('eterna.users.v1',JSON.stringify(U0));},[ADMIN,FOTO,CAIXA,QUIOSQUE,HUGO,VKEY,ANTIGO,PERSO,FOTOPOSTO,VALIDA,CAMPO,ATIV]);
   await pg.reload();await pg.waitForTimeout(350);return entrarTeste(pg,email);}
 const abrir=async(pg,h)=>{await pg.goto('about:blank');await pg.goto(U+h);await pg.waitForTimeout(450);};
 const cartoes=pg=>pg.evaluate(()=>[...document.querySelectorAll('#bf-lista .bf-card')].map(c=>({card:c.dataset.card,hora:(c.querySelector('.ps-hora')||{}).textContent||'',fot:(c.querySelector('.ps-fot')||{}).textContent||'',nf:(c.querySelector('.bf-nf')||{}).textContent||'',txt:c.textContent,
@@ -227,15 +229,25 @@ try{
     await ctx.close();}
   // quem já estava cadastrado no perfil (menu antigo, sem a marca) ganha a tela sem recadastro, uma vez, logo depois do Posto
   {const {ctx,pg}=await novo(1280,800);ok(await entrar(pg,ANTIGO),'login: atendente cadastrado antes');
-    const r=await pg.evaluate(e=>{const u=ETERNA.USERS[e];return {menu:u.menu,marca:u.mpf26,preset:u.preset,casa:ETERNA.presetMatch(u),pode:ETERNA.canView('procurar'),imp:ETERNA.canView('importar'),set:ETERNA.can('set','r'),nav:[...document.querySelectorAll('#nav button[data-v]')].map(x=>x.dataset.v),
-      log:JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').some(l=>l.acao==='migracao_procurar26'&&l.alvo===e&&l.mudancas.some(m=>m.campo==='menu'&&m.entra.join()==='procurar'&&!m.sai.length))};},ANTIGO);
-    ok(r.marca===1&&r.menu.indexOf('procurar')===r.menu.indexOf('posto')+1&&!r.menu.includes('importar')&&r.preset==='venda'&&r.casa==='venda'&&r.pode&&!r.imp&&!r.set&&r.nav.includes('procurar')&&r.log,'atendente antigo ganha só Procurar fotos, continua no perfil e a mudança fica no histórico: '+J(r));
+    const r=await pg.evaluate(e=>{const u=ETERNA.USERS[e];return {menu:u.menu,marca:u.mpf26,preset:u.preset,casa:ETERNA.presetMatch(u),nlog:JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').filter(l=>l.acao==='migracao_procurar26').length,pode:ETERNA.canView('procurar'),imp:ETERNA.canView('importar'),set:ETERNA.can('set','r'),nav:[...document.querySelectorAll('#nav button[data-v]')].map(x=>x.dataset.v),
+      log:(()=>{const x=JSON.parse(JSON.stringify(u));x.email='outro.antigo@exemplo.com';delete x.mpf26;x.menu=x.menu.filter(v=>v!=='procurar');ETERNA.migrateUser(x);return x.menu.includes('procurar')&&!JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').some(l=>l.acao==='migracao_procurar26');})()};},ANTIGO);
+    ok(r.marca===1&&r.menu.indexOf('procurar')===r.menu.indexOf('posto')+1&&!r.menu.includes('importar')&&r.preset==='venda'&&r.casa==='venda'&&r.pode&&!r.imp&&!r.set&&r.nav.includes('procurar')&&r.log&&r.nlog===0,'atendente antigo ganha só Procurar fotos e continua no perfil; no navegador de quem não altera Permissões a migração não deixa linha no histórico: '+J(r));
     // tirada de propósito em Permissões: a marca fica e a tela não volta na carga seguinte
     await pg.evaluate(e=>{const U0=JSON.parse(localStorage.getItem('eterna.users.v1'));U0[e].menu=U0[e].menu.filter(v=>v!=='procurar');U0[e].preset='custom';localStorage.setItem('eterna.users.v1',JSON.stringify(U0));},ANTIGO);
     await pg.reload();await pg.waitForTimeout(600);await abrir(pg,'#procurar');
     {const d=await pg.evaluate(e=>({u:!!ETERNA.state.user,menu:ETERNA.USERS[e].menu.includes('procurar'),pode:ETERNA.canView('procurar'),view:ETERNA.state.view,nav:!!document.querySelector('#nav button[data-v="procurar"]'),tela:!!document.querySelector('#bf')}),ANTIGO);
       ok(d.u&&!d.menu&&!d.pode&&d.view!=='procurar'&&!d.nav&&!d.tela,'quem teve a tela tirada não ganha de volta ao recarregar: '+J(d));}
     await ctx.close();}
+  // fotógrafo que também tem o Posto (vínculo e módulo de Minhas fotos): continua preso às próprias sessões em Procurar fotos
+  {const {ctx,pg}=await novo(1280,800);ok(await entrar(pg,FOTOPOSTO),'login: fotógrafo com Posto');ok(await espera(pg,()=>Object.keys(ETERNA.SRV.sess).length>=180,20000),'feed chegou ao fotógrafo com Posto');
+    await clica(pg,'#nav button[data-v="procurar"]');await pg.waitForTimeout(300);await fundo(pg);await fundo(pg);const cs=await cartoes(pg);
+    await pg.evaluate(()=>{window.scrollTo(0,0);const x=document.createElement('button');x.dataset.act='bf-abrir';x.dataset.card='LPBF00006';document.querySelector('#bf').appendChild(x);x.click();x.remove();const s=document.createElement('select');s.dataset.act='bf-foto';s.innerHTML='<option value="carlos">c</option>';document.querySelector('#bf').appendChild(s);s.dispatchEvent(new Event('change',{bubbles:true}));});await pg.waitForTimeout(250);
+    const r=await pg.evaluate(()=>({preso:ETERNA.impPreso(),posto:ETERNA.canView('posto'),imp:ETERNA.canView('importar'),menu:ETERNA.state.user.menu.includes('procurar'),sel:!!document.querySelector('#bf-foto'),sess:!!document.querySelector('.bf-sess'),key:ETERNA.state.procurar.key,base:ETERNA.bfBase().length>0&&ETERNA.bfBase().every(x=>x.fotografo==='samuel'),fots:[...new Set([...document.querySelectorAll('#bf-lista .ps-fot')].map(x=>x.textContent))]}));
+    ok(r.preso==='samuel'&&r.posto&&r.imp&&r.menu&&!r.sel&&!r.sess&&r.key==='todos'&&r.base&&cs.length>0&&cs.every(c=>c.fot==='Samuel')&&r.fots.join()==='Samuel','fotógrafo com Posto vê só as próprias sessões, sem seletor, nem com clique forjado: '+J(r)+' '+cs.length);await ctx.close();}
+  // Validador, Equipe de campo e vendedor de Drone, Chute a Gol e Snap Pop: #procurar não abre
+  for(const [email,nome] of [[VALIDA,'Validador'],[CAMPO,'Equipe de campo'],[ATIV,'Vendedor Drone, Chute a Gol e Snap Pop']]){const {ctx,pg}=await novo(1280,800);ok(await entrar(pg,email),'login: '+nome);
+    await abrir(pg,'#procurar');const r=await pg.evaluate(e=>({u:!!ETERNA.state.user,pode:ETERNA.canView('procurar'),view:ETERNA.state.view,h:location.hash,nav:!!document.querySelector('#nav button[data-v="procurar"]'),tela:!!document.querySelector('#bf'),menu:(ETERNA.USERS[e].menu||[]).includes('procurar')}),email);
+    ok(r.u&&!r.pode&&r.view!=='procurar'&&r.h!=='#procurar'&&!r.nav&&!r.tela&&!r.menu,nome+' não abre #procurar: '+J(r));await ctx.close();}
   // perfil personalizado com o Posto e sem a tela (já migrado) e Checkout do cliente não veem; sem o Posto ninguém ganha
   for(const [email,nome] of [[PERSO,'Personalizado sem a tela'],[QUIOSQUE,'Checkout']]){const {ctx,pg}=await novo(1280,800);ok(await entrar(pg,email),'login: '+nome);
     await abrir(pg,'#procurar');const r=await pg.evaluate(e=>({pode:ETERNA.canView('procurar'),view:ETERNA.state.view,nav:!!document.querySelector('#nav button[data-v="procurar"]'),tela:!!document.querySelector('#bf'),menu:(ETERNA.USERS[e].menu||[]).includes('procurar')}),email);
@@ -253,6 +265,22 @@ try{
       ok(!m.foto&&!m.valida&&!m.quiosque&&!m.campo&&!m.ativ&&!m.snap&&m.sup&&!m.semPosto&&m.duas===1&&m.perfilVelho&&!m.perfilSalvo&&m.pronto&&!m.fotoPronto&&m.supPronto&&m.todas,'migração: só quem vê o Posto ganha, uma vez; perfil gravado antes ganha, salvo depois vale como está: '+J(m));}
     await ctx.close();}
   {const {ctx,pg}=await novo(1280,800);await pg.goto(U+'#loja');await pg.waitForTimeout(2500);ok(await pg.evaluate(()=>!document.querySelector('#bf,.bf-card,[data-v="procurar"]')),'#loja (Checkout do cliente) sem nada da tela');await ctx.close();}
+  // pessoa nova criada pelo Admin (tela Usuários) num perfil próprio "Posto sem Procurar fotos": nasce com a marca e não ganha a tela
+  // na carga seguinte; a migração no navegador de quem altera Permissões deixa a linha no histórico
+  {const {ctx,pg}=await novo(1280,800);ok(await entrar(pg,ADMIN),'login do Admin para criar pessoa');await abrir(pg,'#usuarios');
+    const r=await pg.evaluate(()=>{const o={};const P0=ETERNA.PERFIS;const sem=ETERNA.presetMenu('venda').filter(v=>v!=='procurar');const e='pessoa.nova@exemplo.com';
+      P0.psem={id:'psem',name:'Posto sem Procurar fotos',perms:ETERNA.presetPerms('venda'),menu:sem,inicio:'posto',mpf26:1};ETERNA.perfisAplica();o.perfilSem=!ETERNA.presetMenu('psem').includes('procurar');
+      ETERNA.state.users.draft={email:e,email0:null,name:'Pessoa Nova de Teste',key:null,preset:'psem'};ETERNA.render();
+      const b=document.createElement('button');b.dataset.act='user-save';document.querySelector('#main').appendChild(b);b.click();b.remove();
+      const u=ETERNA.USERS[e];o.criou=!!u;if(!u)return o;o.marca=u.mpf26;o.preset=u.preset;o.semTela=!u.menu.includes('procurar')&&u.menu.includes('posto');
+      const x=ETERNA.migrateUser(JSON.parse(JSON.stringify(u)));o.depois=!x.menu.includes('procurar');
+      const gravado=JSON.parse(localStorage.getItem('eterna.users.v1'))[e];o.gravado=!!gravado&&gravado.mpf26===1&&!gravado.menu.includes('procurar');
+      // controle: o mesmo cadastro sem a marca (gravado antes desta versão) ganha, e com o Admin conectado fica no histórico
+      const y=JSON.parse(JSON.stringify(u));delete y.mpf26;y.email='pessoa.antiga@exemplo.com';ETERNA.migrateUser(y);o.controle=y.menu.includes('procurar');
+      o.log=JSON.parse(localStorage.getItem('eterna.users.log.v1')||'[]').filter(l=>l.acao==='migracao_procurar26'&&l.alvo===y.email&&l.mudancas.some(m=>m.campo==='menu'&&m.entra.join()==='procurar'&&!m.sai.length)).length;
+      return o;});
+    ok(r.perfilSem&&r.criou&&r.marca===1&&r.preset==='psem'&&r.semTela&&r.depois&&r.gravado&&r.controle&&r.log===1,'pessoa nova em perfil com Posto e sem Procurar fotos não ganha a tela; cadastro antigo sem a marca ganha, com linha no histórico do Admin: '+J(r));
+    await ctx.close();}
   // sem o servidor do ponto: aviso, sem erro
   {const {ctx,pg}=await novo(1280,800,false);ok(await entrar(pg,ADMIN),'login do Admin sem servidor');await abrir(pg,'#procurar');
     ok(await pg.evaluate(()=>ETERNA.state.view==='procurar'&&/Sem conexão com o servidor do ponto/.test((document.querySelector('#bf-sem')||{}).textContent||'')),'sem servidor: aviso na tela');await ctx.close();}

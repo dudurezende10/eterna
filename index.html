@@ -9481,11 +9481,13 @@ function migraMontagens26(x){x.mmn26=1;if(x.preset!=='supervisor'||!Array.isArra
 // 26/11 (Eduardo): "Procurar fotos tem que estar liberada também para os atendentes e vendedor". Quem já vê o Posto de venda
 // (venda em Ver e alguma tela de venda no menu) ganha a tela Procurar fotos no menu, logo depois do Posto, sem recadastro. Só põe
 // esta tela: Minhas fotos e o resto do grupo Fotógrafo não mudam. Uma vez por pessoa (marca mpf26): quem tiver a tela tirada em
-// Permissões depois não ganha de novo. Registra migracao_procurar26 e grava a marca de volta (como migraMontagens26).
+// Permissões depois não ganha de novo. Cadastro criado ou salvo nesta versão já nasce com a marca (o menu escolhido vale).
+// Só registra migracao_procurar26 e grava a marca de volta quando quem está conectado altera Permissões: no navegador dos outros a
+// tela vale só ali, sem linha no histórico nem gravação recusada pelo servidor.
 function migraProcurar26(x){x.mpf26=1;if(!Array.isArray(x.menu)||x.menu.includes('procurar')||!x.perms||!x.perms.venda||!x.perms.venda.r||!VENDA_VIEWS.some(v=>x.menu.includes(v)))return;
   const antes=JSON.parse(JSON.stringify({perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));const i=x.menu.indexOf('posto');
   if(i>=0)x.menu.splice(i+1,0,'procurar');else x.menu.push('procurar');
-  if(typeof auditLog==='function'&&typeof state!=='undefined'){const e=auditLog('migracao_procurar26',x.email,permDiff(antes,{perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));
+  if(typeof auditLog==='function'&&typeof state!=='undefined'&&state.user&&can('permissoes','u')){const e=auditLog('migracao_procurar26',x.email,permDiff(antes,{perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));
     if(e&&state.db)setTimeout(()=>{if(USERS[x.email]&&USERS[x.email].mpf26)saveUsers(x.email);},0);}}
 
 function vAlertas(){const ve=can('desempenho','r');if(ve)fotPull();const a=alerts();const srv=ve&&esOn(); // revisão 23/11: com os dados do servidor, o período escolhido nos chips
@@ -9681,7 +9683,7 @@ const sameSet=(a,b)=>{a=a||[];b=b||[];return a.length===b.length&&a.every(x=>b.i
 function presetMatch(d){const pn=permNorm(d.perms);for(const k of Object.keys(PRESETS)){const pp=presetPerms(k);if(MODULES.every(([m])=>['c','r','u','d'].every(o=>pn[m][o]===pp[m][o]))&&sameSet(escVivo(d.menu||[]),presetMenu(k))&&(d.inicio||PRESETS[k].inicio||'perfis')===(PRESETS[k].inicio||'perfis'))return k;}return 'custom';} // tela inicial vazia (Padrão) = a do perfil
 const normEmail=e=>String(e||'').trim().toLowerCase();
 const usuarioOk=e=>/^[a-z0-9][a-z0-9._@+-]{1,99}$/.test(e);
-const mkUser=(e,n,p,k,at)=>({v:2,email:e,name:n,preset:p,key:k||null,perms:presetPerms(p),menu:presetMenu(p),inicio:PRESETS[p].inicio,active:true,createdAt:at||'2026-10-26T12:00:00.000Z',createdBy:'seed',lastLogin:null});
+const mkUser=(e,n,p,k,at)=>({v:2,email:e,name:n,preset:p,key:k||null,perms:presetPerms(p),menu:presetMenu(p),inicio:PRESETS[p].inicio,active:true,createdAt:at||'2026-10-26T12:00:00.000Z',createdBy:'seed',lastLogin:null,mpf26:1});
 let USERS={};
 function seedUsers(){USERS={};SEED_USERS.forEach(([e,n,p,k])=>{USERS[e]=mkUser(e,n,p,k)});}
 // migração para v:2 (D11): perfil pronto segue o perfil novo; personalizado mantém o que tinha, módulo a módulo
@@ -9787,7 +9789,7 @@ function permDiff(a,b){a=a||{};b=b||{};const out=[];
   const ma=a.perms?userMenu(a):[],mb=b.perms?userMenu(b):[];const sai=ma.filter(v=>!mb.includes(v)),entra=mb.filter(v=>!ma.includes(v));if(sai.length||entra.length)out.push({campo:'menu',sai,entra});
   return out;}
 // recuperação (D12, só no protótipo): sem nenhum administrador ativo, os e-mails admin da semente voltam a ser admin
-function ensureAdmin(){if(adminCount(USERS)>=1)return false;SEED_USERS.filter(y=>y[2]==='admin').forEach(([e,n])=>{const antes=USERS[e]?JSON.parse(JSON.stringify(USERS[e])):null;const u=USERS[e]||{email:e,name:n,key:null,createdAt:now().toISOString(),createdBy:'recuperacao',lastLogin:null};Object.assign(u,{v:2,preset:'admin',perms:presetPerms('admin'),menu:presetMenu('admin'),inicio:'perfis',active:true});USERS[e]=u;auditLog('recuperacao',e,permDiff(antes||{},u));});return true;}
+function ensureAdmin(){if(adminCount(USERS)>=1)return false;SEED_USERS.filter(y=>y[2]==='admin').forEach(([e,n])=>{const antes=USERS[e]?JSON.parse(JSON.stringify(USERS[e])):null;const u=USERS[e]||{email:e,name:n,key:null,createdAt:now().toISOString(),createdBy:'recuperacao',lastLogin:null};Object.assign(u,{v:2,preset:'admin',perms:presetPerms('admin'),menu:presetMenu('admin'),inicio:'perfis',active:true,mpf26:1});USERS[e]=u;auditLog('recuperacao',e,permDiff(antes||{},u));});return true;}
 function migrateUsers(persist){Object.keys(USERS).forEach(k=>{const x=USERS[k];if(!usuarioOk(k)||!x||typeof x!=='object'||x.email!==k)delete USERS[k];}); // chave que não é usuário válido (ex.: __proto__) sai
   Object.values(USERS).forEach(migrateUser);let rec=false;if(persist){rec=ensureAdmin();try{localStorage.setItem('eterna.users.v1',JSON.stringify(USERS))}catch(e){}}return rec;}
 seedUsers();
@@ -13578,7 +13580,7 @@ function userSave(){const d=state.users.draft;if(!d)return;const isNew=!d.email0
   if(isNew&&!can('usuarios','c')){toast(TE('us_t_criar'));return;}if(!isNew&&!can('usuarios','u')){toast(TE('us_t_alterar'));return;}
   const e=normEmail(d.email);if(!usuarioOk(e)){toast(TE('us_t_invalido'));return;}if(!d.name||!d.name.trim()){toast(TE('us_t_nome'));return;}const contato=normEmail(d.contato||'');if(contato&&!/^[^@\s]+@[^@\s]+\.[a-z]{2,24}$/.test(contato)){toast(TE('us_t_email'));return;}if(e!==d.email0&&USERS[e]){toast(TE('us_t_existe'));return;}
   const antes=isNew?null:USERS[d.email0];if(!isNew&&!antes)return;let depois;
-  let cp=null;if(isNew){const k=PRESETS[d.preset]?d.preset:'custom';const pr=PRESETS[k];depois={v:2,email:e,name:d.name.trim(),contato:contato||null,idioma:d.idioma||null,preset:k,key:d.key||null,foto:d.foto||null,perms:pr?presetPerms(k):permNorm({}),menu:pr?presetMenu(k):[],inicio:pr?pr.inicio:null,active:true,createdAt:now().toISOString(),createdBy:state.user.email,lastLogin:null,mv:83};
+  let cp=null;if(isNew){const k=PRESETS[d.preset]?d.preset:'custom';const pr=PRESETS[k];depois={v:2,email:e,name:d.name.trim(),contato:contato||null,idioma:d.idioma||null,preset:k,key:d.key||null,foto:d.foto||null,perms:pr?presetPerms(k):permNorm({}),menu:pr?presetMenu(k):[],inicio:pr?pr.inicio:null,active:true,createdAt:now().toISOString(),createdBy:state.user.email,lastLogin:null,mv:83,mpf26:1}; // mpf26: cadastro novo nasce com o menu escolhido (perfil sem Procurar fotos não ganha a tela na carga seguinte)
     if(d.copyFrom&&USERS[d.copyFrom]){cp=permCopia(d.copyFrom,null,state.user);Object.assign(depois,{perms:cp.depois.perms,menu:cp.depois.menu,inicio:cp.depois.inicio,preset:cp.depois.preset});}}
   else depois=Object.assign({},antes,{email:e,name:d.name.trim(),contato:contato||null,idioma:d.idioma||null,key:d.key||null,foto:d.foto||null});
   const usersDepois=Object.assign({},USERS);if(!isNew&&d.email0!==e)delete usersDepois[d.email0];usersDepois[e]=depois;
@@ -13687,7 +13689,7 @@ function perfilEditor(){const P0=state.perm;const f=P0.pf;const d=P0.draft;const
 // as pessoas marcadas passam a seguir o perfil; quem estava nele e saiu da lista fica Personalizado com o que tinha. Cada cadastro
 // passa por permValidate (quem tem mais acesso que o editor fica de fora). Devolve [mudou, ficou de fora].
 function perfilPessoas(id,quem){const me=state.user;let n=0,fora=0;Object.values(USERS).forEach(u=>{const quer=!!quem[u.email],era=u.preset===id;if(!quer&&!era)return;
-    const depois=quer?Object.assign({},u,{preset:id,perms:presetPerms(id),menu:presetMenu(id),inicio:PRESETS[id].inicio||null,v:2}):Object.assign({},u,{preset:'custom'});
+    const depois=quer?Object.assign({},u,{preset:id,perms:presetPerms(id),menu:presetMenu(id),inicio:PRESETS[id].inicio||null,v:2,mpf26:1}):Object.assign({},u,{preset:'custom'});
     const muds=permDiff(u,depois);if(!muds.length)return;const v=permValidate(me,u,depois,Object.assign({},USERS,{[u.email]:depois}));if(!v.ok){fora++;return;}
     depois.updatedAt=now().toISOString();depois.updatedBy=me.email;USERS[u.email]=depois;saveUsers(u.email);auditLog('perfil_aplicado',u.email,muds,{perfil:id});
     if(u.email===me.email)state.user=userFor(u.email);n++;});return [n,fora];}
@@ -13721,7 +13723,7 @@ function permCopia(de,alvo,ed){const fonte=USERS[de];if(!fonte||!ed)return null;
 function permCopiaSalvar(){const P0=state.perm;const e=P0.sel;const alvo=USERS[e];const de=P0.copy&&P0.copy.de;if(!alvo||!de||!USERS[de]||de===e)return;if(!can('permissoes','u')||permRO(alvo)){toast(TE('us_t_sem_perm'));return;}
   const cp=permCopia(de,alvo,state.user);if(!cp)return;const muds=permDiff(alvo,cp.depois);if(!muds.length){toast(cp.fora.length?TE('pm_nada_copiado'):TE('us_t_nada'));return;}
   const v=permValidate(state.user,alvo,cp.depois,Object.assign({},USERS,{[e]:cp.depois}));if(!v.ok){toast(v.msg);return;}
-  cp.depois.updatedAt=now().toISOString();cp.depois.updatedBy=state.user.email;USERS[e]=cp.depois;saveUsers(e);
+  cp.depois.mpf26=1;cp.depois.updatedAt=now().toISOString();cp.depois.updatedBy=state.user.email;USERS[e]=cp.depois;saveUsers(e);
   auditLog('permissoes_copiadas',e,muds,{de,para:e,fora:cp.fora});if(e===state.user.email)state.user=userFor(e);
   permDraft(e);toast(cp.fora.length?TE('pm_copiadas_fora',cp.fora.length):TE('pm_copiadas'));render();}
 function permCopiaPainel(alvo,me,dirty){const P0=state.perm;const c=P0.copy||{};const outros=Object.values(USERS).filter(u=>u.email!==alvo.email).sort((a,b)=>String(a.name).localeCompare(String(b.name),localeEq()));
@@ -13736,7 +13738,7 @@ function permCopiaPainel(alvo,me,dirty){const P0=state.perm;const c=P0.copy||{};
     ${prev||`<div class="row"><button class="btn ghost" data-act="perm-copy-no">${TE('cancelar')}</button></div>`}</div>`;}
 function permSave(){const P0=state.perm;const d=P0.draft;const e=P0.sel;const antes=USERS[e];if(!d||!antes)return;if(!can('permissoes','u')||permRO(antes)){toast(TE('us_t_sem_perm'));return;}
   const depois=Object.assign({},antes,{perms:permNorm(d.perms),menu:d.menu.filter(v=>MODULE_OF[v]),inicio:d.inicio||null});if(!ESCALA_ON&&Array.isArray(antes.menu)&&antes.menu.includes('escala')&&!depois.menu.includes('escala')&&depois.perms.escala.r)depois.menu.push('escala'); // Escala desligada: quem tinha a tela no menu continua com ela gravada (religar devolve)
-  depois.preset=presetMatch(depois);depois.v=2;
+  depois.preset=presetMatch(depois);depois.v=2;depois.mpf26=1; // menu escolhido em Permissões: a migração da Procurar fotos não mexe mais
   const muds=permDiff(antes,depois);if(!muds.length){toast(TE('us_t_nada'));return;}
   const v=permValidate(state.user,antes,depois,Object.assign({},USERS,{[e]:depois}));if(!v.ok){toast(v.msg);return;}
   depois.updatedAt=now().toISOString();depois.updatedBy=state.user.email;USERS[e]=depois;saveUsers(e);
@@ -15224,7 +15226,7 @@ window.ETERNA={bfBase,bfNovas,fgIndiceDados,FG_ETERNA_DESDE,fgIndiceRef:()=>({de
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 Object.assign(window.ETERNA,{FIA_PADRAO,IMP_PX,FIA_ROSTOS,BG_DEF,mtgPanel,mtgModoSalva,MTG_MODOS,posesPanel,psModoSalva,PS_MODOS,mtgSrv,mtgFundo,mtgPedir,MTG,mtgCanvasOk,mtgConhecido,mtgGer:()=>MTG_GER,fiaMontagens:FIA_CONTA,mtgTempos:(e,p,d,h,t,n)=>{if(e!=null)MTG_ESPERA_MS=e;if(p!=null)MTG_PASSO_MS=p;if(d!=null)MTG_DE_NOVO_MS=d;if(h!=null)MTG_HI_ESPERA_MS=h;if(t!=null)MTG_PASSO_TETO_MS=t;if(n!=null)MTG_FALHAS_MAX=n;}}); // montagem no servidor (E1): tabelas para o teste de paridade com o agente/eterna-montagem.py e a chave do modo
 Object.assign(window.ETERNA,{ljEscolhidas,ljEscUpd,ljFsUpd,ljDesfMs:v=>{LJ_DESF_MS=v;}}); // 17/11: barra das escolhidas (testes/checkout-barra-escolhidas.js)
-Object.assign(window.ETERNA,{migraProcurar26,viewsMenu,perfisAplica,guardAct,get PERFIS(){return PERFIS}}); // 26/11: Procurar fotos no atendimento e venda (testes/procurar-fotos.js)
+Object.assign(window.ETERNA,{migraProcurar26,migrateUser,viewsMenu,perfisAplica,guardAct,get PERFIS(){return PERFIS}}); // 26/11: Procurar fotos no atendimento e venda (testes/procurar-fotos.js)
 Object.assign(window.ETERNA,{mnZera,mnSnap,mnLote,migraMontagens26,MN_MOTIVOS,MN_PASSO}); // 26/11: Montagens de IA (testes/montagens-ia.js)
 Object.assign(window.ETERNA,{lxFiltrados,lxStatus,lxPill,lxCfgPanel,lxCfg,migraLixeira24,migrateUser,LX_MOTIVOS,lxModalN:()=>MODAL.list.length}); // 24/11: Lixeira da IA (testes/lixeira.js)
 })();
