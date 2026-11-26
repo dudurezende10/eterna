@@ -20985,6 +20985,7 @@ ROTAS = (
     # só a equipe, pelo módulo
     ("GET", "/biblioteca", "sessao", ("set.r", "estoque.r")), ("GET", "/events", "sessao", ("set.r", "estoque.r")),
     ("POST", "/fotos/enviar", "sessao", ("set.c",)),
+    ("POST", "/fotos/teste", "sessao", VENDER),   # 26/11: teste de selfie do vendedor (uma foto dele, como um cliente)
     ("GET", "/metricas", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/metricas/dia", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/visitantes", "sessao", ("estatisticas.r", "financeiro.r")), ("GET", "/pessoas/rostos", "sessao", ("qualidade.r",)),
     ("GET", "/ativ/vendas", "sessao", ("estatisticas.r", "financeiro.r", "relatorios.r")),   # v100: resumo das ativações
     ("POST", "/ativ/venda", "sessao", ("ativvenda.c",)), ("GET", "/ativ/minhas", "sessao", ("ativvenda.r",)),   # v100: venda no tablet
@@ -23188,7 +23189,7 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def fotos_enviar_post(self):
+    def fotos_enviar_post(self, teste=False):
         """v96-ux: POST /fotos/enviar?nome=&mt=: uma foto do cartão (o JPEG é o corpo) mandada pela tela Minhas fotos quando o
         leitor não reconheceu o cartão. Posto + origem local + X-Eterna: 1 e pessoa conectada com Upload (set.c, também em ROTAS).
         Entra pelo ingest_file como foto de cartão, com a origem fixa ENVIO_ORIGEM.
@@ -23211,7 +23212,9 @@ class H(BaseHTTPRequestHandler):
             pass
         elif not eu:
             erro = ({"erro": "sem_sessao"}, 401)
-        elif not auth_pode(eu["cadastro"], "set", "c"):
+        elif not auth_pode(eu["cadastro"], "set", "c") and not (teste and any(auth_pode(eu["cadastro"], *x.split(".")) for x in VENDER)):
+            # 26/11 (Ronaldo): teste de selfie. O vendedor tira uma foto dele no Posto e ela entra como a de um cliente, para ele
+            # fazer a selfie no Checkout. Só por /fotos/teste, uma foto por vez (a taxa de envio vale igual)
             erro = ({"erro": "sem_permissao"}, 403)
         elif (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "image/jpeg":
             erro = ({"erro": "formato"}, 415)
@@ -24689,6 +24692,8 @@ class H(BaseHTTPRequestHandler):
             return self.montagens_pedir_post()
         if u.path == "/fotos/enviar":
             return self.fotos_enviar_post()
+        if u.path == "/fotos/teste":
+            return self.fotos_enviar_post(teste=True)
         if ("POST", u.path) in AGENDA_ROTAS:         # v97
             return self.agenda_rota("POST", u.path)
         if u.path == "/fila-fotografo/funcao":
