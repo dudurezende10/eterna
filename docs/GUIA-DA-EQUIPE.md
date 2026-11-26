@@ -39,7 +39,7 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | --- | --- |
 | Venda | Posto de venda |
 | Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
-| Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA |
+| Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA, Montagens de IA |
 | Fotógrafo | Diário do set, Minhas fotos, Procurar fotos, Fila do fotógrafo |
 | Configurações | Preços e Checkout, Ajuste automático, IA automática |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
@@ -1486,6 +1486,23 @@ Bom saber:
 - Nada é apagado. A foto fica 30 dias na biblioteca, como as outras.
 - **Não é ruim** não marca nada no Treino da IA.
 - Em Teste, **Não é ruim** só anota: a foto já estava à venda.
+
+### Montagens de IA (Admin e Supervisora, 26/11/2026)
+
+Em **Curadoria › Montagens de IA** ficam as fotos com fundo de IA que o servidor já montou. A gente olha e diz se cada uma ficou boa ou ruim.
+
+1. Abra **Curadoria › Montagens de IA**. A tela abre em hoje, nas montagens **Sem nota**.
+2. Cada cartão mostra a montagem e, no canto, a foto original. Toque na imagem para ampliar; a seta mostra a original.
+3. Ficou boa? Toque em **Boa**.
+4. Ficou ruim? Toque em **Ruim**, marque o que ficou ruim (pode ser mais de um motivo) e toque em **Gravar ruim**.
+5. Errou? Toque no outro botão para trocar ou em **Desfazer a nota**.
+
+Bom saber:
+- A nota fica gravada no servidor, com o seu nome e a hora.
+- A montagem que ganhou nota continua na tela até você trocar o filtro ou tocar em **Atualizar**.
+- Os filtros são dia, fotógrafo, fundo e situação (Sem nota, Boas, Ruins, Todas).
+- O servidor só monta as sessões de hoje e guarda as montagens por 2 dias. As notas ficam.
+- A nota não muda o que o cliente vê no Checkout.
 
 ### Minhas fotos sem o seletor Fotógrafo
 

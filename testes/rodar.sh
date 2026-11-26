@@ -35,6 +35,11 @@ for t in testes/lixeira_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   conta "$(basename $t)" $RC "$OUT"
 done
+# 26/11: Montagens de IA na Curadoria (linha própria, pelo mesmo motivo)
+for t in testes/montagens_ia_agente.py; do
+  H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
+  conta "$(basename $t)" $RC "$OUT"
+done
 # 24/11: bases dos fundos de IA = as duas melhores do gramado (linha própria, pelo mesmo motivo)
 for t in testes/bases_melhores_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"

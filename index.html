@@ -239,6 +239,20 @@ svg text{font-family:var(--body);fill:var(--muted);font-size:12px}
 .lx-filtros{gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px}.lx-dia select{min-height:44px;max-width:100%}.lx-mot .chip{min-height:44px}
 .lx-regua summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600}.lx-regua-l{margin:8px 0;padding-left:18px;line-height:1.5}
 @media (max-width:700px){.lx-grade{grid-template-columns:repeat(2,minmax(0,1fr))}.lx-dia{flex:1 1 100%}.lx-dia select{width:100%}}
+/* 26/11: Montagens de IA (Curadoria): cartão com a montagem e a foto original no canto; em 390 px duas colunas e botões de 44 px */
+.mn-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-top:12px}
+.mn-item{display:flex;flex-direction:column;gap:6px;min-width:0;padding:8px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.mn-item.mn-boa{border-color:var(--good)}.mn-item.mn-ruim{border-color:var(--bad)}
+.mn-fig{position:relative;display:block;width:100%;padding:0;border:0;border-radius:4px;overflow:hidden;background:#1a1917;aspect-ratio:3/2;cursor:pointer}
+.mn-fig .mn-m{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+.mn-fig .mn-o{position:absolute;left:5px;bottom:5px;width:30%;max-height:48%;object-fit:contain;border:2px solid #fff;border-radius:3px;background:#000}
+.mn-info,.mn-nota{font-size:13px;line-height:1.4;min-width:0;overflow-wrap:anywhere}.mn-nota .pill,.mn-info .pill{white-space:normal;line-height:1.35}
+.mn-bts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.mn-bts .btn{min-height:44px;padding:0 8px;min-width:0}
+.mn-bts .mn-boa[aria-pressed="true"]{background:var(--good);border-color:var(--good);color:#fff}.mn-bts .mn-ruim[aria-pressed="true"]{background:var(--bad);border-color:var(--bad);color:#fff}
+.mn-mot{display:flex;flex-direction:column;gap:6px}.mn-mot .chip,.mn-chips .chip,.mn-desf{min-height:44px}.mn-desf{align-self:flex-start}
+.mn-filtros{gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}.mn-sel select{min-height:44px;max-width:100%}.mn-chips{margin:0 0 10px}
+.mn-conta{display:flex;flex-direction:column;gap:4px}.mn-nums{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:14px}.mn-num b{font-family:var(--display);font-size:20px}.mn-nf .mn-num b{font-size:16px}
+@media (max-width:700px){.mn-grade{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.mn-item{padding:6px}.mn-sel{flex:1 1 100%}.mn-sel select{width:100%}}
 .bd-thumb{width:60px;height:40px;max-width:none;min-width:60px;object-fit:contain;border-radius:3px;background:var(--surface2);display:block;box-shadow:0 0 0 1px var(--line)}
 .ph{position:relative;aspect-ratio:3/2;max-width:100%;border-radius:4px;overflow:hidden;background:#1a1917;border:2px solid transparent;cursor:pointer;display:block;width:100%;padding:0}
 .ph::before{content:'';position:absolute;inset:0;background:var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);filter:var(--flt,none);transform:var(--tf,none);transform-origin:center}
@@ -1839,6 +1853,7 @@ const VIEWS=[
  ['fotografos','Fotógrafos','índice e métricas','Curadoria'], // Eduardo (23/11): saiu do Dashboard; permissões, rota e conteúdo iguais (módulo desempenho)
  ['alertas','Alertas','o que precisa de olho','Curadoria'],
  ['lixeira','Lixeira da IA','fotos sem salvação','Curadoria'], // 24/11: Lixeira da IA (plano docs/planos/2026-11-24-lixeira-ia.md), módulo qualidade
+ ['montagens','Montagens de IA','dizer se ficaram boas ou ruins','Curadoria'], // 26/11: Montagens de IA (plano docs/planos/2026-11-26-montagens-ia-curadoria.md), módulo qualidade
  ['diario','Diário do set','equipamento e ocorrências','Fotógrafo'],
  ['importar','Minhas fotos','fotos do cartão e da câmera','Fotógrafo'],
  ['procurar','Procurar fotos','achar sessão e foto do dia','Fotógrafo'], // 25/11: tela parada para achar sessão e foto; acompanha Minhas fotos (mesmo módulo e mesmo item do menu gravado)
@@ -9307,6 +9322,109 @@ function migraLixeira24(x){x.mlx24=1;if(x.preset!=='supervisor'||!Array.isArray(
   if(typeof auditLog==='function'&&typeof state!=='undefined'){const e=auditLog('migracao_lixeira24',x.email,permDiff(antes,{perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));
     if(e&&state.db)setTimeout(()=>{if(USERS[x.email]&&USERS[x.email].mlx24)saveUsers(x.email);},0);}}
 
+// ---------- 26/11: Montagens de IA (Curadoria; plano docs/planos/2026-11-26-montagens-ia-curadoria.md) ----------
+// O servidor do ponto monta os fundos de IA de cada sessão. Aqui quem cuida da qualidade olha as montagens prontas e diz se cada uma
+// ficou boa ou ruim, com o motivo. Tudo vem do servidor (GET /montagens/dia; a imagem, GET /montagens/previa/) e a nota é gravada lá
+// (POST /montagens/nota, com quem e quando pela sessão): nada vai para o SIM nem para o localStorage; state.mn é só a memória da tela
+// (o Sair zera). A lista na tela é um retrato do filtro (mnSnap): a montagem que ganha nota continua à vista, para trocar ou desfazer,
+// e só sai no próximo filtro ou no Atualizar. Nada é montado no navegador e a tela nunca pede montagem nova.
+const MN_MOTIVOS=['pequena','recorte','corte','lugar','luz','outro'],MN_SITS=['sem','boa','ruim','todas'],MN_PASSO=24;
+function mnZera(){state.mn={dia:null,fundo:'todos',sit:'sem',fot:'todos',j:null,lista:[],n:MN_PASSO,busy:false,err:null,pedido:false,voo:{},abre:null,rasc:[]};}
+mnZera();
+const mnK=x=>x.pid+'|'+x.fundo;
+const mnOk=x=>!!x&&/^[0-9a-f]{6,40}$/.test(x.pid||'')&&/^[a-z0-9]{2,40}$/.test(x.fundo||'');
+const mnNotaOk=n=>n&&(n.v==='boa'||n.v==='ruim')?n:null;
+const mnFundoNome=f=>{const b=(DATA.backgrounds||[]).find(x=>x.id===f);return (b&&b.name)||String(f);};
+const mnFotNome=k=>k?fotNome(k):TE('up_sem_foto');
+const mnUrl=(u,x)=>u+'/montagens/previa/'+encodeURIComponent(x.pid)+'/'+encodeURIComponent(x.fundo)+'.jpg';
+const mnItem=k=>((state.mn.j&&state.mn.j.itens)||[]).find(x=>mnK(x)===k);
+function mnConta(l){const c={prontas:l.length,sem:0,boa:0,ruim:0};l.forEach(x=>{c[x.nota?x.nota.v:'sem']++;});return c;}
+// as montagens do dia com os filtros de fundo e de fotógrafo (os contadores "neste filtro" usam esta lista)
+function mnDoFiltro(){const L=state.mn;return ((L.j&&L.j.itens)||[]).filter(x=>(L.fundo==='todos'||x.fundo===L.fundo)&&(L.fot==='todos'||String(x.fotografo||'')===L.fot));}
+function mnSnap(){const L=state.mn;L.lista=mnDoFiltro().filter(x=>L.sit==='todas'||(L.sit==='sem'?!x.nota:!!x.nota&&x.nota.v===L.sit));L.n=MN_PASSO;L.abre=null;L.rasc=[];}
+// a lista vem em pedaços (o servidor manda até 2.000 por pedido); a resposta de um dia que já não é o escolhido é descartada
+async function mnPull(o){o=o||{};const L=state.mn,u=trAg();if(!u||L.busy)return;L.busy=true;L.err=null;if(!o.quieto)render();const pedido=L.dia;
+  try{let j=null,de=0,itens=[];
+    for(let v=0;v<6;v++){const q=[];if(pedido)q.push('dia='+encodeURIComponent(pedido));if(de)q.push('de='+de);
+      const r=await agFetch(u+'/montagens/dia'+(q.length?'?'+q.join('&'):''),{cache:'no-store'});const p=r.ok?await r.json().catch(()=>null):null;
+      if(!p||!Array.isArray(p.itens)){j=null;break;}j=p;itens=itens.concat(p.itens.filter(mnOk));if(!p.mais||!p.itens.length)break;de+=p.itens.length;}
+    if(!j)L.err='mn_erro';
+    else if(L.dia!==pedido||(pedido&&j.dia!==pedido)){if(L.j&&L.j.dia!==L.dia)L.j=null;}
+    else{itens.forEach(x=>{x.nota=mnNotaOk(x.nota);});j.itens=itens;L.j=j;if(!L.dia)L.dia=j.dia;if(L.fot!=='todos'&&!itens.some(x=>String(x.fotografo||'')===L.fot))L.fot='todos';
+      if(L.fundo!=='todos'&&!(j.fundos||[]).includes(L.fundo))L.fundo='todos';mnSnap();}}
+  catch(e){L.err='mn_erro';}finally{L.busy=false;if(state.view==='montagens')render();}}
+function mnCartao(x){const L=state.mn,u=trAg()||'';const k=mnK(x),n=x.nota,pode=can('qualidade','u'),voo=!!L.voo[k],ab=L.abre===k,nome=mnFundoNome(x.fundo);
+  const selo=n?`<span class="pill ${n.v==='boa'?'good':'bad'}">${TE(n.v==='boa'?'mn_boa':'mn_ruim')}</span>`:`<span class="pill neutral">${TE('mn_sem_nota')}</span>`;
+  const linha=n?` <span class="note">${esc(TE('mn_por',n.nome||trMedQuem(n.por),lxHora(n.em)))}</span>${n.v==='ruim'&&(n.motivos||[]).length?`<br><span class="note mn-motivos">${esc(n.motivos.map(m=>TEk('mn_mot_'+m,m)).join(', '))}</span>`:''}${n.atual===false?`<br><span class="note">${TE('mn_refeita')}</span>`:''}`:'';
+  const bts=pode?`<div class="mn-bts"><button class="btn mn-boa" data-act="mn-boa" data-k="${esc(k)}" aria-pressed="${!!n&&n.v==='boa'}"${voo?' disabled':''}>${TE('mn_boa')}</button><button class="btn mn-ruim" data-act="mn-ruim" data-k="${esc(k)}" aria-pressed="${!!n&&n.v==='ruim'}" aria-expanded="${ab}"${voo?' disabled':''}>${TE('mn_ruim')}</button></div>`:'';
+  const painel=pode&&ab?`<div class="mn-mot"><div class="note">${TE('mn_mot_h')}</div><div class="chips" role="group" aria-label="${esc(TE('mn_mot_h'))}">${MN_MOTIVOS.map(m=>`<button class="chip" data-act="mn-mot" data-k="${esc(k)}" data-m="${m}" aria-pressed="${L.rasc.includes(m)}">${esc(TE('mn_mot_'+m))}</button>`).join('')}</div><div class="mn-bts"><button class="btn primary" data-act="mn-grava" data-k="${esc(k)}">${TE('mn_gravar')}</button><button class="btn ghost" data-act="mn-fecha" data-k="${esc(k)}">${TE('cancelar')}</button></div></div>`:'';
+  const desf=pode&&n&&!ab?`<button class="chip mn-desf" data-act="mn-desfaz" data-k="${esc(k)}"${voo?' disabled':''}>${TE('mn_desfazer')}</button>`:'';
+  return `<div class="mn-item${n?' mn-'+n.v:''}" data-k="${esc(k)}"><button class="mn-fig" data-act="mn-zoom" data-k="${esc(k)}" aria-label="${esc(TE('mn_ampliar',nome))}"><img class="mn-m" loading="lazy" decoding="async" alt="" src="${esc(mnUrl(u,x))}"><img class="mn-o" loading="lazy" decoding="async" alt="" src="${esc(u+'/thumb/'+encodeURIComponent(x.pid))}"></button>
+    <div class="mn-info"><b>${esc(nome)}</b>${x.preferida===false?` <span class="note">· ${TE('mn_reserva')}</span>`:''}${x.vendida===true?` <span class="pill neutral">${TE('ps_vendida')}</span>`:''}<br><span class="note">${esc([x.sessao,mnFotNome(x.fotografo),x.hora].filter(Boolean).join(' · '))}</span></div>
+    <div class="mn-nota">${selo}${linha}</div>${bts}${painel}${desf}</div>`;}
+function mnContaHtml(){const L=state.mn;const filt=L.fundo!=='todos'||L.fot!=='todos';
+  const linha=(c,cls)=>`<div class="mn-nums${cls}">${[['prontas','mn_n_prontas'],['sem','mn_n_sem'],['boa','mn_n_boas'],['ruim','mn_n_ruins']].map(([a,t])=>`<span class="mn-num" data-n="${a}"><b>${c[a]}</b> ${TE(t)}</span>`).join('')}</div>`;
+  return `<div id="mn-conta" class="mn-conta" role="status">${linha(mnConta((L.j&&L.j.itens)||[]),'')}${filt?`<div class="note">${TE('mn_no_filtro')}</div>${linha(mnConta(mnDoFiltro()),' mn-nf')}`:''}</div>`;}
+// só o cartão e os contadores mudam (a grade não é redesenhada: a rolagem e as imagens ficam onde estão)
+function mnAtualiza(k){if(state.view!=='montagens')return;const x=state.mn.lista.find(y=>mnK(y)===k);const el=x&&[...document.querySelectorAll('#mn-lista .mn-item')].find(e=>e.dataset.k===k);
+  if(el)el.outerHTML=mnCartao(x);const c=document.getElementById('mn-conta');if(c)c.outerHTML=mnContaHtml();}
+// a nota: a tela mostra na hora e grava no servidor; se a gravação falhar, volta ao que era e avisa
+async function mnNota(k,v,motivos){const L=state.mn,u=trAg(),x=mnItem(k);if(!u||!x||L.voo[k])return;
+  if(state.assumido){toast(TE('vc_so_ver'));return;}if(!can('qualidade','u'))return;
+  const antes=x.nota||null;if((v===null&&!antes)||(v==='boa'&&antes&&antes.v==='boa'))return;
+  const mot=v==='ruim'?MN_MOTIVOS.filter(m=>(motivos||[]).includes(m)):[];const eu=state.user||{};
+  L.voo[k]=1;x.nota=v?{v,motivos:mot,por:eu.email||'',nome:eu.name||'',em:new Date().toISOString(),atual:true}:null;if(L.abre===k){L.abre=null;L.rasc=[];}mnAtualiza(k);
+  const idem='mn-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);let ok=false,msg='mn_erro_nota';
+  try{const r=await agFetch(u+'/montagens/nota',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid:x.pid,fundo:x.fundo,v,motivos:mot,idem})});const j=await r.json().catch(()=>null);
+    if(r.ok&&j&&j.ok){ok=true;x.nota=mnNotaOk(j.nota);}
+    else if(r.status===403&&j&&j.erro==='so_ver')msg='vc_so_ver';
+    else if(r.status===404)msg='mn_sumiu';}
+  catch(e){}
+  if(!ok){x.nota=antes;toast(TE(msg));}
+  delete L.voo[k];mnAtualiza(k);}
+function mnRuim(k){const L=state.mn,x=mnItem(k);if(!x||L.voo[k]||!can('qualidade','u'))return;const ant=L.abre;
+  if(ant===k){L.abre=null;L.rasc=[];}else{L.abre=k;L.rasc=x.nota&&x.nota.v==='ruim'?(x.nota.motivos||[]).slice():[];}
+  if(ant&&ant!==k)mnAtualiza(ant);mnAtualiza(k);}
+// a montagem grande no zoom de sempre, com a foto original como segunda imagem (setas ou deslizar)
+function mnZoom(k){const x=mnItem(k),u=trAg();if(!x||!u||!mnOk(x))return;const pe=[x.sessao,mnFotNome(x.fotografo),x.hora].filter(Boolean).join(' · ');
+  const pgs=[{url:mnUrl(u,x),cap:mnFundoNome(x.fundo)+' · '+pe},{url:u+'/file/'+encodeURIComponent(x.pid),cap:TE('mn_original')+' · '+pe}];let i=0;
+  const show=j=>{i=(j+pgs.length)%pgs.length;openModal(`--img:url(${pgs[i].url})`,pgs[i].cap+' · '+(i+1)+'/'+pgs.length,true);$('#modal-prev').hidden=$('#modal-next').hidden=false;$('#modal-kbd').textContent=TE('zm_teclas');MODAL.comp={show,get i(){return i}};};
+  MODAL.list=[];MODAL.ctx={};renderModalTools();show(0);}
+// rolagem contínua: perto do fim entra mais um lote de 24, sem redesenhar o que já está na tela
+function mnLote(){const L=state.mn;if(state.view!=='montagens')return;let voltas=0;
+  for(;;){const fim=document.getElementById('mn-fim'),el=document.getElementById('mn-lista');if(!fim||!el||fim.getBoundingClientRect().top>innerHeight+800||++voltas>8)return;
+    const mais=L.lista.slice(L.n,L.n+MN_PASSO);L.n+=MN_PASSO;if(mais.length)el.insertAdjacentHTML('beforeend',mais.map(mnCartao).join(''));if(L.n>=L.lista.length)fim.remove();}}
+{let q=0;const f=()=>{if(q||state.view!=='montagens')return;q=requestAnimationFrame(()=>{q=0;mnLote();});};window.addEventListener('scroll',f,{passive:true});window.addEventListener('resize',f);}
+function vMontagens(){const L=state.mn,u=trAg();
+  if(u&&!L.j&&!L.busy&&!L.err&&!L.pedido){L.pedido=true;setTimeout(()=>{L.pedido=false;mnPull({quieto:true});},0);}
+  const head=`<div class="head"><div><div class="eyebrow">${TE('g_curadoria')}</div><h1>${esc(viewLabel('montagens'))}</h1><div class="note">${TE('mn_nota')}</div></div></div>`;
+  if(!u)return head+`<div class="panel"><div class="note mn-vazio" data-m="servidor">${TE('mn_sem_servidor')}</div></div>`;
+  const J=L.j;if(!J)return head+`<div class="panel">${L.err?`<div class="note mn-vazio" data-m="erro">${TE(L.err)}</div><div class="row"><button class="btn" data-act="mn-reler">${TE('lx_tentar')}</button></div>`:`<div class="note">${TE('mn_carregando')}</div>`}</div>`;
+  const hoje=venueToday();const guarda=Math.max(0,Math.min(7,+J.guarda_dias||2));const dias=[];for(let i=0;i<=guarda;i++)dias.push(addDays(hoje,-i));if(J.dia&&!dias.includes(J.dia))dias.push(J.dia);
+  const sel=`<label class="mn-sel">${TE('lx_dia')} <select data-act="mn-dia">${dias.map(d=>`<option value="${esc(d)}"${d===J.dia?' selected':''}>${esc(d===hoje?TE('ar_hoje')+' · '+lxDiaBR(d):lxDiaBR(d))}</option>`).join('')}</select></label>`;
+  const fots=[...new Set(J.itens.map(x=>String(x.fotografo||'')))].map(k=>({k,nome:mnFotNome(k)})).sort((a,b)=>(!a.k)-(!b.k)||a.nome.localeCompare(b.nome));
+  const selFot=`<label class="mn-sel">${TE('mn_fotografo')} <select data-act="mn-fot"><option value="todos">${TE('ps_todos')}</option>${fots.map(f=>`<option value="${esc(f.k)}"${L.fot===f.k?' selected':''}>${esc(f.nome)}</option>`).join('')}</select></label>`;
+  const fundos=(Array.isArray(J.fundos)?J.fundos:[]).filter(f=>/^[a-z0-9]{2,40}$/.test(f));
+  const chF=`<div class="chips mn-chips" role="group" aria-label="${esc(TE('mn_fundo'))}">${['todos',...fundos].map(f=>`<button class="chip" data-act="mn-fundo" data-f="${esc(f)}" aria-pressed="${L.fundo===f}">${esc(f==='todos'?TE('mn_fundo_todos'):mnFundoNome(f))}</button>`).join('')}</div>`;
+  const chS=`<div class="chips mn-chips" role="group" aria-label="${esc(TE('mn_sit'))}">${MN_SITS.map(s=>`<button class="chip" data-act="mn-sit" data-s="${s}" aria-pressed="${L.sit===s}">${TE('mn_sit_'+s)}</button>`).join('')}</div>`;
+  const ag=state.agent&&state.agent.montagem;const modo=(ag&&ag.modo)||J.modo;const mais=L.n<L.lista.length;if(mais)setTimeout(mnLote,0);
+  const vazio=(m,t)=>`<div class="note mn-vazio" data-m="${m}">${t}</div>`;
+  const corpo=!J.itens.length?(J.motivo==='guarda'?vazio('guarda',esc(TE('mn_vazio_guarda',guarda))):modo==='desligada'?vazio('desligada',TE('mn_vazio_desligada')):J.dia===hoje?vazio('hoje',TE('mn_vazio_hoje')):vazio('dia',TE('mn_vazio_dia')))
+    :!L.lista.length?vazio('filtro',TE('mn_vazio_filtro'))
+    :`${modo==='desligada'?`<div class="note mn-aviso">${TE('mn_desligada_tem')}</div>`:''}<div class="mn-grade" id="mn-lista">${L.lista.slice(0,L.n).map(mnCartao).join('')}</div>${mais?'<div id="mn-fim"></div>':''}`;
+  return head+`<div class="panel">${mnContaHtml()}<div class="row mn-filtros">${sel}${selFot}<button class="chip mn-desf" data-act="mn-reler"${L.busy?' disabled':''}>${TE('bf_atualizar')}</button></div>${chF}${chS}${corpo}<div class="note" style="margin-top:12px">${esc(TE('mn_guarda',guarda))}</div></div>`;}
+// filtros de dia (busca no servidor) e de fotógrafo (só refaz o retrato)
+document.addEventListener('change',e=>{const t=e.target;if(!t||!t.dataset||state.view!=='montagens')return;const L=state.mn;const v=String(t.value||'');
+  if(t.dataset.act==='mn-dia'){if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return;L.dia=v;L.j=null;L.err=null;L.lista=[];mnPull();}
+  else if(t.dataset.act==='mn-fot'){L.fot=v==='todos'||((L.j&&L.j.itens)||[]).some(x=>String(x.fotografo||'')===v)?v:'todos';mnSnap();render();}});
+// 26/11: a Supervisora (perfil pronto) já gravada ganha a tela Montagens de IA no menu, logo depois da Lixeira da IA. Só põe a tela;
+// personalizado não muda. Registra migracao_montagens26 e grava a marca de volta (como migraLixeira24).
+function migraMontagens26(x){x.mmn26=1;if(x.preset!=='supervisor'||!Array.isArray(x.menu)||x.menu.includes('montagens'))return;
+  const antes=JSON.parse(JSON.stringify({perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));const i=x.menu.indexOf('lixeira')>=0?x.menu.indexOf('lixeira'):x.menu.indexOf('alertas');
+  if(i>=0)x.menu.splice(i+1,0,'montagens');else x.menu.push('montagens');
+  if(typeof auditLog==='function'&&typeof state!=='undefined'){const e=auditLog('migracao_montagens26',x.email,permDiff(antes,{perms:x.perms,menu:x.menu,inicio:x.inicio,preset:x.preset}));
+    if(e&&state.db)setTimeout(()=>{if(USERS[x.email]&&USERS[x.email].mmn26)saveUsers(x.email);},0);}}
+
 function vAlertas(){const ve=can('desempenho','r');if(ve)fotPull();const a=alerts();const srv=ve&&esOn(); // revisão 23/11: com os dados do servidor, o período escolhido nos chips
   return `<div class="head"><div><div class="eyebrow">${srv?`${TE('periodo')} · ${esc(TEk('fot_per_'+state.fot.per,state.fot.per))}`:`${TE('al_semana')} · ${DATA.period.label}`}</div><h1>${esc(viewLabel('alertas'))}</h1></div></div>
   ${srv?fotBarra():''}
@@ -9391,7 +9509,7 @@ const MODULES=[
  ['financeiro','Números de vendas',['painel','vendas','vendas-lista','ativ-resumo']],
  ['estatisticas','Estatísticas',['estatisticas']],
  ['galerias','Galerias online',['galerias']],
- ['qualidade','Qualidade e IA',['revisao','treino','lixeira']],
+ ['qualidade','Qualidade e IA',['revisao','treino','lixeira','montagens']],
  ['diario','Diário do set',['diario']],
  ['set','Upload, câmeras e ajustes',['importar','ajustes']],
  ['escala','Escala e calendário',['escala','calendario']],
@@ -9416,7 +9534,7 @@ const MODULE_INFO={
  desempenho:{desc:'Fotógrafos: índice e métricas de cada um',r:'ver o índice (o fotógrafo vinculado vê só o dele)'},
  financeiro:{desc:'Painel, Vendedores, Lista de vendas',r:'ver faturamento, vendas, valores e volume',d:'cancelar venda'},
  galerias:{desc:'Galerias online: QR, cortesias e grupos de escola',c:'criar galeria e grupo de escola',r:'ver as galerias',u:'dar ou retirar cortesia, reenviar, editar grupo',d:'encerrar grupo'},
- qualidade:{desc:'Qualidade e Treino da IA',c:'importar rótulos de treino',r:'ver as revisões',u:'avaliar, marcar, descartar e rotular fotos e tirar foto da Lixeira da IA'},
+ qualidade:{desc:'Qualidade e Treino da IA',c:'importar rótulos de treino',r:'ver as revisões',u:'avaliar, marcar, descartar e rotular fotos, tirar foto da Lixeira da IA e dar nota às montagens de IA'},
  diario:{desc:'Diário do set',c:'registrar ocorrência',r:'ver o diário',u:'marcar como resolvida',d:'ver e tratar as ocorrências da equipe toda (sem isso, só as próprias)'},
  set:{desc:'Minhas fotos (fotógrafo pelo usuário do FTP e pelo nome gravado na câmera) e Ajuste automático (o item do Ajuste fica no menu Configurações)',c:'receber fotos (leva e arquivos)',r:'ver o upload, as câmeras, as fotos e os ajustes',u:'parar o recebimento, ligar e desligar o ajuste automático, ajustar fotos',d:'limpar a leva'},
  estatisticas:{desc:'Estatísticas: vendas e produtos, produção dos fotógrafos, rapidez, dias e eventos, visitantes e movimento da bilheteria',c:'importar entradas da bilheteria (bip ou catraca) por CSV',r:'ver as estatísticas'},
@@ -9529,6 +9647,7 @@ function migrateUser(x){if(!x||typeof x!=='object')return x;nomeTelaCerto(x);con
     if(!x.menv96)migraEnvio96(x); // v96-ux: Supervisora com set.c para enviar as fotos do cartão pela tela (uma vez)
     if(!x.mtr16)migraTreino16(x); // 16/11: Supervisora marca no Treino da IA (qualidade.u, uma vez)
     if(!x.mlx24)migraLixeira24(x); // 24/11: Supervisora com a Lixeira da IA no menu, depois de Alertas (uma vez)
+    if(!x.mmn26)migraMontagens26(x); // 26/11: Supervisora com as Montagens de IA no menu, depois da Lixeira da IA (uma vez)
     if(!x.msup98){if(x.preset==='supervisor')x.menu=x.menu.filter(v=>v!=='chute-a-gol');x.msup98=1;} // junção v97+ondas: Chute a gol fora do menu da Supervisora que já tinha migrado (uma vez)
     x.menu=x.menu.filter(v=>MODULE_OF[v]);}
   x.mv=83;
@@ -10050,7 +10169,7 @@ const EQ={
   modi_qualidade_desc:["Qualidade e Treino da IA","Quality and AI Training","Calidad y Entrenamiento de la IA","Qualité et Entraînement de l'IA","Qualität und KI-Training"],
   modi_qualidade_c:["importar rótulos de treino","import training labels","importar etiquetas de entrenamiento","importer des étiquettes d'entraînement","Trainingslabels importieren"],
   modi_qualidade_r:["ver as revisões","see the reviews","ver las revisiones","voir les revues","Prüfungen ansehen"],
-  modi_qualidade_u:["avaliar, marcar, descartar e rotular fotos e tirar foto da Lixeira da IA","rate, mark, discard and label photos and take photos out of the AI bin","evaluar, marcar, descartar y etiquetar fotos y sacar fotos de la Papelera de la IA","évaluer, marquer, écarter et étiqueter des photos et sortir des photos de la corbeille de l'IA","Fotos bewerten, markieren, verwerfen und labeln und Fotos aus dem KI-Papierkorb holen"],
+  modi_qualidade_u:["avaliar, marcar, descartar e rotular fotos, tirar foto da Lixeira da IA e dar nota às montagens de IA","rate, mark, discard and label photos, take photos out of the AI bin and rate the AI composites","evaluar, marcar, descartar y etiquetar fotos, sacar fotos de la Papelera de la IA y calificar los montajes de IA","évaluer, marquer, écarter et étiqueter des photos, sortir des photos de la corbeille de l'IA et noter les montages IA","Fotos bewerten, markieren, verwerfen und labeln, Fotos aus dem KI-Papierkorb holen und die KI-Montagen bewerten"],
   modi_diario_desc:["Diário do set","Set log","Diario del set","Journal du set","Set-Tagebuch"],
   modi_diario_c:["registrar ocorrência","log an incident","registrar incidencia","enregistrer un incident","Vorfall erfassen"],
   modi_diario_r:["ver o diário","see the log","ver el diario","voir le journal","Tagebuch ansehen"],
@@ -13115,6 +13234,52 @@ const EQ={
   rel_texto_xls:["Texto longo cortado nesta tabela: o texto completo está no XLS.","Long text was cut in this table: the full text is in the XLS.","Texto largo cortado en esta tabla: el texto completo está en el XLS.","Texte long coupé dans ce tableau : le texte complet est dans le XLS.","Langer Text in dieser Tabelle gekürzt: Der vollständige Text steht in der XLS-Datei."],
   rel_media_vendas:["Média por dia (vendas)","Daily average (sales)","Promedio por día (ventas)","Moyenne par jour (ventes)","Tagesdurchschnitt (Verkäufe)"],
   rel_valor:["Valor","Value","Valor","Valeur","Wert"],
+  // 26/11: Montagens de IA (Curadoria; plano docs/planos/2026-11-26-montagens-ia-curadoria.md)
+  v_montagens:["Montagens de IA","AI composites","Montajes de IA","Montages IA","KI-Montagen"],
+  vd_montagens:["dizer se ficaram boas ou ruins","say whether they came out good or bad","decir si quedaron buenas o malas","dire si elles sont bonnes ou mauvaises","sagen, ob sie gut oder schlecht geworden sind"],
+  mn_nota:["As montagens com fundo de IA que o servidor já fez. Diga se cada uma ficou boa ou ruim: a nota fica gravada no servidor, com o seu nome.","The AI background composites the server has already made. Say whether each one came out good or bad: the rating is saved on the server, with your name.","Los montajes con fondo de IA que el servidor ya hizo. Diga si cada uno quedó bueno o malo: la nota queda guardada en el servidor, con su nombre.","Les montages avec fond IA que le serveur a déjà faits. Dites si chacun est bon ou mauvais : la note est enregistrée sur le serveur, avec votre nom.","Die Montagen mit KI-Hintergrund, die der Server schon erstellt hat. Sagen Sie, ob jede gut oder schlecht geworden ist: Die Bewertung wird mit Ihrem Namen auf dem Server gespeichert."],
+  mn_boa:["Boa","Good","Buena","Bonne","Gut"],
+  mn_ruim:["Ruim","Bad","Mala","Mauvaise","Schlecht"],
+  mn_sem_nota:["Sem nota","Not rated","Sin nota","Sans note","Ohne Bewertung"],
+  mn_por:[(n,h)=>`por ${n} às ${h}`,(n,h)=>`by ${n} at ${h}`,(n,h)=>`por ${n} a las ${h}`,(n,h)=>`par ${n} à ${h}`,(n,h)=>`von ${n} um ${h}`],
+  mn_refeita:["A montagem foi refeita depois desta nota.","The composite was redone after this rating.","El montaje se rehízo después de esta nota.","Le montage a été refait après cette note.","Die Montage wurde nach dieser Bewertung neu erstellt."],
+  mn_reserva:["foto reserva","backup photo","foto de reserva","photo de réserve","Ersatzfoto"],
+  mn_original:["Foto original","Original photo","Foto original","Photo originale","Originalfoto"],
+  mn_ampliar:[(f)=>`Ampliar a montagem ${f}`,(f)=>`Enlarge the ${f} composite`,(f)=>`Ampliar el montaje ${f}`,(f)=>`Agrandir le montage ${f}`,(f)=>`Montage ${f} vergrößern`],
+  mn_mot_h:["O que ficou ruim? Pode marcar mais de um.","What went wrong? You can pick more than one.","¿Qué quedó mal? Puede marcar más de uno.","Qu'est-ce qui ne va pas ? Vous pouvez en choisir plusieurs.","Was ist schlecht geworden? Mehrere sind möglich."],
+  mn_mot_pequena:["Pessoa pequena","Person too small","Persona pequeña","Personne trop petite","Person zu klein"],
+  mn_mot_recorte:["Recorte com sujeira ou falha na borda","Cutout with dirt or a flaw on the edge","Recorte con suciedad o falla en el borde","Détourage sale ou raté sur le bord","Freisteller mit Schmutz oder Fehler am Rand"],
+  mn_mot_corte:["Corte errado: perna, braço ou cabeça","Wrong crop: leg, arm or head","Corte equivocado: pierna, brazo o cabeza","Mauvaise coupe : jambe, bras ou tête","Falscher Schnitt: Bein, Arm oder Kopf"],
+  mn_mot_lugar:["Não é gramado: arquibancada ou sentado","Not the pitch: stands or sitting","No es césped: grada o sentado","Pas la pelouse : tribune ou assis","Nicht der Rasen: Tribüne oder sitzend"],
+  mn_mot_luz:["Luz: escura, estourada ou cor","Light: dark, blown out or colour","Luz: oscura, sobreexpuesta o color","Lumière : sombre, surexposée ou couleur","Licht: dunkel, überbelichtet oder Farbe"],
+  mn_mot_outro:["Outro","Other","Otro","Autre","Anderes"],
+  mn_gravar:["Gravar ruim","Save as bad","Guardar mala","Enregistrer mauvaise","Als schlecht speichern"],
+  mn_desfazer:["Desfazer a nota","Undo the rating","Deshacer la nota","Annuler la note","Bewertung zurücknehmen"],
+  mn_fotografo:["Fotógrafo","Photographer","Fotógrafo","Photographe","Fotograf"],
+  mn_fundo:["Fundo","Background","Fondo","Fond","Hintergrund"],
+  mn_fundo_todos:["Todos os fundos","All backgrounds","Todos los fondos","Tous les fonds","Alle Hintergründe"],
+  mn_sit:["Situação","Status","Situación","Situation","Status"],
+  mn_sit_sem:["Sem nota","Not rated","Sin nota","Sans note","Ohne Bewertung"],
+  mn_sit_boa:["Boas","Good","Buenas","Bonnes","Gute"],
+  mn_sit_ruim:["Ruins","Bad","Malas","Mauvaises","Schlechte"],
+  mn_sit_todas:["Todas","All","Todas","Toutes","Alle"],
+  mn_n_prontas:["prontas","ready","listas","prêtes","fertig"],
+  mn_n_sem:["sem nota","not rated","sin nota","sans note","ohne Bewertung"],
+  mn_n_boas:["boas","good","buenas","bonnes","gut"],
+  mn_n_ruins:["ruins","bad","malas","mauvaises","schlecht"],
+  mn_no_filtro:["Neste filtro:","In this filter:","En este filtro:","Dans ce filtre :","In diesem Filter:"],
+  mn_guarda:[(n)=>`O servidor guarda as montagens por ${n} dias. Depois disso elas saem desta tela; as notas ficam gravadas.`,(n)=>`The server keeps the composites for ${n} days. After that they leave this screen; the ratings stay saved.`,(n)=>`El servidor guarda los montajes durante ${n} días. Después salen de esta pantalla; las notas quedan guardadas.`,(n)=>`Le serveur garde les montages pendant ${n} jours. Ensuite ils quittent cet écran ; les notes restent enregistrées.`,(n)=>`Der Server bewahrt die Montagen ${n} Tage auf. Danach verschwinden sie von diesem Bildschirm; die Bewertungen bleiben gespeichert.`],
+  mn_vazio_hoje:["Ainda não há montagens hoje. O servidor só monta as sessões de hoje, quando as fotos do gramado chegam.","There are no composites yet today. The server only builds today's sessions, when the pitch photos arrive.","Todavía no hay montajes hoy. El servidor solo monta las sesiones de hoy, cuando llegan las fotos del césped.","Pas encore de montages aujourd'hui. Le serveur ne monte que les séances du jour, quand les photos de la pelouse arrivent.","Heute gibt es noch keine Montagen. Der Server erstellt nur die Sitzungen von heute, sobald die Rasenfotos ankommen."],
+  mn_vazio_dia:["Nenhuma montagem guardada neste dia.","No composites kept for this day.","Ningún montaje guardado este día.","Aucun montage conservé ce jour-là.","Für diesen Tag sind keine Montagen gespeichert."],
+  mn_vazio_guarda:[(n)=>`As montagens deste dia já saíram do servidor: ele guarda por ${n} dias.`,(n)=>`The composites from this day have already left the server: it keeps them for ${n} days.`,(n)=>`Los montajes de este día ya salieron del servidor: los guarda durante ${n} días.`,(n)=>`Les montages de ce jour ont déjà quitté le serveur : il les garde ${n} jours.`,(n)=>`Die Montagen dieses Tages sind nicht mehr auf dem Server: Er bewahrt sie ${n} Tage auf.`],
+  mn_vazio_desligada:["A montagem no servidor está desligada, por isso não há montagens para ver. Quem liga é o Admin.","Server compositing is turned off, so there are no composites to see. The Admin turns it on.","El montaje en el servidor está desactivado, por eso no hay montajes para ver. Lo activa el Admin.","Le montage sur le serveur est désactivé, il n'y a donc aucun montage à voir. C'est l'Admin qui l'active.","Die Montage auf dem Server ist ausgeschaltet, deshalb gibt es keine Montagen zu sehen. Der Admin schaltet sie ein."],
+  mn_desligada_tem:["A montagem no servidor está desligada agora. Estas são as que já estavam prontas.","Server compositing is turned off right now. These are the ones that were already ready.","El montaje en el servidor está desactivado ahora. Estos son los que ya estaban listos.","Le montage sur le serveur est désactivé en ce moment. Voici ceux qui étaient déjà prêts.","Die Montage auf dem Server ist gerade ausgeschaltet. Das sind die, die schon fertig waren."],
+  mn_vazio_filtro:["Nenhuma montagem neste filtro.","No composites in this filter.","Ningún montaje en este filtro.","Aucun montage dans ce filtre.","Keine Montagen in diesem Filter."],
+  mn_sem_servidor:["As montagens ficam no servidor do ponto. Abra o Eterna pelo servidor para ver.","The composites live on the on-site server. Open Eterna through the server to see them.","Los montajes están en el servidor del punto. Abra Eterna por el servidor para verlos.","Les montages sont sur le serveur du site. Ouvrez Eterna par le serveur pour les voir.","Die Montagen liegen auf dem Server vor Ort. Öffnen Sie Eterna über den Server, um sie zu sehen."],
+  mn_erro:["Não deu para falar com o servidor. Tente de novo.","Could not reach the server. Try again.","No se pudo conectar con el servidor. Inténtelo de nuevo.","Impossible de joindre le serveur. Réessayez.","Der Server ist nicht erreichbar. Versuchen Sie es noch einmal."],
+  mn_erro_nota:["A nota não foi gravada. Tente de novo.","The rating was not saved. Try again.","La nota no se guardó. Inténtelo de nuevo.","La note n'a pas été enregistrée. Réessayez.","Die Bewertung wurde nicht gespeichert. Versuchen Sie es noch einmal."],
+  mn_sumiu:["Esta montagem não está mais no servidor. Toque em Atualizar.","This composite is no longer on the server. Tap Refresh.","Este montaje ya no está en el servidor. Toque Actualizar.","Ce montage n'est plus sur le serveur. Touchez Actualiser.","Diese Montage ist nicht mehr auf dem Server. Tippen Sie auf Aktualisieren."],
+  mn_carregando:["Carregando as montagens...","Loading the composites...","Cargando los montajes...","Chargement des montages...","Montagen werden geladen..."],
   // 24/11: Lixeira da IA (Curadoria; plano docs/planos/2026-11-24-lixeira-ia.md)
   v_lixeira:["Lixeira da IA","AI bin","Papelera de la IA","Corbeille de l'IA","KI-Papierkorb"],
   vd_lixeira:["fotos sem salvação","photos beyond saving","fotos sin arreglo","photos irrécupérables","nicht zu rettende Fotos"],
@@ -13189,7 +13354,7 @@ function logout(){const tv=state.train.vendo,tem=state.user&&state.user.email;co
     authSairPend(true);const p=Promise.all([logout.sair,ag]).then(()=>authApi('/auth/sair',{},{signal:agLimite(4000)})).then(r=>{if(r&&(r.status===200||r.status===401))authSairPend(false);return r;});
     logout.sair=p;p.finally(()=>{if(logout.sair===p)logout.sair=null;});}camStop();try{localStorage.removeItem('eterna.posto.vendedor')}catch(e){} // v83: o próximo vendedor não herda as vendas do anterior
   demoDesliga(); // revisão (segurança): o modo demonstração não passa para a próxima pessoa
-  state.sessN++;state.user=null;state.assumido=null;trZera();lxZera();
+  state.sessN++;state.user=null;state.assumido=null;trZera();lxZera();mnZera();
   // revisão 23/11 (AF): números por fotógrafo, rascunho dos limites e calibração não ficam para a próxima pessoa
   Object.assign(state.fot,{j:null,chave:null,em:0,erro:null,rasc:{},recusa:null});Object.assign(state.fg.est,{chave:null,dias:null,em:0,erro:null});Object.assign(state.train.luz,{j:null,esc:{},recusa:null});state.ajustes={key:null,card:null,photo:null};state.person=null;try{localStorage.removeItem('eterna.session')}catch(e){}state.auth={step:'entrar',usuario:'',senha:'',nova:'',nova2:'',err:null,next:null};state.view='entrar';state.person=null;state.session=null;render();window.scrollTo({top:0});}
 // Entrada da equipe: usuário e senha conferidos no servidor do estádio (/auth/*, no agente). A senha nunca fica guardada no navegador,
@@ -13222,11 +13387,11 @@ async function authConferir(){if(authSite()||!state.user)return;const dono=state
   if(r.status===200&&r.ok){const a=r.assumido_por?{por:r.assumido_por,nome:r.assumido_nome||r.assumido_por}:null;if(JSON.stringify(a)!==JSON.stringify(state.assumido)){state.assumido=a;render();}}}
 // 16/11 (Ronaldo): "ver como". Só Admin, só de quem não é Admin. O servidor guarda a sessão do Admin e devolve no "Voltar".
 async function authAssumir(usuario){const me=state.user;if(!me||state.assumido)return;const r=await authApi('/auth/assumir',{usuario});
-  if(r.status===200&&r.ok){trZera();lxZera(); // a escolha (e a fila mostrada) de uma pessoa não vai para a tela nem para a gravação da outra
+  if(r.status===200&&r.ok){trZera();lxZera();mnZera(); // a escolha (e a fila mostrada) de uma pessoa não vai para a tela nem para a gravação da outra
     state.assumido={por:r.assumido_por,nome:r.assumido_nome||me.name||me.email};state.users.draft=null;authEntrou(r);toast(TE('vc_entrou',(USERS[usuario]||{}).name||usuario));return;}
   toast(TE(r.erro==='alvo_maior'?'vc_e_maior':r.erro==='sem_cadastro'?'vc_e_cadastro':r.status===403?'vc_e_perm':'vc_e_conexao'));}
 async function authVoltar(){const r=await authApi('/auth/voltar',{});
-  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;trZera();lxZera(); // o que foi visto e escolhido no "ver como" não aparece nem vira gravação do Admin
+  if(r.status===200&&r.ok){const quem=state.user&&state.user.name;trZera();lxZera();mnZera(); // o que foi visto e escolhido no "ver como" não aparece nem vira gravação do Admin
     state.assumido=null;state.auth_next='usuarios';authEntrou(r);if(quem)toast(TE('vc_voltou'));return;}
   if(r.status===401){logout();return;}toast(TE('vc_e_conexao'));}
 function assumidoFaixa(){const a=state.assumido,u=state.user;if(!a||!u)return '';
@@ -14139,6 +14304,9 @@ function render(){
 }
 // 24/11: Lixeira da IA: a tela, as ações que gravam e o módulo de cada uma, em linhas próprias (o merge com outras branches não briga)
 VIEWFN.lixeira=vLixeira;
+VIEWFN.montagens=vMontagens; // 26/11: Montagens de IA (Curadoria)
+Object.assign(WRITE_OPS,{'mn-boa':'u','mn-grava':'u','mn-desfaz':'u'});
+Object.assign(ACT_MOD,{'mn-boa':'qualidade','mn-grava':'qualidade','mn-desfaz':'qualidade'});
 VIEWFN.procurar=vProcurar; // 25/11: Procurar fotos
 Object.assign(WRITE_OPS,{'lx-rec':'u','lx-cfg':'u'});
 Object.assign(ACT_MOD,{'lx-rec':'qualidade','lx-cfg':'configuracao'});
@@ -14718,6 +14886,17 @@ document.addEventListener('click',e=>{
     case 'lx-rec':lxRec(d.pid);break;
     case 'lx-cfg':lxCfg(d.v);break;
     case 'lx-reler':state.lx.err=null;lxPull();break;
+    // 26/11: Montagens de IA
+    case 'mn-reler':{const L=state.mn;L.err=null;L.j=null;L.lista=[];mnPull();break;}
+    case 'mn-fundo':{const L=state.mn;if(d.f==='todos'||((L.j&&L.j.fundos)||[]).includes(d.f)){L.fundo=d.f;mnSnap();render();}break;}
+    case 'mn-sit':if(MN_SITS.includes(d.s)){state.mn.sit=d.s;mnSnap();render();}break;
+    case 'mn-zoom':mnZoom(d.k);break;
+    case 'mn-boa':mnNota(d.k,'boa');break;
+    case 'mn-ruim':mnRuim(d.k);break;
+    case 'mn-mot':{const L=state.mn;if(L.abre!==d.k||!MN_MOTIVOS.includes(d.m))break;L.rasc=L.rasc.includes(d.m)?L.rasc.filter(m=>m!==d.m):L.rasc.concat([d.m]);mnAtualiza(d.k);break;}
+    case 'mn-grava':if(state.mn.abre===d.k)mnNota(d.k,'ruim',state.mn.rasc);break;
+    case 'mn-fecha':{const L=state.mn;L.abre=null;L.rasc=[];mnAtualiza(d.k);break;}
+    case 'mn-desfaz':mnNota(d.k,null);break;
     case 'lx-regua':{e.preventDefault();const L=state.lx;L.regua=!L.regua;if(L.regua&&!L.med&&!L.medBusy)lxMedida();else render();break;}
   }
 });
@@ -14935,6 +15114,7 @@ window.ETERNA={bfBase,bfNovas,fgIndiceDados,FG_ETERNA_DESDE,fgIndiceRef:()=>({de
 Object.assign(window.ETERNA,{edVista,edVistasEnviar,edLer,edTerminal,ljPrimeira,ljAncora,edSeloTxt,lojaEdEspera,esEdPainel,COMPURL,COMPOK,fiaPronta,fiaFalhou,ljEdEsperaMs:v=>{LJ_ED_ESPERA_MS=v;},edEnviaMs:(a,b)=>{ED_ENVIA_MS=a;if(b!=null)ED_DE_NOVO_MS=b;}}); // v97 (selo)
 Object.assign(window.ETERNA,{FIA_PADRAO,IMP_PX,FIA_ROSTOS,BG_DEF,mtgPanel,mtgModoSalva,MTG_MODOS,posesPanel,psModoSalva,PS_MODOS,mtgSrv,mtgFundo,mtgPedir,MTG,mtgCanvasOk,mtgConhecido,mtgGer:()=>MTG_GER,fiaMontagens:FIA_CONTA,mtgTempos:(e,p,d,h,t,n)=>{if(e!=null)MTG_ESPERA_MS=e;if(p!=null)MTG_PASSO_MS=p;if(d!=null)MTG_DE_NOVO_MS=d;if(h!=null)MTG_HI_ESPERA_MS=h;if(t!=null)MTG_PASSO_TETO_MS=t;if(n!=null)MTG_FALHAS_MAX=n;}}); // montagem no servidor (E1): tabelas para o teste de paridade com o agente/eterna-montagem.py e a chave do modo
 Object.assign(window.ETERNA,{ljEscolhidas,ljEscUpd,ljFsUpd,ljDesfMs:v=>{LJ_DESF_MS=v;}}); // 17/11: barra das escolhidas (testes/checkout-barra-escolhidas.js)
+Object.assign(window.ETERNA,{mnZera,mnSnap,mnLote,migraMontagens26,MN_MOTIVOS,MN_PASSO}); // 26/11: Montagens de IA (testes/montagens-ia.js)
 Object.assign(window.ETERNA,{lxFiltrados,lxStatus,lxPill,lxCfgPanel,lxCfg,migraLixeira24,migrateUser,LX_MOTIVOS,lxModalN:()=>MODAL.list.length}); // 24/11: Lixeira da IA (testes/lixeira.js)
 })();
 </script>
