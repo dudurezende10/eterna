@@ -650,6 +650,10 @@ Quando sai uma versão nova, aparece embaixo da tela uma faixa azul **Nova vers�
 
 O Checkout usa sempre a câmera Logitech espetada no USB, mesmo com a câmera do notebook disponível. Se a Logitech estiver desconectada, a selfie continua com a câmera que houver; ao ligar a Logitech de novo, ela volta a ser a usada na próxima vez que a câmera abrir.
 
+### Testar a selfie (26/11)
+
+Antes do turno, no **Posto de venda**, painel **Imprimir**, toque em **Testar selfie**. A câmera abre; olhe para ela e toque em **Tirar foto**. A foto sobe como a de um cliente. Depois de 1 minuto, abra o **Checkout** e faça a selfie como um cliente: se as suas fotos aparecerem, a selfie está funcionando.
+
 ### Testar a impressora (26/11)
 
 No **Posto de venda**, no painel **Imprimir**, toque em **Testar impressora**. Sai uma folha da Viva Maracanã com **Testado por** (nome e usuário de quem está logado), o posto e a hora. A impressora está pronta quando a folha sai inteira, com os quatro cantos amarelos visíveis e as cores nítidas. Pode testar quantas vezes precisar: o teste não conta como venda nem gasta do rolo no sistema.
