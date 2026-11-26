@@ -5482,7 +5482,7 @@ def mtg_passada(refazer=False):
                     with lock:
                         u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
                     # o atraso conta de quando a base passou a existir: chegada da foto ou fechamento da leva (regra 19: as
-                    # bases saem no fechamento, 60 s sem clique, ou depois, quando o reconhecimento do gramado termina)
+                    # bases saem no fechamento, SESS_PAUSA sem chegada, ou depois, quando o reconhecimento do gramado termina)
                     u = max(u, x.get("fechada_em") or 0.0)
                     job, _ = mtg_enfileirar(pid, fundo, ("p",), MTG_P_REFAZER if velha else MTG_P_VIVO if e_pref else MTG_P_RESERVA,
                                             u=None if velha else u or None, pref=e_pref,
@@ -6520,7 +6520,7 @@ def _sess_pausa():
         v = int(os.environ.get("ETERNA_SESSAO_PAUSA") or 0)
     except ValueError:
         v = 0
-    return v if 2 <= v <= 600 else 60
+    return v if 2 <= v <= 600 else 180
 
 
 def _sess_limites():
@@ -6534,7 +6534,10 @@ def _sess_limites():
     return (LIMITE_TALVEZ, 0.25, LIMITE)
 
 
-SESS_PAUSA = _sess_pausa()      # S1: 60 s sem clique fecha a sessão; igual ao SESSAO_PAUSA_S do app. ETERNA_SESSAO_PAUSA (2 a 600) só nos testes
+# S1: 180 s (3 min) sem clique fecham a sessão; igual ao SESSAO_PAUSA_S do app. Era 60 s até 26/11 (Eduardo: 3 minutos, a
+# regra combinada com os fotógrafos e a mesma das fotos vizinhas do Checkout, VIZ_GAP; com 60 s o cliente que andava do
+# gramado ao troféu em 69 s virava duas sessões e a segunda ficava sem fundo de IA). ETERNA_SESSAO_PAUSA (2 a 600) só nos testes
+SESS_PAUSA = _sess_pausa()
 FF_PAUSA = SESS_PAUSA           # apelido (v87)
 SESS_ATRASO = 600               # S3: foto com chegada − clique acima disto vai para a trilha atrasada (cartão)
 SESS_ROSTO_ESPERA = 20          # S6: prazo para a leitura do rosto, desde a chegada; depois vale só o tempo
@@ -6749,9 +6752,9 @@ def ff_carregar():
 
 # ---------- Sessões montadas no agente (v85 parte A do Ronaldo, regra nova da v90) ----------
 # A sessão nasce aqui, igual em todos os navegadores. Regra (plano v91, S1 a S14): por fotógrafo e trilha (ao vivo ou
-# atrasada), 60 s sem clique (hora do clique corrigida) abrem sessão nova; sem pausa, a foto espera a leitura do rosto
+# atrasada), SESS_PAUSA (3 min) sem clique (hora do clique corrigida) abrem sessão nova; sem pausa, a foto espera a leitura do rosto
 # (até 20 s) e abre sessão nova só quando todos os rostos principais são novos (sim < 0,25, rosto de qualidade). Sessão
-# separada fica "fechando" até 60 s sem chegada e ainda pode se fundir (individuais antes do grupo). Só sessão
+# separada fica "fechando" até SESS_PAUSA sem chegada e ainda pode se fundir (individuais antes do grupo). Só sessão
 # "fechada" vai para o SIM e nunca muda (exceto LGPD). Vetores de rosto só em memória, só das sessões não fechadas.
 # Gravadas em ~/Eterna/ponto/sessoes/AAAA-MM-DD.json (60 dias); em memória ficam hoje e ontem.
 SESS_DIR = os.path.join(HOME, "ponto", "sessoes")
@@ -7986,7 +7989,7 @@ def sess_status():
 
 
 # ---------- v97: visitas (as levas da mesma família, ligadas por rosto) ----------
-# Leva = a sessão de hoje (por fotógrafo ou câmera, 60 s sem disparo fecham, rostos novos separam; código LP). Visita = as
+# Leva = a sessão de hoje (por fotógrafo ou câmera, SESS_PAUSA (3 min) sem disparo fecham, rostos novos separam; código LP). Visita = as
 # levas da mesma família no dia: duas levas ligam quando um rosto de qualidade (principal, >= 60 px, frontal, score >= 0,80)
 # de uma bate (sim >= VIS_LIM) com um rosto de qualidade da outra, em corrente (união), com o 1º e o último clique da visita
 # a até 50 min. Teto: 12 levas ou 15 rostos diferentes (acima disso a ligação automática para e a visita fica "grande":

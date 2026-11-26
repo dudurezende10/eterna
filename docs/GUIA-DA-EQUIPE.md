@@ -37,7 +37,7 @@ O menu fica do lado esquerdo e é dividido em grupos:
 
 | Grupo | O que tem |
 | --- | --- |
-| Venda | Posto de venda |
+| Venda | Posto de venda. Para quem atende e vende, também Procurar fotos |
 | Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
 | Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA, Montagens de IA |
 | Fotógrafo | Diário do set, Minhas fotos, Procurar fotos, Fila do fotógrafo |
@@ -239,8 +239,8 @@ O ajuste automático da IA clareia a foto escura e segura a estourada em toda fo
 **Ajuste à mão, foto por foto.** Em Configurações › Ajuste automático, abra a sessão e toque na foto. Os controles, na ordem da tela: Exposição, Sombras, Realces, Contraste, Saturação, Temperatura e Corte. Cada um tem os botões de menos e de mais e uma barra.
 
 - **Sombras** (24/11): clareia só as partes escuras da foto. De 0 a 100; em 0 não faz nada.
-- **Realces** (26/11): escurece só as partes claras, para recuperar céu, camisa branca e pele com flash. De 0 a 100; em 0 não faz nada. As partes médias e escuras não mudam. O que estourou em branco puro continua branco: o controle não traz de volta detalhe que a câmera não gravou.
-- **Restaurar original** zera tudo. O ajuste automático não usa Sombras nem Realces.
+- **Altas luzes** (26/11): escurece só as partes claras, para recuperar céu, camisa branca e pele com flash. De 0 a 100; em 0 não faz nada. As partes médias e escuras não mudam. O que estourou em branco puro continua branco: o controle não traz de volta detalhe que a câmera não gravou.
+- **Restaurar original** zera tudo. O ajuste automático não usa Sombras nem Altas luzes.
 - O ajuste vale nas telas da equipe, no Checkout e na impressão pelo Chrome. O arquivo enviado ao programa de impressão do posto, a galeria online e as fotos com fundo de IA saem sem os ajustes (exposição, sombras, realces e os demais).
 
 As fotos do **chute a gol** não recebem ajuste automático (24/11): ficam como saíram da câmera. O servidor reconhece o chute a gol sozinho, pelas marcações do Treino da IA. Por isso a foto nova pode levar até um minuto e meio para ser ajustada, enquanto o servidor confere de onde ela é. Quem quiser ainda pode ajustar uma foto do chute à mão.
@@ -355,7 +355,9 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 
 **Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**, no menu **Fotógrafo**, logo abaixo de Minhas fotos.
 
-- **Quem vê:** quem já vê Minhas fotos. A supervisora e o Admin procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. Quem só vende e a tela do cliente não têm essa tela.
+- **Quem vê:** quem já vê Minhas fotos e, desde 26/11, quem atende e vende (quem tem o Posto de venda). A supervisora, o Admin e quem atende e vende procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. A tela do cliente (Checkout) nunca mostra essa tela.
+- **Para quem atende e vende (26/11):** a tela fica no menu logo depois de **Posto de venda**. No computador do Posto, abra o menu e toque em **Procurar fotos** para achar a foto que o cliente não encontrou; depois volte ao Posto para vender. É só para olhar: o atendente não ganha Minhas fotos, não envia cartão e não muda nada nas fotos. Quem já estava cadastrado ganhou a tela sozinho, sem recadastro.
+- **Tirar a tela de alguém:** em **Sistema › Permissões**, na linha **Posto de venda**, desmarque **Procurar fotos** em **Aparece no menu** e salve. Quem tem Minhas fotos continua vendo a tela por ela.
 - **Fotógrafo:** escolha **Todos** ou um nome. Só aparece quem tem sessão hoje, com o número de sessões ao lado.
 - **Tempo:** **Últimos 30 min**, **Última 1 hora**, **Últimas 3 horas** ou **Dia todo**. Com Todos, a tela abre na última 1 hora. Com um fotógrafo escolhido, abre no dia todo. Em **Hora** dá para escolher uma hora cheia (09h, 10h).
 - **Código da sessão:** digite o código inteiro ou um pedaço. Com código digitado, o tempo não filtra.
@@ -375,21 +377,21 @@ Cada sessão tem uma linha com: o código (LP...), o fotógrafo, o ponto, a hora
 | Como aparece | Quer dizer |
 | --- | --- |
 | Borda amarela e **aberta · recebendo** | o fotógrafo ainda está nessa sessão; as fotos novas entram nela |
-| **fechando** | o servidor viu rostos novos e abriu outra sessão; por 1 minuto esta ainda pode se juntar à nova (por exemplo, as fotos individuais do pai e da mãe antes da foto do grupo) |
+| **fechando** | o servidor viu rostos novos e abriu outra sessão; por 3 minutos esta ainda pode se juntar à nova (por exemplo, as fotos individuais do pai e da mãe antes da foto do grupo) |
 | Sem destaque, com **Abrir sessão** | fechada: já está no Checkout e não muda mais |
 | Foto apagada com **lendo rostos** | a foto chegou e o servidor ainda está lendo os rostos para decidir a sessão |
 
 Motivo de a sessão ter começado:
 
 - **primeira do dia**: primeira sessão do fotógrafo hoje.
-- **pausa de 1 min**: o fotógrafo ficou 1 minuto sem clicar.
+- **pausa de 3 min**: o fotógrafo ficou 3 minutos sem clicar (era 1 minuto até 26/11).
 - **rostos novos**: sem pausa, mas a foto trouxe só rostos que não estavam na sessão anterior (outra família).
 - **agente reiniciado** ou **reagrupada**: o computador do ponto foi reiniciado; as fotos foram agrupadas de novo.
 - **atrasada**: fotos do cartão (ou que chegaram mais de 10 minutos depois do clique). Ficam em sessões só delas, separadas das fotos ao vivo do mesmo fotógrafo.
 
 Na dúvida, o servidor deixa a foto na sessão em que está: foto sem rosto, de perfil, de criança pequena ou de alguém ao fundo não abre sessão nova. Se a mesma família foi fotografada por dois fotógrafos, ficam duas sessões; no Checkout a selfie acha as duas.
 
-Se aparecer o aviso **Rostos desligados neste computador**, o servidor está separando as sessões só pela pausa de 1 minuto. Avise a TI.
+Se aparecer o aviso **Rostos desligados neste computador**, o servidor está separando as sessões só pela pausa de 3 minutos: clientes fotografados um logo depois do outro caem na mesma sessão. Avise a TI.
 
 Clique numa foto para ampliar. Abrindo por aqui, as setas passam só pelas fotos daquela sessão (veja **Ver a foto inteira e ampliar**).
 
@@ -1041,7 +1043,7 @@ Fica em **Fotógrafo › Fila do fotógrafo**, logo abaixo de Minhas fotos. É u
 | **Chegando** | ele parou de clicar e as fotos ainda estão subindo para o servidor (fila do Wi-Fi ou leitura de cartão) |
 | **Já no Checkout** | as fotos estão no servidor e os rostos já foram lidos: a selfie do Checkout já acha o cliente |
 
-Um grupo vai para **Já no Checkout** 1 minuto depois da última foto e depois da leitura dos rostos (v91: cada grupo da Fila é uma sessão). Sai da tela 15 minutos depois.
+Um grupo vai para **Já no Checkout** 3 minutos depois da última foto e depois da leitura dos rostos (v91: cada grupo da Fila é uma sessão). Sai da tela 15 minutos depois.
 
 Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segundos. É normal.
 

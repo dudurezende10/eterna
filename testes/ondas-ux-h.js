@@ -25,7 +25,7 @@ try{
     const dif=[];for(const x of its){await pg.evaluate(v=>ETERNA.go(v),x.v);await pg.waitForTimeout(80);const h1=await pg.evaluate(()=>{const h=document.querySelector('#main h1');return h?h.textContent.trim():'';});if(h1.toLowerCase()!==x.t.toLowerCase())dif.push(x.v+': "'+x.t+'" ≠ "'+h1+'"');}
     ok(!dif.length,'H2 '+k+': menu ≠ título: '+dif.join(' | '));
     const grps=await pg.$$eval('#nav .grp',g=>g.map(x=>x.textContent.trim()));
-    if(k==='venda'){ok(!grps.length&&J(its.map(x=>x.t))===J(['Posto de venda'])/* 18/11: quem opera o caixa vê só o Posto de venda e o Checkout */,'H3 vendedor: '+J({grps,its}));
+    if(k==='venda'){ok(!grps.length&&J(its.map(x=>x.t))===J(['Posto de venda','Procurar fotos','Fila de impressão'])/* 18/11: quem opera o caixa vê só o Posto de venda e o Checkout; 23/11: e a Fila de impressão; 26/11: e Procurar fotos */,'H3 vendedor: '+J({grps,its}));
       ok(await pg.$('#rail-ck [data-act="loja-abrir"]')&&!(await pg.$('#rail-ck [data-v="posto"]')),'H4: vendedor com o botão grande Abrir Checkout e sem o botão Posto de venda');}
     if(k==='foto')ok(!grps.length&&its.length<=5&&its.length>0,'H3 fotógrafo: sem grupos e até 5 itens: '+J({grps,n:its.length}));
     if(k==='valida')ok(!grps.length,'H3: validador (3 telas) sem grupos');

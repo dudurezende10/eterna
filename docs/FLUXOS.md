@@ -387,7 +387,7 @@ flowchart TD
   F --> H{"A trilha tem sessão aberta?"}
   G --> H
   H -- "não" --> I["Abre sessão: início do dia ou pausa"]
-  H -- "sim" --> J{"Clique mais de 60 s depois da última foto ou mais de 60 s antes da primeira?"}
+  H -- "sim" --> J{"Clique mais de 3 min depois da última foto ou mais de 3 min antes da primeira?"}
   J -- "sim" --> K["Fecha a aberta e as em fechamento: pausa entre cliques"]
   K --> I
   I --> L["Foto entra na hora, decidida por tempo"]
@@ -426,7 +426,7 @@ flowchart TD
   AE --> AF
   AF --> AG{"Sessão foi aberta antes da virada do dia?"}
   AG -- "sim" --> AH["Fechada: virada do dia"]
-  AG -- "não" --> AI{"Mais de 60 s sem chegada nesta sessão?"}
+  AG -- "não" --> AI{"Mais de 3 min sem chegada nesta sessão?"}
   AI -- "sim" --> AJ["Fechada: pausa sem foto"]
   AI -- "não" --> AF
   AK["Servidor reiniciou"] --> AL["Sessão não fechada fecha: reinício"]
@@ -452,7 +452,7 @@ flowchart TD
 | Hora do clique | Hora da câmera + desvio da série, se estiver entre 48 h antes e 10 min depois da chegada; senão, data do arquivo de origem na mesma janela; senão, a chegada | `sess_clique`, `SESS_CLIQUE_ANTES`, `SESS_CLIQUE_DEPOIS` |
 | Desvio da câmera | Últimas 50 diferenças entre chegada e clique, sem fotos de cartão. Com 3 ou mais, descarta o que está a mais de max(3 x desvio mediano, 30 s) da mediana e usa o menor | `sess_desvio`, `ff_desvio` |
 | Trilha atrasada (`SESS_ATRASO`) | Cartão sempre; demais fontes quando chegada − clique > 600 s | `sess_trilha` |
-| Pausa (`SESS_PAUSA`) | 60 s. `ETERNA_SESSAO_PAUSA` de 2 a 600 só em testes | `_sess_pausa`, `_sess_add` |
+| Pausa (`SESS_PAUSA`) | 180 s (3 min; era 60 s até 26/11). `ETERNA_SESSAO_PAUSA` de 2 a 600 só em testes | `_sess_pausa`, `_sess_add` |
 | Motivo de abertura | Início (primeira da trilha), pausa, rostos novos, ou reagrupada no início do servidor | `_sess_add`, `_sess_decide` |
 | Espera do rosto (`SESS_ROSTO_ESPERA`) | Até 20 s desde a chegada. A foto da frente segura as seguintes da trilha. Vencido o prazo, ou com os rostos desligados, entra por tempo | `_sess_drenar` |
 | Erro na leitura | Conta como lida sem rosto | `leitor_loop`, `sess_rostos_lidos` |
@@ -465,7 +465,7 @@ flowchart TD
 | Sem rosto guardado para comparar | Fica na aberta, como dúvida ou sem rosto | `_sess_decide` |
 | Rostos guardados | Até 40 por sessão; repetido com semelhança de 0,7 ou mais não entra. Só em memória e só em sessões não fechadas | `SESS_ROSTOS_MAX`, `SESS_REPETIDO`, `_sess_guarda_rostos` |
 | Fechar por pausa de clique | Trilha fecha a aberta e as em fechamento | `_sess_add`, `_sess_fecha_uma` |
-| Fechar por falta de chegada | Mais de 60 s sem chegada na sessão; verificação a cada 2 s | `_sess_fechar`, `sess_loop` |
+| Fechar por falta de chegada | Mais de 3 min sem chegada na sessão; verificação a cada 2 s | `_sess_fechar`, `sess_loop` |
 | Fechar por limite | Mais de 2 sessões em fechamento na trilha: a mais antiga fecha, registrada como pausa | `_sess_vira_aberta` |
 | Virada do dia | Comparação pelo dia da primeira chegada | `_sess_fechar` |
 | Início do servidor | Lê ontem e hoje; a não fechada fecha como reinício. Foto sem sessão usa os rostos do banco, que não votam por sessão nova | `sess_carregar`, `_sess_faces_db` |
@@ -474,7 +474,7 @@ flowchart TD
 
 #### Divergências entre documento e código
 
-- `DOCUMENTACAO-TECNICA.md` 7.1 diz que o limiar é aprendido por ponto, com valor inicial de 20 s, e prevê sessão em dúvida para o vendedor juntar ou separar. No código, a pausa é fixa em 60 s e a dúvida fica na sessão aberta, sem ação do vendedor.
+- `DOCUMENTACAO-TECNICA.md` 7.1 diz que o limiar é aprendido por ponto, com valor inicial de 20 s, e prevê sessão em dúvida para o vendedor juntar ou separar. No código, a pausa é fixa em 180 s (3 min) e a dúvida fica na sessão aberta, sem ação do vendedor.
 - A seção "Fila do fotógrafo (v87)" ainda descreve pausa de 20 s e grupos próprios. A seção da v91 no mesmo documento registra que eles saíram, e o código confirma.
 - A regra S2 do plano e da documentação usa o menor desvio. O código descarta primeiro os valores fora da curva; isso aparece em outra parte da documentação.
 - O plano S2 diz que clique inválido cai na chegada. O código tenta antes a data do arquivo de origem.
@@ -551,7 +551,7 @@ flowchart TD
   FF6 -- "não" --> FF7{"Está entre as 24 mais recentes?"}
   FF7 -- "sim" --> FF8["Coluna Já no Checkout"]
   FF7 -- "não" --> FF2
-  FF3 -- "não" --> FF9{"Aberta, ao vivo e com clique nos últimos 60 s?"}
+  FF3 -- "não" --> FF9{"Aberta, ao vivo e com clique nos últimos 3 min?"}
   FF9 -- "sim" --> FF10["Coluna Clicando agora"]
   FF9 -- "não" --> FF5
 ```
@@ -578,7 +578,7 @@ flowchart TD
 | Ajuste manual protegido | Ajuste à mão só é trocado com pedido explícito da IA | `ajAuto`, `ajSet`, `aj-auto`, `aj-auto-all` |
 | Original | O ajuste é um conjunto de valores aplicado na tela e na impressão; o arquivo original não muda | `SIM.edits`, `editStyleObj`, `printMontar` |
 | Descartar e recuperar | Liga e desliga `SIM.discarded`; a foto sai ou volta | `aj-discard`, `m-discard` |
-| Clicando agora | Status aberta, trilha ao vivo e último clique há 60 s ou menos | `ff_json` |
+| Clicando agora | Status aberta, trilha ao vivo e último clique há 3 min ou menos | `ff_json` |
 | Chegando | Resto das não fechadas, ou fechada com foto ainda na fila de rostos | `ff_json` |
 | Já no Checkout | Fechada e sem pendência de rosto. Conta a partir do maior entre fechamento e última leitura | `ff_json` |
 | Saída da coluna final | 15 min depois de pronta; no máximo 24 cartões | `FF_PRONTA_MIN`, `FF_PRONTAS_MAX` |
@@ -1872,7 +1872,7 @@ stateDiagram-v2
     --
     [*] --> PendSessao
     PendSessao --> SessaoAberta: rosto lido ou 20 segundos vencidos
-    SessaoAberta --> SessaoFechada: 60 segundos sem clique
+    SessaoAberta --> SessaoFechada: 3 minutos sem clique
     SessaoFechada --> SessaoApagada: 60 dias
     --
     [*] --> FilaNuvem: envio ligado
@@ -1909,7 +1909,7 @@ stateDiagram-v2
 | Miniatura | `thumbs/`, sem prazo | `ingest_file`, `lgpd_excluir` |
 | Cópia no aparelho da equipe (16/11) | O original aberto na lupa fica 5 minutos, só no aparelho de quem pediu (`Cache-Control: private, max-age=300`); a miniatura fica 1 dia. A lupa só pede o original depois de 250 ms parada na foto | `H.file`, `zoomOriginal`, `ZOOM_HI_MS` |
 | Rostos locais | 60 dias contados pela pasta do dia; limpa ao ligar a leitura e uma vez por dia | `RETENCAO_DIAS`, `limpar_rostos`, `rostos_thread`, `galeria_loop` |
-| Sessão | 60 s sem clique fecham; espera do rosto de 20 s desde a chegada | `SESS_PAUSA`, `SESS_ROSTO_ESPERA` |
+| Sessão | 3 min sem clique fecham; espera do rosto de 20 s desde a chegada | `SESS_PAUSA`, `SESS_ROSTO_ESPERA` |
 | Arquivo de sessão | 60 dias | `SESS_RET_DIAS`, `sess_limpar` |
 | Recorte | 2 dias, teto de 5 GB (`ETERNA_RECORTES_GB`), apagando os mais antigos | `REC_DIAS`, `REC_TETO_GB`, `limpar_recortes` |
 | Validade da galeria | 60 dias a partir da criação; não aumenta em republicação | `GAL_DIAS`, `galNovo`, `gal_mesclar` |
@@ -1953,7 +1953,7 @@ Em todos os casos abaixo, os diagramas seguem o código.
 | Só versão liberada | Pesquisa de 02/11: desde 02/11 só entra versão liberada | Vale para o agente no canal estável. Vigia, instalação inicial e app vêm do `main`. `pedidos-do-eduardo-pos-v91` já registra o app | `instalar-servidor.ps1`, `iniciar-eterna.bat`, `H.app` |
 | Plano de atualização | Plano do instalador: consulta a cada 30 min, pacote com o app, teste em porta livre, janela, volta sozinho, 3 versões | Só ao religar; só o programa; só compilação; sem janela e sem volta | `eterna-vigia.ps1` |
 | Retenção de 60 dias | Comentário e documentos: leituras ficam 60 dias | Ao ligar, fotos do disco sem leitura voltam para a fila, inclusive as com mais de 60 dias. Pelo código, são relidas com o dia antigo e apagadas na limpeza seguinte. Não testado | `rostos_thread`, `leitor_loop`, `limpar_rostos` |
-| Pausa da sessão | Relatório de 31/10: pausa de 20 s | 60 s na v91. O relatório é anterior | `SESS_PAUSA` |
+| Pausa da sessão | Relatório de 31/10: pausa de 20 s | 60 s na v91 e 180 s desde 26/11. O relatório é anterior | `SESS_PAUSA` |
 | Selfie e fotos | Relatório de 31/10: achado pela selfie, vê só as próprias fotos | A v91 mudou: `lojaDele` só para menor e escola, segundo o plano de pedidos. Fluxo detalhado fora deste escopo | `docs/planos/2026-11-02-pedidos-do-eduardo-pos-v91.md` |
 | Usuário do servidor | `CHECKLIST-SERVIDOR` passo 0 e 3: usuário eterna; passo 7: usuário de quem usa o computador | O instalador aceita qualquer perfil com a venv | `instalar-servidor.ps1` |
 

@@ -23,6 +23,11 @@ class Tabela:
             raise ClientError({"Error": {"Code": "ConditionalCheckFailedException"}}, "UpdateItem")
         if UpdateExpression.startswith("REMOVE"):
             it.pop(UpdateExpression.split()[1], None); return {}
+        if UpdateExpression.startswith("ADD") and Key["pk"] == "LEADDIA":      # 26/11: contadores do dia (ADD #c0 :um, ... SET #ttl = :ttl)
+            adds, _, sets = UpdateExpression[4:].partition(" SET ")
+            for par in adds.split(","):
+                a, b = par.split(); it[n[a]] = it.get(n[a], 0) + v[b]
+            a, b = [x.strip() for x in sets.split("=")]; it[n[a]] = v[b]; return {}
         if UpdateExpression.startswith("ADD"):
             it["n"] = it.get("n", 0) + 1; return {"Attributes": {"n": it["n"]}}
         for par in UpdateExpression[4:].split(","):
@@ -34,6 +39,7 @@ class Tabela:
             e = c.get_expression(); op, vs = e["operator"], e["values"]
             if op == "AND": return casa(vs[0], it) and casa(vs[1], it)
             a = it[0] if vs[0].name == "pk" else it[1]
+            if op == "BETWEEN": return vs[1] <= a <= vs[2]
             return a == vs[1] if op == "=" else a > vs[1]
         its = sorted((k_, v) for k_, v in s.d.items() if casa(KeyConditionExpression, k_))
         return {"Items": [dict(v) for k_, v in its][:Limit]}
@@ -603,5 +609,72 @@ except rdstation.RdErro as ex:
     msg = str(ex) + repr(ex.__cause__) + repr(ex.__context__ if not ex.__suppress_context__ else None)
 urllib.request.urlopen = u0
 ok(msg.startswith("http 401") and "chave-de-teste" not in msg and "api_key" not in msg, "erro do RD sem a chave nem a URL: %r" % msg)
+rdstation.CHAVE_SSM, rdstation._chave = rd0[0], rd0[1]
+# ---------- 26/11: lead novo ou já existente no RD (OAuth), contagem por dia e volta da autorização ----------
+rdstation.CHAVE_SSM, rdstation._chave["v"] = "/eterna/rdstation-chave", "chave-de-teste"
+rdstation._http = lambda dados: mandados.append(dados) or 200
+dia0, h0 = app.dia_hora()
+T.d = {k: v for k, v in T.d.items() if k[0] != "LEADDIA" and not k[0].startswith("LEAD#")}
+ssm = {"/a": '{"client_id": "cid", "client_secret": "seg"}', "/e": "estado-certo"}
+rdstation._ler = lambda nome: ssm.get(nome, "")
+class Ssm:
+    def put_parameter(s, Name, Value, **k): ssm[Name] = Value
+rdstation._ssm = lambda: Ssm()
+rdstation.APP_SSM, rdstation.REFRESH_SSM, rdstation.ESTADO_SSM = "/a", "/r", "/e"
+chamadas = []
+def api(metodo, caminho, dados=None, bearer=None):
+    chamadas.append((metodo, caminho, bearer))
+    if caminho.startswith("/auth/token?token_by=code"):
+        return (200, {"access_token": "at1", "expires_in": 86400, "refresh_token": "rt1"}) if dados["code"] == "bom" and dados["client_secret"] == "seg" else (401, {})
+    if caminho == "/auth/token":
+        return 200, {"access_token": "at2", "expires_in": 86400, "refresh_token": dados["refresh_token"]}
+    if caminho.startswith("/platform/contacts/email:"):
+        return (200, {"uuid": "x"}) if "antigo-rd" in caminho else (404, {})
+    return 500, {}
+rdstation._json = api
+cb = lambda q: app.handler({"requestContext": {"http": {"method": "GET"}}, "rawPath": "/rd/callback", "queryStringParameters": q}, ctx)
+r = cb({"code": "bom", "state": "errado"})
+ok(r["statusCode"] == 400 and "/r" not in ssm and "rt1" not in r["body"], "callback com state errado não troca o acesso")
+r = cb({"code": "bom", "state": "estado-certo"})
+ok(r["statusCode"] == 200 and ssm.get("/r") == "rt1" and ssm["/e"] == "usado" and "rt1" not in r["body"] and "at1" not in r["body"],
+   "callback certo guarda o refresh_token, queima o state e a página não mostra token")
+ok(cb({"code": "bom", "state": "estado-certo"})["statusCode"] == 400, "o mesmo link de autorização não vale duas vezes")
+app.lead("novo-rd@exemplo.com", "pt", "tok-rd", True, "v1", origem="selfie")
+app.lead("antigo-rd@exemplo.com", "en", "tok-rd", True, "v1", origem="selfie")
+app.lead("sem-aceite-rd@exemplo.com", "pt", "tok-rd", False, "v1", origem="selfie")
+app.rd_fila()
+lds = lambda: {v["email"]: v for k, v in T.d.items() if k[0].startswith("LEAD#")}
+L = lds()
+ok(L["novo-rd@exemplo.com"].get("rd_novo") is True and L["antigo-rd@exemplo.com"].get("rd_novo") is False and L["novo-rd@exemplo.com"].get("rd_primeiro"),
+   "consulta antes do envio: novo no RD = True, já existia = False")
+cons = [c for c in chamadas if c[1].startswith("/platform/contacts")]
+ok(len(cons) == 2 and all(c[2] == "at1" for c in cons), "uma consulta por lead, com o access_token da autorização")
+app.lead("novo-rd@exemplo.com", "pt", "tok-rd", True, "v1", ref="R9")
+app.rd_fila()
+ok(len([c for c in chamadas if c[1].startswith("/platform/contacts")]) == 2 and lds()["novo-rd@exemplo.com"]["rd_novo"] is True,
+   "segunda origem do mesmo lead não consulta de novo nem perde a marca")
+d = {k: v for k, v in T.d.get(("LEADDIA", dia0), {}).items() if k not in ("pk", "sk", "ttl")}
+ok(d.get("captados") == 3 and d.get("aceite") == 2 and d.get("rd") == 2 and d.get("rd_novo") == 1 and d.get("rd_existente") == 1
+   and d.get("o_selfie") == 2 and d.get("o_compra") == 1 and d.get("h_rd_%02d" % h0) == 2 and d.get("h_cap_%02d" % h0) == 3,
+   "contagem do dia: %r" % d)
+ok(not any("@" in str(v) for v in d.values()), "contagem sem e-mail")
+lp = lambda q: app.handler({"requestContext": {"http": {"method": "GET"}}, "rawPath": "/ponto/leads", "headers": {"x-eterna-ponto": "x"},
+                            "queryStringParameters": q}, ctx)
+ok(lp({"de": dia0})["statusCode"] == 401, "leads do dia pedem o segredo do ponto")
+po = app.ponto_ok
+app.ponto_ok = lambda s: True
+r = lp({"de": dia0, "ate": dia0})
+b = json.loads(r["body"])
+ok(r["statusCode"] == 200 and b["dias"][dia0]["rd_novo"] == 1 and b["oauth"] is True and "@" not in r["body"], "GET /ponto/leads devolve só números")
+ok(lp({"de": "2026-01-01", "ate": "2026-12-31"})["statusCode"] == 400, "período longo demais é recusado")
+app.ponto_ok = po
+rdstation._oauth["tok"] = ("at1", 0)
+ok(rdstation._token() == "at2", "access_token vencido é renovado pelo refresh_token")
+T.scan = lambda **k: {"Items": [dict(v) for kk, v in T.d.items() if kk[0].startswith("LEAD#")]}
+T.d = {k: v for k, v in T.d.items() if k[0] != "LEADDIA"}
+rr = app.handler({"leads_recalcular": True}, ctx)
+d2 = T.d.get(("LEADDIA", dia0), {})
+ok(rr["dias"] == 1 and d2.get("captados") == 3 and d2.get("rd") == 2 and d2.get("rd_novo") == 1 and d2.get("rd_existente") == 1, "recálculo refaz o dia: %r" % rr)
+rdstation.APP_SSM = rdstation.REFRESH_SSM = rdstation.ESTADO_SSM = ""
 rdstation.CHAVE_SSM, rdstation._chave = rd0[0], rd0[1]
 print("\ntudo certo")

@@ -12,7 +12,7 @@ const {chromium}=require('playwright');const entrarTeste=require('./_entrar');
   // 1. o controle aparece logo depois de Sombras, de 0 a 100 em passos de 10, começando em 0
   const ctl=await p.evaluate(()=>{const ks=[...document.querySelectorAll('[data-act="aj-range"]')].map(r=>r.dataset.k);const r=document.querySelector('[data-act="aj-range"][data-k="r"]');
     return {ks,min:r&&r.min,max:r&&r.max,step:r&&r.step,val:r&&r.value,rot:r&&r.getAttribute('aria-label'),lab:(document.querySelector('[data-ajv="r"]')||{}).textContent};});
-  ok(ctl.ks.join('')==='bhrcstz','ordem dos controles: '+J(ctl.ks));ok(ctl.min==='0'&&ctl.max==='100'&&ctl.step==='10'&&ctl.val==='0','faixa do controle: '+J(ctl));ok(ctl.rot==='Realces'&&ctl.lab==='0%','rótulo e valor: '+J(ctl));
+  ok(ctl.ks.join('')==='bhrcstz','ordem dos controles: '+J(ctl.ks));ok(ctl.min==='0'&&ctl.max==='100'&&ctl.step==='10'&&ctl.val==='0','faixa do controle: '+J(ctl));ok(ctl.rot==='Altas luzes'&&ctl.lab==='0%','rótulo e valor: '+J(ctl));
   // 2. mexer grava r, marca "à mão" e o filtro leva url(#hlNN) antes do brightness
   await p.click('[data-act="aj-step"][data-k="r"][data-dv="10"]');await p.click('[data-act="aj-step"][data-k="r"][data-dv="10"]');await p.waitForTimeout(100);
   let r=await p.evaluate(id=>{const T=ETERNA.ajT;const e=T.SIM.edits[id];const pv=document.getElementById('aj-pv');return {e:{...e},tag:T.ajTag(id),ed:T.isEdited(id),st:pv.getAttribute('style'),comp:getComputedStyle(pv,'::before').filter,lab:document.querySelector('[data-ajv="r"]').textContent,guardado:(JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}').edits||{})[id]};},id);
@@ -57,9 +57,9 @@ const {chromium}=require('playwright');const entrarTeste=require('./_entrar');
   ok(cinza(px.r50)&&cinza(px.r100),'cinza continua cinza (mesma curva nos três canais)');const pele=px.r100.v[6];ok(pele[0]>pele[1]&&pele[1]>pele[2]&&pele[0]<240&&pele[2]>=100,'pele clara escurece e segue com cor de pele: '+J(pele));
   // 7. nome nas línguas
   const nomes=await p.evaluate(()=>{const S=ETERNA.ajT.state;const u0=S.user.idioma,l0=S.langEq;const o={};for(const l of ['pt','en','es','fr']){S.user.idioma=l;S.langEq=l;ETERNA.render();o[l]=[...document.querySelectorAll('.ajrow .eyebrow')].map(e=>e.textContent)[2];}S.user.idioma=u0;S.langEq=l0;ETERNA.render();return o;});
-  ok(J(nomes)===J({pt:'Realces',en:'Highlights',es:'Altas luces',fr:'Hautes lumières'}),'nome nas línguas da equipe: '+J(nomes));
+  ok(J(nomes)===J({pt:'Altas luzes',en:'Highlights',es:'Altas luces',fr:'Hautes lumières'}),'nome nas línguas da equipe: '+J(nomes));
   // o alemão não é idioma de tela da equipe hoje; o texto fica na tabela, como o de Sombras
-  ok(require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8').includes('aj_realces:["Realces","Highlights","Altas luces","Hautes lumières","Lichter"]'),'texto nas 5 línguas na tabela');
+  ok(require('fs').readFileSync(require('path').join(__dirname,'..','index.html'),'utf8').includes('aj_realces:["Altas luzes","Highlights","Altas luces","Hautes lumières","Lichter"]'),'texto nas 5 línguas na tabela');
   // 9. campo do ajuste que não é número vale o padrão: nada do texto chega ao estilo nem ao HTML do editor; ajuste válido sai igual
   const nn=await p.evaluate(id=>{const T=ETERNA.ajT;const o={};const mal='zzq"><i id=inj>';
     // a conta de antes, copiada aqui, para comparar a string do ajuste válido

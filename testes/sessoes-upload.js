@@ -27,11 +27,11 @@ async function entrar(pg,email){await pg.goto(U);await pg.waitForTimeout(350);if
 const FEED={gen:'b90',rev:10,rostos:true,sessoes:[],semSessoes:false};
 async function agente(ctx){
   await ctx.route(ORIG+'/status',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,agent:'eterna-agente',version:3,boot:'b90',card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:FEED.rostos},
-    sessoes:FEED.semSessoes?undefined:{v:2,pausa:60,rostos:FEED.rostos,rev:FEED.rev,gen:FEED.gen,hoje:FEED.sessoes.length,abertas:1}})}));
+    sessoes:FEED.semSessoes?undefined:{v:2,pausa:FEED.pausa||180,rostos:FEED.rostos,rev:FEED.rev,gen:FEED.gen,hoje:FEED.sessoes.length,abertas:1}})}));
   await ctx.route(ORIG+'/events*',r=>r.fulfill({status:200,contentType:'application/json',body:'{"events":[],"next":0,"total":0}'}));
   await ctx.route(ORIG+'/biblioteca',r=>r.fulfill({status:200,contentType:'application/json',body:'{"fotos":[]}'}));
   await ctx.route(ORIG+'/sessoes*',r=>{const q=new URL(r.request().url()).searchParams;const desde=+q.get('desde')||0;const ont=q.get('ontem')==='1';if(ont)FEED.ontemReqs=(FEED.ontemReqs||0)+1; // como o agente: ontem só com ?ontem=1
-    r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,gen:FEED.gen,rev:FEED.rev,pausa:60,rostos:FEED.rostos,completo:!desde,sessoes:FEED.sessoes.filter(x=>x.rev>desde&&(ont||x.dia===hoje))})});});
+    r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({ok:true,gen:FEED.gen,rev:FEED.rev,pausa:FEED.pausa||180,rostos:FEED.rostos,completo:!desde,sessoes:FEED.sessoes.filter(x=>x.rev>desde&&(ont||x.dia===hoje))})});});
   await ctx.route(ORIG+'/thumb/**',r=>{const id=r.request().url().split('/').pop();r.fulfill({status:200,contentType:'image/jpeg',body:cores[parseInt(id.slice(-3),16)%cores.length]});});
   await ctx.route(ORIG+'/file/**',r=>r.fulfill({status:200,contentType:'image/jpeg',body:cores[0]}));}
 const espera=async(pg,fn,ms)=>{const t0=Date.now();while(Date.now()-t0<(ms||8000)){if(await pg.evaluate(fn))return true;await pg.waitForTimeout(200);}return false;};
@@ -52,8 +52,12 @@ try{
   ok(blocos.filter(x=>x.on).map(x=>x.card).join()==='LPK7Q2M9X','21: só a aberta tem a classe on: '+JSON.stringify(blocos.map(x=>[x.card,x.on])));
   const hh=t=>new Date(t*1000).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   [[0,['LPK7Q2M9X','Carlos','Terminal Campo',hh(S_ABERTA.cap0)+'–'+hh(S_ABERTA.cap1),'9 fotos','rostos novos','aberta · recebendo']],
-   [1,['LPH3D8W2R','Carlos','Terminal Campo','5 fotos','pausa de 1 min','fechando']],
-   [2,['LPN4T6Y8B','Samuel','Foto Campo 4','9 fotos','primeira do dia','atrasada','fechada · 1 min sem foto','Abrir sessão']]].forEach(([i,ss])=>ss.forEach(t=>ok(blocos[i]&&blocos[i].h.includes(t),`21: falta "${t}" no cabeçalho ${i}: ${blocos[i]&&blocos[i].h}`)));
+   [1,['LPH3D8W2R','Carlos','Terminal Campo','5 fotos','pausa de 3 min','fechando']],
+   [2,['LPN4T6Y8B','Samuel','Foto Campo 4','9 fotos','primeira do dia','atrasada','fechada · 3 min sem foto','Abrir sessão']]].forEach(([i,ss])=>ss.forEach(t=>ok(blocos[i]&&blocos[i].h.includes(t),`21: falta "${t}" no cabeçalho ${i}: ${blocos[i]&&blocos[i].h}`)));
+  // 26/11: a pausa passou a 3 min e os textos saem do valor que o servidor informa (nunca de número escrito no texto)
+  {const eb=await pg.evaluate(()=>(document.querySelector('#up-sessoes .eyebrow')||{}).textContent||'');ok(eb==='Montadas pelo servidor do ponto · pausa de 3 min e rostos novos','26/11: cabeçalho com a pausa de 3 min: '+eb);
+   const t=await pg.evaluate(()=>[ETERNA.sessPausaTxt(60),ETERNA.sessPausaTxt(180),ETERNA.sessPausaTxt(45),ETERNA.sessPausaTxt(180,'Min.'),ETERNA.SESSAO_PAUSA_S,ETERNA.srvComo({fechada_por:'pausa_clique'},180),ETERNA.srvComo({fechada_por:'pausa'},60)]);
+   ok(t.join('|')==='1 min|3 min|45 s|3 Min.|180|pausa de 3 min entre cliques (servidor)|pausa de 1 min sem foto nova (servidor)','26/11: textos da pausa saem do valor: '+t.join('|'));}
   ok(blocos[0]&&blocos[0].th===9&&blocos[0].pend===2,'21: pendentes com "lendo rostos": '+JSON.stringify(blocos[0]));
   ok(await pg.evaluate(()=>[...document.querySelectorAll('.up-sess .ph[data-pend="1"] .tag')].every(t=>t.textContent==='lendo rostos')),'21: tag lendo rostos');
   ok(!(await pg.$('#up-sessoes .up-aviso')),'aviso de rostos desligados só sem rostos');
@@ -99,7 +103,7 @@ try{
   ok(await espera(pg,()=>ETERNA.SIM.sessions.LPN4T6Y8B.photos.length===7),'revisão 5: LGPD tira as fotos da sessão do SIM sem venda: '+await pg.evaluate(()=>ETERNA.SIM.sessions.LPN4T6Y8B.photos.length));
   // aviso de rostos desligados
   FEED.rostos=false;FEED.rev=16;S_ABERTA.rev=16;
-  ok(await espera(pg,()=>/Rostos desligados neste computador: as sessões estão sendo separadas só por tempo \(1 minuto\)\./.test((document.querySelector('#up-sessoes .up-aviso')||{}).textContent||'')),'aviso de rostos desligados');
+  ok(await espera(pg,()=>/Rostos desligados neste computador: as sessões estão sendo separadas só por tempo \(3 min\)\./.test((document.querySelector('#up-sessoes .up-aviso')||{}).textContent||'')),'aviso de rostos desligados');
   FEED.rostos=true;
   // 15/11: sessão fechada sem fotógrafo que o servidor corrige (dono_corrigido) passa ao nome dele na cópia do aparelho e na Qualidade
   {const S_SEM=sessao({card:'LPD2N5AAA',fotografo:null,fonte:'câmera ···6666',n:3,rev:17}),S_OUT=sessao({card:'LPD2N5BBB',fotografo:null,fonte:'câmera ···7777',n:2,rev:17});
