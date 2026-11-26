@@ -619,6 +619,10 @@ No **Posto de venda**, ao abrir o pedido, aparece a lista fixa de itens com pre�
 
 Na confirmação ficam registrados quem deu cada cortesia, o motivo, o texto, a venda e a hora (**Galerias online › Cortesias**). As fotos cortesia e a do porta-retrato saem primeiro na impressão.
 
+### Cliente que já comprou e quer mais (25/11)
+
+O cliente faz a selfie de novo no Checkout. Se ele já comprou, aparece **Você já comprou fotos nesta visita** com dois botões: **Comprar mais fotos** começa uma venda nova, do zero, com todas as fotos dele (compradas ou não), e segue como qualquer venda; **Ver o QR das fotos compradas** mostra de novo o QR da compra anterior.
+
 ### Fila de impressão (25/11)
 
 Abaixo do pedido, **Imprimir** mostra uma linha por venda: venda, hora, pacote e valor, quantas impressões, situação (**Aguardando**, **Impressa** ou **Só digital**) e um botão (**Reimprimir** ou **Ver fotos e imprimir**). As fotos só abrem na venda que está aguardando ou quando se toca no botão. A coluna da esquerda acompanha a rolagem.

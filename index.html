@@ -1589,7 +1589,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.87.0 · 25/11 23:20"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.87.1 · 25/11 23:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -3163,7 +3163,7 @@ const soCards=card=>{const so=state.kiosk&&state.kiosk.so;return so&&so.card===c
 function sesHora(c){const sim=SIM.sessions[c]||{};const t=sim.openedAt?Date.parse(sim.openedAt):NaN;if(!isNaN(t))return t;const s=sessionObj(c);const m=/^(\d\d?):(\d\d)/.exec((s&&s.time)||sim.time||'');return m?new Date().setHours(+m[1],+m[2],0,0):0;}
 // fotos do cliente no Checkout: sessão por sessão, em ordem de hora; cada foto sabe de que sessão veio (ses)
 function lojaFotos(card,soltas){const vis=new Set();const so=state.kiosk&&state.kiosk.so;const sel=so&&so.card===card&&so.cards; // selfie: fora o que já foi comprado (C3)
-  const vend=sel?vendidasTodas():null;return soCards(card).filter(c=>!sel||!lojaJaPaga(c)).map(c=>({c,s:sessionObj(c)})).filter(x=>x.s).sort((a,b)=>sesHora(a.c)-sesHora(b.c))
+  const vend=sel&&!(SIM.sessions[card]||{}).pai?vendidasTodas():null;return soCards(card).filter(c=>!sel||!lojaJaPaga(c)).map(c=>({c,s:sessionObj(c)})).filter(x=>x.s).sort((a,b)=>sesHora(a.c)-sesHora(b.c))
   .flatMap(({c,s})=>[...(soltas?((SIM.sessions[c]||{}).ia||[]).filter(id=>soltas.has(id)).map(id=>({id})):[]),...s.photos].filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]&&lojaDele(card,p.id)&&!(vend&&vend.has(p.id))&&!vis.has(p.id)&&vis.add(p.id)).map(p=>({...p,ses:c})));}
 // rótulo discreto de cada bloco quando as fotos vêm de mais de uma sessão: ponto · hora
 function lojaBloco(c){const s=sessionObj(c)||{};const sim=SIM.sessions[c]||{};const pt=(DATA.points.find(p=>p.id===sim.point)||{}).name||s.pdv||sim.pdv||'';const h=sim.openedAt?new Date(sim.openedAt).toLocaleTimeString(LOCALES[lang()]||'pt-BR',{hour:'2-digit',minute:'2-digit'}):(s.time||'');return [pt,h].filter(Boolean).join(' · ');}
@@ -3354,9 +3354,9 @@ function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk
 const lojaJaPaga=card=>(SIM.sessions[card]||{}).status==='paga';
 // tempos da venda para o BI: cada marca vale uma vez por sessão e vai no evento "criar"
 function ljTempo(card,nome){const s=simOf(card);s.tempos=s.tempos||{};if(!s.tempos[nome]){s.tempos[nome]=now().toISOString();saveSim();}}
-// comprar mais: fotos do cliente que ninguém comprou ainda. Achado pela selfie, só as dele (so.ids); nunca abre foto de outra família.
-function lojaMaisIds(){const k=state.kiosk;if(!k||!k.code)return [];const base=(SIM.sessions[k.code]||{}).pai||k.code;const b=sessionObj(base);const so=k.so&&k.so.card===k.code?k.so.ids:null;const vend=vendidasTodas();
-  return (so||(b?b.photos.map(p=>p.id):[])).filter(id=>hasImg(id)&&!(SIM.discarded||{})[id]&&!vend.has(id));}
+// comprar mais: todas as fotos do cliente (25/11: compradas ou não, é uma venda nova). Achado pela selfie, só as dele (so.ids); nunca abre foto de outra família.
+function lojaMaisIds(){const k=state.kiosk;if(!k||!k.code)return [];const base=(SIM.sessions[k.code]||{}).pai||k.code;const b=sessionObj(base);const so=k.so&&k.so.card===k.code?k.so.ids:null;
+  return (so||(b?b.photos.map(p=>p.id):[])).filter(id=>hasImg(id)&&!(SIM.discarded||{})[id]);} // 25/11 (Ronaldo): venda nova do zero, compradas ou não
 // venda complementar em sessão-filha (opção B do plano de 29/10): venda, impressão e QR próprios, sem mexer na venda já paga
 function lojaMais(){const k=state.kiosk;const ids=lojaMaisIds();if(!ids.length){toast(T('ljMaisNada'));render();return;}
   const base=(SIM.sessions[k.code]||{}).pai||k.code;const o=SIM.sessions[base]||{};const filhas=Object.keys(SIM.sessions).filter(c=>SIM.sessions[c].pai===base);
@@ -3365,6 +3365,8 @@ function lojaMais(){const k=state.kiosk;const ids=lojaMaisIds();if(!ids.length){
   if(!saveSim()){delete SIM.sessions[card];toast(T('ljSaveFail'));render();return;}
   lojaTimerOff();Object.assign(k,{code:card,so:{card,cards:[card],ids},tv:null,galTok:null,paid:null,doneAt:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
   ljTempo(card,'inicio');render();lojaPreload(card);}
+// a galeria da compra já paga (para mostrar o QR de novo)
+function ljQrPago(k){const pc=lojaJaPaga(k.code)?k.code:(soCards(k.code).find(c=>lojaJaPaga(c))||k.code);const sim=SIM.sessions[pc]||{};const tok=sim.galVenda||galDaSessao(pc);const gm=tok&&SIM.galerias&&SIM.galerias[tok];return gm?{token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false}:null;}
 const ljMaisBtn=()=>lojaMaisIds().length?`<button class="lj-cta lj-restart" data-act="loja-mais">${ICO.spark} ${T('ljMais')}</button>`:'';
 // tela final: com paid.wait (cartão, PIX ou dinheiro aguardando) não há QR nem contagem; a contagem só começa depois da confirmação (D5)
 function lojaFim(paid){const k=state.kiosk;lojaTimerOff();k.step='done';k.paid=paid;k.ver=null;k.prontoDesde=k.prontoEm=Date.now();k.doneAt=paid&&paid.wait?null:Date.now();render();if(!(paid&&paid.wait))k.timer=setInterval(lojaTick,250);}
@@ -4365,6 +4367,9 @@ gq_payCancel:['O pagamento não foi concluído. Suas fotos continuam aqui para c
  gq_waitCash:['Seu pagamento em dinheiro está esperando o caixa','Your cash payment is waiting at the counter','Tu pago en efectivo está esperando en la caja','Votre paiement en espèces attend la caisse','Deine Barzahlung wartet an der Kasse'],
  gq_waitCashD:['Assim que a equipe confirmar, suas fotos aparecem aqui.','As soon as the team confirms it, your photos will appear here.','En cuanto el equipo lo confirme, tus fotos aparecerán aquí.','Dès que l’équipe le confirme, vos photos apparaissent ici.','Sobald das Team bestätigt, erscheinen deine Fotos hier.'],
  ljMais:['Comprar mais fotos','Buy more photos','Comprar más fotos','Acheter d’autres photos','Mehr Fotos kaufen'],
+ ljJaComprouH:['Você já comprou fotos nesta visita','You already bought photos on this visit','Ya compraste fotos en esta visita','Vous avez déjà acheté des photos lors de cette visite','Du hast bei diesem Besuch schon Fotos gekauft'],
+ ljJaComprouSub:['Quer mais? Comprar mais fotos começa uma venda nova, com todas as suas fotos.','Want more? Buy more photos starts a new sale with all your photos.','¿Quieres más? Comprar más fotos inicia una venta nueva con todas tus fotos.','Envie de plus ? Acheter d’autres photos lance une nouvelle vente avec toutes vos photos.','Mehr gewünscht? Mehr Fotos kaufen startet einen neuen Kauf mit all deinen Fotos.'],
+ ljVerQR:['Ver o QR das fotos compradas','Show the QR of the photos I bought','Ver el QR de las fotos compradas','Voir le QR des photos achetées','QR der gekauften Fotos zeigen'],
  ljMaisNada:['Você já comprou todas as suas fotos.','You have already bought all your photos.','Ya compraste todas tus fotos.','Vous avez déjà acheté toutes vos photos.','Du hast schon alle deine Fotos gekauft.'],
  ljAlreadyPaid:['Estas fotos já foram compradas. Fale com a equipe para comprar mais.','These photos have already been purchased. Talk to the team to buy more.','Estas fotos ya fueron compradas. Habla con el equipo para comprar más.','Ces photos ont déjà été achetées. Parlez à l’équipe pour en acheter d’autres.','Diese Fotos wurden schon gekauft. Sprich mit dem Team, wenn du mehr kaufen möchtest.'],
  ljSaveFail:['Não conseguimos registrar o pedido. Fale com a equipe no balcão.','We couldn’t register your order. Please talk to the team at the counter.','No pudimos registrar tu pedido. Habla con el equipo en el mostrador.','Nous n’avons pas pu enregistrer votre commande. Parlez à l’équipe au comptoir.','Wir konnten deine Bestellung nicht speichern. Bitte sprich mit dem Team an der Theke.'],
@@ -4909,9 +4914,8 @@ function vQuiosque(){
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v96: sem etapa de pacote e pagamento no Checkout
   if(k.prep&&k.prep===k.code&&k.step==='review')return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2">${T('foundYou')}</h1><p class="lj-sub" aria-live="polite">${T('ljSeparando')}</p></div></div>`;
   const pagoTudo=lojaJaPaga(k.code)||!!(k.so&&k.so.cards&&!lojaFotos(k.code).length); // v91 (revisão C3): achado pela selfie e tudo já comprado
-  if((k.step==='review'||k.step==='cart')&&pagoTudo){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (com o botão de comprar mais)
-    const pc=lojaJaPaga(k.code)?k.code:(soCards(k.code).find(c=>lojaJaPaga(c))||k.code);const sim=SIM.sessions[pc]||{};const tok=sim.galVenda||galDaSessao(pc);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){setTimeout(()=>{if(state.kiosk===k&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
-  if((k.step==='review'||k.step==='cart')&&pagoTudo)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljMaisBtn()}${ljVoltar('loja-new','')}</div></div>`;
+  // 25/11 (Ronaldo): quem já comprou e volta escolhe: comprar mais (venda nova, do zero, com todas as fotos dele) ou ver o QR da compra
+  if((k.step==='review'||k.step==='cart')&&pagoTudo)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljJaComprouH')}</h1><p class="lj-sub">${T('ljJaComprouSub')}</p>${ljMaisBtn()}${ljQrPago(k)?`<button class="lj-ghost" data-act="loja-qr-pago">${ICO.phone} ${T('ljVerQR')}</button>`:''}${ljVoltar('loja-new','')}</div></div>`;
   if(k.step==='review'){const n=items.length;ljAncora(k,items); // galeria em grade: todas as fotos inteiras (sem corte), um toque marca ou desmarca
     const full=st0=>String(st0||'').replace('--bs:cover','--bs:contain');const spr=st0=>/sprites\//.test(String(st0||''));
     const img=(q,s2,cls,lb)=>{const rot=lb?`<span class="lj-lbsrc">${esc(lb)}</span>`:'';
@@ -14386,6 +14390,7 @@ document.addEventListener('click',e=>{
         const n=pendTiraLeva(c,d.id);log(`Visita: ${c} separada (${postoNome()})`);if(n>=0)toast(n?'Leva separada: as fotos dela saíram do pedido':'Leva separada da família');render();});break;}
     case 'pend-meio':state.pend.passo=null;pendEscolher(d.id,{meio:d.m});break;
     case 'loja-mais':lojaCliente();lojaMais();break;
+    case 'loja-qr-pago':{const q=ljQrPago(state.kiosk);if(q)lojaFim(q);break;}
     case 'loja-exit':case 'loja-new':lojaSaiu();lojaCliente();lojaReset();render();break; // R3: saindo da tela Pronto ou do valor, o Posto vê "o cliente saiu"
     case 'loja-list':state.kiosk.list=!state.kiosk.list;render();break;
     case 'loja-sair':lojaSair();break;
