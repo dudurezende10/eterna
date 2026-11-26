@@ -18,7 +18,7 @@ async function abrirPerm(pg,email){await pg.evaluate(()=>{ETERNA.state.perm.tab=
 const ck=(pg,m,op)=>pg.click(`.perm-tbl input[data-act="perm-op"][data-m="${m}"][data-op="${op}"]`);
 const draft=pg=>pg.evaluate(()=>JSON.parse(JSON.stringify(ETERNA.state.perm.draft)));
 // v94-ux (parte H): grupos Venda e Sistema (Repositório, Identidade, Usuários, Permissões e o antigo Laboratório)
-const MENUS={Venda:['posto','ativ-venda','ativ-entrega'],Dashboard:['painel','estatisticas','bandeiras','estoque','impfila','vendas','vendas-lista','ativ-resumo','galerias','calendario'],Curadoria:['revisao','treino','fotografos','alertas','lixeira'],'Fotógrafo':['diario','importar','fotofila'],'Configurações':['catalogo','ajustes','ia-auto'],'Sistema':['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']}; // parte I: Fundos de IA (técnico) no Sistema; 23/11: Fotógrafos na Curadoria
+const MENUS={Venda:['posto','ativ-venda','ativ-entrega'],Dashboard:['painel','estatisticas','bandeiras','estoque','impfila','vendas','vendas-lista','ativ-resumo','galerias','calendario'],Curadoria:['revisao','treino','fotografos','alertas','lixeira'],'Fotógrafo':['diario','importar','procurar','fotofila'],'Configurações':['catalogo','ajustes','ia-auto'],'Sistema':['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']}; // parte I: Fundos de IA (técnico) no Sistema; 23/11: Fotógrafos na Curadoria
 (async()=>{const b=await chromium.launch();
 try{
   // ---------- 1, 2, 3, 4, 19 e menus: admin ----------
@@ -106,7 +106,7 @@ try{
     await ctx.close();}
   // ---------- 6, 17 e o check-in da câmera no Upload automático: Carlos com a semente limpa ----------
   {const {ctx,pg}=await nova(b);await entrar(pg,'carlos@eterna.photo');
-    const v6=await nav(pg);ok(v6.length&&v6.every(v=>['diario','importar','fotofila','escala'].includes(v)),'6: menu do fotógrafo '+JSON.stringify(v6));
+    const v6=await nav(pg);ok(v6.length&&v6.every(v=>['diario','importar','procurar','fotofila','escala'].includes(v)),'6: menu do fotógrafo '+JSON.stringify(v6));
     ok(!(await pg.$$eval('#nav .grp',e=>e.map(x=>x.textContent.trim()))).includes('Dashboard'),'6: fotógrafo não vê o Dashboard (nem Fotógrafos)');
     ok(await pg.evaluate(()=>ETERNA.state.view)==='importar','6: depois do login o fotógrafo cai no Upload automático: '+await pg.evaluate(()=>ETERNA.state.view));
     ok(!(await pg.$('.rail [data-act="loja-abrir"]')),'6: fotógrafo não vê Abrir Checkout');
