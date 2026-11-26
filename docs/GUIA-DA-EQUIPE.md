@@ -547,7 +547,7 @@ Na v99.3 (11/11) voltou o catálogo de antes da v98: a lista da Imply ficou de l
 
 | Produto | O que leva | Preço |
 | --- | --- | --- |
-| Pacote Maracanã Mais | todas as fotos, só digitais | R$ 250 |
+| Pacote Maracanã Mais | todas as fotos digitais e 1 foto impressa (desde 25/11) | R$ 250 |
 | Pacote Tribuna de Honra | 12 fotos, digitais e impressas | R$ 220 |
 | Pacote Maracanã | 9 fotos, digitais e impressas | R$ 190 |
 | Pacote Gramado | 6 fotos, digitais e impressas | R$ 150 |
@@ -898,7 +898,7 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 - **Venda manual (quando o Checkout está fora)**: link no fim do Posto. Abre um bloco no alto da própria tela, com a câmera do balcão, o código da sessão, as fotos, o pacote, o Fundo de IA e o pagamento. **Fechar venda manual** fecha o bloco. Com uma sessão aberta na Venda manual, os botões Recibo ficam apagados até você fechar.
 - **Cliente pediu: apagar as fotos** (LGPD): fica na Venda manual, depois de escolher a sessão, para quem pode alterar as Galerias online. Pede confirmação e não dá para desfazer. Desde a v97, as fotos compradas e as cortesias ficam com o cliente e a galeria paga continua aberta (passo a passo em **Novidades da v97**).
 - As telas **Fila do balcão** e **Caixa** separadas saíram: tudo é feito no Posto de venda.
-- **Aviso da Edição Maracanã** (foto com fundo de IA): a montagem ainda não vai para a galeria do QR, então o cliente só recebe se ela for impressa. Quando o pedido tem montagem, os pacotes só digitais (Zona Mista e Maracanã Mais) aparecem com o selo "sem a Edição Maracanã" e, se você escolher um deles, um aviso amarelo aparece abaixo dos pacotes: ofereça um pacote com impressão. O aviso também aparece quando as montagens não cabem nas impressões do pacote. Ele não trava a venda. Na Venda manual, o aviso aparece sempre que um Fundo de IA é escolhido.
+- **Aviso da Edição Maracanã** (foto com fundo de IA): a montagem ainda não vai para a galeria do QR, então o cliente só recebe se ela for impressa. Quando o pedido tem montagem, os pacotes só digitais (Zona Mista) aparecem com o selo "sem a Edição Maracanã" e, se você escolher um deles, um aviso amarelo aparece abaixo dos pacotes: ofereça um pacote com impressão. O aviso também aparece quando as montagens não cabem nas impressões do pacote (caso comum no Maracanã Mais, que imprime 1 foto: a montagem só sai se for a favorita ou se você a marcar na fila de impressão). Ele não trava a venda. Na Venda manual, o aviso aparece sempre que um Fundo de IA é escolhido.
 
 ### Confirmar na maquininha
 
@@ -1182,7 +1182,7 @@ Resumo do que mudou. Os passos estão nas partes indicadas.
 - O Checkout abre na primeira montagem pronta. Se ela ainda estiver sendo preparada e o cliente não tocar em nada, depois de 8 segundos a tela vai sozinha para a próxima foto pronta.
 - No Posto de venda, as montagens do pedido e a tela do cliente mostram a mesma faixa Edição Maracanã. A montagem continua contando dentro do pacote, igual a qualquer outra foto.
 - A faixa é só da tela: a foto impressa e a do download saem sem ela.
-- Atenção: hoje a montagem não vai para a galeria online. No pacote só digital (Zona Mista, Maracanã Mais) a montagem escolhida não chega ao cliente. Nos pacotes com impressão, a montagem sai impressa. Por isso o Posto avisa o caixa.
+- Atenção: hoje a montagem não vai para a galeria online. No pacote só digital (Zona Mista) a montagem escolhida não chega ao cliente. No Maracanã Mais (1 impressa) ela só chega se for a foto impressa. Nos pacotes com impressão, a montagem sai impressa. Por isso o Posto avisa o caixa.
 - Para o Admin: em Estatísticas, o quadro "Edição Maracanã: montagens vistas × compradas" mostra por dia quantas montagens os clientes viram no Checkout e quantas compraram.
 
 ### Fundo novo: Telão do Maracanã

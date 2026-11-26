@@ -1259,7 +1259,7 @@ Na sessão (`SIM.sessions[card]`): enquanto espera, `status:'aguardando'` e `din
 
 | id | Produto | Preço | Digitais | Impressas 10×15 |
 | --- | --- | --- | --- | --- |
-| `mais` | Pacote Maracanã Mais | R$ 250 | todas | 0 |
+| `mais` | Pacote Maracanã Mais | R$ 250 | todas | 1 (desde 25/11; venda anterior guarda o `prints` gravado; "todas" na galeria online = 0) |
 | `tribuna` | Pacote Tribuna de Honra (novo) | R$ 220 | 12 | 12 |
 | `maracana` | Pacote Maracanã | R$ 190 | 9 | 9 |
 | `gramado` | Pacote Gramado (novo) | R$ 150 | 6 | 6 |
