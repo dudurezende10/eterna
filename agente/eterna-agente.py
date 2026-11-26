@@ -13085,7 +13085,7 @@ SELFIE_LOG_DIR = os.environ.get("ETERNA_SELFIE_LOG") or os.path.join(os.path.dir
 _selfie_log_aviso = [False]
 
 
-def selfie_diagnostico(origem, r, t0, res, posto=None):
+def selfie_diagnostico(origem, r, t0, res, posto=None, vendedor=None):
     try:
         fotos = r.get("fotos") or []
         agora = time.time()
@@ -13095,7 +13095,8 @@ def selfie_diagnostico(origem, r, t0, res, posto=None):
                  "janela_min": r.get("janela_min"), "fila": r.get("fila"), "erro": r.get("error"),
                  "top": [{"id": f.get("id"), "sim": f.get("sim")} for f in fotos[:10]],
                  # 25/11: posto e todas as fotos devolvidas (id e semelhança, até 400), para conferir cada reclamação de selfie
-                 "posto": posto, "grupo": bool(r.get("grupo")), "ids": [[f.get("id"), f.get("sim")] for f in fotos[:400]],
+                 "posto": posto, "vendedor": vendedor,   # 25/11 (Ronaldo): quem estava logado no aparelho, para ver por vendedor
+                 "grupo": bool(r.get("grupo")), "ids": [[f.get("id"), f.get("sim")] for f in fotos[:400]],
                  # 25/11: fotos vizinhas devolvidas junto (só a quantidade e o teto que cortou; nunca id de foto nem de sessão)
                  "viz_n": (r.get("viz") or {}).get("n"), "viz_corte": (r.get("viz") or {}).get("corte")}
         os.makedirs(SELFIE_LOG_DIR, exist_ok=True)
@@ -13113,12 +13114,12 @@ def selfie_diagnostico(origem, r, t0, res, posto=None):
             print("  selfie: diagnóstico não gravou em %s: %s" % (SELFIE_LOG_DIR, str(ex)[:120]))
 
 
-def selfie_registra(origem, r, t0, posto=None):
+def selfie_registra(origem, r, t0, posto=None, vendedor=None):
     """Conta uma selfie para o BI. Falha aqui nunca atrapalha a busca do cliente."""
     try:
         r = r or {}
         res = "erro" if r.get("error") else "varias_pessoas" if r.get("varias") else "sem_rosto" if not r.get("rosto") else "achou" if r.get("fotos") else "nao_achou"
-        selfie_diagnostico(origem, r, t0, res, posto)
+        selfie_diagnostico(origem, r, t0, res, posto, vendedor)
         agora = time.time()
         with ev_lock:
             db = vendas_db()
@@ -24539,7 +24540,7 @@ class H(BaseHTTPRequestHandler):
                         r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None, grupo=body.get("grupo") is True)
                     except Exception as ex:
                         _viz_tl.vets = None
-                        selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0, pnome)
+                        selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0, pnome, (self.sessao() or {}).get("usuario"))
                         raise
                     vets, _viz_tl.vets = _viz_tl.vets, None
                     if isinstance(r, dict) and body.get("grupo") is True:
@@ -24554,7 +24555,7 @@ class H(BaseHTTPRequestHandler):
                             r["viz"] = {"ligada": True, "n": len(vz), "ms": int((time.perf_counter() - tv) * 1000), "corte": vi.get("corte")}
                     except Exception:
                         r.pop("vizinhas", None); r.pop("viz", None)
-                    selfie_registra("qr" if todo else "checkout", r, t0, pnome)
+                    selfie_registra("qr" if todo else "checkout", r, t0, pnome, (self.sessao() or {}).get("usuario"))
                     return self.js(r)
                 return self.js(medir(body.get("sessoes") or {}))
             except Exception as ex:
