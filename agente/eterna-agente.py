@@ -13236,14 +13236,14 @@ def metricas_loop():
 
 
 # 25/11 (Ronaldo): a Roverpix saiu e o Eterna abastece a aba Fotografia do painel de gestão (maraca-acessos) e a API de BI do
-# Caio. A cada 5 min o servidor manda o resumo de hoje (e o de ontem até as 4h) para o servidor de parceiros na VM, que guarda e
-# repassa ao painel e ao BI. Só números e nomes de fotógrafo e vendedor; nada de cliente. O envio roda numa thread à parte, com
+# Caio. A cada 10 min o servidor manda o resumo de hoje (e o de ontem até as 4h) para o servidor de parceiros na VM, que guarda e
+# repassa ao painel e ao BI. Lê o arquivo do dia que as métricas já gravam: não recalcula nem consulta o banco. Só números e nomes de fotógrafo e vendedor; nada de cliente. O envio roda numa thread à parte, com
 # tempo limite, e falha só fica registrada: nunca atrapalha venda, foto ou impressão.
 # Chave: gerada aqui na primeira vez (~/Eterna/painel-fotos-chave.txt, só o dono lê). A VM guarda só o SHA-256 dela
 # (INTEGRACAO_TOKENS, escopo "eterna"), que aparece em GET /painel-fotos/status.
 PAINEL_FOTOS_URL = os.environ.get("ETERNA_PAINEL_FOTOS_URL", "https://parceiros.vivamaracana.com.br/api/eterna/fotografia")
 PAINEL_FOTOS_CHAVE = os.path.join(HOME, "painel-fotos-chave.txt")
-PAINEL_FOTOS_SEG = 300
+PAINEL_FOTOS_SEG = 600                           # o mesmo ritmo do metricas_loop, que grava o arquivo lido aqui
 painel_fotos = {"em": None, "ok": None, "erro": None, "dias": []}
 PAINEL_PRODUTOS = {"maracana": "Pacote Maracanã", "gramado": "Pacote Gramado", "zona": "Pacote Zona Mista", "tribuna": "Pacote Tribuna de Honra",
                    "arq": "Pacote Arquibancada", "mais": "Todas as fotos", "extra": "Foto adicional", "pr3": "Porta-retrato",
@@ -13308,7 +13308,13 @@ def painel_fotos_enviar(dias=None):
     enviados, erro = [], None
     for dia in dias:
         try:
-            corpo = json.dumps({"dia": dia, "resumo": painel_fotos_resumo(metricas_dia(dia)), "gerado": _iso()},
+            # Lê o arquivo que o metricas_loop já grava a cada 10 min: o envio não recalcula nada nem toca no banco.
+            arq = os.path.join(MET_DIR, dia + ".json")
+            if not os.path.exists(arq):
+                continue
+            with open(arq, encoding="utf8") as f:
+                m = json.load(f)
+            corpo = json.dumps({"dia": dia, "resumo": painel_fotos_resumo(m), "gerado": _iso()},
                                ensure_ascii=False).encode("utf8")
             req = urllib.request.Request(PAINEL_FOTOS_URL, data=corpo, method="POST",
                                          headers={"Content-Type": "application/json", "X-Api-Key": painel_fotos_chave(),
