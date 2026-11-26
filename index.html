@@ -1617,7 +1617,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.94.11 · 26/11 12:25"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.95.0 · 26/11 18:00"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -2354,10 +2354,13 @@ function pendItens(r,o){const id=esc(r.id);const QM=r.pkgs||(r.pkg?{[r.pkg]:r.pk
   const pk=state.pend.pick&&state.pend.pick.id===r.id?state.pend.pick:null;
   const qb=(mais,menos,q)=>o.rw?`<span class="pend-q"><button ${menos} ${q>0?'':'disabled'} aria-label="−1">−</button><b>${q}</b><button ${mais} aria-label="+1">+</button></span>`:`<b class="pi-qro">${q}×</b>`;
   const linha=(nome,desc,preco,q,mais,menos)=>`<li class="${q?'on':''}"><span class="pi-n"><b>${esc(nome)}</b>${desc?`<small>${esc(desc)}</small>`:''}</span><span class="pi-p">${fmtR(preco)}</span>${qb(mais,menos,q)}<b class="pc-v">${q?fmtR(q*preco):'—'}</b></li>`;
-  const escolha=t=>`<li class="pi-pick"><span class="eyebrow">${TE(t==='cort'?'po_qual_cort':'po_qual_porta')}</span>
-    <div class="pi-ths">${F.map((x,i)=>`<button class="pi-th${pk.foto===x.k?' sel':''}" ${x.t==='ph'?`style="${phStyle(x.id)}"${fotoReal(x.id)}`:''} data-act="pend-pick-foto" data-k="${esc(x.k)}" aria-pressed="${pk.foto===x.k}" aria-label="${esc(TE('foto_n',i+1))}">${x.t==='ai'?lojaThumb(x):''}<span>${i+1}</span></button>`).join('')}</div>
-    ${t==='cort'?`<div class="pi-mot"><select id="pend-cort-mot" aria-label="${esc(TE('po_motivo_cort'))}">${cortOpcoes(pk.mot||'')}</select><input type="text" id="pend-cort-nota" maxlength="200" value="${esc(pk.nota||'')}" placeholder="${esc(TE('po_o_que_houve_ph'))}"></div>`:''}
-    <div class="row"><button class="btn primary" data-act="pend-pick-ok" data-id="${id}">${TE('po_pick_ok')}</button><button class="btn ghost" data-act="pend-pick-x">${TE('cancelar')}</button></div></li>`;
+  // 26/11 (Ronaldo: "justificar uma por uma está muito burocrático"): na cortesia o vendedor marca de uma vez quantas fotos quiser
+  // e justifica uma vez só; com cortesia já dada neste pedido, o motivo dela vale para as novas e não é pedido de novo
+  const pkSel=x=>pk.t==='cort'?(pk.fotos||[]).includes(x.k):pk.foto===x.k;const jaMot=!!(r.cortFoto&&(r.cortFoto.motivo||r.cortFoto.nota));
+  const escolha=t=>`<li class="pi-pick"><span class="eyebrow">${TE(t==='cort'?'po_qual_cort_n':'po_qual_porta')}</span>
+    <div class="pi-ths">${F.map((x,i)=>`<button class="pi-th${pkSel(x)?' sel':''}" ${x.t==='ph'?`style="${phStyle(x.id)}"${fotoReal(x.id)}`:''} data-act="pend-pick-foto" data-k="${esc(x.k)}" aria-pressed="${pkSel(x)}" aria-label="${esc(TE('foto_n',i+1))}">${x.t==='ai'?lojaThumb(x):''}<span>${i+1}</span></button>`).join('')}</div>
+    ${t==='cort'&&!jaMot?`<div class="pi-mot"><select id="pend-cort-mot" aria-label="${esc(TE('po_motivo_cort'))}">${cortOpcoes(pk.mot||'')}</select><input type="text" id="pend-cort-nota" maxlength="200" value="${esc(pk.nota||'')}" placeholder="${esc(TE('po_o_que_houve_ph'))}"></div>`:''}
+    <div class="row"><button class="btn primary" data-act="pend-pick-ok" data-id="${id}">${t==='cort'&&(pk.fotos||[]).length>1?TE('po_pick_ok_n',(pk.fotos||[]).length):TE('po_pick_ok')}</button><button class="btn ghost" data-act="pend-pick-x">${TE('cancelar')}</button></div></li>`;
   const L=[];
   DATA.catalog.filter(c=>pkgEscolhivel(c.id)).forEach(p=>{const q=QM[p.id]||0;const nd=p.digital==='todas'?0:(+p.digital||1);const desc=p.digital==='todas'?(+p.prints?TE('po_todas_imp',+p.prints):TE('po_todas_fotos')):TE('n_fotos',nd)+', '+TE(p.prints?'po_dig_imp':'po_so_dig',nd); // 25/11 (Eduardo): Maracanã Mais = todas as digitais e 1 impressa
     L.push(linha(p.name,desc,priceOf(p.id),q,`data-act="pend-pkg-q" data-id="${id}" data-p="${esc(p.id)}" data-q="${q+1}"`,`data-act="pend-pkg-q" data-id="${id}" data-p="${esc(p.id)}" data-q="${q-1}"`));});
@@ -2376,9 +2379,10 @@ function pendItens(r,o){const id=esc(r.id);const QM=r.pkgs||(r.pkg?{[r.pkg]:r.pk
 function pendCortesia(id,dar,foto,mot,nota){if(!can('venda','c')){toast(TE('po_so_cortesia'));return false;}const r=dinPegar(id);if(!r)return false;
   if(!r.escolha){toast('Esta compra já veio com o pacote escolhido');return false;}const n=pendN(r);if(!n||n!==r.n){toast('As fotos deste pedido não conferem. Cancele e peça ao cliente para escolher de novo.');render();return false;}
   const antes=JSON.stringify(SIM);const de=r.total;const k0=cortN(r);
-  if(dar){if(!foto)return false;const m=cortMotivos().some(x=>x.id===mot)?mot:null;nota=String(nota||'').trim().slice(0,200);
+  if(dar){const fs=(Array.isArray(foto)?foto:[foto]).filter(Boolean);if(!fs.length)return false;let m=cortMotivos().some(x=>x.id===mot)?mot:null;nota=String(nota||'').trim().slice(0,200);
     const c=r.cortFoto||{n:0,fotos:[],itens:[],motivo:m,nota,por:state.user.email,porNome:state.user.name,em:now().toISOString()};
-    c.fotos=(c.fotos||[]).concat(foto);c.itens=(c.itens||[]).concat({foto,motivo:m,nota});c.n=k0+1;if(!c.motivo&&m)c.motivo=m;if(!c.nota&&nota)c.nota=nota;r.cortFoto=c;}
+    if(!m&&!nota){m=c.motivo||null;nota=c.nota||'';} // 26/11: as novas herdam o motivo da cortesia já dada
+    c.fotos=(c.fotos||[]).concat(fs);c.itens=(c.itens||[]).concat(fs.map(f=>({foto:f,motivo:m,nota})));c.n=k0+fs.length;if(!c.motivo&&m)c.motivo=m;if(!c.nota&&nota)c.nota=nota;r.cortFoto=c;}
   else{if(!r.cortFoto)return false;const c=r.cortFoto;if(k0<=1)delete r.cortFoto;else{c.n=k0-1;c.fotos=(c.fotos||[]).slice(0,c.n);c.itens=(c.itens||[]).slice(0,c.n);}}
   pendRecalc(r,n);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return false;}
@@ -12708,6 +12712,8 @@ const EQ={
   po_qual_cort:["Qual foto vai de cortesia?","Which photo is complimentary?","¿Qué foto va de cortesía?","Quelle photo est offerte ?","Welches Foto ist gratis?"],
   po_qual_porta:["Qual foto vai no porta-retrato?","Which photo goes in the frame?","¿Qué foto va en el portarretrato?","Quelle photo va dans le cadre ?","Welches Foto kommt in den Rahmen?"],
   po_pick_ok:["Adicionar","Add","Agregar","Ajouter","Hinzufügen"],
+  po_pick_ok_n:[n=>`Adicionar ${n} cortesias`,n=>`Add ${n} complimentary photos`,n=>`Agregar ${n} cortesías`,n=>`Ajouter ${n} photos offertes`,n=>`${n} Gratisfotos hinzufügen`],
+  po_qual_cort_n:["Toque nas fotos que serão cortesia (quantas quiser)","Tap the photos that will be complimentary (as many as you like)","Toca las fotos que serán cortesía (las que quieras)","Touchez les photos offertes (autant que vous voulez)","Die Gratisfotos antippen (beliebig viele)"],
   po_pick_sem_foto:["Toque na foto que vai impressa","Tap the photo to print","Toca la foto que se imprime","Touchez la photo à imprimer","Tippen Sie auf das Foto zum Drucken"],
   po_nada_carrinho:["Nada no carrinho","Cart is empty","Carrito vacío","Panier vide","Warenkorb leer"],
   po_dig_imp:[(n)=>n===1?"digital e impressa":"digitais e impressas",(n)=>"digital and printed",(n)=>n===1?"digital e impresa":"digitales e impresas",(n)=>n===1?"numérique et imprimée":"numériques et imprimées",(n)=>"digital und gedruckt"],
@@ -14835,11 +14841,11 @@ document.addEventListener('click',e=>{
     case 'pend-porta-rm':state.pend.passo={id:d.id,p:1};pendPorta(d.id,d.p,false);break;
     case 'porta-salvar':portaSalvar(+d.i);break;
     case 'porta-foto':portaFotoEscolher(+d.i);break;
-    case 'pend-pick':state.pend.pick={id:d.id,t:d.t,p:d.p||null,foto:null};state.pend.passo={id:d.id,p:1};render();break; // 25/11: + na cortesia ou no porta-retrato abre a escolha da foto
-    case 'pend-pick-foto':{const pk=state.pend.pick;if(pk){pk.mot=($('#pend-cort-mot')||{}).value||pk.mot||'';pk.nota=($('#pend-cort-nota')||{}).value||pk.nota||'';pk.foto=d.k;render();}break;}
+    case 'pend-pick':state.pend.pick={id:d.id,t:d.t,p:d.p||null,foto:null,fotos:[]};state.pend.passo={id:d.id,p:1};render();break; // 25/11: + na cortesia ou no porta-retrato abre a escolha da foto
+    case 'pend-pick-foto':{const pk=state.pend.pick;if(pk){pk.mot=($('#pend-cort-mot')||{}).value||pk.mot||'';pk.nota=($('#pend-cort-nota')||{}).value||pk.nota||'';if(pk.t==='cort'){const a=pk.fotos||(pk.fotos=[]);const j=a.indexOf(d.k);if(j<0)a.push(d.k);else a.splice(j,1);}else pk.foto=d.k;render();}break;}
     case 'pend-pick-x':state.pend.pick=null;render();break;
-    case 'pend-pick-ok':{const pk=state.pend.pick;if(!pk||pk.id!==d.id)break;if(!pk.foto){toast(TE('po_pick_sem_foto'));break;}
-      const ok=pk.t==='cort'?pendCortesia(d.id,true,pk.foto,($('#pend-cort-mot')||{}).value||pk.mot,($('#pend-cort-nota')||{}).value||pk.nota):pendPorta(d.id,pk.p,true,pk.foto);
+    case 'pend-pick-ok':{const pk=state.pend.pick;if(!pk||pk.id!==d.id)break;if(pk.t==='cort'?!(pk.fotos||[]).length:!pk.foto){toast(TE('po_pick_sem_foto'));break;}
+      const ok=pk.t==='cort'?pendCortesia(d.id,true,pk.fotos,($('#pend-cort-mot')||{}).value||pk.mot,($('#pend-cort-nota')||{}).value||pk.nota):pendPorta(d.id,pk.p,true,pk.foto);
       if(ok){state.pend.pick=null;render();}break;}
     case 'pend-cort-rm':pendCortesia(d.id,false);break;
     case 'pend-sel':state.pend.sel=d.id;state.pend.passo=null;state.caixa.dinCancel=null;render();break;
