@@ -459,7 +459,8 @@ flowchart LR
 | Canon EOS 5D Mark IV | entra | FTP pelo Wi‑Fi da câmera | JPG direto ao servidor, sem celular | a testar |
 | Agente do ponto | entra | HTTP local 8765 | fotos do cartão, eventos dup | v1 funcional |
 | Painel Maracatour (catracas) | entra | HTTP JSON `/api/stats`, `/api/fotos/stats?periodo=` | PAX por dia, hora e canal | disponível, sem login |
-| Roverpix (transição até a troca) | entra | API em tempo real (credencial com o Ronaldo) | vendas e sessões para comparar o período paralelo | aguardando credencial |
+| Roverpix | entra | API em tempo real | vendas e sessões até 24/11/2026 | desligada em 25/11/2026 |
+| Painel de gestão e BI (servidor de parceiros na VM) | sai | HTTPS POST `/api/eterna/fotografia`, cabeçalho `X-Api-Key` | resumo do dia a cada 5 min no formato da aba Fotografia: fotos, sessões, vendas, faturamento, por hora, fotógrafo, vendedor, produto e pagamento | em uso desde 25/11/2026 |
 | AWS S3 e CloudFront | sai | HTTPS, SDK boto3 | acervo e galeria | conta a criar |
 | AWS Rekognition | sai (opcional) | HTTPS | facial para venues que preferirem nuvem | não usado no Maracanã |
 | Maquininha POS | manual hoje | - | valor digitado pelo vendedor | em uso |
