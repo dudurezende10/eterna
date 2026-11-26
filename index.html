@@ -371,12 +371,33 @@ select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid v
 .pend-mont{margin:2px 0 10px;padding:10px 12px;border-radius:10px;background:#fff6d6;border:1.5px solid #FFB800;color:#5a4300;font-size:14px;font-weight:600}
 .pend-pkg .pend-semmont{grid-column:1/-1;justify-self:start;font-style:normal;font-size:12px;font-weight:600;color:#5a4300;background:#fff6d6;border:1px solid #FFB800;border-radius:999px;padding:1px 8px;margin-top:2px}
 .pend-carrinho{border:1.5px solid #134078;border-radius:12px;background:#f6f9fd;padding:10px 14px;margin:10px 0 8px}.pend-carrinho ul{list-style:none;margin:0;padding:0}.pend-carrinho li{display:grid;grid-template-columns:1fr auto 110px;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid #dfe6f0}.pend-carrinho li small{color:#5b6b83;font-weight:400}.pc-n{font-weight:600}.pc-v{text-align:right}.pc-tot{display:flex;justify-content:space-between;align-items:baseline;padding:10px 0 6px;font-size:15px}.pc-tot b{font-size:24px;font-weight:800;color:#0C2340}.pc-pagar{width:100%;min-height:48px;font-size:16px}.pend-segue{display:flex;justify-content:flex-end;align-items:center;gap:14px;flex-wrap:wrap;margin:2px 0 8px}.pend-tot{display:flex;flex-direction:column;align-items:flex-end;min-width:0}.pend-tot span{font-size:12px;color:#5b6b83}.pend-tot b{font-size:20px;font-weight:800;color:#0C2340}.pend-segue .btn{min-height:44px;min-width:180px}.pend-pkgw{display:flex;flex-direction:column;gap:4px}.pend-pkgw .pend-pkg{flex:1}.pend-q{display:flex;align-items:center;justify-content:center;gap:10px}.pend-q button{min-width:44px;min-height:36px;border-radius:8px;border:1.5px solid #134078;background:#fff;color:#134078;font-size:20px;font-weight:700;cursor:pointer}.pend-q button:disabled{opacity:.35;cursor:default}.pend-q b{min-width:34px;text-align:center;font-size:16px}
+/* 25/11 (Ronaldo): fila de impressão em linhas */
+.imp-lista{gap:0}.imp-lista .imp-item{padding:0;border:0;border-bottom:1px solid #dfe6f0;border-radius:0;background:transparent}
+.imp-linha{display:grid;grid-template-columns:70px 44px minmax(0,1fr) 72px 96px 128px;align-items:center;gap:10px;padding:8px 4px}
+.imp-cab{font-size:12px;color:#5b6b83;border-bottom:1.5px solid #134078}
+.imp-pac{display:flex;flex-direction:column;min-width:0}.imp-pac small{color:#5b6b83;font-size:12px}
+.imp-acoes{display:flex;justify-content:flex-end}.imp-acoes .btn{white-space:nowrap}.imp-n{text-align:center}.imp-cab span:nth-child(4){text-align:center}
+.imp-link{background:none;border:0;padding:0;color:#134078;text-decoration:underline;font:inherit;cursor:pointer}
+.imp-corpo{padding:4px 4px 12px 4px}
+/* 25/11 (Ronaldo): carrinho em lista fixa de itens (nome, preço, quantidade, subtotal) */
+.pend-carrinho.pend-itens li{grid-template-columns:minmax(0,1fr) 70px auto 96px}
+.pend-carrinho.pend-itens li.on{background:#e3ecf8;margin:0 -8px;padding:6px 8px;border-radius:8px;border-bottom-color:transparent}
+.pend-carrinho.pend-itens .pi-n{display:flex;flex-direction:column;min-width:0}.pend-carrinho.pend-itens .pi-n small{color:#5b6b83;font-size:12px}
+.pend-carrinho.pend-itens .pi-p{text-align:right;color:#5b6b83;font-size:13px}.pend-carrinho.pend-itens .pc-v{text-align:right}.pend-carrinho.pend-itens .pi-qro{text-align:center}
+.pend-carrinho.pend-itens li.pi-pick{display:block;background:#fff;border:1.5px solid #134078;border-radius:10px;padding:10px;margin:6px 0}
+.pi-ths{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.pi-th{position:relative;width:84px;aspect-ratio:3/2;border-radius:6px;border:2px solid transparent;padding:0;overflow:hidden;background:#0C2340 var(--img) no-repeat;background-size:var(--bs);background-position:var(--bp);cursor:pointer}
+.pi-th span{position:absolute;left:4px;bottom:3px;background:#134078;color:#fff;font-size:11px;font-weight:700;border-radius:4px;padding:0 5px}
+.pi-th.sel{border-color:var(--venue2,#e0a800);box-shadow:0 0 0 2px var(--venue2,#e0a800)}
+.pi-mot{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}.pi-mot input{flex:1;min-width:180px}
+.pend-carrinho.pend-itens .pc-tot span{color:#5b6b83;font-size:13px}
 .pend-pkg.on,.pend-meio.on{border-color:#134078;background:#eef4fc;box-shadow:0 0 0 1.5px #134078 inset}
 .pend-meios{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px}.pend-meio{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:10px;border:1.5px solid var(--line,#d9dee6);background:#fff;color:inherit;font-weight:700;cursor:pointer}.pend-meio svg{width:28px;height:20px}
 .posto-head .row{flex-wrap:wrap}
 .posto-cols{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:14px;align-items:start}
 .posto-cols>div{display:flex;flex-direction:column;gap:14px;min-width:0}
-@media (max-width:980px){.posto-cols{grid-template-columns:minmax(0,1fr)}}
+.posto-esq{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow-y:auto}   /* 25/11 (Ronaldo): sem branco na lateral ao descer pelo carrinho */
+@media (max-width:980px){.posto-cols{grid-template-columns:minmax(0,1fr)}.posto-esq{position:static;max-height:none;overflow:visible}}
 /* 15/11: Posto compacto. Checkout parado numa linha; fila de pedidos em linhas; o pedido escolhido em passos */
 .posto-eco .eco-off,.posto-eco .eco-wait{padding:6px 4px;flex-direction:row;flex-wrap:wrap;justify-content:space-between;text-align:left;gap:4px 10px}
 .posto-eco .head{margin-bottom:6px}.posto-eco h2,#pend-painel h2{font-size:20px}
@@ -1568,7 +1589,7 @@ body:not([data-admin]) .pw-v{display:none}
     <button class="menubtn" id="menu-btn" data-act="menu-toggle" aria-expanded="false" aria-controls="railgav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>Menu</span></button>
     <div class="railgav" id="railgav" aria-label="Menu"><div id="rail-idiomas"></div>
     <nav class="nav" id="nav" aria-label="Seções"></nav>
-    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.86.2 · 25/11 22:10"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
+    <div class="venue"><span id="venue-sub"></span><span class="powered" title="Eterna v99.87.1 · 25/11 23:40"><svg width="12" height="12" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="17" stroke="currentColor" stroke-width="2"></circle><circle cx="20" cy="20" r="6" fill="currentColor"></circle></svg><span>powered by <b>Eterna</b><span class="pw-v"> · v99</span></span></span></div>
     </div>
   </aside>
   <div class="navback" id="navback" data-act="menu-close" aria-hidden="true"></div>
@@ -1778,8 +1799,11 @@ const CORT_MOTIVOS=[['espera','Espera longa'],['operacao','Falha na operação']
 // vale até alguém cadastrar. Motivo e "o que houve" são opcionais. -> [{id, nome (português, gravado), rot (no idioma da tela)}]
 state.cortCfg=null;
 const cortSlug=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').slice(0,32);
-function cortMotivos(){const c=state.cortCfg;if(c&&Array.isArray(c.motivos))return c.motivos.filter(m=>m&&m.id&&m.nome).map(m=>({id:m.id,nome:m.nome,rot:TEk('cort_'+m.id,m.nome)}));
-  return CORT_MOTIVOS.map(([id,nome])=>({id,nome,rot:TEk('cort_'+id,nome)}));}
+// 25/11 (Ronaldo): "Foto do porta-retrato" sempre na lista; é o motivo gravado para a foto que vai dentro do porta-retrato vendido
+const CORT_PORTA=['porta','Foto do porta-retrato'];
+function cortMotivos(){const c=state.cortCfg;const L=c&&Array.isArray(c.motivos)?c.motivos.filter(m=>m&&m.id&&m.nome).map(m=>({id:m.id,nome:m.nome,rot:TEk('cort_'+m.id,m.nome)}))
+  :CORT_MOTIVOS.map(([id,nome])=>({id,nome,rot:TEk('cort_'+id,nome)}));
+  if(!L.some(m=>m.id===CORT_PORTA[0]))L.push({id:CORT_PORTA[0],nome:CORT_PORTA[1],rot:TEk('cort_'+CORT_PORTA[0],CORT_PORTA[1])});return L;}
 const cortRot=id=>{if(!id)return '';const m=cortMotivos().find(x=>x.id===id||x.nome===id);return m?m.rot:TEk('cort_'+id,id);};
 const cortOpcoes=(sel,val)=>`<option value="">—</option>${cortMotivos().map(m=>{const v=val==='nome'?m.nome:m.id;return `<option value="${esc(v)}" ${sel===v?'selected':''}>${esc(m.rot)}</option>`;}).join('')}`;
 
@@ -2026,7 +2050,7 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   const meio=meioDe(r);
   const ref=null; // 18/11 (Ronaldo): sem NSU; o "Pago na maquininha" confirma num toque, como o "Recebi" do dinheiro
   const antes=JSON.stringify(SIM);const u=state.user;const s=simOf(r.card);
-  if(vendaFaltaAvisa(vendaFalta({u,vendedor:r.vendedor||(u?{nome:u.name}:null),card:r.card,saleNo:r.saleNo||s.saleNo||'novo',meio:MEIO_NOME[meio]?meio:null,total:r.total,n:(r.n||0)+(r.selected||[]).length+(r.aiSel||[]).length+(r.cortFoto?1:0)+portasDe(r).length,posto:r.posto||postoNome()})))return false;
+  if(vendaFaltaAvisa(vendaFalta({u,vendedor:r.vendedor||(u?{nome:u.name}:null),card:r.card,saleNo:r.saleNo||s.saleNo||'novo',meio:MEIO_NOME[meio]?meio:null,total:r.total,n:(r.n||0)+(r.selected||[]).length+(r.aiSel||[]).length+cortN(r)+portasDe(r).length,posto:r.posto||postoNome()})))return false;
   if(s.status==='paga'){dinFechar(id,'substituida','pago_de_outro_jeito',u);if(saveSim())pvCancelEv(r,'pago_de_outro_jeito');toast('Esta sessão já foi paga de outro jeito. A pendência foi encerrada.');render();return false;}
   const at=now().toISOString();const prov=meio==='dinheiro'||meio==='cortesia'?meio:(r.prov||pagProv());
   if(r.escolha&&meio!=='dinheiro'&&meio!=='cortesia'){const PP=PAG_PROV[prov];const ini=(PP&&PP.iniciar({id:r.id,meio,total:r.total}))||{estado:'aguardando'};r.iniciado=ini.estado||'aguardando';} // segurança S3: a maquininha só começa na confirmação
@@ -2035,8 +2059,10 @@ function pendConfirmar(id,o){o=o||{};const r=dinPegar(id);if(!r)return false;if(
   s.vendaId=r.id;if(r.sessoes&&(r.sessoes.length>1||((SIM.galerias||{})[r.token]||{}).venda)){s.sessoes=r.sessoes.slice();s.galVenda=r.token;}if(!r.vendedor&&u&&u.email)r.vendedor={nome:u.name,email:u.email}; // 25/11 (Ronaldo): Checkout sem vendedor declarado, quem confirma é o vendedor
   s.vendedor=r.vendedor||null;s.posto=r.posto||postoNome();s.pag={prov,ref,em:at,porNome:u.name};impIniciar(s);
   if((r.aiSel||[]).length){const ai=aiOf(r.card);r.aiSel.forEach(k=>{const [ph,bg]=String(k).split('|');if(!ai.bought.some(b=>b.ph===ph&&b.bg===bg))ai.bought.push({ph,bg,paidAt:at,where:'loja'});});}
+  s.brinde=[...((r.cortFoto&&r.cortFoto.fotos)||[]),...(r.portaFotos||[])].filter(Boolean); // 25/11: as fotos que o vendedor escolheu para a cortesia e o porta-retrato saem primeiro
   if(r.cortFoto){r.cortFoto.valor=cortValor(r,r.n);s.cortFoto=Object.assign({},r.cortFoto);SIM.cortesiaLog=SIM.cortesiaLog||[];
-    SIM.cortesiaLog.unshift({token:r.token||null,card:r.card,pid:null,acao:'deu',motivo:r.cortFoto.motivo,nota:r.cortFoto.nota,por:r.cortFoto.por,em:at,onde:'checkout',venda:s.saleNo,n:1,valor:r.cortFoto.valor});SIM.cortesiaLog=SIM.cortesiaLog.slice(0,500);}
+    SIM.cortesiaLog.unshift({token:r.token||null,card:r.card,pid:null,acao:'deu',motivo:r.cortFoto.motivo,nota:r.cortFoto.nota,por:r.cortFoto.por,em:at,onde:'checkout',venda:s.saleNo,n:cortN(r),valor:r.cortFoto.valor});SIM.cortesiaLog=SIM.cortesiaLog.slice(0,500);}
+  if(portasDe(r).length){SIM.cortesiaLog=SIM.cortesiaLog||[];SIM.cortesiaLog.unshift({token:r.token||null,card:r.card,pid:null,acao:'deu',motivo:CORT_PORTA[0],nota:'',por:u.email,em:at,onde:'checkout',venda:s.saleNo,n:portasDe(r).length,valor:0});SIM.cortesiaLog=SIM.cortesiaLog.slice(0,500);}
   Object.assign(r,{estado:'confirmada',fechada:at,por:u.email,porNome:u.name,motivo:null,saleNo:s.saleNo,ref});const criar=r.escolha&&!r.pvCriado;if(criar)r.pvCriado=true;
   log(`${MEIO_NOME[meio]} confirmado: ${(r.sessoes||[r.card]).join(' + ')} ${fmtR(r.total)} por ${u.name}`);
   if(pontoModo()!=='posto')galDaVendaPrep(r.card,r.token); // v96.2: sessão paga e compradas numa gravação só
@@ -2248,11 +2274,11 @@ function pendMontAviso(r){const nAI=(r.aiSel||[]).length;if(!nAI||!r.pkg||r.prin
   if(!r.prints)return `<div class="pend-mont" role="status">${TE('po_mont_sem_imp',nAI)}</div>`;
   const fora=pendMontSemImp(r,r.prints);return fora?`<div class="pend-mont" role="status">${TE('po_mont_fora',fora)}</div>`:'';}
 // v96 (P3): pedido do Checkout sem pacote. O caixa vê as fotos escolhidas (com as de fundo de IA), escolhe o pacote e o meio e confirma como antes
-function pendEscolhaItem(r,o){const n=r.n||0;const nc=n-(r.cortFoto?1:0)-portasDe(r).length;const ideal=lojaIdeal(nc).pkg;const mais=vendaMais(r.card);const temMont=(r.aiSel||[]).length>0;const pronto=r.total!=null&&(r.pkg||mais||pendSoBrinde(r))&&MEIO_NOME[r.meio];
+function pendEscolhaItem(r,o){const n=r.n||0;const nc=n-cortN(r)-portasDe(r).length;const ideal=lojaIdeal(nc).pkg;const mais=vendaMais(r.card);const temMont=(r.aiSel||[]).length>0;const pronto=r.total!=null&&(r.pkg||mais||pendSoBrinde(r))&&MEIO_NOME[r.meio];
   const fotos=[...(r.selected||[]).map(id=>({t:'ph',id})),...(r.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {t:'ai',id,bg};})];
   const th=x=>x.t==='ai'?`<div class="pend-th ai">${lojaThumb(x)}</div>`:`<button class="pend-th" style="${phStyle(x.id)}"${fotoReal(x.id)} data-act="zoom" data-id="${esc(x.id)}" aria-label="Foto"></button>`;
   const QM=r.pkgs||(r.pkg?{[r.pkg]:r.pkgQ||1}:{});const algum=Object.keys(QM).length>0;
-  const pkgs=mais?'':DATA.catalog.filter(c=>pkgEscolhivel(c.id)).map(p=>{const q=QM[p.id]||0;const on=q>0;const todasP=p.digital==='todas';const c=algum?{extra:0,custo:Math.max(1,q)*priceOf(p.id)}:lojaPkgCusto(p,nc);const mx=PKG_Q_MAX;
+  const pkgs0=mais?'':DATA.catalog.filter(c=>false).map(p=>{const q=QM[p.id]||0;const on=q>0;const todasP=p.digital==='todas';const c=algum?{extra:0,custo:Math.max(1,q)*priceOf(p.id)}:lojaPkgCusto(p,nc);const mx=PKG_Q_MAX;
     const qtd=o.rw?`<div class="pend-q" role="group" aria-label="${esc(TE('po_qtd')+' · '+p.name)}"><button data-act="pend-pkg-q" data-id="${esc(r.id)}" data-p="${esc(p.id)}" data-q="${q-1}" ${q>0?'':'disabled'} aria-label="−1">−</button><b>${q}</b><button data-act="pend-pkg-q" data-id="${esc(r.id)}" data-p="${esc(p.id)}" data-q="${q+1}" ${q<mx?'':'disabled'} aria-label="+1">+</button></div>`:'';
     return `<div class="pend-pkgw"><button class="pend-pkg${on?' on':''}" data-act="pend-pkg" data-id="${esc(r.id)}" data-p="${esc(p.id)}" aria-pressed="${on}" ${o.rw&&q<mx?'':'disabled'}><b>${q>1?q+'× ':''}${esc(p.name)}</b><small>${todasP?TE('po_todas_fotos'):TE('n_fotos',Math.max(1,q)*p.digital)}${p.prints?' · '+TE('po_impressas'):' · '+TE('po_so_digital')}${c.extra?` + ${TE('n_adic',c.extra)}`:''}</small><span>${fmtR(c.custo)}</span>${p.id===ideal&&!algum?`<i class="pill good">${TE('ideal')}</i>`:''}${temMont&&!p.prints?`<em class="pend-semmont">${TE('po_sem_edicao')}</em>`:''}</button>${qtd}</div>`;}).join('');
   const meios=['cartao','pix','dinheiro'].map(m=>`<button class="pend-meio${r.meio===m?' on':''}" data-act="pend-meio" data-id="${esc(r.id)}" data-m="${m}" aria-pressed="${r.meio===m}" ${o.rw?'':'disabled'}>${ICO[m==='pix'?'pix':m==='cartao'?'card':'cash']} ${meioNome(m)}</button>`).join('');
@@ -2262,11 +2288,11 @@ function pendEscolhaItem(r,o){const n=r.n||0;const nc=n-(r.cortFoto?1:0)-portasD
   const nomes=[TE('pacote'),TE('pagamento'),TE('po_passo_conf')],feito=[pkgOk,meioOk,false];
   const barra=`<ol class="pend-passos">${nomes.map((t,i)=>{const k=i+1;const pode=k!==passo&&feito.slice(0,k-1).every(Boolean);
     return `<li class="${k===passo?'on':feito[i]?'feito':''}"><button data-act="pend-passo" data-id="${esc(r.id)}" data-p="${k}" ${pode&&o.rw?'':'disabled'} aria-current="${k===passo?'step':'false'}"><span>${feito[i]&&k!==passo?ICO.ok:k}</span>${esc(t)}</button></li>`;}).join('')}</ol>`;
-  const pkgNome=mais?TE('po_comprar_mais',TE('n_adicionais',n)):!r.pkg&&pendSoBrinde(r)?esc([r.cortFoto?TE('po_cort_foto'):'',portaResumo(r)].filter(Boolean).join(' + ')):r.pkg?Object.entries(r.pkgs||{[r.pkg]:r.pkgQ||1}).map(([id,q])=>(q>1?q+'× ':'')+esc(catName(id))).join(' + ')+((r.cart||[]).filter(x=>x.id==='extra').length&&!(r.pkgs||{}).extra?' + '+TE('n_adic',(r.cart||[]).filter(x=>x.id==='extra').length):''):'';
+  const pkgNome=mais?TE('po_comprar_mais',TE('n_adicionais',n)):!r.pkg&&pendSoBrinde(r)?esc([r.cortFoto?cortTxt(r):'',portaResumo(r)].filter(Boolean).join(' + ')):r.pkg?Object.entries(r.pkgs||{[r.pkg]:r.pkgQ||1}).map(([id,q])=>(q>1?q+'× ':'')+esc(catName(id))).join(' + ')+((r.cart||[]).filter(x=>x.id==='extra').length&&!(r.pkgs||{}).extra?' + '+TE('n_adic',(r.cart||[]).filter(x=>x.id==='extra').length):''):'';
   // DRY: o valor fica só no cabeçalho e no botão de confirmar; o resumo diz o que foi escolhido, uma vez
-  const resumo=[pkgOk&&(r.pkg||mais)?`<div class="pend-res"><span>${TE('pacote')}</span><b>${pkgNome}</b></div>`:'',pkgOk&&r.cortFoto?`<div class="pend-res"><span>${TE('po_cortesia')}</span><b>${TE('po_cort_foto')}</b></div>`:'',pkgOk&&portasDe(r).length?`<div class="pend-res"><span>${TE('po_porta')}</span><b>${esc(portaResumo(r))}</b></div>`:'',meioOk&&passo===3?`<div class="pend-res"><span>${TE('pagamento')}</span><b>${esc(meioNome(r.meio))}</b></div>`:''].join('');
-  const corpo=passo===1?(mais?`<div class="note">${TE('po_comprar_mais',TE('n_adicionais',n))}</div>`:`<div class="pend-pkgs">${pkgs}</div>${pendMontAviso(r)}`)+pendPortaHtml(r,o)+pendCortHtml(r,o)+(pkgOk?pendCarrinho(r,o):'')
-    :passo===2?`${resumo}<div class="pend-meios">${meios}</div>${pendCortHtml(r,o)}`:resumo+pendCortHtml(r,o);
+  const resumo=[pkgOk&&(r.pkg||mais)?`<div class="pend-res"><span>${TE('pacote')}</span><b>${pkgNome}</b></div>`:'',pkgOk&&r.cortFoto?`<div class="pend-res"><span>${TE('po_cortesia')}</span><b>${esc(cortTxt(r))}</b></div>`:'',pkgOk&&portasDe(r).length?`<div class="pend-res"><span>${TE('po_porta')}</span><b>${esc(portaResumo(r))}</b></div>`:'',meioOk&&passo===3?`<div class="pend-res"><span>${TE('pagamento')}</span><b>${esc(meioNome(r.meio))}</b></div>`:''].join('');
+  const corpo=passo===1?(mais?`<div class="note">${TE('po_comprar_mais',TE('n_adicionais',n))}</div>`:pendItens(r,o)+pendMontAviso(r))
+    :passo===2?`${resumo}<div class="pend-meios">${meios}</div>`:resumo;
   const cancel=`<div class="pend-cancel"><button class="link-danger" data-act="din-cancel" data-id="${esc(r.id)}">${CROSS} ${TE('po_cancelar_compra')}</button></div>`;
   const acts=!o.rw?o.acts:o.conf||(passo===3&&pronto)?o.acts:cancel;
   return `<div class="din-item pend-esc${o.alvo===r.id?' alvo':''}" data-pend="${esc(r.id)}">
@@ -2276,43 +2302,55 @@ function pendEscolhaItem(r,o){const n=r.n||0;const nc=n-(r.cortFoto?1:0)-portasD
     <div class="pend-ths">${fotos.map(th).join('')}</div>${pendVisitaHtml(r)}
     ${barra}<div class="pend-passo-corpo">${corpo}</div>${acts}</div>`;}
 const CORT_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v9h14v-9M7.5 8a2.5 2.5 0 1 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 1 1 0 5"/></svg>';
-function pendCortHtml(r,o){const c=r.cortFoto;const pode=o.rw; // 25/11 (Ronaldo): em qualquer ocasião, para quem registra a venda
-  if(c)return `<div class="pend-cort" id="pend-cort"><span class="pill warn">${TE('po_cort_foto')}</span><span class="note">${[cortRot(c.motivo),c.nota,c.porNome||c.por].filter(Boolean).map(esc).join(' · ')}</span>${pode?`<button class="link-danger" data-act="pend-cort-rm" data-id="${esc(r.id)}">${TE('po_cort_retirar')}</button>`:''}</div>`;
-  if(!pode||(r.n||0)<1)return ''; // 25/11: a cortesia pode ser a venda inteira
-  if(state.pend.cort!==r.id)return `<div class="pend-cort"><button class="pend-cort-mais" data-act="pend-cort" data-id="${esc(r.id)}">${CORT_ICO} ${TE('po_cort_mais1')}</button></div>`;
-  return `<div class="pend-cort pend-cort-form" id="pend-cort"><label><span class="eyebrow">${TE('po_motivo_cort')}</span><select id="pend-cort-mot">${cortOpcoes('')}</select></label>
-    <label style="flex:1;min-width:200px"><span class="eyebrow">${TE('po_o_que_houve')}</span><input type="text" id="pend-cort-nota" maxlength="200" placeholder="${esc(TE('po_o_que_houve_ph'))}"></label>
-    <button class="btn primary" data-act="pend-cort-ok" data-id="${esc(r.id)}">${TE('po_cort_dar')}</button><button class="btn ghost" data-act="pend-cort" data-id="">${TE('cancelar')}</button></div>`;}
-// dar ou retirar a foto cortesia antes de confirmar; o registro de quem deu, quanto e quando fica na confirmação (a cortesia só vale com a venda paga)
-function pendCortesia(id,dar){if(!can('venda','c')){toast(TE('po_so_cortesia'));return false;}const r=dinPegar(id);if(!r)return false;
+const cortTxt=r=>{const k=cortN(r);return k===1?TE('po_cort_foto'):TE('po_cort_n',k);};
+// 25/11 (Ronaldo, "como um Big Mac"): o carrinho é uma lista fixa de itens, na ordem do Catálogo, cada um com preço, − quantidade +
+// e subtotal. O sistema só soma: não sugere pacote nem põe adicional sozinho. Foto cortesia e porta-retrato pedem a foto do cliente
+// que vai impressa (a cortesia, também o motivo); a foto do porta-retrato fica registrada como cortesia "Foto do porta-retrato".
+const pendFotos=r=>[...(r.selected||[]).map(id=>({k:id,t:'ph',id})),...(r.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {k:'ai:'+x,t:'ai',id,bg};})];
+function pendItens(r,o){const id=esc(r.id);const QM=r.pkgs||(r.pkg?{[r.pkg]:r.pkgQ||1}:{});const F=pendFotos(r);
+  const numF=k=>{const i=F.findIndex(x=>x.k===k);return i<0?'':TE('foto_n',i+1);};
+  const pk=state.pend.pick&&state.pend.pick.id===r.id?state.pend.pick:null;
+  const qb=(mais,menos,q)=>o.rw?`<span class="pend-q"><button ${menos} ${q>0?'':'disabled'} aria-label="−1">−</button><b>${q}</b><button ${mais} aria-label="+1">+</button></span>`:`<b class="pi-qro">${q}×</b>`;
+  const linha=(nome,desc,preco,q,mais,menos)=>`<li class="${q?'on':''}"><span class="pi-n"><b>${esc(nome)}</b>${desc?`<small>${esc(desc)}</small>`:''}</span><span class="pi-p">${fmtR(preco)}</span>${qb(mais,menos,q)}<b class="pc-v">${q?fmtR(q*preco):'—'}</b></li>`;
+  const escolha=t=>`<li class="pi-pick"><span class="eyebrow">${TE(t==='cort'?'po_qual_cort':'po_qual_porta')}</span>
+    <div class="pi-ths">${F.map((x,i)=>`<button class="pi-th${pk.foto===x.k?' sel':''}" ${x.t==='ph'?`style="${phStyle(x.id)}"${fotoReal(x.id)}`:''} data-act="pend-pick-foto" data-k="${esc(x.k)}" aria-pressed="${pk.foto===x.k}" aria-label="${esc(TE('foto_n',i+1))}">${x.t==='ai'?lojaThumb(x):''}<span>${i+1}</span></button>`).join('')}</div>
+    ${t==='cort'?`<div class="pi-mot"><select id="pend-cort-mot" aria-label="${esc(TE('po_motivo_cort'))}">${cortOpcoes(pk.mot||'')}</select><input type="text" id="pend-cort-nota" maxlength="200" value="${esc(pk.nota||'')}" placeholder="${esc(TE('po_o_que_houve_ph'))}"></div>`:''}
+    <div class="row"><button class="btn primary" data-act="pend-pick-ok" data-id="${id}">${TE('po_pick_ok')}</button><button class="btn ghost" data-act="pend-pick-x">${TE('cancelar')}</button></div></li>`;
+  const L=[];
+  DATA.catalog.filter(c=>pkgEscolhivel(c.id)).forEach(p=>{const q=QM[p.id]||0;const nd=p.digital==='todas'?0:(+p.digital||1);const desc=p.digital==='todas'?TE('po_todas_fotos'):TE('n_fotos',nd)+', '+TE(p.prints?'po_dig_imp':'po_so_dig',nd);
+    L.push(linha(p.name,desc,priceOf(p.id),q,`data-act="pend-pkg-q" data-id="${id}" data-p="${esc(p.id)}" data-q="${q+1}"`,`data-act="pend-pkg-q" data-id="${id}" data-p="${esc(p.id)}" data-q="${q-1}"`));});
+  const auto=(r.cart||[]).filter(x=>x.id==='extra').length-(QM.extra||0);if(auto>0)L.push(`<li><span class="pi-n"><b>${esc(catName('extra'))}</b><small>${TE('n_adic',auto)}</small></span><span class="pi-p">${fmtR(priceOf('extra'))}</span><b class="pi-qro">${auto}×</b><b class="pc-v">${fmtR(auto*priceOf('extra'))}</b></li>`);
+  if(!vendaMais(r.card)){const pr=portasDe(r),pf=r.portaFotos||[];
+    DATA.catalog.filter(c=>c.kind==='porta').forEach(c=>{const idx=pr.map((x,i)=>x===c.id?i:-1).filter(i=>i>=0);const q=idx.length;const fs=idx.map(i=>numF(pf[i])).filter(Boolean);
+      L.push(linha(c.name,fs.length?TE('po_porta_com',fs.join(', ')):TE('po_porta_desc'),priceOf(c.id),q,`data-act="pend-pick" data-id="${id}" data-t="porta" data-p="${esc(c.id)}"`,`data-act="pend-porta-rm" data-id="${id}" data-p="${esc(c.id)}"`));
+      if(pk&&pk.t==='porta'&&pk.p===c.id)L.push(escolha('porta'));});}
+  if(o.rw||r.cortFoto){const c=r.cortFoto,k=cortN(r);const fs=((c&&c.fotos)||[]).map(numF).filter(Boolean);
+    L.push(linha(TE('po_cort_linha'),c?[fs.join(', '),cortRot(c.motivo)].filter(Boolean).join(' · ')||TE('po_cort_desc'):TE('po_cort_desc'),0,k,`data-act="pend-pick" data-id="${id}" data-t="cort"`,`data-act="pend-cort-rm" data-id="${id}"`));
+    if(pk&&pk.t==='cort')L.push(escolha('cort'));}
+  const conta=[...Object.entries(QM).map(([p,q])=>q+' × '+catName(p)),...(auto>0?[auto+' × '+catName('extra')]:[]),...Object.entries(portasDe(r).reduce((a,x)=>(a[x]=(a[x]||0)+1,a),{})).map(([p,q])=>q+' × '+catName(p)),...(cortN(r)?[cortN(r)+' × '+TE('po_cort_linha')]:[])].join(' + ');
+  const pago=r.total!=null&&(r.pkg||pendSoBrinde(r));
+  return `<div class="pend-carrinho pend-itens"><ul>${L.join('')}</ul><div class="pc-tot"><span>${esc(conta)||TE('po_nada_carrinho')}</span><b>${r.total!=null?fmtR(r.total):fmtR(0)}</b></div>${o.rw&&pago?`<button class="btn primary pc-pagar" data-act="pend-passo" data-id="${id}" data-p="${r.total===0?3:2}">${r.total===0?TE('po_passo_conf'):TE('pagamento')} →</button>`:''}</div>`;}
+// mais uma foto cortesia (com a foto escolhida e o motivo) ou tirar a última; o registro de quem deu fica na confirmação
+function pendCortesia(id,dar,foto,mot,nota){if(!can('venda','c')){toast(TE('po_so_cortesia'));return false;}const r=dinPegar(id);if(!r)return false;
   if(!r.escolha){toast('Esta compra já veio com o pacote escolhido');return false;}const n=pendN(r);if(!n||n!==r.n){toast('As fotos deste pedido não conferem. Cancele e peça ao cliente para escolher de novo.');render();return false;}
-  let info=null;if(dar){if(r.cortFoto||n<1)return false;const nota=(($('#pend-cort-nota')||{}).value||'').trim().slice(0,200);
-    const mot=($('#pend-cort-mot')||{}).value;info={n:1,motivo:cortMotivos().some(m=>m.id===mot)?mot:null,nota,por:state.user.email,porNome:state.user.name,em:now().toISOString()};}
-  else if(!r.cortFoto)return false;
-  const antes=JSON.stringify(SIM);const de=r.total;if(dar)r.cortFoto=info;else delete r.cortFoto;
+  const antes=JSON.stringify(SIM);const de=r.total;const k0=cortN(r);
+  if(dar){if(!foto)return false;const m=cortMotivos().some(x=>x.id===mot)?mot:null;nota=String(nota||'').trim().slice(0,200);
+    const c=r.cortFoto||{n:0,fotos:[],itens:[],motivo:m,nota,por:state.user.email,porNome:state.user.name,em:now().toISOString()};
+    c.fotos=(c.fotos||[]).concat(foto);c.itens=(c.itens||[]).concat({foto,motivo:m,nota});c.n=k0+1;if(!c.motivo&&m)c.motivo=m;if(!c.nota&&nota)c.nota=nota;r.cortFoto=c;}
+  else{if(!r.cortFoto)return false;const c=r.cortFoto;if(k0<=1)delete r.cortFoto;else{c.n=k0-1;c.fotos=(c.fotos||[]).slice(0,c.n);c.itens=(c.itens||[]).slice(0,c.n);}}
   pendRecalc(r,n);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return false;}
-  auditLog('venda_cortesia','venda/'+(r.saleNo||r.id),[{campo:'foto cortesia',de:dar?null:1,para:dar?1:null},...(de!==r.total?[{campo:'valor',de,para:r.total}]:[])],{n,motivo:(info||{}).motivo||null});
-  state.pend.cort=null;toast(dar?TE('po_cort_dada'):TE('po_cort_retirada'));render();return true;}
+  auditLog('venda_cortesia','venda/'+(r.saleNo||r.id),[{campo:'foto cortesia',de:k0||null,para:cortN(r)||null},...(de!==r.total?[{campo:'valor',de,para:r.total}]:[])],{n,motivo:dar?(mot||null):null});
+  toast(dar?TE('po_cort_dada'):TE('po_cort_retirada'));render();return true;}
 // 24/11 (Ronaldo): porta-retrato no pedido. Um toque no modelo põe uma unidade; ✕ tira uma. Cada unidade precisa de uma foto escolhida a mais
 // que o pacote (a que vai no porta-retrato); sem sobra o modelo fica desligado e o "Rever as fotos" leva o cliente a escolher mais uma.
 const portaResumo=r=>{const q={};portasDe(r).forEach(id=>{q[id]=(q[id]||0)+1;});return Object.entries(q).map(([id,n])=>catName(id)+(n>1?' ×'+n:'')).join(', ');};
-// 25/11 (Ronaldo, na operação: "é como se fosse um carrinho"): o que está no pedido, linha a linha, com − n +, o valor de cada linha e o total
-function pendCarrinho(r,o){const QM=r.pkgs||(r.pkg?{[r.pkg]:r.pkgQ||1}:{});const id=esc(r.id);
-  const qb=(act,actMenos,p,q,mx)=>o.rw?`<span class="pend-q"><button data-act="${actMenos}" data-id="${id}" data-p="${esc(p)}" data-q="${q-1}" aria-label="−1">−</button><b>${q}</b><button data-act="${act}" data-id="${id}" data-p="${esc(p)}" data-q="${q+1}" ${q<mx?'':'disabled'} aria-label="+1">+</button></span>`:`<b>${q}×</b>`;
-  const L=Object.entries(QM).map(([p,q])=>{const todas=(DATA.catalog.find(c=>c.id===p)||{}).digital==='todas';return `<li><span class="pc-n">${esc(catName(p))}</span>${qb('pend-pkg-q','pend-pkg-q',p,q,PKG_Q_MAX)}<b class="pc-v">${fmtR(q*priceOf(p))}</b></li>`;});
-  const auto=(r.cart||[]).filter(x=>x.id==='extra').length-(QM.extra||0);if(auto>0)L.push(`<li><span class="pc-n">${esc(catName('extra'))} <small>${TE('n_adic',auto)}</small></span><b>${auto}×</b><b class="pc-v">${fmtR(auto*priceOf('extra'))}</b></li>`);
-  const pq={};portasDe(r).forEach(x=>{pq[x]=(pq[x]||0)+1;});Object.entries(pq).forEach(([p,q])=>L.push(`<li><span class="pc-n">${esc(catName(p))}</span>${qb('pend-porta','pend-porta-rm',p,q,PKG_Q_MAX)}<b class="pc-v">${fmtR(q*priceOf(p))}</b></li>`));
-  if(r.cortFoto)L.push(`<li><span class="pc-n">${TE('po_cort_foto')}</span><b>1×</b><b class="pc-v">${fmtR(0)}</b></li>`);
-  return `<div class="pend-carrinho"><ul>${L.join('')}</ul><div class="pc-tot"><span>${TE('total')}</span><b>${r.total!=null?fmtR(r.total):'—'}</b></div>${o.rw?`<button class="btn primary pc-pagar" data-act="pend-passo" data-id="${id}" data-p="${r.total===0?3:2}">${r.total===0?TE('po_passo_conf'):TE('pagamento')} →</button>`:''}</div>`;}
-function pendPortaHtml(r,o){const M=DATA.catalog.filter(c=>c.kind==='porta');if(!M.length||vendaMais(r.card))return '';const pr=portasDe(r);const sobra=true;const pode=o.rw; // 25/11: sempre à venda; sem foto a mais, sai cópia
-  const q={};pr.forEach(id=>{q[id]=(q[id]||0)+1;});
-  return `<div class="pend-porta" id="pend-porta"><span class="eyebrow">${TE('po_porta')}</span><div class="pend-portas">${M.map(c=>`<div class="pend-pr${q[c.id]?' on':''}"><button data-act="pend-porta" data-id="${esc(r.id)}" data-p="${esc(c.id)}" ${pode?'':'disabled'} title="${esc(sobra?TE('po_porta_add'):TE('po_porta_sem_sobra'))}">${c.foto?`<img src="${esc(c.foto)}" alt="">`:''}<b>${esc(c.name)}</b><span>+ ${fmtR(priceOf(c.id))}</span></button>${q[c.id]?`<span class="pill good">${q[c.id]}×</span>${o.rw?`<button class="link-danger" data-act="pend-porta-rm" data-id="${esc(r.id)}" data-p="${esc(c.id)}" aria-label="${esc(TE('po_porta_rm',c.name))}">${CROSS}</button>`:''}`:''}</div>`).join('')}</div></div>`;}
-function pendPorta(id,pid,poe){const r=dinPegar(id);if(!r)return false;if(!r.escolha){toast('Esta compra já veio com o pacote escolhido');return false;}
+function pendPorta(id,pid,poe,foto){const r=dinPegar(id);if(!r)return false;if(!r.escolha){toast('Esta compra já veio com o pacote escolhido');return false;}
   const n=pendN(r);if(!n||n!==r.n){toast('As fotos deste pedido não conferem. Cancele e peça ao cliente para escolher de novo.');render();return false;}
   if(!DATA.catalog.some(c=>c.id===pid&&c.kind==='porta'))return false;const pr=portasDe(r);
-  if(poe){pr.push(pid);}else{const i=pr.lastIndexOf(pid);if(i<0)return false;pr.splice(i,1);}
-  const antes=JSON.stringify(SIM);const de=r.total;r.portas=pr;if(!pr.length)delete r.portas;
+  const antes=JSON.stringify(SIM);const pf=(r.portaFotos||[]).slice(0,pr.length);while(pf.length<pr.length)pf.push(null);
+  if(poe){pr.push(pid);pf.push(foto||null);}else{const i=pr.lastIndexOf(pid);if(i<0)return false;pr.splice(i,1);pf.splice(i,1);}
+  const de=r.total;r.portas=pr;r.portaFotos=pf;if(!pr.length){delete r.portas;delete r.portaFotos;}
   pendRecalc(r,n);
   if(!saveSim()){SIM=Object.assign(SIM0(),JSON.parse(antes));toast(TE('nao_gravou'));render();return false;}
   auditLog('venda_porta','venda/'+(r.saleNo||r.id),[{campo:'porta-retrato',de:poe?null:catName(pid),para:poe?catName(pid):null},...(de!==r.total?[{campo:'valor',de,para:r.total}]:[])],{n});
@@ -2464,7 +2502,7 @@ function pvDados(r){const ed={};(r.selected||[]).forEach(id=>{const e=SIM.edits&
 // Foto com fundo de IA imprime (Eduardo, 29/10; a D8 do plano caiu): a montagem é refeita com o fundo de 5000 px (fileHi).
 // Ordem: favoritas, depois as do campo, depois as de IA, até s.prints. semFoto = impressões do pacote sem foto nenhuma para imprimir.
 function impFotos(s){const iaB=iaSet();const ph=(s.selected||[]).filter(id=>s.status==='paga'||!iaB.has(id)).map(id=>({k:id,t:'ph',id})); /* v93: base de IA não imprime como foto, menos a já paga (navegador antigo) */const ai=(s.aiSel||[]).map(x=>{const [id,bg]=String(x).split('|');return {k:'ai:'+x,t:'ai',id,bg};});
-  const fav=new Set(s.fav||[]);const ord=[...[...ph,...ai].filter(x=>fav.has(x.k)),...ph.filter(x=>!fav.has(x.k)),...ai.filter(x=>!fav.has(x.k))];
+  const fav=new Set(s.fav||[]);const br=new Set(s.brinde||[]);const tudo=[...ph,...ai];const ord=[...tudo.filter(x=>br.has(x.k)),...tudo.filter(x=>!br.has(x.k)&&fav.has(x.k)),...ph.filter(x=>!br.has(x.k)&&!fav.has(x.k)),...ai.filter(x=>!br.has(x.k)&&!fav.has(x.k))];
   const n=Math.max(0,+(s.prints!=null?s.prints:simPrints(s))||0);
   const base=ord.length;for(let i=base;i<n&&base;i++){const x=ord[i%base];ord.push(Object.assign({},x,{k:x.k+'#'+(Math.floor(i/base)+1)}));} // 25/11: mais impressões que fotos = cópias
   return {fotos:ord.slice(0,n),todas:ord,semFoto:Math.max(0,n-ord.length),n};}
@@ -2684,9 +2722,16 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can
   const item=([card,s])=>{const im=s.impressao||{estado:'nao_se_aplica'};const job=state.impJob&&state.impJob.card===card?state.impJob:null;const hora=s.paidAt?hhmm(new Date(s.paidAt)):'';
     const ped=noSrv?impPedido(s.saleNo||card):null;const naFila=impAtivo(ped);const linhaFila=ped?impPedidoLinha(ped):'';const cancelaFila=naFila&&rw?`<div class="row"><button class="btn ghost" data-act="if-acao" data-a="cancelar" data-id="${ped.id}">${TE('imp_cancelar_ped')}</button></div>`:'';
     const semSaida=ped&&(ped.estado==='erro'||ped.estado==='cancelado');
-    const pac=mvPacote(s.cart),val=saleTotal(s);const head=`<div class="din-top"><b>${esc(s.saleNo||card)}${pac?' · '+esc(pac):''}${val!=null?' · '+fmtR(val):''}</b><span class="row" style="gap:8px">${cards?'':`<button class="chip" data-act="caixa-open" data-card="${esc(card)}">${TE('imp_recibo_qr')}</button>`}</span></div><div class="note">${TE('imp_head_nota',esc(card),hora,esc(pagNome(s.payment||'')),TE('n_impressas',s.prints||0))}</div>`;
+    // 25/11 (Ronaldo): uma linha por venda (venda, hora, pacote, impressões, situação, ações); o detalhe só abre quando há o que fazer
+    const pac=mvPacote(s.cart),val=saleTotal(s);const reAb=!!(state.impRe&&state.impRe.card===card);const jrAb=!!(job&&job.re);
+    const fechado=!naFila&&!jrAb&&!reAb&&im.estado!=='pendente';const nre0=(s.impressoes||[]).filter(x=>x.reimpressao&&x.resultado==='ok').length;
+    const sit=im.estado==='nao_se_aplica'?`<span class="pill neutral">${TE('po_so_digital')}</span>`:im.estado==='pendente'?`<span class="pill warn">${TE('imp_sit_aguarda')}</span>`:`<span class="pill good">${TE('imp_sit_impressa')}</span>`;
+    const quem=[esc(pagNome(s.payment||'')),im.porNome&&im.estado!=='pendente'?TE('por_x',esc(im.porNome)):'',nre0?TE('n_reimp',nre0):''].filter(Boolean).join(' · ');
+    const acao=!rw||!fechado?'':im.estado==='nao_se_aplica'?`<button class="btn ghost" data-act="imp-avulsa" data-card="${esc(card)}">${TE('imp_ver_fotos')}</button>`:`<button class="btn ghost" data-act="imp-reprint" data-card="${esc(card)}">${TE('imp_reimprimir')}</button>`;
+    const recibo=cards?'':` <button class="imp-link" data-act="caixa-open" data-card="${esc(card)}">${TE('imp_recibo_qr')}</button>`;
+    const head=`<div class="imp-linha"><b>${esc(s.saleNo||card)}</b><span>${hora}</span><span class="imp-pac">${esc(pac||'—')}${val!=null?' · '+fmtR(val):''}<small>${quem}${recibo}</small></span><span class="imp-n">${s.prints||0}</span><span>${sit}</span><span class="imp-acoes">${acao}</span></div>`;
     let body='';
-    if(im.estado==='nao_se_aplica')body=`<div class="note"><span class="pill neutral">${TE('po_so_digital')}</span> ${TE('n_fotos',(s.selected||[]).length+(s.aiSel||[]).length)}</div>${avulsa(card,s)}`;
+    if(im.estado==='nao_se_aplica')body=fechado?'':avulsa(card,s);
     else if(im.estado==='pendente'){const S=impSel(card,s);const selK=new Set(S.sel.map(x=>x.k));const feitas=new Set(im.feitas||[]);
       const nota=S.semFoto?`<div class="note"><span class="pill bad">${TE('imp_sem_foto',S.semFoto)}</span></div>`:'';
       const ult=(s.impressoes||[]).slice(-1)[0];const falhaIA=ult&&ult.falhasIA&&ult.falhasIA.length?`<div class="note"><span class="pill warn">${TE('imp_falha_fundo')}</span></div>`:'';
@@ -2701,18 +2746,17 @@ function impPainel(cards,o){o=o||{};const L=impVendas(cards,!cards);const rw=can
         ${rw?`<div class="row"><button class="btn primary" data-act="imp-print" data-card="${esc(card)}" ${S.sel.length?'':'disabled'}>${TE('imp_imprimir_n',TE('n_fotos',S.sel.length))}</button></div>`:''}${avulsa(card,s)}`;}
     else{const re=state.impRe&&state.impRe.card===card?state.impRe:null;const max=impReMax(s);const nre=(s.impressoes||[]).filter(x=>x.reimpressao&&x.resultado==='ok');const feitas=new Set(im.feitas||[]);
       const jr=job&&job.re?job:null;const r=jr&&jr.res||{ok:[],falhasIA:[],falhas:[]};
-      body=`<div class="note">${TE('imp_impressa_info',im.porNome?TE('por_x',esc(im.porNome)):'',im.em?TE('as_hora',hhmm(new Date(im.em))):'',TE('n_fotos',im.n||0),nre.length?' · '+TE('n_reimp',nre.length):'')}</div>
-        ${jr&&jr.fase==='montando'?`<div class="note"><span class="pill neutral">${TE('imp_prep_re')}</span></div>`:''}
+      body=`${jr&&jr.fase==='montando'?`<div class="note"><span class="pill neutral">${TE('imp_prep_re')}</span></div>`:''}
         ${naFila?linhaFila+cancelaFila:jr&&(jr.fase==='imprimindo'||jr.fase==='impresso')?`${noSrv?linhaFila:`<div class="note">${TE('imp_re_enviadas',r.ok.length)}</div>`}${r.falhasIA.length?`<div class="note"><span class="pill warn">${TE('imp_falha_fundo')}</span></div>`:''}
           ${jr.local&&jr.fase==='imprimindo'?impConf():rw?`<div class="row"><button class="btn primary" data-act="imp-ok" data-card="${esc(card)}">${TE('imp_saiu_certo')}</button><button class="btn ghost" data-act="imp-falha" data-card="${esc(card)}">${TE('imp_nao_saiu')}</button></div>`:''}`
         :!rw||jr?'':re&&!re.todas?`<div class="din-conf"><span class="eyebrow">${TE('imp_quais_re',max)}</span>
           <div class="imp-grid">${impFotos(s).todas.filter(x=>feitas.has(x.k)).map(x=>impThumb(x,(re.sel||[]).includes(x.k),'imp-repick',card)).join('')}</div>
           <div class="chips">${IMP_MOTIVOS.map(([k,l])=>`<button class="chip" data-act="imp-motivo" data-m="${k}" aria-pressed="${re.motivo===k}">${TEk('impm_'+k,l)}</button>`).join('')}</div>
           <div class="row"><button class="btn primary" data-act="imp-reprint-ok" data-card="${esc(card)}" ${(re.sel||[]).length?'':'disabled'}>${(re.sel||[]).length?TE('imp_reimprimir_n',TE('n_fotos',(re.sel||[]).length)):TE('imp_reimprimir')}</button><button class="btn ghost" data-act="imp-reprint-no">${TE('voltar')}</button></div></div>`
-          :state.impRe&&state.impRe.card===card&&state.impRe.todas?avulsa(card,s):`<div class="row"><button class="btn ghost" data-act="imp-reprint" data-card="${esc(card)}">${TE('imp_reimprimir')}</button><button class="btn ghost" data-act="imp-avulsa" data-card="${esc(card)}">${TE('imp_ver_fotos')}</button></div>`}`;}
-    return `<div class="din-item" data-imp="${esc(card)}">${head}${body}</div>`;};
+          :state.impRe&&state.impRe.card===card&&state.impRe.todas?avulsa(card,s):''}`;}
+    return `<div class="din-item imp-item" data-imp="${esc(card)}">${head}${body.trim()?`<div class="imp-corpo">${body}</div>`:''}</div>`;};
   return `<div class="panel" id="imp-painel"><div class="head"><h2>${TE('imp_titulo')}</h2>${o.semRolo?'':roloSelo('neutral',true)}</div>
-    ${L.length?`<div class="din-list">${L.map(item).join('')}</div>`:`<div class="note">${TE('imp_nenhuma')}</div>`}</div>`;}
+    ${L.length?`<div class="din-list imp-lista"><div class="imp-linha imp-cab"><span>${TE('mv_venda')}</span><span>${TE('mv_hora')}</span><span>${TE('pacote')}</span><span>${TE('imp_col_imp')}</span><span>${TE('imp_col_sit')}</span><span></span></div>${L.map(item).join('')}</div>`:`<div class="note">${TE('imp_nenhuma')}</div>`}</div>`;}
 // "Minhas vendas de hoje" (D9): deste notebook e do e-mail de quem está logado; nenhum total.
 // 18/11 (Ronaldo): o pacote de cada venda. 25/11 (Ronaldo): o vendedor vê o valor e o total do que vendeu (só o confirmado)
 // 25/11: vendas do dia de todos os postos (servidor), relidas a cada 30 s enquanto a lista está na tela
@@ -3119,7 +3163,7 @@ const soCards=card=>{const so=state.kiosk&&state.kiosk.so;return so&&so.card===c
 function sesHora(c){const sim=SIM.sessions[c]||{};const t=sim.openedAt?Date.parse(sim.openedAt):NaN;if(!isNaN(t))return t;const s=sessionObj(c);const m=/^(\d\d?):(\d\d)/.exec((s&&s.time)||sim.time||'');return m?new Date().setHours(+m[1],+m[2],0,0):0;}
 // fotos do cliente no Checkout: sessão por sessão, em ordem de hora; cada foto sabe de que sessão veio (ses)
 function lojaFotos(card,soltas){const vis=new Set();const so=state.kiosk&&state.kiosk.so;const sel=so&&so.card===card&&so.cards; // selfie: fora o que já foi comprado (C3)
-  const vend=sel?vendidasTodas():null;return soCards(card).filter(c=>!sel||!lojaJaPaga(c)).map(c=>({c,s:sessionObj(c)})).filter(x=>x.s).sort((a,b)=>sesHora(a.c)-sesHora(b.c))
+  const vend=sel&&!(SIM.sessions[card]||{}).pai?vendidasTodas():null;return soCards(card).filter(c=>!sel||!lojaJaPaga(c)).map(c=>({c,s:sessionObj(c)})).filter(x=>x.s).sort((a,b)=>sesHora(a.c)-sesHora(b.c))
   .flatMap(({c,s})=>[...(soltas?((SIM.sessions[c]||{}).ia||[]).filter(id=>soltas.has(id)).map(id=>({id})):[]),...s.photos].filter(p=>hasImg(p.id)&&!(SIM.discarded||{})[p.id]&&lojaDele(card,p.id)&&!(vend&&vend.has(p.id))&&!vis.has(p.id)&&vis.add(p.id)).map(p=>({...p,ses:c})));}
 // rótulo discreto de cada bloco quando as fotos vêm de mais de uma sessão: ponto · hora
 function lojaBloco(c){const s=sessionObj(c)||{};const sim=SIM.sessions[c]||{};const pt=(DATA.points.find(p=>p.id===sim.point)||{}).name||s.pdv||sim.pdv||'';const h=sim.openedAt?new Date(sim.openedAt).toLocaleTimeString(LOCALES[lang()]||'pt-BR',{hour:'2-digit',minute:'2-digit'}):(s.time||'');return [pt,h].filter(Boolean).join(' · ');}
@@ -3225,19 +3269,20 @@ function vendaCalc(n,nSes,pkg,mais,q){const M=n?pkgMapa(pkg,q):{};const ids=Obje
   const lines=ids.map(id=>{const p=DATA.catalog.find(c=>c.id===id);return {t:'pkg',id,q:M[id],n:p.digital==='todas'?'todas':M[id]*p.digital,v:M[id]*priceOf(id)};});if(extra)lines.push({t:'extra',n:extra,un:priceOf('extra'),v:extra*priceOf('extra')});
   return {pkg,q,pkgs:M,extra,cart,total,prints,sobra,nSes,save,lines};}
 // 17/11 (Ronaldo): "+1 foto cortesia" na venda paga do Checkout. O cliente escolhe uma foto a mais; o atendente que pode dar cortesia
-// registra o motivo e o que houve. O pacote é calculado com uma foto a menos e a cortesia sai digital e impressa, sem valor.
+// registra o motivo e o que houve. A cortesia sai digital e impressa, sem valor. Desde 25/11 o vendedor escolhe a foto e cada cortesia soma uma impressão ao pacote.
 // 24/11 (Ronaldo): porta-retrato no pedido do Checkout (r.portas, um id por unidade). Cada unidade cobra o modelo e leva a CORTESIA
 // PORTA-RETRATO (brinde do catálogo): uma das fotos escolhidas sai impressa sem custo, então o pacote conta uma foto a menos, como a cortesia.
-const pendSoBrinde=r=>!r.pkg&&!vendaMais(r.card)&&((r.cortFoto?1:0)+portasDe(r).length)>0&&pendN(r)-((r.cortFoto?1:0)+portasDe(r).length)<=0;
+const cortN=r=>r&&r.cortFoto?Math.max(1,+r.cortFoto.n||1):0; // 25/11: quantas fotos cortesia (cada uma com a foto escolhida pelo vendedor)
+const pendSoBrinde=r=>!r.pkg&&!vendaMais(r.card)&&(cortN(r)+portasDe(r).length)>0&&pendN(r)-(cortN(r)+portasDe(r).length)<=0;
 // total zero (só cortesia): a forma vira Cortesia, sem maquininha; voltou a ter valor, a forma volta a ser escolhida
 function pendMeioAjusta(r){if(r.total===0){r.meio='cortesia';r.prov='cortesia';}else if(r.meio==='cortesia'){delete r.meio;delete r.prov;delete r.iniciado;}}
 function pendRecalc(r,n){if(r.pkg||vendaMais(r.card)||pendSoBrinde(r)){const c=vendaCalcCort(r,n,r.pkg);Object.assign(r,{cart:c.cart.map(x=>({...x})),total:c.total,prints:c.prints});}else if(!r.pkg)Object.assign(r,{cart:[],total:null,prints:null});pendMeioAjusta(r);}
 const portasDe=r=>Array.isArray(r&&r.portas)?r.portas.filter(id=>DATA.catalog.some(c=>c.id===id&&c.kind==='porta')):[];
-function vendaCalcCort(r,n,pkg){const mais=vendaMais(r.card);const kc=r.cortFoto?1:0;const pr=portasDe(r);const k=kc+pr.length;const sem=!(r.pkgs&&Object.keys(r.pkgs).length)&&!pkg;
-  if(sem&&!mais&&k>0&&n-k<=0){const cart=cartComPreco([...(kc?[{id:'cort_foto'}]:[]),...pr.map(id=>({id}))]);return {pkg:null,soBrinde:true,q:1,pkgs:{},extra:0,cart,total:cartTotal(cart),prints:k,sobra:0,nSes:n,save:0,lines:[...(kc?[{t:'cort',n:1,v:0}]:[]),...pr.map(id=>({t:'porta',id,v:priceOf(id)}))]};} // 25/11: só a cortesia (ou só o porta-retrato)
-  const nb=Math.max(n?1:0,n-k);const c=vendaCalc(nb,Math.max(nb,(r.nSes||n)-k),pkg,mais,r.pkgs||r.pkgQ);
-  if(!k||(!c.pkg&&!mais))return c;const cart=cartComPreco([...c.cart,...(kc?[{id:'cort_foto'}]:[]),...pr.map(id=>({id}))]);
-  return Object.assign({},c,{cart,total:cartTotal(cart),prints:c.prints+k,lines:[...c.lines,...(kc?[{t:'cort',n:1,v:0}]:[]),...pr.map(id=>({t:'porta',id,v:priceOf(id)}))]});}
+function vendaCalcCort(r,n,pkg){const mais=vendaMais(r.card);const kc=cortN(r);const pr=portasDe(r);const k=kc+pr.length;const sem=!(r.pkgs&&Object.keys(r.pkgs).length)&&!pkg;
+  if(sem&&!mais&&k>0&&n-k<=0){const cart=cartComPreco([...Array.from({length:kc},()=>({id:'cort_foto'})),...pr.map(id=>({id}))]);return {pkg:null,soBrinde:true,q:1,pkgs:{},extra:0,cart,total:cartTotal(cart),prints:k,sobra:0,nSes:n,save:0,lines:[...(kc?[{t:'cort',n:kc,v:0}]:[]),...pr.map(id=>({t:'porta',id,v:priceOf(id)}))]};} // 25/11: só a cortesia (ou só o porta-retrato)
+  const nb=n;const c=vendaCalc(nb,Math.max(nb,r.nSes||n),pkg,mais,r.pkgs||r.pkgQ); // 25/11 (Ronaldo): só soma; cada cortesia e cada porta-retrato é mais uma impressão, sem descontar do pacote
+  if(!k||(!c.pkg&&!mais))return c;const cart=cartComPreco([...c.cart,...Array.from({length:kc},()=>({id:'cort_foto'})),...pr.map(id=>({id}))]);
+  return Object.assign({},c,{cart,total:cartTotal(cart),prints:c.prints+k,lines:[...c.lines,...(kc?[{t:'cort',n:kc,v:0}]:[]),...pr.map(id=>({t:'porta',id,v:priceOf(id)}))]});}
 // quanto a cortesia valeu: o que a venda custaria sem ela menos o que o cliente pagou
 const cortValor=(r,n)=>{const c=vendaCalcCort(Object.assign({},r,{cortFoto:null}),n,r.pkg);return Math.max(0,Math.round(100*(c.total-(r.total||0)))/100);};
 function lojaThumb(x,big){if(x.t==='ai'){const b=bgOf(x.bg);const nm=bgNomeCli(b);return `<span class="compimg" data-comp="${esc(x.id)}|${esc(x.bg)}" style="background-image:url(${b?esc(b.file):''})"><span class="lj-aimk" role="status"><i class="lj-spin" aria-hidden="true"></i>${T('aiMaking')}</span></span><span class="lj-ed" aria-hidden="true" title="${esc(nm)}">${esc(edSeloTxt())}</span><span class="laibadge" aria-label="${esc(edSeloTxt()+' · '+nm)}" title="${esc(nm)}">${ICO.spark}</span>`;}return '';}
@@ -3309,9 +3354,9 @@ function lojaFresh(card){const pk=(SIM.sessions[card]||{}).pick;simFresh();if(pk
 const lojaJaPaga=card=>(SIM.sessions[card]||{}).status==='paga';
 // tempos da venda para o BI: cada marca vale uma vez por sessão e vai no evento "criar"
 function ljTempo(card,nome){const s=simOf(card);s.tempos=s.tempos||{};if(!s.tempos[nome]){s.tempos[nome]=now().toISOString();saveSim();}}
-// comprar mais: fotos do cliente que ninguém comprou ainda. Achado pela selfie, só as dele (so.ids); nunca abre foto de outra família.
-function lojaMaisIds(){const k=state.kiosk;if(!k||!k.code)return [];const base=(SIM.sessions[k.code]||{}).pai||k.code;const b=sessionObj(base);const so=k.so&&k.so.card===k.code?k.so.ids:null;const vend=vendidasTodas();
-  return (so||(b?b.photos.map(p=>p.id):[])).filter(id=>hasImg(id)&&!(SIM.discarded||{})[id]&&!vend.has(id));}
+// comprar mais: todas as fotos do cliente (25/11: compradas ou não, é uma venda nova). Achado pela selfie, só as dele (so.ids); nunca abre foto de outra família.
+function lojaMaisIds(){const k=state.kiosk;if(!k||!k.code)return [];const base=(SIM.sessions[k.code]||{}).pai||k.code;const b=sessionObj(base);const so=k.so&&k.so.card===k.code?k.so.ids:null;
+  return (so||(b?b.photos.map(p=>p.id):[])).filter(id=>hasImg(id)&&!(SIM.discarded||{})[id]);} // 25/11 (Ronaldo): venda nova do zero, compradas ou não
 // venda complementar em sessão-filha (opção B do plano de 29/10): venda, impressão e QR próprios, sem mexer na venda já paga
 function lojaMais(){const k=state.kiosk;const ids=lojaMaisIds();if(!ids.length){toast(T('ljMaisNada'));render();return;}
   const base=(SIM.sessions[k.code]||{}).pai||k.code;const o=SIM.sessions[base]||{};const filhas=Object.keys(SIM.sessions).filter(c=>SIM.sessions[c].pai===base);
@@ -3320,6 +3365,8 @@ function lojaMais(){const k=state.kiosk;const ids=lojaMaisIds();if(!ids.length){
   if(!saveSim()){delete SIM.sessions[card];toast(T('ljSaveFail'));render();return;}
   lojaTimerOff();Object.assign(k,{code:card,so:{card,cards:[card],ids},tv:null,galTok:null,paid:null,doneAt:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
   ljTempo(card,'inicio');render();lojaPreload(card);}
+// a galeria da compra já paga (para mostrar o QR de novo)
+function ljQrPago(k){const pc=lojaJaPaga(k.code)?k.code:(soCards(k.code).find(c=>lojaJaPaga(c))||k.code);const sim=SIM.sessions[pc]||{};const tok=sim.galVenda||galDaSessao(pc);const gm=tok&&SIM.galerias&&SIM.galerias[tok];return gm?{token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false}:null;}
 const ljMaisBtn=()=>lojaMaisIds().length?`<button class="lj-cta lj-restart" data-act="loja-mais">${ICO.spark} ${T('ljMais')}</button>`:'';
 // tela final: com paid.wait (cartão, PIX ou dinheiro aguardando) não há QR nem contagem; a contagem só começa depois da confirmação (D5)
 function lojaFim(paid){const k=state.kiosk;lojaTimerOff();k.step='done';k.paid=paid;k.ver=null;k.prontoDesde=k.prontoEm=Date.now();k.doneAt=paid&&paid.wait?null:Date.now();render();if(!(paid&&paid.wait))k.timer=setInterval(lojaTick,250);}
@@ -4320,6 +4367,9 @@ gq_payCancel:['O pagamento não foi concluído. Suas fotos continuam aqui para c
  gq_waitCash:['Seu pagamento em dinheiro está esperando o caixa','Your cash payment is waiting at the counter','Tu pago en efectivo está esperando en la caja','Votre paiement en espèces attend la caisse','Deine Barzahlung wartet an der Kasse'],
  gq_waitCashD:['Assim que a equipe confirmar, suas fotos aparecem aqui.','As soon as the team confirms it, your photos will appear here.','En cuanto el equipo lo confirme, tus fotos aparecerán aquí.','Dès que l’équipe le confirme, vos photos apparaissent ici.','Sobald das Team bestätigt, erscheinen deine Fotos hier.'],
  ljMais:['Comprar mais fotos','Buy more photos','Comprar más fotos','Acheter d’autres photos','Mehr Fotos kaufen'],
+ ljJaComprouH:['Você já comprou fotos nesta visita','You already bought photos on this visit','Ya compraste fotos en esta visita','Vous avez déjà acheté des photos lors de cette visite','Du hast bei diesem Besuch schon Fotos gekauft'],
+ ljJaComprouSub:['Quer mais? Comprar mais fotos começa uma venda nova, com todas as suas fotos.','Want more? Buy more photos starts a new sale with all your photos.','¿Quieres más? Comprar más fotos inicia una venta nueva con todas tus fotos.','Envie de plus ? Acheter d’autres photos lance une nouvelle vente avec toutes vos photos.','Mehr gewünscht? Mehr Fotos kaufen startet einen neuen Kauf mit all deinen Fotos.'],
+ ljVerQR:['Ver o QR das fotos compradas','Show the QR of the photos I bought','Ver el QR de las fotos compradas','Voir le QR des photos achetées','QR der gekauften Fotos zeigen'],
  ljMaisNada:['Você já comprou todas as suas fotos.','You have already bought all your photos.','Ya compraste todas tus fotos.','Vous avez déjà acheté toutes vos photos.','Du hast schon alle deine Fotos gekauft.'],
  ljAlreadyPaid:['Estas fotos já foram compradas. Fale com a equipe para comprar mais.','These photos have already been purchased. Talk to the team to buy more.','Estas fotos ya fueron compradas. Habla con el equipo para comprar más.','Ces photos ont déjà été achetées. Parlez à l’équipe pour en acheter d’autres.','Diese Fotos wurden schon gekauft. Sprich mit dem Team, wenn du mehr kaufen möchtest.'],
  ljSaveFail:['Não conseguimos registrar o pedido. Fale com a equipe no balcão.','We couldn’t register your order. Please talk to the team at the counter.','No pudimos registrar tu pedido. Habla con el equipo en el mostrador.','Nous n’avons pas pu enregistrer votre commande. Parlez à l’équipe au comptoir.','Wir konnten deine Bestellung nicht speichern. Bitte sprich mit dem Team an der Theke.'],
@@ -4864,9 +4914,8 @@ function vQuiosque(){
   if(k.step==='gallery'||k.step==='pick'||k.step==='pay'||k.step==='cart'){if(k.step==='gallery'||k.step==='pick')k.ver=k.i||0;k.step='review';} // v96: sem etapa de pacote e pagamento no Checkout
   if(k.prep&&k.prep===k.code&&k.step==='review')return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2">${T('foundYou')}</h1><p class="lj-sub" aria-live="polite">${T('ljSeparando')}</p></div></div>`;
   const pagoTudo=lojaJaPaga(k.code)||!!(k.so&&k.so.cards&&!lojaFotos(k.code).length); // v91 (revisão C3): achado pela selfie e tudo já comprado
-  if((k.step==='review'||k.step==='cart')&&pagoTudo){ // quem já comprou e volta: mostra de novo o QR e o código da galeria (com o botão de comprar mais)
-    const pc=lojaJaPaga(k.code)?k.code:(soCards(k.code).find(c=>lojaJaPaga(c))||k.code);const sim=SIM.sessions[pc]||{};const tok=sim.galVenda||galDaSessao(pc);const gm=tok&&SIM.galerias&&SIM.galerias[tok];if(gm){setTimeout(()=>{if(state.kiosk===k&&k.step!=='done')lojaFim({token:tok,codigo:gm.codigo||null,total:saleTotal(sim),meio:null,wait:false});},0);}}
-  if((k.step==='review'||k.step==='cart')&&pagoTudo)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljAlreadyPaid')}</h1>${ljMaisBtn()}${ljVoltar('loja-new','')}</div></div>`;
+  // 25/11 (Ronaldo): quem já comprou e volta escolhe: comprar mais (venda nova, do zero, com todas as fotos dele) ou ver o QR da compra
+  if((k.step==='review'||k.step==='cart')&&pagoTudo)return `<div class="lj lj-full lj-hero">${photo}${stripe}${deco}<div class="lj-top"><div class="lj-logo" data-act="loja-logo">${logo}</div>${topR('')}</div><div class="lj-heroin"><div class="lj-okbig">${ICO.ok}</div><h1 class="lj-h2 lj-paidmsg">${T('ljJaComprouH')}</h1><p class="lj-sub">${T('ljJaComprouSub')}</p>${ljMaisBtn()}${ljQrPago(k)?`<button class="lj-ghost" data-act="loja-qr-pago">${ICO.phone} ${T('ljVerQR')}</button>`:''}${ljVoltar('loja-new','')}</div></div>`;
   if(k.step==='review'){const n=items.length;ljAncora(k,items); // galeria em grade: todas as fotos inteiras (sem corte), um toque marca ou desmarca
     const full=st0=>String(st0||'').replace('--bs:cover','--bs:contain');const spr=st0=>/sprites\//.test(String(st0||''));
     const img=(q,s2,cls,lb)=>{const rot=lb?`<span class="lj-lbsrc">${esc(lb)}</span>`:'';
@@ -12309,6 +12358,20 @@ const EQ={
   po_cort_mais1:["+1 foto cortesia","+1 complimentary photo","+1 foto de cortesía","+1 photo offerte","+1 Gratisfoto"],
   po_cort_sac:["Cortesia","Complimentary photos","Cortesía","Offert","Gratisfotos"],
   po_cort_foto:["1 foto cortesia","1 complimentary photo","1 foto de cortesía","1 photo offerte","1 Gratisfoto"],
+  po_cort_n:[(n)=>`${n} fotos cortesia`,(n)=>`${n} complimentary photos`,(n)=>`${n} fotos de cortesía`,(n)=>`${n} photos offertes`,(n)=>`${n} Gratisfotos`],
+  po_cort_linha:["Foto cortesia","Complimentary photo","Foto de cortesía","Photo offerte","Gratisfoto"],
+  po_cort_desc:["1 foto impressa, de presente","1 printed photo, free","1 foto impresa, de regalo","1 photo imprimée, offerte","1 gedrucktes Foto, gratis"],
+  po_porta_desc:["com 1 foto do cliente impressa dentro","with 1 printed customer photo inside","con 1 foto del cliente impresa dentro","avec 1 photo du client imprimée","mit 1 gedruckten Kundenfoto"],
+  po_porta_com:[(f)=>`com a ${f}`,(f)=>`with ${f}`,(f)=>`con la ${f}`,(f)=>`avec la ${f}`,(f)=>`mit ${f}`],
+  po_qual_cort:["Qual foto vai de cortesia?","Which photo is complimentary?","¿Qué foto va de cortesía?","Quelle photo est offerte ?","Welches Foto ist gratis?"],
+  po_qual_porta:["Qual foto vai no porta-retrato?","Which photo goes in the frame?","¿Qué foto va en el portarretrato?","Quelle photo va dans le cadre ?","Welches Foto kommt in den Rahmen?"],
+  po_pick_ok:["Adicionar","Add","Agregar","Ajouter","Hinzufügen"],
+  po_pick_sem_foto:["Toque na foto que vai impressa","Tap the photo to print","Toca la foto que se imprime","Touchez la photo à imprimer","Tippen Sie auf das Foto zum Drucken"],
+  po_nada_carrinho:["Nada no carrinho","Cart is empty","Carrito vacío","Panier vide","Warenkorb leer"],
+  po_dig_imp:[(n)=>n===1?"digital e impressa":"digitais e impressas",(n)=>"digital and printed",(n)=>n===1?"digital e impresa":"digitales e impresas",(n)=>n===1?"numérique et imprimée":"numériques et imprimées",(n)=>"digital und gedruckt"],
+  po_so_dig:[(n)=>n===1?"só digital":"só digitais",(n)=>"digital only",(n)=>"solo digital",(n)=>"numérique seulement",(n)=>"nur digital"],
+  foto_n:[(n)=>`foto ${n}`,(n)=>`photo ${n}`,(n)=>`foto ${n}`,(n)=>`photo ${n}`,(n)=>`Foto ${n}`],
+  cort_porta:["Foto do porta-retrato","Frame photo","Foto del portarretrato","Photo du cadre","Rahmenfoto"],
   po_cort_dar:["Dar a foto cortesia","Give the complimentary photo","Dar la foto de cortesía","Offrir la photo","Gratisfoto geben"],
   po_cort_retirar:["Retirar cortesia","Remove complimentary photo","Quitar cortesía","Retirer l'offre","Gratisfoto entfernen"],
   po_cort_dada:["Foto cortesia na venda. O cliente leva uma foto a mais sem pagar.","Complimentary photo added. The customer gets one more photo for free.","Foto de cortesía en la venta. El cliente lleva una foto más sin pagar.","Photo offerte ajoutée. Le client reçoit une photo de plus sans payer.","Gratisfoto hinzugefügt. Der Kunde bekommt ein Foto mehr ohne Zahlung."],
@@ -12431,6 +12494,10 @@ const EQ={
   impm_outro:["Outro","Other","Otro","Autre","Sonstiges"],
   imp_reimprimir_n:[(n)=>`Reimprimir ${n}`,(n)=>`Reprint ${n}`,(n)=>`Reimprimir ${n}`,(n)=>`Réimprimer ${n}`,(n)=>`${n} nachdrucken`],
   imp_reimprimir:["Reimprimir","Reprint","Reimprimir","Réimprimer","Nachdrucken"],
+  imp_sit_aguarda:["Aguardando","Waiting","Esperando","En attente","Wartet"],
+  imp_sit_impressa:["Impressa","Printed","Impresa","Imprimée","Gedruckt"],
+  imp_col_imp:["Impressões","Prints","Impresiones","Impressions","Drucke"],
+  imp_col_sit:["Situação","Status","Estado","État","Status"],
   imp_titulo:["Imprimir","Print","Imprimir","Imprimer","Drucken"],
   imp_nenhuma:["Nenhuma venda para imprimir","No sales to print","Ninguna venta para imprimir","Aucune vente à imprimer","Keine Verkäufe zum Drucken"],
   imp_conf:["Imprimindo e conferindo com a impressora...","Printing and checking with the printer...","Imprimiendo y verificando con la impresora...","Impression et vérification avec l'imprimante...","Drucken und mit dem Drucker abgleichen..."],
@@ -12971,9 +13038,9 @@ function idiomaSel(){return `<div class="idiomas" role="group" aria-label="${esc
 function idiomaEquipe(l){if(!idiomaEqOk(l))return;state.langEq=l;try{localStorage.setItem('eterna.equipe.idioma',l)}catch(e){}const u=state.user&&USERS[state.user.email];if(u){u.idioma=l;saveUsers(u.email);}render();const b=[...document.querySelectorAll(`[data-act="idioma-equipe"][data-l="${l}"]`)].find(x=>x.getClientRects().length);if(b)b.focus({preventScroll:true});}
 function vSemAcesso(){return `<div class="enter login"><div class="login-mark">${venueLogo(84,'dark')}</div><div class="panel"><h2>${TE('sem_acesso')}</h2><div class="note">${TE('sem_acesso_nota')}</div><div class="note">${esc(state.user?state.user.email:'')}</div><div class="row"><button class="btn ghost" data-act="role-exit">${TE('sair')}</button></div></div></div>`;}
 function roleViews(){return VIEWS.filter(v=>v[3]&&canView(v[0]));}
-const WRITE_OPS={'pend-porta':'c','pend-porta-rm':'c','porta-salvar':'u','porta-foto':'u','mtg-modo':'u','ps-modo':'u','co-troca':'u','venda-cancel-ok':'u','cort-motivos-salvar':'u','pend-cort-ok':'c','pend-cort-rm':'c','posto-parear':'u','posto-revogar':'u','leitor-criar':'u','leitor-codigo':'u','leitor-revogar':'u','leitor-revogar-sim':'u','ag-colar-ok':'u','ag-atualizar':'u','ag-chave-salvar':'u','ag-chave-testar':'u','ag-chave-remover-ok':'u','es-importar-totais':'c','visita-juntar':'u','visita-separar':'u','demo-toggle':'u','cartao-ligar':'u','cartao-lote':'u','loja-fim':'u','rolo-troca':'c','rolo-troca-sim':'c','es-importar':'c','ag-salvar':'u','ag-apagar':'u','ag-apagar-ok':'u','ag-importar':'u','ag-feriados':'u','ag-novo':'u','ag-editar':'u','busca-janela':'u','busca-janela-dia':'u','vis-rosto':'u','ia-ligada':'u','ia-cliques':'u','ia-ponto':'u','ia-volante':'u','fotofila-mini':'u','bg-ativar':'u','bg-lab':'u',save:'u',note:'u',score:'u',tag:'u','m-rate':'u','m-adjust':'u','m-reset':'u','m-discard':'u','caixa-confirm':'c','caixa-pay':'c','caixa-reprint':'c','caixa-mode':'u','caixa-tef':'c','checkout-pick':'u','checkout-lost':'u','checkout-seller':'u','checkout-step':'u','checkout-face':'u','checkout-selfie':'u','checkout-next-guest':'u','fila-add':'u','fila-bg':'u','ing-start':'c','ing-stop':'u','ing-reset':'d','imp-files':'c',price:'u','price-reset':'u','repo-set':'u','repo-toggle':'u',reset:'d','stock-swap':'u','flag-state':'u','flag-point':'u','tr-ok':'u','tr-desfaz':'u','tr-analise':'u','tr-forcar':'u','train-import':'c','kiosk-buy':'c','rv-save':'u','rv-sync':'u','fe-new':'c','fe-edit':'u','fe-save':'u','fe-del':'d','fe-qty':'u','venue-pick':'u','venue-reset':'u','venue-logo-clear':'u','aj-open':'u','aj-step':'u','aj-reset':'u','aj-discard':'u','di-add':'c','di-done':'u','user-new':'c','user-del-ok':'d','bg-on':'u','user-active':'u','perm-save':'u','perm-preset-apply':'u','gal-criar':'c','gal-cort':'u','gal-cort-ok':'u','gal-cort-rm':'u','gal-menor':'u','gal-reenviar':'u','gal-ev-novo':'c','gal-ev-salvar':'c','gal-ev-editar':'u','gal-ev-encerrar':'d','aj-autotoggle':'u','din-confirm':'c','din-cancel':'c','din-cancel-ok':'c','pend-pos-ok':'c','pend-pkg':'c','pend-meio':'c','imp-print':'c','imp-ok':'c','imp-falha':'c','imp-reprint-ok':'c','rf-save':'u','perm-copy-ok':'u','fundos-modo':'u','envio-files':'c','envio-escolher':'c','envio-repetir':'c','pend-recomecar':'u','pend-chamar':'u','pend-recomecar-sim':'u','pend-rever':'u','fot-cfg-salvar':'u','tr-luz-usar':'u','tr-cfg':'u','zerar-ir':'u'};
+const WRITE_OPS={'pend-porta':'c','pend-porta-rm':'c','porta-salvar':'u','porta-foto':'u','mtg-modo':'u','ps-modo':'u','co-troca':'u','venda-cancel-ok':'u','cort-motivos-salvar':'u','pend-cort-ok':'c','pend-pick-ok':'c','pend-cort-rm':'c','posto-parear':'u','posto-revogar':'u','leitor-criar':'u','leitor-codigo':'u','leitor-revogar':'u','leitor-revogar-sim':'u','ag-colar-ok':'u','ag-atualizar':'u','ag-chave-salvar':'u','ag-chave-testar':'u','ag-chave-remover-ok':'u','es-importar-totais':'c','visita-juntar':'u','visita-separar':'u','demo-toggle':'u','cartao-ligar':'u','cartao-lote':'u','loja-fim':'u','rolo-troca':'c','rolo-troca-sim':'c','es-importar':'c','ag-salvar':'u','ag-apagar':'u','ag-apagar-ok':'u','ag-importar':'u','ag-feriados':'u','ag-novo':'u','ag-editar':'u','busca-janela':'u','busca-janela-dia':'u','vis-rosto':'u','ia-ligada':'u','ia-cliques':'u','ia-ponto':'u','ia-volante':'u','fotofila-mini':'u','bg-ativar':'u','bg-lab':'u',save:'u',note:'u',score:'u',tag:'u','m-rate':'u','m-adjust':'u','m-reset':'u','m-discard':'u','caixa-confirm':'c','caixa-pay':'c','caixa-reprint':'c','caixa-mode':'u','caixa-tef':'c','checkout-pick':'u','checkout-lost':'u','checkout-seller':'u','checkout-step':'u','checkout-face':'u','checkout-selfie':'u','checkout-next-guest':'u','fila-add':'u','fila-bg':'u','ing-start':'c','ing-stop':'u','ing-reset':'d','imp-files':'c',price:'u','price-reset':'u','repo-set':'u','repo-toggle':'u',reset:'d','stock-swap':'u','flag-state':'u','flag-point':'u','tr-ok':'u','tr-desfaz':'u','tr-analise':'u','tr-forcar':'u','train-import':'c','kiosk-buy':'c','rv-save':'u','rv-sync':'u','fe-new':'c','fe-edit':'u','fe-save':'u','fe-del':'d','fe-qty':'u','venue-pick':'u','venue-reset':'u','venue-logo-clear':'u','aj-open':'u','aj-step':'u','aj-reset':'u','aj-discard':'u','di-add':'c','di-done':'u','user-new':'c','user-del-ok':'d','bg-on':'u','user-active':'u','perm-save':'u','perm-preset-apply':'u','gal-criar':'c','gal-cort':'u','gal-cort-ok':'u','gal-cort-rm':'u','gal-menor':'u','gal-reenviar':'u','gal-ev-novo':'c','gal-ev-salvar':'c','gal-ev-editar':'u','gal-ev-encerrar':'d','aj-autotoggle':'u','din-confirm':'c','din-cancel':'c','din-cancel-ok':'c','pend-pos-ok':'c','pend-pkg':'c','pend-meio':'c','imp-print':'c','imp-ok':'c','imp-falha':'c','imp-reprint-ok':'c','rf-save':'u','perm-copy-ok':'u','fundos-modo':'u','envio-files':'c','envio-escolher':'c','envio-repetir':'c','pend-recomecar':'u','pend-chamar':'u','pend-recomecar-sim':'u','pend-rever':'u','fot-cfg-salvar':'u','tr-luz-usar':'u','tr-cfg':'u','zerar-ir':'u'};
 // ações de cadastro e de permissões têm módulo fixo (não dependem da tela aberta); ação que grava em tela sem módulo é barrada
-const ACT_MOD={'pend-porta':'venda','pend-porta-rm':'venda','porta-salvar':'configuracao','porta-foto':'configuracao','mtg-modo':'configuracao','ps-modo':'configuracao','co-troca':'configuracao','venda-cancel-ok':'venda','cort-motivos-salvar':'configuracao','pend-cort-ok':'venda','pend-cort-rm':'venda','tr-analise':'configuracao','tr-forcar':'configuracao','posto-parear':'configuracao','posto-revogar':'configuracao','leitor-criar':'configuracao','leitor-codigo':'configuracao','leitor-revogar':'configuracao','leitor-revogar-sim':'configuracao','ag-atualizar':'escala','ag-colar':'escala','ag-colar-ok':'escala','ag-chave-salvar':'configuracao','ag-chave-testar':'configuracao','ag-chave-trocar':'configuracao','ag-chave-remover':'configuracao','ag-chave-remover-ok':'configuracao','es-ano':'estatisticas','es-dias-csv':'estatisticas','es-importar-totais':'estatisticas','visita-juntar':'venda','visita-separar':'venda','demo-toggle':'usuarios','rolo-troca':'venda','rolo-troca-sim':'venda','stock-swap':'estoque','es-importar':'estatisticas','ag-salvar':'escala','ag-apagar':'escala','ag-apagar-ok':'escala','ag-importar':'escala','ag-feriados':'escala','ag-novo':'escala','ag-editar':'escala','busca-janela':'configuracao','busca-janela-dia':'configuracao','vis-rosto':'configuracao','ia-ligada':'configuracao','ia-cliques':'configuracao','ia-ponto':'configuracao','ia-volante':'configuracao','fotofila-mini':'filafoto','bg-ativar':'configuracao','bg-lab':'configuracao','user-new':'usuarios','user-save':'usuarios','user-active':'usuarios','user-del-ok':'usuarios','perm-save':'permissoes','perm-preset-apply':'permissoes','aj-autotoggle':'set','din-confirm':'venda','din-cancel':'venda','din-cancel-ok':'venda','pend-pos-ok':'venda','pend-pkg':'venda','pend-meio':'venda','imp-print':'venda','imp-ok':'venda','imp-falha':'venda','imp-reprint-ok':'venda','rf-save':'configuracao','perm-copy-ok':'permissoes','fundos-modo':'configuracao','envio-files':'set','envio-escolher':'set','envio-repetir':'set','pend-recomecar':'venda','pend-chamar':'venda','pend-recomecar-sim':'venda','pend-rever':'venda','fot-cfg-salvar':'configuracao','tr-luz-usar':'configuracao','zerar-ir':'configuracao','zerar-previa':'configuracao',
+const ACT_MOD={'pend-pick-ok':'venda','pend-porta':'venda','pend-porta-rm':'venda','porta-salvar':'configuracao','porta-foto':'configuracao','mtg-modo':'configuracao','ps-modo':'configuracao','co-troca':'configuracao','venda-cancel-ok':'venda','cort-motivos-salvar':'configuracao','pend-cort-ok':'venda','pend-cort-rm':'venda','tr-analise':'configuracao','tr-forcar':'configuracao','posto-parear':'configuracao','posto-revogar':'configuracao','leitor-criar':'configuracao','leitor-codigo':'configuracao','leitor-revogar':'configuracao','leitor-revogar-sim':'configuracao','ag-atualizar':'escala','ag-colar':'escala','ag-colar-ok':'escala','ag-chave-salvar':'configuracao','ag-chave-testar':'configuracao','ag-chave-trocar':'configuracao','ag-chave-remover':'configuracao','ag-chave-remover-ok':'configuracao','es-ano':'estatisticas','es-dias-csv':'estatisticas','es-importar-totais':'estatisticas','visita-juntar':'venda','visita-separar':'venda','demo-toggle':'usuarios','rolo-troca':'venda','rolo-troca-sim':'venda','stock-swap':'estoque','es-importar':'estatisticas','ag-salvar':'escala','ag-apagar':'escala','ag-apagar-ok':'escala','ag-importar':'escala','ag-feriados':'escala','ag-novo':'escala','ag-editar':'escala','busca-janela':'configuracao','busca-janela-dia':'configuracao','vis-rosto':'configuracao','ia-ligada':'configuracao','ia-cliques':'configuracao','ia-ponto':'configuracao','ia-volante':'configuracao','fotofila-mini':'filafoto','bg-ativar':'configuracao','bg-lab':'configuracao','user-new':'usuarios','user-save':'usuarios','user-active':'usuarios','user-del-ok':'usuarios','perm-save':'permissoes','perm-preset-apply':'permissoes','aj-autotoggle':'set','din-confirm':'venda','din-cancel':'venda','din-cancel-ok':'venda','pend-pos-ok':'venda','pend-pkg':'venda','pend-meio':'venda','imp-print':'venda','imp-ok':'venda','imp-falha':'venda','imp-reprint-ok':'venda','rf-save':'configuracao','perm-copy-ok':'permissoes','fundos-modo':'configuracao','envio-files':'set','envio-escolher':'set','envio-repetir':'set','pend-recomecar':'venda','pend-chamar':'venda','pend-recomecar-sim':'venda','pend-rever':'venda','fot-cfg-salvar':'configuracao','tr-luz-usar':'configuracao','zerar-ir':'configuracao','zerar-previa':'configuracao',
   // v94-ux (parte I, risco 3): ações de Preços e Checkout com módulo fixo; bg-on pede Alterar em Configurações do venue em qualquer tela
   'bg-on':'configuracao','cartao-lote':'catalogo','cartao-ligar':'venda','loja-fim':'catalogo',price:'catalogo','price-reset':'catalogo','tr-cfg':'configuracao'};
 function guardAct(a){const op=WRITE_OPS[a];if(!op)return true;if(state.assumido){toast(TE('vc_so_ver'));return false;}const m=ACT_MOD[a]||MODULE_OF[state.view];if(!m){toast('Sem permissão nesta tela');return false;}if(can(m,op))return true;toast(`Sem permissão para ${OPS.find(o=>o[0]===op)[1].toLowerCase()} em ${MODULES.find(x=>x[0]===m)[1]}`);return false;}
@@ -14304,8 +14371,12 @@ document.addEventListener('click',e=>{
     case 'pend-porta-rm':state.pend.passo={id:d.id,p:1};pendPorta(d.id,d.p,false);break;
     case 'porta-salvar':portaSalvar(+d.i);break;
     case 'porta-foto':portaFotoEscolher(+d.i);break;
-    case 'pend-cort':state.pend.cort=d.id||null;render();if(d.id){const el=$('#pend-cort-nota');if(el)el.focus();}break;
-    case 'pend-cort-ok':pendCortesia(d.id,true);break;
+    case 'pend-pick':state.pend.pick={id:d.id,t:d.t,p:d.p||null,foto:null};state.pend.passo={id:d.id,p:1};render();break; // 25/11: + na cortesia ou no porta-retrato abre a escolha da foto
+    case 'pend-pick-foto':{const pk=state.pend.pick;if(pk){pk.mot=($('#pend-cort-mot')||{}).value||pk.mot||'';pk.nota=($('#pend-cort-nota')||{}).value||pk.nota||'';pk.foto=d.k;render();}break;}
+    case 'pend-pick-x':state.pend.pick=null;render();break;
+    case 'pend-pick-ok':{const pk=state.pend.pick;if(!pk||pk.id!==d.id)break;if(!pk.foto){toast(TE('po_pick_sem_foto'));break;}
+      const ok=pk.t==='cort'?pendCortesia(d.id,true,pk.foto,($('#pend-cort-mot')||{}).value||pk.mot,($('#pend-cort-nota')||{}).value||pk.nota):pendPorta(d.id,pk.p,true,pk.foto);
+      if(ok){state.pend.pick=null;render();}break;}
     case 'pend-cort-rm':pendCortesia(d.id,false);break;
     case 'pend-sel':state.pend.sel=d.id;state.pend.passo=null;state.caixa.dinCancel=null;render();break;
     case 'pend-passo':state.pend.passo={id:d.id,p:+d.p||1};render();break;
@@ -14319,6 +14390,7 @@ document.addEventListener('click',e=>{
         const n=pendTiraLeva(c,d.id);log(`Visita: ${c} separada (${postoNome()})`);if(n>=0)toast(n?'Leva separada: as fotos dela saíram do pedido':'Leva separada da família');render();});break;}
     case 'pend-meio':state.pend.passo=null;pendEscolher(d.id,{meio:d.m});break;
     case 'loja-mais':lojaCliente();lojaMais();break;
+    case 'loja-qr-pago':{const q=ljQrPago(state.kiosk);if(q)lojaFim(q);break;}
     case 'loja-exit':case 'loja-new':lojaSaiu();lojaCliente();lojaReset();render();break; // R3: saindo da tela Pronto ou do valor, o Posto vê "o cliente saiu"
     case 'loja-list':state.kiosk.list=!state.kiosk.list;render();break;
     case 'loja-sair':lojaSair();break;
