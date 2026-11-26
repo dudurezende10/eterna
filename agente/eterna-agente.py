@@ -1246,12 +1246,17 @@ def grupo_juntar(resultados):
     melhor = {}
     for r in resultados:
         for f in r.get("fotos") or []:
+            # 25/11 (fotos vizinhas): ancora = ALGUMA pessoa, sozinha, tem nesta foto sim >= LIMITE e rosto principal. O maior
+            # sim e o principal abaixo podem vir de pessoas diferentes e, juntos, não provam que alguém da selfie está na frente
+            anc = bool(f.get("sim", 0) >= LIMITE and f.get("principal"))
             o = melhor.get(f["id"])
             if o is None:
-                melhor[f["id"]] = dict(f)
+                o = melhor[f["id"]] = dict(f)
+                o["ancora"] = anc
             else:
                 o["sim"] = max(o["sim"], f["sim"])
                 o["principal"] = bool(o.get("principal") or f.get("principal"))
+                o["ancora"] = bool(o.get("ancora") or anc)
     return sorted(melhor.values(), key=lambda x: -x["sim"])[:500]
 
 
@@ -1399,12 +1404,18 @@ def busca_janela_efetiva(janela=None):
     return BUSCA_JANELA_MIN if v is None else v
 
 
+_viz_tl = threading.local()   # 25/11 (fotos vizinhas): os vetores da selfie desta busca, só nesta thread e só até a resposta sair
+
+
 def buscar_vetor(me, dias=1, janela=None, agora=None):
     """Fotos com o rosto do vetor me (128, normalizado), nos dias da busca. Separada de _buscar para medir (v91 parte B:
     selfie até a primeira foto ampliada em menos de 2 s; testes/selfie_rapidez.py). Cada foto vem com principal: o rosto que
     bateu tem largura >= ROSTO_PRINCIPAL x a do maior rosto daquela foto (B5: quem só aparece no fundo não abre a sessão
     inteira no Checkout). Com janela (minutos) > 0, só as fotos de sessões com a última foto dentro da janela."""
     np = _cv["np"]
+    vets = getattr(_viz_tl, "vets", None)
+    if vets is not None:
+        vets.append(me)
     hoje = time.time() if agora is None else agora
     M, ps, L, mx = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
     jan = busca_janela_efetiva(janela)
@@ -6534,6 +6545,23 @@ SESS_CAND_MAX = 3               # S7: sessões candidatas por trilha (a aberta +
 SESS_RET_DIAS = 60              # S14: arquivos de sessão
 SESS_Q_SCORE, SESS_Q_LARG, SESS_Q_FRONTAL = 0.80, 60, 0.35   # S5: rosto de qualidade (vota por sessão nova)
 SESS_CLIQUE_ANTES, SESS_CLIQUE_DEPOIS = 48 * 3600, 600       # S2: clique válido em [u − 48 h, u + 10 min]
+# 25/11 (Eduardo; docs/planos/2026-11-25-fotos-vizinhas-checkout.md): fotos vizinhas na selfie do Checkout (sess_vizinhas)
+def _viz_env(nome, padrao, piso, teto):
+    """Inteiro do ambiente dentro de [piso, teto]; ausente ou ilegível vale o padrão; fora da faixa vale a ponta mais próxima."""
+    try:
+        return max(piso, min(teto, int(os.environ[nome])))
+    except (KeyError, ValueError):
+        return padrao
+
+
+# Ajustáveis sem publicar (reiniciar o agente): ETERNA_VIZ_GAP (30 a 900), ETERNA_VIZ_ALCANCE (60 a 3600), ETERNA_VIZ_MAX (1 a 200)
+VIZ_GAP = _viz_env("ETERNA_VIZ_GAP", 180, 30, 900)               # s, no máximo, entre uma foto da caminhada e a seguinte (clique)
+VIZ_ALCANCE = _viz_env("ETERNA_VIZ_ALCANCE", 1500, 60, 3600)     # s, para cada lado, desde a foto reconhecida mais próxima
+VIZ_MAX = _viz_env("ETERNA_VIZ_MAX", 80, 1, 200)                 # fotos vizinhas por busca (as mais próximas das reconhecidas)
+VIZ_LIM = LIMITE                # rosto de qualidade com semelhança abaixo disto contra o grupo reconhecido = outra pessoa
+VIZ_G_OUTROS = 300              # rostos de acompanhantes comparados entre si
+VIZ_G_MAX = 400                 # rostos do grupo reconhecido usados na comparação
+VIZ_ENV = os.environ.get("ETERNA_VIZINHAS") != "0"   # ETERNA_VIZINHAS=0 desliga e vence o Painel de controle
 FF_PRONTA_MIN = 15              # D1 (Eduardo, 30/10): sai da coluna final 15 min depois de ficar pronto
 FF_PIDS = 6                     # miniaturas por grupo aberto (risco 2: o pid abre o original)
 FF_PRONTAS_MAX = 24             # cartões na coluna final
@@ -7947,12 +7975,14 @@ def sess_feed(desde=0, ontem=False):
 
 def sess_status():
     jan = busca_janela_efetiva()         # fora do sess_lock (lê o estado.db com o estado_lock)
+    vz = viz_cfg()                       # idem
     with sess_lock:
         hoje = _ff_hoje()
         return {"v": 2, "pausa": SESS_PAUSA, "rostos": bool(sess_rostos_on()), "rev": sess_rev[0], "gen": BOOT, "dias": BUSCA_DIAS,
                 "janela_min": jan, "janela_padrao": BUSCA_JANELA_MIN, "janela_fixa": BUSCA_DIAS_EXPLICITA,
                 "hoje": sum(1 for x in sess.values() if x["dia"] == hoje and not x.get("removida")),
-                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada"), "visitas": _vis_status_mem()}
+                "abertas": sum(1 for x in sess.values() if x["status"] != "fechada"), "visitas": _vis_status_mem(),
+                "vizinhas": {"ligada": bool(VIZ_ENV and vz.get("ligada")), "forcada": not VIZ_ENV, "em": vz.get("em")}}
 
 
 # ---------- v97: visitas (as levas da mesma família, ligadas por rosto) ----------
@@ -8678,6 +8708,285 @@ def _rosto_q_db(pids):
     except Exception as ex:
         print("  visitas: rostos de qualidade do boot indisponíveis (%s)" % str(ex)[:80])
     return out
+
+
+# ---------- 25/11: fotos vizinhas na selfie do Checkout ----------
+# Plano docs/planos/2026-11-25-fotos-vizinhas-checkout.md. A selfie devolve só as fotos em que o rosto bateu; a família de
+# costas, de perfil ou olhando longe, fotografada junto pelo mesmo fotógrafo, ficava de fora. sess_vizinhas parte das fotos
+# reconhecidas (sim >= LIMITE e rosto principal) e anda pela trilha delas, foto a foto na ordem do clique, para antes e para
+# depois. Para, naquele sentido, na primeira foto com rosto de qualidade (tabela rosto_q) que não bate com o grupo
+# reconhecido (semelhança abaixo de LIMITE), na primeira foto ainda sem leitura de rosto, na sessão aberta ou protegida (escola ou menor), quando passa
+# mais de VIZ_GAP entre uma foto e a seguinte, ou nos tetos (VIZ_ALCANCE para cada lado da reconhecida mais próxima, VIZ_MAX
+# fotos por busca). Um ensaio longo entra inteiro enquanto as fotos vierem em sequência. Na busca em grupo, o grupo
+# reconhecido junta os rostos principais das fotos de todas as pessoas da selfie. Só o Checkout assistido usa (POST /rostos/buscar sem
+# todo); a galeria por QR e a de escola não. Chave: config/vizinhas {"ligada": bool} (só POST /vizinhas/config, Admin) e
+# ETERNA_VIZINHAS=0. Não grava nada; só lê as sessões em memória (com o sess_lock) e o rostos.db (sem o lock).
+VIZ_CFG_PADRAO = {"ligada": True}
+_viz_cfg = {"t": 0.0, "v": None}
+
+
+def viz_valida(j):
+    """config/vizinhas: só {"ligada": bool} (por e em são de auditoria). Outro formato = None."""
+    if not isinstance(j, dict) or not isinstance(j.get("ligada"), bool):
+        return None
+    return {"ligada": j["ligada"]}
+
+
+def viz_cfg():
+    """Interruptor das fotos vizinhas (estado.db config/vizinhas), relido a cada 3 s. Nunca chamar com o sess_lock na mão.
+    Só vale "ligada" por padrão quando o documento não existe. Documento que existe e não pôde ser lido (banco ocupado,
+    formato ruim) vale desligada até a próxima leitura boa."""
+    agora = time.time()
+    if agora - _viz_cfg["t"] < 3 and _viz_cfg["v"] is not None:
+        return _viz_cfg["v"]
+    v = None
+    try:
+        if os.path.exists(ESTADO_DB):
+            with estado_lock:
+                db = estado_db()
+                try:
+                    r = db.execute("select valor from doc where col = 'config' and id = 'vizinhas' and valor is not null").fetchone()
+                finally:
+                    db.close()
+            if r:
+                v = {"ligada": False, "ilegivel": True}
+                j = json.loads(r[0])
+                ok_ = viz_valida(j)
+                if ok_ is not None:
+                    v = {**ok_, "por": j.get("por"), "em": j.get("em")}
+    except Exception:
+        v = v or {"ligada": False, "ilegivel": True}
+    v = v or dict(VIZ_CFG_PADRAO)
+    _viz_cfg.update(t=agora, v=v)
+    return v
+
+
+def viz_cfg_mem():
+    """O último valor lido (sem abrir o banco). Antes da primeira leitura (agente acabou de subir) vale desligada: quem
+    decide é sempre o viz_cfg, que lê o banco na primeira chamada."""
+    return _viz_cfg["v"] or {"ligada": False}
+
+
+def _viz_db():
+    """Leitura do rostos.db só para as vizinhas: espera no máximo 1 s por banco ocupado (o rostos_db espera 30 s e a selfie
+    do cliente ficaria parada); não cria tabela nem muda o modo do banco."""
+    return sqlite3.connect(ROSTOS_DB, timeout=1, check_same_thread=False)
+
+
+def viz_ligada():
+    """ETERNA_VIZINHAS=0 vence; senão vale o config/vizinhas (ligada sem documento). Fora do sess_lock."""
+    return bool(VIZ_ENV and viz_cfg().get("ligada") is True)
+
+
+def viz_cfg_gravar(ligada, por=None, posto=None, quem_ip=None):
+    """POST /vizinhas/config {ligada, por, posto} (Painel de controle, só Admin). Grava config/vizinhas no estado.db (rev
+    novo) e registra no console e no visitas-log.jsonl. Vale na busca seguinte. Fora do sess_lock."""
+    de = viz_cfg().get("ligada") is True
+    v = {"ligada": bool(ligada), "por": _vis_txt(por, 60), "em": _iso()}
+    with estado_lock:
+        db = estado_db()
+        try:
+            rev = db.execute("select coalesce(max(rev), 0) from doc").fetchone()[0] + 1
+            db.execute("insert into doc values (?,?,?,?,?) on conflict(col, id) do update set valor = excluded.valor, rev = excluded.rev, em = excluded.em",
+                       ("config", "vizinhas", json.dumps(v, ensure_ascii=False), rev, _iso()))
+            db.commit()
+        finally:
+            db.close()
+    _viz_cfg.update(t=time.time(), v=dict(v))
+    print("  vizinhas: fotos vizinhas na selfie %s -> %s · por %s" % ("ligadas" if de else "desligadas", "ligadas" if v["ligada"] else "desligadas", v["por"] or "?"))
+    vis_log({"acao": "vizinhas_config", "ligada": v["ligada"], "de": de, "por": v["por"], "posto": _vis_txt(posto, 40),
+             "ip": None if quem_ip in (None, "127.0.0.1", "::1") else quem_ip, "em": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    return {"ok": True, "ligada": bool(VIZ_ENV and v["ligada"]), "forcada": not VIZ_ENV, "em": v["em"], "por": v["por"]}
+
+
+def sess_vizinhas(fotos, agora=None, info=None, vets=None):
+    """[{"id", "card", "mesma"}] das fotos vizinhas das reconhecidas (fotos = o que a busca devolveu, de uma pessoa ou do
+    grupo inteiro), na ordem do clique. mesma = a foto é de uma sessão que tem foto reconhecida. info (dict, opcional) recebe
+    "corte": "alcance" ou "max" quando a caminhada parou num teto, senão None. vets = os vetores da selfie (um por pessoa
+    buscada), para saber qual rosto de cada foto reconhecida é de quem fez a selfie. Qualquer erro devolve [] (a busca
+    responde como sempre)."""
+    try:
+        return _viz_calc(fotos, agora, info if isinstance(info, dict) else {}, vets)
+    except Exception as ex:
+        print("  vizinhas: fora nesta busca (%s)" % type(ex).__name__)
+        return []
+
+
+def _viz_calc(fotos, agora=None, info=None, vets=None):
+    info = {} if info is None else info
+    info["corte"] = None
+    hoje = _ff_hoje(agora)
+    fotos = [f for f in (fotos or []) if isinstance(f, dict) and isinstance(f.get("id"), str)]
+    rec = {f["id"] for f in fotos}                   # tudo o que a busca já devolveu (clara ou "talvez") não se repete aqui
+    # reconhecida que puxa vizinha: sim >= LIMITE e rosto principal da MESMA pessoa. Na busca em grupo quem diz é o campo
+    # ancora do grupo_juntar (o maior sim e o principal da foto podem ser de pessoas diferentes)
+    anc = [f["id"] for f in sorted(fotos, key=lambda f: -_num(f.get("sim")))
+           if (f["ancora"] is True if "ancora" in f else (_num(f.get("sim")) >= LIMITE and f.get("principal") is True))]
+    if not anc:
+        return []
+    ancs = set(anc)
+    tr = {}
+    with sess_lock:                                  # só copia; nenhuma consulta a banco aqui dentro
+        ks = set()
+        for p in anc:
+            x = sess.get(sess_pid.get(p))
+            if x and x.get("k") and x["dia"] == hoje and x["status"] == "fechada" and not x.get("removida") \
+                    and not _vis_protegida(x) and _num(x.get("cap0")) > 0 and p in x["fotos"]:
+                ks.add(x["k"])
+        for x in sess.values():
+            if x.get("k") in ks and x["dia"] == hoje and not x.get("removida"):
+                ts = x.get("_t") or {}
+                tr.setdefault(x["k"], []).append({
+                    "card": x["card"], "cap0": _num(x.get("cap0")), "cap1": _num(x.get("cap1")), "fotos": list(x["fotos"]),
+                    "t": {p: _num(ts[p][0]) for p in x["fotos"] if p in ts},
+                    "ia": set(x.get("ia") or ()), "n": x.get("_n") or 0,
+                    # sessão aberta, protegida ou sem hora do primeiro clique (não dá para medir o intervalo): barreira
+                    "ok": x["status"] == "fechada" and not _vis_protegida(x) and _num(x.get("cap0")) > 0})
+    if not tr or not os.path.exists(ROSTOS_DB):
+        return []
+    np = _cv.get("np")
+    db = _viz_db()
+    try:
+        # G, o grupo reconhecido (revisão de segurança, 25/11):
+        #  - o rosto de quem fez a selfie em cada foto reconhecida (semelhança >= LIMITE com um vetor da selfie) entra sempre;
+        #  - outro rosto principal (largura >= metade do maior da foto) só entra se o mesmo rosto for principal em pelo menos
+        #    2 fotos reconhecidas diferentes (semelhança entre si >= LIMITE). Quem aparece numa foto reconhecida só, de
+        #    qualquer tamanho, não entra no grupo. Sem os vetores da selfie, todo rosto segue esta segunda regra.
+        porf = {}
+        for i in range(0, len(anc), 500):
+            parte = anc[i:i + 500]
+            for p, larg, emb in db.execute("select pid, larg, emb from rosto where pid in (%s)" % ",".join("?" * len(parte)), parte):
+                porf.setdefault(p, []).append((_num(larg), bytes(emb)))
+
+        def vetor(e):
+            if np is not None:
+                return np.frombuffer(e, "float32")
+            v = array.array("f")
+            v.frombytes(e)
+            return v
+
+        vs = []
+        for v in (vets or [])[:GRUPO_MAX]:
+            v = [float(a) for a in v]
+            if len(v) == 128:
+                vs.append(np.asarray(v, "float32") if np is not None else v)
+
+        def proprio(q):                              # o rosto é de alguém da selfie
+            if np is not None:
+                return any(float(v @ q) >= LIMITE for v in vs)
+            return any(_dot(v, q) >= LIMITE for v in vs)
+
+        G, outros = [], []                           # outros: (foto, vetor, bytes)
+        for p in anc:
+            fs = porf.get(p) or []
+            mx = max((l for l, _ in fs), default=0)
+            for l, e in fs:
+                if len(e) != 512:
+                    continue
+                q = vetor(e)
+                if vs and proprio(q):
+                    G.append(e)
+                elif l >= ROSTO_PRINCIPAL * mx and len(outros) < (VIZ_G_OUTROS if np is not None else 60):
+                    outros.append((p, q, e))
+        if outros and np is not None:
+            O = np.stack([o[1] for o in outros])
+            S = O @ O.T
+            for i, o in enumerate(outros):
+                if any(S[i, j] >= LIMITE and outros[j][0] != o[0] for j in np.nonzero(S[i] >= LIMITE)[0]):
+                    G.append(o[2])
+        else:
+            for o in outros:
+                if any(x[0] != o[0] and _dot(x[1], o[1]) >= LIMITE for x in outros):
+                    G.append(o[2])
+        G = G[:VIZ_G_MAX]
+        if np is not None:
+            Gm = np.frombuffer(b"".join(G), "float32").reshape(-1, 128) if G else None
+        else:
+            Gm = [vetor(e) for e in G]
+        lidas, rq, veredito = set(), {}, {}
+
+        def carrega(pids):                           # leitura de rosto das fotos ao alcance, em lote (uma consulta por tabela)
+            for i in range(0, len(pids), 500):
+                parte = pids[i:i + 500]
+                q = ",".join("?" * len(parte))
+                lidas.update(p for (p,) in db.execute("select pid from foto where pid in (%s)" % q, parte))
+                for p, emb in db.execute("select pid, emb from rosto_q where pid in (%s)" % q, parte):
+                    rq.setdefault(p, []).append(bytes(emb))
+
+        def livre(p):                                # True = lida e sem rosto de qualidade de fora do grupo
+            v = veredito.get(p)
+            if v is None:
+                v = p in lidas
+                for e in (rq.get(p) or ()) if v else ():
+                    if len(e) != 512 or not G:
+                        v = False
+                    elif np is not None:
+                        v = float((Gm @ np.frombuffer(e, "float32")).max()) >= VIZ_LIM
+                    else:
+                        q = array.array("f")
+                        q.frombytes(e)
+                        v = max(_dot(g, q) for g in Gm) >= VIZ_LIM
+                    if not v:
+                        break
+                veredito[p] = v
+            return v
+
+        achadas = {}                                 # pid -> (distância em fotos até a reconhecida, trilha, posição, sessão)
+        mesmas = set()
+        for ki, k in enumerate(sorted(tr)):
+            # a trilha em fila única: sessões pela hora do primeiro clique, fotos na ordem da sessão. Hora da foto = o clique
+            # corrigido (em memória); sem ele (agente reiniciado), repartida entre o primeiro e o último clique da sessão.
+            # Sessão aberta ou protegida vira uma barreira (None) que a caminhada não atravessa.
+            fila = []
+            for s in sorted(tr[k], key=lambda s: (s["cap0"], s["cap1"], s["n"])):
+                if not s["ok"]:
+                    fila.append((None, 0.0, s))
+                    continue
+                n = len(s["fotos"])
+                for i, p in enumerate(s["fotos"]):
+                    t = s["t"].get(p)
+                    if not t:
+                        t = s["cap0"] + (s["cap1"] - s["cap0"]) * (i / (n - 1) if n > 1 else 0)
+                    fila.append((p, t, s))
+            pos = [i for i, e in enumerate(fila) if e[0] in ancs]
+            if not pos:
+                continue
+            t_a, t_b = min(fila[i][1] for i in pos) - VIZ_ALCANCE - 1, max(fila[i][1] for i in pos) + VIZ_ALCANCE + 1
+            carrega([e[0] for e in fila if e[0] and e[0] not in ancs and t_a <= e[1] <= t_b])
+            for i0 in pos:
+                t0 = fila[i0][1]
+                mesmas.add(fila[i0][2]["card"])
+                for passo in (1, -1):
+                    j, tp, dist, n = i0 + passo, t0, 0, 0
+                    while 0 <= j < len(fila):
+                        p, t, s = fila[j]
+                        if p is None or p in ancs:           # barreira, ou outra reconhecida (a caminhada dela continua daqui)
+                            break
+                        if abs(t - tp) > VIZ_GAP:            # mais de VIZ_GAP desde a foto anterior da caminhada
+                            break
+                        if abs(t - t0) > VIZ_ALCANCE:
+                            info["corte"] = info["corte"] or "alcance"
+                            break
+                        if not livre(p):                     # rosto de qualidade de fora do grupo, ou foto ainda sem leitura
+                            break
+                        dist += 1
+                        if p not in rec and p not in s["ia"]:
+                            if n >= VIZ_MAX:
+                                info["corte"] = "max"
+                                break
+                            n += 1
+                            o = achadas.get(p)
+                            if o is None or dist < o[0]:
+                                achadas[p] = (dist, ki, j, s["card"])
+                        tp = t
+                        j += passo
+    finally:
+        db.close()
+    if len(achadas) > VIZ_MAX:
+        info["corte"] = "max"
+    top = sorted(achadas.items(), key=lambda kv: kv[1][:3])[:VIZ_MAX]
+    top.sort(key=lambda kv: kv[1][1:3])
+    return [{"id": p, "card": v[3], "mesma": v[3] in mesmas} for p, v in top]
 
 
 def vis_protege(cards):
@@ -12592,6 +12901,9 @@ def estado_gravar(body, quem=""):
                 if d["col"] == "config" and d["id"] == "visitas":   # B1: o interruptor só muda pela rota /visitas/config
                     print("  config/visitas recusada pela sincronização (só POST /visitas/config) · de %s" % (quem or "?"))
                     continue
+                if d["col"] == "config" and d["id"] == "vizinhas":  # 25/11: as fotos vizinhas só pela rota /vizinhas/config
+                    print("  config/vizinhas recusada pela sincronização (só POST /vizinhas/config) · de %s" % (quem or "?"))
+                    continue
                 if d["col"] == "config" and d["id"] == "treino":    # 16/11: o interruptor da análise só pela rota /treino/config
                     print("  config/treino recusada pela sincronização (só POST /treino/config) · de %s" % (quem or "?"))
                     continue
@@ -12773,7 +13085,7 @@ SELFIE_LOG_DIR = os.environ.get("ETERNA_SELFIE_LOG") or os.path.join(os.path.dir
 _selfie_log_aviso = [False]
 
 
-def selfie_diagnostico(origem, r, t0, res, posto=None):
+def selfie_diagnostico(origem, r, t0, res, posto=None, vendedor=None):
     try:
         fotos = r.get("fotos") or []
         agora = time.time()
@@ -12783,7 +13095,10 @@ def selfie_diagnostico(origem, r, t0, res, posto=None):
                  "janela_min": r.get("janela_min"), "fila": r.get("fila"), "erro": r.get("error"),
                  "top": [{"id": f.get("id"), "sim": f.get("sim")} for f in fotos[:10]],
                  # 25/11: posto e todas as fotos devolvidas (id e semelhança, até 400), para conferir cada reclamação de selfie
-                 "posto": posto, "grupo": bool(r.get("grupo")), "ids": [[f.get("id"), f.get("sim")] for f in fotos[:400]]}
+                 "posto": posto, "vendedor": vendedor,   # 25/11 (Ronaldo): quem estava logado no aparelho, para ver por vendedor
+                 "grupo": bool(r.get("grupo")), "ids": [[f.get("id"), f.get("sim")] for f in fotos[:400]],
+                 # 25/11: fotos vizinhas devolvidas junto (só a quantidade e o teto que cortou; nunca id de foto nem de sessão)
+                 "viz_n": (r.get("viz") or {}).get("n"), "viz_corte": (r.get("viz") or {}).get("corte")}
         os.makedirs(SELFIE_LOG_DIR, exist_ok=True)
         with open(os.path.join(SELFIE_LOG_DIR, time.strftime("%Y-%m-%d", time.localtime(agora)) + ".jsonl"), "a", encoding="utf-8") as fh:
             fh.write(json.dumps(linha, ensure_ascii=False) + "\n")
@@ -12799,12 +13114,12 @@ def selfie_diagnostico(origem, r, t0, res, posto=None):
             print("  selfie: diagnóstico não gravou em %s: %s" % (SELFIE_LOG_DIR, str(ex)[:120]))
 
 
-def selfie_registra(origem, r, t0, posto=None):
+def selfie_registra(origem, r, t0, posto=None, vendedor=None):
     """Conta uma selfie para o BI. Falha aqui nunca atrapalha a busca do cliente."""
     try:
         r = r or {}
         res = "erro" if r.get("error") else "varias_pessoas" if r.get("varias") else "sem_rosto" if not r.get("rosto") else "achou" if r.get("fotos") else "nao_achou"
-        selfie_diagnostico(origem, r, t0, res, posto)
+        selfie_diagnostico(origem, r, t0, res, posto, vendedor)
         agora = time.time()
         with ev_lock:
             db = vendas_db()
@@ -15453,6 +15768,12 @@ def treino_db():
     c.execute("create table if not exists lixeira (pid text primary key, dia text, v integer, mot text, dados text, em text, rec_por text, rec_em text)")
     c.execute("create index if not exists lixeira_dia on lixeira(dia)")
     c.execute("create table if not exists lixeira_log (pid text, acao text, por text, em text)")
+    # 26/11: Montagens de IA na Curadoria: a nota de cada montagem (uma por foto e fundo, a última) e o registro de cada gravação
+    c.execute("create table if not exists mtg_nota (pid text, fundo text, dia text, v text, mot text, dados text, por text, em text,"
+              " primary key (pid, fundo))")
+    c.execute("create index if not exists mtg_nota_dia on mtg_nota(dia)")
+    c.execute("create table if not exists mtg_nota_log (pid text, fundo text, v text, mot text, dados text, por text, em text, idem text)")
+    c.execute("create unique index if not exists mtg_nota_log_idem on mtg_nota_log(idem)")
     return c
 
 
@@ -15830,7 +16151,7 @@ def treino_lgpd(pids):
             db = treino_db()
             try:
                 for p in pids:
-                    for tab in ("rotulo", "rotulo_hist", "medida", "lixeira", "lixeira_log"):
+                    for tab in ("rotulo", "rotulo_hist", "medida", "lixeira", "lixeira_log", "mtg_nota", "mtg_nota_log"):
                         db.execute("delete from %s where pid = ?" % tab, (p,))
                 db.commit()
             finally:
@@ -17331,6 +17652,12 @@ def lx_limpa_noite(t=None):
     lx_st["limpa_dia"] = hoje
     if n:
         print("  lixeira: %d linha(s) de fotos que saíram da biblioteca apagada(s)" % n)
+    try:
+        nm = mn_limpa(t)                               # 26/11: as notas das montagens seguem o mesmo prazo das fotos
+        if nm:
+            print("  montagens-ia: %d linha(s) de nota mais antigas que %d dias apagada(s)" % (nm, RETENCAO_DIAS))
+    except Exception as ex:
+        print("  montagens-ia: limpeza falhou (%s)" % type(ex).__name__)
     return n
 
 
@@ -17348,6 +17675,246 @@ def lx_loop():
         except Exception as ex:
             print("  lixeira: %s" % type(ex).__name__)
         lx_parar.wait(60)
+
+
+# ---------- Montagens de IA na Curadoria (26/11, plano docs/planos/2026-11-26-montagens-ia-curadoria.md) ----------
+# A equipe (Qualidade e IA) olha as montagens que o servidor já fez e diz se cada uma ficou boa ou ruim, com o motivo. A tela
+# lê GET /montagens/dia (só o que tem a prévia em disco; nada é montado nem posto na fila por causa da tela) e a imagem por
+# GET /montagens/previa/<pid>/<fundo>.jpg. A nota mora no treino.db: mtg_nota (uma por foto e fundo, a última) e
+# mtg_nota_log (só acrescenta; o idem não deixa repetir), com quem (da sessão de login), quando e as versões da montagem e
+# do recorte daquele momento. Vai para o backup; a exclusão LGPD apaga pelo treino_lgpd e a limpeza da madrugada apaga as
+# notas mais antigas que RETENCAO_DIAS (mn_limpa), o prazo das fotos. Nenhuma foto sai do servidor.
+MN_MOTIVOS = ("pequena", "recorte", "corte", "lugar", "luz", "outro")
+MN_ITENS_MAX = 2000
+_re_mn_idem = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+def _mn_sessoes(dia):
+    """As sessões do dia, da mais nova para a mais antiga: as da memória (hoje e ontem); sem nenhuma, o arquivo do dia."""
+    with sess_lock:
+        ss = [{"card": x.get("card"), "fotografo": x.get("fotografo"), "ia": list(x.get("ia") or []),
+               "ia_regra": dict(x.get("ia_regra") or {}), "t": max(_num(x.get("cap1")), _num(x.get("ultima_chegada")))}
+              for x in sess.values() if x.get("dia") == dia and not x.get("removida")]
+    if not ss:
+        try:
+            with open(os.path.join(SESS_DIR, dia + ".json"), encoding="utf8") as f:
+                bruto = json.load(f).get("sessoes") or []
+        except Exception:
+            bruto = []
+        for x in bruto:
+            if not isinstance(x, dict) or x.get("removida") or not isinstance(x.get("card"), str):
+                continue
+            ss.append({"card": x["card"], "fotografo": x.get("fotografo"), "ia": x.get("ia") if isinstance(x.get("ia"), list) else [],
+                       "ia_regra": x.get("ia_regra") if isinstance(x.get("ia_regra"), dict) else {},
+                       "t": max(_num(x.get("cap1")), _num(x.get("ultima_chegada")))})
+    for x in ss:
+        if not isinstance(x["fotografo"], str):
+            x["fotografo"] = None
+    return sorted(ss, key=lambda x: (-x["t"], str(x["card"])))
+
+
+def _mn_nota(r, versao, nomes):
+    """Linha do mtg_nota (v, mot, dados, por, em) -> a nota da resposta. atual = a montagem é a mesma de quando a nota foi dada."""
+    try:
+        dd = json.loads(r[2] or "{}") or {}
+    except ValueError:
+        dd = {}
+    return {"v": r[0], "motivos": [m_ for m_ in (r[1] or "").split(",") if m_ in MN_MOTIVOS], "por": r[3], "nome": nomes.get(r[3]),
+            "em": r[4], "atual": bool(versao) and dd.get("fundo_v") == versao}
+
+
+def mn_lista(dia, de=0):
+    """GET /montagens/dia: as montagens prontas do dia (base candidata x fundo ativo com a prévia da versão atual em disco),
+    da sessão mais nova para a mais antiga, até MN_ITENS_MAX por pedido a partir de "de". Só lê: nunca põe montagem na fila.
+    motivo quando a lista vem vazia: "guarda" (dia mais antigo que a guarda das montagens), "futuro", "desligada" ou "nenhuma"."""
+    hoje = _ff_hoje()
+    out = {"v": 1, "dia": dia, "hoje": hoje, "modo": mtg_cfg()["modo"], "guarda_dias": MTG_DIAS, "fundos": list(MTG_ATIVOS),
+           "motivos": list(MN_MOTIVOS), "itens": [], "de": de, "total": 0, "mais": False, "motivo": None,
+           "n": {"prontas": 0, "sem_nota": 0, "boas": 0, "ruins": 0}}
+    if dia > hoje:
+        out["motivo"] = "futuro"
+        return out
+    if dia < _ff_hoje(time.time() - MTG_DIAS * 86400):
+        out["motivo"] = "guarda"
+        return out
+    versoes = {f: mtg_versao(f) for f in MTG_ATIVOS}
+    try:
+        pagas = mtg_pagas()
+    except Exception:
+        pagas = None                                   # sem ler as vendas agora: a lista sai sem o "vendida"
+    itens = []
+    for x in _mn_sessoes(dia):
+        cands = [p for p in mtg_candidatas(x) if _re_mtg_pid.match(p)]
+        if not cands:
+            continue
+        hora = time.strftime("%H:%M", time.localtime(x["t"])) if x["t"] else None
+        for pid in cands:
+            for fundo in MTG_ATIVOS:
+                v = versoes.get(fundo)
+                if not v or not os.path.isfile(mtg_arquivo(pid, fundo, "p", v)):
+                    continue
+                it = {"pid": pid, "fundo": fundo, "fundo_v": v, "sessao": x["card"], "fotografo": x["fotografo"], "hora": hora, "t": int(x["t"]),
+                      "preferida": cands[mtg_preferida(fundo, len(cands))] == pid, "nota": None}
+                if pagas is not None:
+                    it["vendida"] = (pid, fundo) in pagas
+                itens.append(it)
+    with lock:
+        itens = [it for it in itens if it["pid"] in lib]
+    notas = {}
+    pids = sorted({it["pid"] for it in itens})
+    if pids and os.path.exists(TREINO_DB):
+        with treino_lock:
+            db = treino_db()
+            try:
+                for i in range(0, len(pids), 500):
+                    bl = pids[i:i + 500]
+                    for r in db.execute("select pid, fundo, v, mot, dados, por, em from mtg_nota where pid in (%s)" % ",".join("?" * len(bl)), bl):
+                        notas[(r[0], r[1])] = r[2:]
+            finally:
+                db.close()
+    nomes = _lx_nomes({r[3] for r in notas.values() if r[3]})
+    for it in itens:
+        r = notas.get((it["pid"], it["fundo"]))
+        if r and r[0] in ("boa", "ruim"):
+            it["nota"] = _mn_nota(r, versoes.get(it["fundo"]), nomes)
+    boas = sum(1 for it in itens if it["nota"] and it["nota"]["v"] == "boa")
+    ruins = sum(1 for it in itens if it["nota"] and it["nota"]["v"] == "ruim")
+    out["n"] = {"prontas": len(itens), "sem_nota": len(itens) - boas - ruins, "boas": boas, "ruins": ruins}
+    out["total"] = len(itens)
+    out["itens"] = itens[de:de + MN_ITENS_MAX]
+    out["mais"] = de + MN_ITENS_MAX < len(itens)
+    if not itens:
+        out["motivo"] = "desligada" if out["modo"] == "desligada" else "nenhuma"
+    return out
+
+
+def mn_valida(corpo):
+    """Formato fechado do POST /montagens/nota. -> (campos, None) ou (None, nome do campo recusado)."""
+    if not isinstance(corpo, dict) or set(corpo) - {"pid", "fundo", "v", "motivos", "idem", "fundo_v"}:
+        return None, "campo"
+    pid, fundo, v, idem = corpo.get("pid"), corpo.get("fundo"), corpo.get("v"), corpo.get("idem")
+    visto = corpo.get("fundo_v")
+    if visto is not None and not (isinstance(visto, str) and re.match(r"^[0-9a-f]{8}$", visto)):
+        return None, "fundo_v"
+    mot = corpo.get("motivos", [])
+    if not pid_ok(pid):
+        return None, "pid"
+    if not isinstance(fundo, str) or fundo not in MTG_FUNDOS:
+        return None, "fundo"
+    if "v" not in corpo or not (v is None or (isinstance(v, str) and v in ("boa", "ruim"))):
+        return None, "v"
+    if not isinstance(mot, list) or len(mot) > len(MN_MOTIVOS) or not all(isinstance(x, str) and x in MN_MOTIVOS for x in mot) \
+            or len(set(mot)) != len(mot) or (mot and v != "ruim"):
+        return None, "motivos"
+    if not isinstance(idem, str) or not _re_mn_idem.match(idem):
+        return None, "idem"
+    return {"pid": pid_lib(pid), "fundo": fundo, "v": v, "motivos": [x for x in MN_MOTIVOS if x in mot], "idem": idem, "fundo_v": visto}, None
+
+
+def _mn_sessao_de(pid):
+    """(dia, sessão) em que pid é base de IA, entre hoje e os dias da guarda das montagens: a memória (hoje e ontem) e, para
+    o dia que já saiu dela, o arquivo do dia (como o _mn_sessoes). (None, None) se não achar."""
+    for i in range(MTG_DIAS + 1):
+        dia = _ff_hoje(time.time() - i * 86400)
+        for x in _mn_sessoes(dia):
+            if pid in x["ia"]:
+                return dia, x
+    return None, None
+
+
+def mn_gravar(quem, corpo):
+    """POST /montagens/nota. quem = usuário da sessão de login (por e em são daqui, nunca do navegador). -> (status, resposta).
+    v null desfaz a nota. O mesmo idem de novo (da mesma pessoa, foto e fundo), ou a mesma nota da mesma pessoa para a mesma
+    versão da montagem, responde igual sem gravar outra vez. fundo_v = a versão que a tela viu: se a montagem foi refeita
+    depois, 409 versao (a tela relê a lista). Foto, sessão ou montagem que não existe: o mesmo 404."""
+    c, campo = mn_valida(corpo)
+    if c is None:
+        return 400, {"ok": False, "error": campo}
+    if not isinstance(quem, str) or not _re_treino_quem.match(quem):
+        return 403, {"ok": False, "error": "sem_permissao"}
+    nf = (404, {"ok": False, "error": "montagem"})
+    pid, fundo = c["pid"], c["fundo"]
+    with lock:
+        viva = pid in lib
+    if not viva:
+        return nf
+    versao = mtg_versao(fundo)
+    dia, x = _mn_sessao_de(pid)
+    card, fot = (x["card"], x["fotografo"]) if x else (None, None)
+    cands = mtg_candidatas(x) if x else []
+    pref = (cands[mtg_preferida(fundo, len(cands))] == pid) if pid in cands else None
+    pronta = bool(versao) and pid in cands and os.path.isfile(mtg_arquivo(pid, fundo, "p", versao))
+    info = None
+    try:
+        with open(mtg_info(pid), encoding="utf8") as f:
+            j = json.load(f)
+        if isinstance(j, dict):
+            info = {k: j.get(k) for k in ("frente", "trunc", "q")}
+    except Exception:
+        pass
+    dados = json.dumps({"mtg": MTG_VERSAO, "rec": REC_VERSAO, "fundo_v": versao, "pref": pref, "sessao": card,
+                        "fotografo": fot, "info": info}, ensure_ascii=False)
+    mot = ",".join(c["motivos"])
+
+    def versao_de(r):
+        try:
+            return (json.loads(r[2] or "{}") or {}).get("fundo_v")
+        except ValueError:
+            return None
+    # dentro do treino_lock só o banco; o nome de quem marcou (estado.db) é lido depois, fora dele
+    with treino_lock:
+        db = treino_db()
+        try:
+            atual = db.execute("select v, mot, dados, por, em from mtg_nota where pid = ? and fundo = ?", (pid, fundo)).fetchone()
+            rep = db.execute("select pid, fundo, por from mtg_nota_log where idem = ?", (c["idem"],)).fetchone()
+            if rep:
+                if (rep[0], rep[1], rep[2]) != (pid, fundo, quem):
+                    return 409, {"ok": False, "error": "idem"}      # o idem é de outra gravação (outra foto, fundo ou pessoa)
+                fim, igual, aviso = atual, True, None
+            elif c["fundo_v"] and versao and c["fundo_v"] != versao:
+                return 409, {"ok": False, "error": "versao"}        # a montagem foi refeita depois que a tela a mostrou
+            elif c["v"] is None:
+                fim, igual, aviso = None, not atual, None
+                if atual:
+                    db.execute("delete from mtg_nota where pid = ? and fundo = ?", (pid, fundo))
+                    db.execute("insert into mtg_nota_log values (?,?,?,?,?,?,?,?)", (pid, fundo, None, "", dados, quem, _treino_em(), c["idem"]))
+                    db.commit()
+                    aviso = "nota desfeita (%s)" % fundo
+            elif not pronta:
+                return nf                                           # só se dá nota à montagem que está pronta no servidor
+            elif atual and atual[0] == c["v"] and (atual[1] or "") == mot and atual[3] == quem and versao_de(atual) == versao:
+                fim, igual, aviso = atual, True, None
+            else:
+                em = _treino_em()
+                db.execute("insert into mtg_nota values (?,?,?,?,?,?,?,?) on conflict(pid, fundo) do update set dia = excluded.dia, v = excluded.v,"
+                           " mot = excluded.mot, dados = excluded.dados, por = excluded.por, em = excluded.em",
+                           (pid, fundo, dia or _ff_hoje(), c["v"], mot, dados, quem, em))
+                db.execute("insert into mtg_nota_log values (?,?,?,?,?,?,?,?)", (pid, fundo, c["v"], mot, dados, quem, em, c["idem"]))
+                db.commit()
+                fim, igual, aviso = (c["v"], mot, dados, quem, em), False, "nota %s (%s%s)" % (c["v"], fundo, " · " + mot if mot else "")
+        finally:
+            db.close()
+    if aviso:
+        print("  montagens-ia: %s · por %s" % (aviso, quem))            # auditoria no console, sem o id da foto
+    nota = _mn_nota(fim, versao, _lx_nomes({fim[3]} if fim[3] else set())) if fim and fim[0] in ("boa", "ruim") else None
+    return 200, dict({"ok": True, "nota": nota}, **({"igual": True} if igual else {}))
+
+
+def mn_limpa(agora=None):
+    """As notas seguem o prazo das fotos (RETENCAO_DIAS): apaga do mtg_nota (pelo dia da sessão) e do mtg_nota_log (pela hora
+    da gravação) o que ficou mais antigo que isso. Roda na limpeza da madrugada (lx_limpa_noite). -> linhas apagadas"""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    corte = _ff_hoje((agora or time.time()) - RETENCAO_DIAS * 86400)
+    with treino_lock:
+        db = treino_db()
+        try:
+            n = db.execute("delete from mtg_nota where dia < ?", (corte,)).rowcount
+            n += db.execute("delete from mtg_nota_log where em < ?", (corte,)).rowcount
+            db.commit()
+        finally:
+            db.close()
+    return n
 
 
 # ---------- Alertas do fotógrafo (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md) ----------
@@ -20459,6 +21026,7 @@ ROTAS = (
     ("GET", "/treino/rotulos", "sessao", ("qualidade.r",)), ("POST", "/treino/rotulo", "sessao", ("qualidade.u",)),
     ("POST", "/treino/config", "sessao", ("configuracao.u",)),
     ("GET", "/treino/medida", "sessao", ("qualidade.r",)),    # 18/11: medida do reconhecimento do ponto (10 por minuto por pessoa)
+    ("POST", "/vizinhas/config", "sessao", ("configuracao.u",)),   # 25/11: fotos vizinhas na selfie do Checkout; só o Admin (vizinhas_config_post)
     ("POST", "/poses/config", "sessao", ("configuracao.u",)),   # 23/11: chave da classificação de poses (6 por minuto por pessoa); 24/11: só o Admin (poses_post)
     # 23/11 (AF): números por fotógrafo só com desempenho.r (Admin e Supervisora), conferido aqui pela sessão; a calibração da luz
     # é da Medição (qualidade.r); os limites, de configuracao.u E desempenho.r (o segundo conferido no fotografos_post)
@@ -20475,6 +21043,9 @@ ROTAS = (
     ("GET", "/lixeira/medida", "sessao", ("qualidade.r",)),
     ("POST", "/lixeira/recuperar", "sessao", ("qualidade.u",)),
     ("POST", "/lixeira/config", "sessao", ("configuracao.u",)),
+    # 26/11: Montagens de IA (Curadoria). Ver a lista e a prévia pronta pelo módulo qualidade em Ver; dar a nota, em Alterar
+    ("GET", "/montagens/dia", "sessao", ("qualidade.r",)), ("GET", "/montagens/previa/", "sessao", ("qualidade.r",)),
+    ("POST", "/montagens/nota", "sessao", ("qualidade.u",)),
 )
 
 
@@ -21259,7 +21830,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/vendas-dia", "/ponto/selfies", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/vendas-dia", "/ponto/selfies", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/", "/montagens/")) or path in AGENDA_ROTAS_PATHS
 
 
 # 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
@@ -22062,6 +22633,30 @@ class H(BaseHTTPRequestHandler):
             return self.js({"error": "erro no servidor"}, 500)
         return self.js(r, 200, nostore=True)
 
+    def vizinhas_config_post(self):
+        """25/11: POST /vizinhas/config {ligada: bool, por, posto}: liga ou desliga as fotos vizinhas na selfie do Checkout.
+        configuracao.u pela tabela ROTAS e só o perfil Admin da sessão (o perfil vem do cadastro, nunca do pedido; "ver como"
+        não vale): 403 so_admin. Origem local, X-Eterna: 1, 6 por minuto por pessoa, corpo só com ligada booleano."""
+        if not self.origem_local() or self.headers.get("X-Eterna") != "1":
+            return self.js({"ok": False, "error": "origem não autorizada"}, 403)
+        eu = self.sessao() or {}
+        if (eu.get("cadastro") or {}).get("preset") != "admin" or eu.get("assumido_por"):
+            return self.js({"ok": False, "error": "so_admin"}, 403)
+        quem = eu.get("usuario") or ""
+        if not limite_ok("u:" + quem, "vizinhas_cfg", 6):
+            return self.js({"ok": False, "error": "limite"}, 429)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, err)
+        if not isinstance(body, dict) or not isinstance(body.get("ligada"), bool):
+            return self.js({"ok": False, "error": "ligada deve ser true ou false"}, 400)
+        try:
+            r = viz_cfg_gravar(body["ligada"], quem or body.get("por"), body.get("posto"), self.client_address[0])
+        except Exception as ex:
+            print("  vizinhas: config %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500)
+        return self.js(r, 200, nostore=True)
+
     def treino_get(self, u):
         """16/11: GET /treino/dias, /treino/amostra?dia=&fotografo=&modo=&n= e /treino/rotulos?dia= (só texto: a foto vem
         pelo /thumb/ de sempre e não sai do servidor por aqui)."""
@@ -22320,6 +22915,73 @@ class H(BaseHTTPRequestHandler):
                 st, r = lx_recuperar(pid[3:] if pid.startswith("ag_") else pid, quem)
         except Exception as ex:
             print("  lixeira: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500, nostore=True)
+        return self.js(r, st, nostore=True)
+
+    def montagens_ia_get(self, u):
+        """26/11: GET /montagens/dia?dia=&de= (qualidade.r, 30 por minuto por pessoa) e GET /montagens/previa/<pid>/<fundo>.jpg
+        (qualidade.r, 600 por minuto por pessoa): só a prévia que já está pronta em disco, da versão atual; nunca põe montagem
+        na fila. Origem local. Tudo que não existe responde o mesmo 404. O console nunca imprime pid."""
+        if not self.origem_local():
+            return self.js({"error": "origem"}, 403, nostore=True)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        try:
+            if u.path == "/montagens/dia":
+                q = parse_qs(u.query)
+                dia = (q.get("dia") or [_ff_hoje()])[0]
+                de = (q.get("de") or ["0"])[0]
+                if not _re_dia_iso.match(dia):
+                    return self.js({"error": "dia"}, 400, nostore=True)
+                if not re.match(r"^\d{1,6}$", de):
+                    return self.js({"error": "de"}, 400, nostore=True)
+                if not limite_ok("u:" + quem, "montagens_dia", 30):
+                    return self.js({"error": "limite"}, 429, nostore=True)
+                return self.js(mn_lista(dia, int(de)), nostore=True)
+            nf = {"error": "not found"}
+            m = _re_mtg.match(u.path[len("/montagens/previa/"):])
+            if not m or m.group(3) not in MTG_FUNDOS:
+                return self.js(nf, 404, True)
+            if not limite_ok("u:" + quem, "montagens_previa", 600):
+                return self.js({"error": "limite"}, 429, True)
+            pid, fundo = m.group(2), m.group(3)
+            with lock:
+                viva = pid in lib
+            versao = mtg_versao(fundo) if viva else None
+            arq = mtg_arquivo(pid, fundo, "p", versao) if versao else None
+            base = os.path.realpath(MONTAGENS)
+            if not arq or not os.path.isfile(arq) or os.path.commonpath([os.path.realpath(arq), base]) != base:
+                return self.js(nf, 404, True)
+            with open(arq, "rb") as f:
+                data = f.read()
+        except Exception as ex:
+            print("  montagens-ia: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500, nostore=True)
+        self.send_response(200)
+        self.cors()
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, no-store")       # sem cache no aparelho, como o /montagem/
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
+        return None
+
+    def montagens_ia_post(self):
+        """26/11: POST /montagens/nota {pid, fundo, v: "boa"|"ruim"|null, motivos, idem, fundo_v} (qualidade.u, 120 por minuto por pessoa).
+        Origem local, X-Eterna (conferido no autoriza), corpo até 1 KB. O "ver como" já parou no do_POST (403 so_ver).
+        O console nunca imprime o corpo nem o pid."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403, nostore=True)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "montagens_nota", 120):
+            return self.js({"ok": False, "error": "limite"}, 429, nostore=True)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, 413 if err == 413 else 400, nostore=True)
+        try:
+            st, r = mn_gravar(quem, body)
+        except Exception as ex:
+            print("  montagens-ia: %s" % type(ex).__name__)
             return self.js({"ok": False, "error": "erro no servidor"}, 500, nostore=True)
         return self.js(r, st, nostore=True)
 
@@ -23841,6 +24503,8 @@ class H(BaseHTTPRequestHandler):
             return self.fotografos_get(u)
         if u.path in ("/lixeira", "/lixeira/medida"):
             return self.lixeira_get(u)
+        if u.path == "/montagens/dia" or u.path.startswith("/montagens/previa/"):
+            return self.montagens_ia_get(u)
         if u.path == "/pessoas/rostos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -24039,6 +24703,8 @@ class H(BaseHTTPRequestHandler):
             return self.visitas_post(u.path.rsplit("/", 1)[1])
         if u.path == "/visitas/config":
             return self.visitas_config_post()
+        if u.path == "/vizinhas/config":
+            return self.vizinhas_config_post()
         if u.path == "/posto/lado":
             return self.posto_lado_post()
         if u.path in ("/treino/rotulo", "/treino/config"):
@@ -24051,6 +24717,8 @@ class H(BaseHTTPRequestHandler):
             return self.zerar_post()
         if u.path in ("/lixeira/recuperar", "/lixeira/config"):
             return self.lixeira_post(u.path)
+        if u.path == "/montagens/nota":
+            return self.montagens_ia_post()
         if u.path == "/compra-online/config":
             return self.compra_online_post()
         if u.path == "/vendas/canceladas":
@@ -24193,14 +24861,27 @@ class H(BaseHTTPRequestHandler):
                     todo, t0 = body.get("todo") is True, time.time()
                     pa = self.posto_atual()
                     pnome = str(pa.get("nome") or "")[:30] if pa else None
+                    _viz_tl.vets = None if todo else []        # 25/11: os vetores desta selfie, só para as fotos vizinhas (nunca saem daqui)
                     try:
                         r = buscar(body.get("imagens") or [], body.get("dias") or 1, 0 if todo else None, grupo=body.get("grupo") is True)
                     except Exception as ex:
-                        selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0, pnome)
+                        _viz_tl.vets = None
+                        selfie_registra("qr" if todo else "checkout", {"error": str(ex)}, t0, pnome, (self.sessao() or {}).get("usuario"))
                         raise
+                    vets, _viz_tl.vets = _viz_tl.vets, None
                     if isinstance(r, dict) and body.get("grupo") is True:
                         r.setdefault("grupo", True)
-                    selfie_registra("qr" if todo else "checkout", r, t0, pnome)
+                    # 25/11: fotos vizinhas das reconhecidas, só no Checkout assistido (nunca com todo:true, a galeria por QR).
+                    # Desligada ou com erro, a resposta é a de sempre, sem os campos novos
+                    try:
+                        if not todo and isinstance(r, dict) and r.get("fotos") and not r.get("varias") and viz_ligada():
+                            tv, vi = time.perf_counter(), {}
+                            vz = sess_vizinhas(r["fotos"], info=vi, vets=vets)
+                            r["vizinhas"] = vz
+                            r["viz"] = {"ligada": True, "n": len(vz), "ms": int((time.perf_counter() - tv) * 1000), "corte": vi.get("corte")}
+                    except Exception:
+                        r.pop("vizinhas", None); r.pop("viz", None)
+                    selfie_registra("qr" if todo else "checkout", r, t0, pnome, (self.sessao() or {}).get("usuario"))
                     return self.js(r)
                 return self.js(medir(body.get("sessoes") or {}))
             except Exception as ex:

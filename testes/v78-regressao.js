@@ -22,10 +22,10 @@ const J=JSON.stringify;
 // v94-ux (parte H): grupos Venda (Posto) e Sistema; Laboratório entrou no Sistema; Supervisora sem o Sistema; até 5 telas, sem grupos.
 // ck = tem "Abrir Checkout" (botão grande no topo para quem começa no Posto, item no rodapé do menu para os outros)
 const PERFIS={
-  'eduardo@eduardorezende.com':{n:'admin',g:[['Venda',['posto']],['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','fotografos','alertas','lixeira']],['Fotógrafo',['diario','importar','fotofila']],['Configurações',['catalogo','ajustes','ia-auto']],['Sistema',['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']]],ini:'painel',ck:true},
-  'carlos@eterna.photo':{n:'fotografo',g:[['',['diario','importar','fotofila']]],ini:'importar',ck:false},
+  'eduardo@eduardorezende.com':{n:'admin',g:[['Venda',['posto']],['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','fotografos','alertas','lixeira','montagens']],['Fotógrafo',['diario','importar','procurar','fotofila']],['Configurações',['catalogo','ajustes','ia-auto']],['Sistema',['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']]],ini:'painel',ck:true},
+  'carlos@eterna.photo':{n:'fotografo',g:[['',['diario','importar','procurar','fotofila']]],ini:'importar',ck:false},
   'loja@eterna.photo':{n:'atendimento',g:[['',['posto','fotofila','catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
-  'supervisor@eterna.photo':{n:'supervisor',g:[['Venda',['posto']],['Dashboard',['painel','bandeiras','estoque','impfila','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','fotografos','alertas','lixeira']],['Fotógrafo',['diario','importar','fotofila']],['Configurações',['catalogo','ajustes','ia-auto']]],ini:'painel',ck:true}, // parte I: Fundos de IA (técnico) no Sistema; a Supervisora usa a aba de Preços e Checkout
+  'supervisor@eterna.photo':{n:'supervisor',g:[['Venda',['posto']],['Dashboard',['painel','bandeiras','estoque','impfila','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','fotografos','alertas','lixeira','montagens']],['Fotógrafo',['diario','importar','procurar','fotofila']],['Configurações',['catalogo','ajustes','ia-auto']]],ini:'painel',ck:true}, // parte I: Fundos de IA (técnico) no Sistema; a Supervisora usa a aba de Preços e Checkout
   'qualidade@eterna.photo':{n:'validador',g:[['',['revisao','treino','diario']]],ini:'revisao',ck:false},
 };
 (async()=>{const b=await chromium.launch();
@@ -109,7 +109,7 @@ try{
       await pg.selectOption('[data-act="perm-inicio"]','diario');await pg.click('.perm-tbl input[data-act="perm-view"][data-v="fotofila"]');await pg.click('[data-act="perm-save"]');await pg.waitForTimeout(150);
       const cu=await pg.evaluate(()=>{const u=ETERNA.USERS['carlos@eterna.photo'];return {ini:u.inicio,menu:u.menu,preset:u.preset};});ok(cu.ini==='diario'&&!cu.menu.includes('fotofila')&&cu.preset==='custom','E: gravar tela inicial e menu '+J(cu));
       await pg.click('[data-act="perm-tab"][data-t="historico"]');await pg.waitForTimeout(100);await pg.screenshot({path:`${P}/v78-permissoes-historico.png`});
-      await entrar(pg,'carlos@eterna.photo');const g=await grupos(pg);ok(await view(pg)==='diario'&&J(g)===J([['',['diario','importar']]]),/* v94-ux: até 5 telas, sem grupo */'E: Carlos deveria entrar no Diário sem a Fila do fotógrafo: '+await view(pg)+' '+J(g));}
+      await entrar(pg,'carlos@eterna.photo');const g=await grupos(pg);ok(await view(pg)==='diario'&&J(g)===J([['',['diario','importar','procurar']]]),/* v94-ux: até 5 telas, sem grupo */'E: Carlos deveria entrar no Diário sem a Fila do fotógrafo: '+await view(pg)+' '+J(g));}
     await ctx.close();}
   // ---------- F. cadastro: cancelar exclusão; e-mail fora do cadastro; tela "sem acesso" ----------
   {const {ctx,pg}=await nova(b,1280,900);await entrar(pg,'eduardo@eduardorezende.com');await pg.evaluate(()=>{ETERNA.state.view='usuarios';ETERNA.render();});

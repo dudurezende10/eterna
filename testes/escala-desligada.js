@@ -99,7 +99,7 @@ try{
     let r=await pg.evaluate(()=>{const u=ETERNA.USERS['carlos@eterna.photo'];return {v:ETERNA.state.view,falhou:/Algo falhou/.test(document.querySelector('#main').textContent),menu:u.menu,ini:u.inicio,guardado:JSON.parse(localStorage.getItem('eterna.users.v1'))['carlos@eterna.photo'].menu,vis:ETERNA.userMenu(u)};});
     ok(r.v==='importar'&&!r.falhou,'2: quem começava na Escala entra na tela inicial do perfil (Minhas fotos): '+J([r.v,r.falhou]));
     ok(r.menu.includes('escala')&&r.guardado.includes('escala')&&r.ini==='escala'&&!r.vis.includes('escala'),'1: o menu gravado guarda a Escala (não é regravado) e a tela não aparece: '+J(r));
-    const v=await nav(pg);ok(J(v)===J(['diario','importar','fotofila']),'1 e 3: menu do Fotógrafo sem Escala e sem Calendário: '+J(v));
+    const v=await nav(pg);ok(J(v)===J(['diario','importar','procurar','fotofila']),'1 e 3: menu do Fotógrafo sem Escala e sem Calendário: '+J(v));
     ok(await pg.evaluate(()=>!ETERNA.canView('calendario')&&!ETERNA.canView('escala')),'3: Fotógrafo não vê o Calendário');
     for(const lg of await pg.evaluate(()=>ETERNA.IDIOMAS_EQ.map(x=>x[0]))){await lingua(pg,lg,'importar');await pg.waitForTimeout(100);
       const m=await pg.evaluate(()=>({fixo:[...document.querySelectorAll('#main .imp-fixo')].map(x=>x.innerText.replace(/\s+/g,' ').trim()),point:ETERNA.state.imp.point,key:ETERNA.state.imp.key,txt:document.querySelector('#main').innerText,sem:ETERNA.TE('mf_sem_ponto'),pt:ETERNA.TE('mf_ponto')}));
@@ -109,7 +109,7 @@ try{
     // 9: a mesma janela com a chave ligada (o mesmo que religar no código): a Escala volta, com o menu e a tela inicial gravados
     await escalaLigada(ctx);await pg.goto(U);await pg.waitForTimeout(500);
     r=await pg.evaluate(()=>({on:ETERNA.escalaOn(),u:!!ETERNA.state.user,v:ETERNA.state.view,menu:[...document.querySelectorAll('#nav button[data-v]')].map(x=>x.dataset.v),mod:ETERNA.MODULES.find(m=>m[0]==='escala'),nome:ETERNA.modNome('escala'),rel:!!ETERNA.REL.escala,foto:ETERNA.PRESETS.foto.menu}));
-    ok(r.on===true&&r.u&&J(r.menu)===J(['diario','importar','fotofila','escala'])&&await pg.evaluate(()=>ETERNA.homeView())==='escala','9: religada, o Carlos tem a Escala no menu e como tela inicial, como antes: '+J(r));
+    ok(r.on===true&&r.u&&J(r.menu)===J(['diario','importar','procurar','fotofila','escala'])&&await pg.evaluate(()=>ETERNA.homeView())==='escala','9: religada, o Carlos tem a Escala no menu e como tela inicial, como antes: '+J(r));
     await pg.click('#nav button[data-v="escala"]');await pg.waitForTimeout(200);ok(await pg.evaluate(()=>ETERNA.state.view==='escala'&&!!document.querySelector('#esc-hoje')),'9: religada, a Escala do fotógrafo abre');
     ok(r.mod[1]==='Escala e calendário'&&J(r.mod[2])===J(['escala','calendario'])&&r.nome==='Escala e calendário'&&r.rel&&r.foto.includes('escala'),'9: religada, módulo, perfil e exportação de volta: '+J(r));
     await pg.evaluate(()=>{ETERNA.state.view='importar';ETERNA.render();});await pg.waitForTimeout(150);

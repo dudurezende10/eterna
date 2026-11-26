@@ -39,8 +39,8 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | --- | --- |
 | Venda | Posto de venda |
 | Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
-| Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA |
-| Fotógrafo | Diário do set, Minhas fotos, Fila do fotógrafo |
+| Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA, Montagens de IA |
+| Fotógrafo | Diário do set, Minhas fotos, Procurar fotos, Fila do fotógrafo |
 | Configurações | Preços e Checkout, Ajuste automático, IA automática |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
@@ -174,7 +174,7 @@ Parando o mouse em cima do ícone aparece o nome do formato. O arquivo é baixad
 ### O que o fotógrafo vê
 
 - Ao entrar, cai direto em **Minhas fotos**.
-- No menu, só o grupo **Fotógrafo**: Diário do set, Minhas fotos e Fila do fotógrafo.
+- No menu, só o grupo **Fotógrafo**: Diário do set, Minhas fotos, Procurar fotos e Fila do fotógrafo.
 - Não vê Checkout, vendas, números de outros fotógrafos, Curadoria nem Configurações.
 
 ### Seu nome (v97, mudou em 16/11)
@@ -183,7 +183,7 @@ No alto de **Minhas fotos** aparece o seu nome. Ele vem do seu login. Não dá p
 
 - Outro fotógrafo vai usar o computador: toque em **Trocar fotógrafo**.
 
-Desde 24/11 não existe mais o seletor **Fotógrafo** no alto da tela. A supervisora e o Admin veem as sessões de todos os fotógrafos de uma vez. O seletor **Ponto** já tinha saído em 18/11.
+Desde 24/11 não existe mais o seletor **Fotógrafo** no alto da tela. A supervisora e o Admin veem as sessões de todos os fotógrafos de uma vez. O seletor **Ponto** já tinha saído em 18/11. Em 25/11 o seletor chegou a voltar por algumas horas e saiu de novo: para ver as fotos de um fotógrafo, use a tela **Procurar fotos** (logo abaixo).
 
 ### A Escala saiu do Eterna (16/11)
 
@@ -343,6 +343,21 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 - **Novo código**: para reinstalar o leitor naquele computador. O código antigo e a instalação anterior deixam de valer quando o novo é usado.
 - **Desativar**: o leitor para de enviar na hora. As fotos que estavam na fila dele ficam naquele computador até a TI apagar; depois de 7 dias desativado, o próprio leitor apaga a fila. A tabela continua mostrando o tamanho da fila do leitor desativado.
 - A tabela mostra se cada leitor está **Ligado**, **Desligado desde…**, **Aguardando instalação** ou **Desativado**, o último cartão (lendo, pronto, quantas já estavam no servidor, quantas ficaram sem fotógrafo), a fila e o aviso, se houver.
+
+### Procurar fotos (25/11)
+
+**Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**, no menu **Fotógrafo**, logo abaixo de Minhas fotos.
+
+- **Quem vê:** quem já vê Minhas fotos. A supervisora e o Admin procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. Quem só vende e a tela do cliente não têm essa tela.
+- **Fotógrafo:** escolha **Todos** ou um nome. Só aparece quem tem sessão hoje, com o número de sessões ao lado.
+- **Tempo:** **Últimos 30 min**, **Última 1 hora**, **Últimas 3 horas** ou **Dia todo**. Com Todos, a tela abre na última 1 hora. Com um fotógrafo escolhido, abre no dia todo. Em **Hora** dá para escolher uma hora cheia (09h, 10h).
+- **Código da sessão:** digite o código inteiro ou um pedaço. Com código digitado, o tempo não filtra.
+- **Lista:** um cartão por sessão, com a hora do primeiro e do último clique, o fotógrafo, o código, o número de fotos e o selo **Já vendida**. A mais nova vem primeiro; dá para inverter. É só ir descendo: as sessões seguintes entram sozinhas, sem botão.
+- **Ver a foto grande:** toque numa miniatura. As setas passam pelas fotos daquela sessão. Feche e a lista está no mesmo lugar.
+- **Ver a sessão inteira:** toque no alto do cartão (**Ver sessão**). **Voltar** devolve à lista no mesmo lugar, com os mesmos filtros.
+- **A tela não se mexe sozinha.** Quando chegam sessões novas, aparece no alto o aviso **N sessões novas** com o botão **Atualizar**. A lista só muda quando você toca em Atualizar ou troca um filtro.
+
+A tela mostra só as sessões de hoje e precisa do computador do ponto ligado. Nada se vende por ela.
 
 ### Sessões de hoje (v91)
 
@@ -1471,6 +1486,23 @@ Bom saber:
 - Nada é apagado. A foto fica 30 dias na biblioteca, como as outras.
 - **Não é ruim** não marca nada no Treino da IA.
 - Em Teste, **Não é ruim** só anota: a foto já estava à venda.
+
+### Montagens de IA (Admin e Supervisora, 26/11/2026)
+
+Em **Curadoria › Montagens de IA** ficam as fotos com fundo de IA que o servidor já montou. A gente olha e diz se cada uma ficou boa ou ruim.
+
+1. Abra **Curadoria › Montagens de IA**. A tela abre em hoje, nas montagens **Sem nota**.
+2. Cada cartão mostra a montagem e, no canto, a foto original. Toque na imagem para ampliar; a seta mostra a original.
+3. Ficou boa? Toque em **Boa**.
+4. Ficou ruim? Toque em **Ruim**, marque o que ficou ruim (pode ser mais de um motivo) e toque em **Gravar ruim**.
+5. Errou? Toque no outro botão para trocar ou em **Desfazer a nota**.
+
+Bom saber:
+- A nota fica gravada no servidor, com o seu nome e a hora.
+- A montagem que ganhou nota continua na tela até você trocar o filtro ou tocar em **Atualizar**.
+- Os filtros são dia, fotógrafo, fundo e situação (Sem nota, Boas, Ruins, Todas).
+- O servidor só monta as sessões de hoje e guarda as montagens por 2 dias. As notas ficam.
+- A nota não muda o que o cliente vê no Checkout.
 
 ### Minhas fotos sem o seletor Fotógrafo
 
