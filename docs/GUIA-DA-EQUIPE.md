@@ -39,7 +39,7 @@ O menu fica do lado esquerdo e é dividido em grupos:
 | --- | --- |
 | Venda | Posto de venda |
 | Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
-| Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA |
+| Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA, Montagens de IA |
 | Fotógrafo | Diário do set, Minhas fotos, Procurar fotos, Fila do fotógrafo |
 | Configurações | Preços e Checkout, Ajuste automático, IA automática |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
@@ -562,7 +562,7 @@ Na v99.3 (11/11) voltou o catálogo de antes da v98: a lista da Imply ficou de l
 
 | Produto | O que leva | Preço |
 | --- | --- | --- |
-| Pacote Maracanã Mais | todas as fotos, só digitais | R$ 250 |
+| Pacote Maracanã Mais | todas as fotos digitais e 1 foto impressa (desde 25/11) | R$ 250 |
 | Pacote Tribuna de Honra | 12 fotos, digitais e impressas | R$ 220 |
 | Pacote Maracanã | 9 fotos, digitais e impressas | R$ 190 |
 | Pacote Gramado | 6 fotos, digitais e impressas | R$ 150 |
@@ -637,6 +637,10 @@ Na confirmação ficam registrados quem deu cada cortesia, o motivo, o texto, a 
 ### Cliente que já comprou e quer mais (25/11)
 
 O cliente faz a selfie de novo no Checkout. Se ele já comprou, aparece **Você já comprou fotos nesta visita** com dois botões: **Comprar mais fotos** começa uma venda nova, do zero, com todas as fotos dele (compradas ou não), e segue como qualquer venda; **Ver o QR das fotos compradas** mostra de novo o QR da compra anterior.
+
+### Testar a impressora (26/11)
+
+No **Posto de venda**, no painel **Imprimir**, toque em **Testar impressora**. Sai uma folha da Viva Maracanã com o nome do posto, quem testou e a hora. A impressora está pronta quando a folha sai inteira, com os quatro cantos amarelos visíveis e as cores nítidas. Pode testar quantas vezes precisar: o teste não conta como venda nem gasta do rolo no sistema.
 
 ### Fila de impressão (25/11)
 
@@ -913,7 +917,7 @@ Cada vendedor trabalha num notebook com a DNP RX1HS ao lado. A tela do vendedor 
 - **Venda manual (quando o Checkout está fora)**: link no fim do Posto. Abre um bloco no alto da própria tela, com a câmera do balcão, o código da sessão, as fotos, o pacote, o Fundo de IA e o pagamento. **Fechar venda manual** fecha o bloco. Com uma sessão aberta na Venda manual, os botões Recibo ficam apagados até você fechar.
 - **Cliente pediu: apagar as fotos** (LGPD): fica na Venda manual, depois de escolher a sessão, para quem pode alterar as Galerias online. Pede confirmação e não dá para desfazer. Desde a v97, as fotos compradas e as cortesias ficam com o cliente e a galeria paga continua aberta (passo a passo em **Novidades da v97**).
 - As telas **Fila do balcão** e **Caixa** separadas saíram: tudo é feito no Posto de venda.
-- **Aviso da Edição Maracanã** (foto com fundo de IA): a montagem ainda não vai para a galeria do QR, então o cliente só recebe se ela for impressa. Quando o pedido tem montagem, os pacotes só digitais (Zona Mista e Maracanã Mais) aparecem com o selo "sem a Edição Maracanã" e, se você escolher um deles, um aviso amarelo aparece abaixo dos pacotes: ofereça um pacote com impressão. O aviso também aparece quando as montagens não cabem nas impressões do pacote. Ele não trava a venda. Na Venda manual, o aviso aparece sempre que um Fundo de IA é escolhido.
+- **Aviso da Edição Maracanã** (foto com fundo de IA): a montagem ainda não vai para a galeria do QR, então o cliente só recebe se ela for impressa. Quando o pedido tem montagem, os pacotes só digitais (Zona Mista) aparecem com o selo "sem a Edição Maracanã" e, se você escolher um deles, um aviso amarelo aparece abaixo dos pacotes: ofereça um pacote com impressão. O aviso também aparece quando as montagens não cabem nas impressões do pacote (caso comum no Maracanã Mais, que imprime 1 foto: a montagem só sai se for a favorita ou se você a marcar na fila de impressão). Ele não trava a venda. Na Venda manual, o aviso aparece sempre que um Fundo de IA é escolhido.
 
 ### Confirmar na maquininha
 
@@ -1197,7 +1201,7 @@ Resumo do que mudou. Os passos estão nas partes indicadas.
 - O Checkout abre na primeira montagem pronta. Se ela ainda estiver sendo preparada e o cliente não tocar em nada, depois de 8 segundos a tela vai sozinha para a próxima foto pronta.
 - No Posto de venda, as montagens do pedido e a tela do cliente mostram a mesma faixa Edição Maracanã. A montagem continua contando dentro do pacote, igual a qualquer outra foto.
 - A faixa é só da tela: a foto impressa e a do download saem sem ela.
-- Atenção: hoje a montagem não vai para a galeria online. No pacote só digital (Zona Mista, Maracanã Mais) a montagem escolhida não chega ao cliente. Nos pacotes com impressão, a montagem sai impressa. Por isso o Posto avisa o caixa.
+- Atenção: hoje a montagem não vai para a galeria online. No pacote só digital (Zona Mista) a montagem escolhida não chega ao cliente. No Maracanã Mais (1 impressa) ela só chega se for a foto impressa. Nos pacotes com impressão, a montagem sai impressa. Por isso o Posto avisa o caixa.
 - Para o Admin: em Estatísticas, o quadro "Edição Maracanã: montagens vistas × compradas" mostra por dia quantas montagens os clientes viram no Checkout e quantas compraram.
 
 ### Fundo novo: Telão do Maracanã
@@ -1486,6 +1490,23 @@ Bom saber:
 - Nada é apagado. A foto fica 30 dias na biblioteca, como as outras.
 - **Não é ruim** não marca nada no Treino da IA.
 - Em Teste, **Não é ruim** só anota: a foto já estava à venda.
+
+### Montagens de IA (Admin e Supervisora, 26/11/2026)
+
+Em **Curadoria › Montagens de IA** ficam as fotos com fundo de IA que o servidor já montou. A gente olha e diz se cada uma ficou boa ou ruim.
+
+1. Abra **Curadoria › Montagens de IA**. A tela abre em hoje, nas montagens **Sem nota**.
+2. Cada cartão mostra a montagem e, no canto, a foto original. Toque na imagem para ampliar; a seta mostra a original.
+3. Ficou boa? Toque em **Boa**.
+4. Ficou ruim? Toque em **Ruim**, marque o que ficou ruim (pode ser mais de um motivo) e toque em **Gravar ruim**.
+5. Errou? Toque no outro botão para trocar ou em **Desfazer a nota**.
+
+Bom saber:
+- A nota fica gravada no servidor, com o seu nome e a hora.
+- A montagem que ganhou nota continua na tela até você trocar o filtro ou tocar em **Atualizar**.
+- Os filtros são dia, fotógrafo, fundo e situação (Sem nota, Boas, Ruins, Todas).
+- O servidor só monta as sessões de hoje e guarda as montagens por 2 dias. As notas ficam.
+- A nota não muda o que o cliente vê no Checkout.
 
 ### Minhas fotos sem o seletor Fotógrafo
 

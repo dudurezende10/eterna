@@ -111,7 +111,7 @@ try{
   ok(e.ok&&e.total===220&&e.prints===8&&J(e.cart)===J(['gramado:150','extra:35','extra:35'])&&e.save===95&&e.sobra===0,'4.4: Gramado com 8 escolhidas: + 2 adicionais (digitais e impressas), R$ 220, 8 impressas, economia R$ 95: '+J(e));
   ok(await valorNo('R$ 220'),'4.4 (v96): a troca de pacote chega à tela do cliente');
   e=await escolhe({pkg:'mais'});const save45=PRECO.arq+(e.nSes-1)*PRECO.extra-PRECO.mais;
-  ok(e.ok&&e.total===250&&e.prints===0&&J(e.cart)===J(['mais:250'])&&e.save===Math.max(0,save45)&&e.nSes>8,'4.5: Todas: R$ 250 sem impressas; economia pelas fotos da sessão ('+e.nSes+'): '+J(e));
+  ok(e.ok&&e.total===250&&e.prints===1&&J(e.cart)===J(['mais:250'])&&e.save===Math.max(0,save45)&&e.nSes>8,'4.5: Todas: R$ 250 com 1 impressa (25/11); economia pelas fotos da sessão ('+e.nSes+'): '+J(e));
   // casos sem pedido aberto (cálculo do Posto, o mesmo vendaCalc da v94)
   const vc=await A.evaluate(()=>{const f=(n,p,ns)=>{const c=ETERNA.vendaCalc(n,ns||n,p);return {total:c.total,prints:c.prints,cart:c.cart.map(x=>x.id).join('+'),save:c.save,sobra:c.sobra};};
     return {zona4:[ETERNA.lojaIdeal(4).pkg,f(4,'zona')],gram4:f(4,'gramado'),um:[ETERNA.lojaIdeal(1).pkg,f(1,'arq')],trib10:[ETERNA.lojaIdeal(10).pkg,f(10,'tribuna')],mais13:[ETERNA.lojaIdeal(13).pkg,f(13,'mais')],gram7:[ETERNA.lojaIdeal(7).pkg,f(7,'gramado')],trib7:f(7,'tribuna'),nada:f(3,'naoexiste')};});
@@ -119,7 +119,7 @@ try{
   ok(J(vc.gram4)===J({total:150,prints:4,cart:'gramado',save:25,sobra:2}),'4.4: Gramado com 4 escolhidas: 4 impressas, sobra 2, economia R$ 25: '+J(vc.gram4));
   ok(vc.um[0]==='arq'&&J(vc.um[1])===J({total:70,prints:1,cart:'arq',save:0,sobra:0}),'4.6: com 1 foto, Arquibancada R$ 70 sem economia: '+J(vc.um));
   ok(vc.trib10[0]==='tribuna'&&vc.trib10[1].total===220&&vc.trib10[1].prints===10&&vc.trib10[1].sobra===2,'4.6: 10 fotos no Tribuna (10 impressas, sobra 2): '+J(vc.trib10));
-  ok(vc.mais13[0]==='mais'&&vc.mais13[1].total===250&&vc.mais13[1].prints===0,'4.6: 13 fotos no Todas, sem impressas: '+J(vc.mais13));
+  ok(vc.mais13[0]==='mais'&&vc.mais13[1].total===250&&vc.mais13[1].prints===1,'4.6: 13 fotos no Todas, 1 impressa (25/11): '+J(vc.mais13));
   ok(vc.gram7[0]==='gramado'&&vc.gram7[1].total===185&&vc.gram7[1].prints===7,'4.6: 7 fotos no Gramado + 1: '+J(vc.gram7));
   ok(vc.trib7.total===220&&vc.trib7.prints===7,'4.4: Tribuna com 7 fotos imprime 7, não 12 (teto pelas escolhidas): '+J(vc.trib7));
   ok(vc.nada.total===0&&vc.nada.cart==='','pacote que não existe não vira venda: '+J(vc.nada));

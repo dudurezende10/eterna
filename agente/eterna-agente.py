@@ -15768,6 +15768,12 @@ def treino_db():
     c.execute("create table if not exists lixeira (pid text primary key, dia text, v integer, mot text, dados text, em text, rec_por text, rec_em text)")
     c.execute("create index if not exists lixeira_dia on lixeira(dia)")
     c.execute("create table if not exists lixeira_log (pid text, acao text, por text, em text)")
+    # 26/11: Montagens de IA na Curadoria: a nota de cada montagem (uma por foto e fundo, a última) e o registro de cada gravação
+    c.execute("create table if not exists mtg_nota (pid text, fundo text, dia text, v text, mot text, dados text, por text, em text,"
+              " primary key (pid, fundo))")
+    c.execute("create index if not exists mtg_nota_dia on mtg_nota(dia)")
+    c.execute("create table if not exists mtg_nota_log (pid text, fundo text, v text, mot text, dados text, por text, em text, idem text)")
+    c.execute("create unique index if not exists mtg_nota_log_idem on mtg_nota_log(idem)")
     return c
 
 
@@ -16145,7 +16151,7 @@ def treino_lgpd(pids):
             db = treino_db()
             try:
                 for p in pids:
-                    for tab in ("rotulo", "rotulo_hist", "medida", "lixeira", "lixeira_log"):
+                    for tab in ("rotulo", "rotulo_hist", "medida", "lixeira", "lixeira_log", "mtg_nota", "mtg_nota_log"):
                         db.execute("delete from %s where pid = ?" % tab, (p,))
                 db.commit()
             finally:
@@ -17646,6 +17652,12 @@ def lx_limpa_noite(t=None):
     lx_st["limpa_dia"] = hoje
     if n:
         print("  lixeira: %d linha(s) de fotos que saíram da biblioteca apagada(s)" % n)
+    try:
+        nm = mn_limpa(t)                               # 26/11: as notas das montagens seguem o mesmo prazo das fotos
+        if nm:
+            print("  montagens-ia: %d linha(s) de nota mais antigas que %d dias apagada(s)" % (nm, RETENCAO_DIAS))
+    except Exception as ex:
+        print("  montagens-ia: limpeza falhou (%s)" % type(ex).__name__)
     return n
 
 
@@ -17663,6 +17675,246 @@ def lx_loop():
         except Exception as ex:
             print("  lixeira: %s" % type(ex).__name__)
         lx_parar.wait(60)
+
+
+# ---------- Montagens de IA na Curadoria (26/11, plano docs/planos/2026-11-26-montagens-ia-curadoria.md) ----------
+# A equipe (Qualidade e IA) olha as montagens que o servidor já fez e diz se cada uma ficou boa ou ruim, com o motivo. A tela
+# lê GET /montagens/dia (só o que tem a prévia em disco; nada é montado nem posto na fila por causa da tela) e a imagem por
+# GET /montagens/previa/<pid>/<fundo>.jpg. A nota mora no treino.db: mtg_nota (uma por foto e fundo, a última) e
+# mtg_nota_log (só acrescenta; o idem não deixa repetir), com quem (da sessão de login), quando e as versões da montagem e
+# do recorte daquele momento. Vai para o backup; a exclusão LGPD apaga pelo treino_lgpd e a limpeza da madrugada apaga as
+# notas mais antigas que RETENCAO_DIAS (mn_limpa), o prazo das fotos. Nenhuma foto sai do servidor.
+MN_MOTIVOS = ("pequena", "recorte", "corte", "lugar", "luz", "outro")
+MN_ITENS_MAX = 2000
+_re_mn_idem = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+def _mn_sessoes(dia):
+    """As sessões do dia, da mais nova para a mais antiga: as da memória (hoje e ontem); sem nenhuma, o arquivo do dia."""
+    with sess_lock:
+        ss = [{"card": x.get("card"), "fotografo": x.get("fotografo"), "ia": list(x.get("ia") or []),
+               "ia_regra": dict(x.get("ia_regra") or {}), "t": max(_num(x.get("cap1")), _num(x.get("ultima_chegada")))}
+              for x in sess.values() if x.get("dia") == dia and not x.get("removida")]
+    if not ss:
+        try:
+            with open(os.path.join(SESS_DIR, dia + ".json"), encoding="utf8") as f:
+                bruto = json.load(f).get("sessoes") or []
+        except Exception:
+            bruto = []
+        for x in bruto:
+            if not isinstance(x, dict) or x.get("removida") or not isinstance(x.get("card"), str):
+                continue
+            ss.append({"card": x["card"], "fotografo": x.get("fotografo"), "ia": x.get("ia") if isinstance(x.get("ia"), list) else [],
+                       "ia_regra": x.get("ia_regra") if isinstance(x.get("ia_regra"), dict) else {},
+                       "t": max(_num(x.get("cap1")), _num(x.get("ultima_chegada")))})
+    for x in ss:
+        if not isinstance(x["fotografo"], str):
+            x["fotografo"] = None
+    return sorted(ss, key=lambda x: (-x["t"], str(x["card"])))
+
+
+def _mn_nota(r, versao, nomes):
+    """Linha do mtg_nota (v, mot, dados, por, em) -> a nota da resposta. atual = a montagem é a mesma de quando a nota foi dada."""
+    try:
+        dd = json.loads(r[2] or "{}") or {}
+    except ValueError:
+        dd = {}
+    return {"v": r[0], "motivos": [m_ for m_ in (r[1] or "").split(",") if m_ in MN_MOTIVOS], "por": r[3], "nome": nomes.get(r[3]),
+            "em": r[4], "atual": bool(versao) and dd.get("fundo_v") == versao}
+
+
+def mn_lista(dia, de=0):
+    """GET /montagens/dia: as montagens prontas do dia (base candidata x fundo ativo com a prévia da versão atual em disco),
+    da sessão mais nova para a mais antiga, até MN_ITENS_MAX por pedido a partir de "de". Só lê: nunca põe montagem na fila.
+    motivo quando a lista vem vazia: "guarda" (dia mais antigo que a guarda das montagens), "futuro", "desligada" ou "nenhuma"."""
+    hoje = _ff_hoje()
+    out = {"v": 1, "dia": dia, "hoje": hoje, "modo": mtg_cfg()["modo"], "guarda_dias": MTG_DIAS, "fundos": list(MTG_ATIVOS),
+           "motivos": list(MN_MOTIVOS), "itens": [], "de": de, "total": 0, "mais": False, "motivo": None,
+           "n": {"prontas": 0, "sem_nota": 0, "boas": 0, "ruins": 0}}
+    if dia > hoje:
+        out["motivo"] = "futuro"
+        return out
+    if dia < _ff_hoje(time.time() - MTG_DIAS * 86400):
+        out["motivo"] = "guarda"
+        return out
+    versoes = {f: mtg_versao(f) for f in MTG_ATIVOS}
+    try:
+        pagas = mtg_pagas()
+    except Exception:
+        pagas = None                                   # sem ler as vendas agora: a lista sai sem o "vendida"
+    itens = []
+    for x in _mn_sessoes(dia):
+        cands = [p for p in mtg_candidatas(x) if _re_mtg_pid.match(p)]
+        if not cands:
+            continue
+        hora = time.strftime("%H:%M", time.localtime(x["t"])) if x["t"] else None
+        for pid in cands:
+            for fundo in MTG_ATIVOS:
+                v = versoes.get(fundo)
+                if not v or not os.path.isfile(mtg_arquivo(pid, fundo, "p", v)):
+                    continue
+                it = {"pid": pid, "fundo": fundo, "fundo_v": v, "sessao": x["card"], "fotografo": x["fotografo"], "hora": hora, "t": int(x["t"]),
+                      "preferida": cands[mtg_preferida(fundo, len(cands))] == pid, "nota": None}
+                if pagas is not None:
+                    it["vendida"] = (pid, fundo) in pagas
+                itens.append(it)
+    with lock:
+        itens = [it for it in itens if it["pid"] in lib]
+    notas = {}
+    pids = sorted({it["pid"] for it in itens})
+    if pids and os.path.exists(TREINO_DB):
+        with treino_lock:
+            db = treino_db()
+            try:
+                for i in range(0, len(pids), 500):
+                    bl = pids[i:i + 500]
+                    for r in db.execute("select pid, fundo, v, mot, dados, por, em from mtg_nota where pid in (%s)" % ",".join("?" * len(bl)), bl):
+                        notas[(r[0], r[1])] = r[2:]
+            finally:
+                db.close()
+    nomes = _lx_nomes({r[3] for r in notas.values() if r[3]})
+    for it in itens:
+        r = notas.get((it["pid"], it["fundo"]))
+        if r and r[0] in ("boa", "ruim"):
+            it["nota"] = _mn_nota(r, versoes.get(it["fundo"]), nomes)
+    boas = sum(1 for it in itens if it["nota"] and it["nota"]["v"] == "boa")
+    ruins = sum(1 for it in itens if it["nota"] and it["nota"]["v"] == "ruim")
+    out["n"] = {"prontas": len(itens), "sem_nota": len(itens) - boas - ruins, "boas": boas, "ruins": ruins}
+    out["total"] = len(itens)
+    out["itens"] = itens[de:de + MN_ITENS_MAX]
+    out["mais"] = de + MN_ITENS_MAX < len(itens)
+    if not itens:
+        out["motivo"] = "desligada" if out["modo"] == "desligada" else "nenhuma"
+    return out
+
+
+def mn_valida(corpo):
+    """Formato fechado do POST /montagens/nota. -> (campos, None) ou (None, nome do campo recusado)."""
+    if not isinstance(corpo, dict) or set(corpo) - {"pid", "fundo", "v", "motivos", "idem", "fundo_v"}:
+        return None, "campo"
+    pid, fundo, v, idem = corpo.get("pid"), corpo.get("fundo"), corpo.get("v"), corpo.get("idem")
+    visto = corpo.get("fundo_v")
+    if visto is not None and not (isinstance(visto, str) and re.match(r"^[0-9a-f]{8}$", visto)):
+        return None, "fundo_v"
+    mot = corpo.get("motivos", [])
+    if not pid_ok(pid):
+        return None, "pid"
+    if not isinstance(fundo, str) or fundo not in MTG_FUNDOS:
+        return None, "fundo"
+    if "v" not in corpo or not (v is None or (isinstance(v, str) and v in ("boa", "ruim"))):
+        return None, "v"
+    if not isinstance(mot, list) or len(mot) > len(MN_MOTIVOS) or not all(isinstance(x, str) and x in MN_MOTIVOS for x in mot) \
+            or len(set(mot)) != len(mot) or (mot and v != "ruim"):
+        return None, "motivos"
+    if not isinstance(idem, str) or not _re_mn_idem.match(idem):
+        return None, "idem"
+    return {"pid": pid_lib(pid), "fundo": fundo, "v": v, "motivos": [x for x in MN_MOTIVOS if x in mot], "idem": idem, "fundo_v": visto}, None
+
+
+def _mn_sessao_de(pid):
+    """(dia, sessão) em que pid é base de IA, entre hoje e os dias da guarda das montagens: a memória (hoje e ontem) e, para
+    o dia que já saiu dela, o arquivo do dia (como o _mn_sessoes). (None, None) se não achar."""
+    for i in range(MTG_DIAS + 1):
+        dia = _ff_hoje(time.time() - i * 86400)
+        for x in _mn_sessoes(dia):
+            if pid in x["ia"]:
+                return dia, x
+    return None, None
+
+
+def mn_gravar(quem, corpo):
+    """POST /montagens/nota. quem = usuário da sessão de login (por e em são daqui, nunca do navegador). -> (status, resposta).
+    v null desfaz a nota. O mesmo idem de novo (da mesma pessoa, foto e fundo), ou a mesma nota da mesma pessoa para a mesma
+    versão da montagem, responde igual sem gravar outra vez. fundo_v = a versão que a tela viu: se a montagem foi refeita
+    depois, 409 versao (a tela relê a lista). Foto, sessão ou montagem que não existe: o mesmo 404."""
+    c, campo = mn_valida(corpo)
+    if c is None:
+        return 400, {"ok": False, "error": campo}
+    if not isinstance(quem, str) or not _re_treino_quem.match(quem):
+        return 403, {"ok": False, "error": "sem_permissao"}
+    nf = (404, {"ok": False, "error": "montagem"})
+    pid, fundo = c["pid"], c["fundo"]
+    with lock:
+        viva = pid in lib
+    if not viva:
+        return nf
+    versao = mtg_versao(fundo)
+    dia, x = _mn_sessao_de(pid)
+    card, fot = (x["card"], x["fotografo"]) if x else (None, None)
+    cands = mtg_candidatas(x) if x else []
+    pref = (cands[mtg_preferida(fundo, len(cands))] == pid) if pid in cands else None
+    pronta = bool(versao) and pid in cands and os.path.isfile(mtg_arquivo(pid, fundo, "p", versao))
+    info = None
+    try:
+        with open(mtg_info(pid), encoding="utf8") as f:
+            j = json.load(f)
+        if isinstance(j, dict):
+            info = {k: j.get(k) for k in ("frente", "trunc", "q")}
+    except Exception:
+        pass
+    dados = json.dumps({"mtg": MTG_VERSAO, "rec": REC_VERSAO, "fundo_v": versao, "pref": pref, "sessao": card,
+                        "fotografo": fot, "info": info}, ensure_ascii=False)
+    mot = ",".join(c["motivos"])
+
+    def versao_de(r):
+        try:
+            return (json.loads(r[2] or "{}") or {}).get("fundo_v")
+        except ValueError:
+            return None
+    # dentro do treino_lock só o banco; o nome de quem marcou (estado.db) é lido depois, fora dele
+    with treino_lock:
+        db = treino_db()
+        try:
+            atual = db.execute("select v, mot, dados, por, em from mtg_nota where pid = ? and fundo = ?", (pid, fundo)).fetchone()
+            rep = db.execute("select pid, fundo, por from mtg_nota_log where idem = ?", (c["idem"],)).fetchone()
+            if rep:
+                if (rep[0], rep[1], rep[2]) != (pid, fundo, quem):
+                    return 409, {"ok": False, "error": "idem"}      # o idem é de outra gravação (outra foto, fundo ou pessoa)
+                fim, igual, aviso = atual, True, None
+            elif c["fundo_v"] and versao and c["fundo_v"] != versao:
+                return 409, {"ok": False, "error": "versao"}        # a montagem foi refeita depois que a tela a mostrou
+            elif c["v"] is None:
+                fim, igual, aviso = None, not atual, None
+                if atual:
+                    db.execute("delete from mtg_nota where pid = ? and fundo = ?", (pid, fundo))
+                    db.execute("insert into mtg_nota_log values (?,?,?,?,?,?,?,?)", (pid, fundo, None, "", dados, quem, _treino_em(), c["idem"]))
+                    db.commit()
+                    aviso = "nota desfeita (%s)" % fundo
+            elif not pronta:
+                return nf                                           # só se dá nota à montagem que está pronta no servidor
+            elif atual and atual[0] == c["v"] and (atual[1] or "") == mot and atual[3] == quem and versao_de(atual) == versao:
+                fim, igual, aviso = atual, True, None
+            else:
+                em = _treino_em()
+                db.execute("insert into mtg_nota values (?,?,?,?,?,?,?,?) on conflict(pid, fundo) do update set dia = excluded.dia, v = excluded.v,"
+                           " mot = excluded.mot, dados = excluded.dados, por = excluded.por, em = excluded.em",
+                           (pid, fundo, dia or _ff_hoje(), c["v"], mot, dados, quem, em))
+                db.execute("insert into mtg_nota_log values (?,?,?,?,?,?,?,?)", (pid, fundo, c["v"], mot, dados, quem, em, c["idem"]))
+                db.commit()
+                fim, igual, aviso = (c["v"], mot, dados, quem, em), False, "nota %s (%s%s)" % (c["v"], fundo, " · " + mot if mot else "")
+        finally:
+            db.close()
+    if aviso:
+        print("  montagens-ia: %s · por %s" % (aviso, quem))            # auditoria no console, sem o id da foto
+    nota = _mn_nota(fim, versao, _lx_nomes({fim[3]} if fim[3] else set())) if fim and fim[0] in ("boa", "ruim") else None
+    return 200, dict({"ok": True, "nota": nota}, **({"igual": True} if igual else {}))
+
+
+def mn_limpa(agora=None):
+    """As notas seguem o prazo das fotos (RETENCAO_DIAS): apaga do mtg_nota (pelo dia da sessão) e do mtg_nota_log (pela hora
+    da gravação) o que ficou mais antigo que isso. Roda na limpeza da madrugada (lx_limpa_noite). -> linhas apagadas"""
+    if not os.path.exists(TREINO_DB):
+        return 0
+    corte = _ff_hoje((agora or time.time()) - RETENCAO_DIAS * 86400)
+    with treino_lock:
+        db = treino_db()
+        try:
+            n = db.execute("delete from mtg_nota where dia < ?", (corte,)).rowcount
+            n += db.execute("delete from mtg_nota_log where em < ?", (corte,)).rowcount
+            db.commit()
+        finally:
+            db.close()
+    return n
 
 
 # ---------- Alertas do fotógrafo (23/11, plano docs/planos/2026-11-23-alertas-fotografo.md) ----------
@@ -20791,6 +21043,9 @@ ROTAS = (
     ("GET", "/lixeira/medida", "sessao", ("qualidade.r",)),
     ("POST", "/lixeira/recuperar", "sessao", ("qualidade.u",)),
     ("POST", "/lixeira/config", "sessao", ("configuracao.u",)),
+    # 26/11: Montagens de IA (Curadoria). Ver a lista e a prévia pronta pelo módulo qualidade em Ver; dar a nota, em Alterar
+    ("GET", "/montagens/dia", "sessao", ("qualidade.r",)), ("GET", "/montagens/previa/", "sessao", ("qualidade.r",)),
+    ("POST", "/montagens/nota", "sessao", ("qualidade.u",)),
 )
 
 
@@ -21575,7 +21830,7 @@ def rota_privada(path):
     """Rotas que expõem fotos, o índice de rostos ou o faturamento da Roverpix: sem CORS aberto.
     v80: /roverpix/* (vendas, vendedores, códigos de cartão), /metricas, /ftp-remoto/* e /photoroom/status só para a origem
     do agente e ETERNA_APP_ORIGIN."""
-    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/vendas-dia", "/ponto/selfies", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/")) or path in AGENDA_ROTAS_PATHS
+    return path.startswith("/auth/") or path in ("/biblioteca", "/metricas", "/metricas/dia", "/visitantes", "/pessoas/rostos", "/ponto/docs", "/ponto/docs/revs", "/ponto/pedidos", "/ponto/numero", "/ponto/vendas-posto", "/ponto/vendas-dia", "/ponto/selfies", "/ponto/impressoes", "/ponto/entradas", "/ponto/entradas/importacoes", "/ponto/montagens", "/photoroom/status", "/recorte", "/impressao/miniatura", "/sessoes", "/fotos/enviar", "/leitores", "/montagens/pedir") or path.startswith(("/leitor/", "/leitores/", "/treino/", "/fotografos/", "/thumb/", "/file/", "/rostos/", "/roverpix/", "/ftp-remoto/", "/nuvem/", "/recorte/", "/montagem/", "/montagens/")) or path in AGENDA_ROTAS_PATHS
 
 
 # 17/11 (Ronaldo): proteção por IP, antes de qualquer rota.
@@ -22660,6 +22915,73 @@ class H(BaseHTTPRequestHandler):
                 st, r = lx_recuperar(pid[3:] if pid.startswith("ag_") else pid, quem)
         except Exception as ex:
             print("  lixeira: %s" % type(ex).__name__)
+            return self.js({"ok": False, "error": "erro no servidor"}, 500, nostore=True)
+        return self.js(r, st, nostore=True)
+
+    def montagens_ia_get(self, u):
+        """26/11: GET /montagens/dia?dia=&de= (qualidade.r, 30 por minuto por pessoa) e GET /montagens/previa/<pid>/<fundo>.jpg
+        (qualidade.r, 600 por minuto por pessoa): só a prévia que já está pronta em disco, da versão atual; nunca põe montagem
+        na fila. Origem local. Tudo que não existe responde o mesmo 404. O console nunca imprime pid."""
+        if not self.origem_local():
+            return self.js({"error": "origem"}, 403, nostore=True)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        try:
+            if u.path == "/montagens/dia":
+                q = parse_qs(u.query)
+                dia = (q.get("dia") or [_ff_hoje()])[0]
+                de = (q.get("de") or ["0"])[0]
+                if not _re_dia_iso.match(dia):
+                    return self.js({"error": "dia"}, 400, nostore=True)
+                if not re.match(r"^\d{1,6}$", de):
+                    return self.js({"error": "de"}, 400, nostore=True)
+                if not limite_ok("u:" + quem, "montagens_dia", 30):
+                    return self.js({"error": "limite"}, 429, nostore=True)
+                return self.js(mn_lista(dia, int(de)), nostore=True)
+            nf = {"error": "not found"}
+            m = _re_mtg.match(u.path[len("/montagens/previa/"):])
+            if not m or m.group(3) not in MTG_FUNDOS:
+                return self.js(nf, 404, True)
+            if not limite_ok("u:" + quem, "montagens_previa", 600):
+                return self.js({"error": "limite"}, 429, True)
+            pid, fundo = m.group(2), m.group(3)
+            with lock:
+                viva = pid in lib
+            versao = mtg_versao(fundo) if viva else None
+            arq = mtg_arquivo(pid, fundo, "p", versao) if versao else None
+            base = os.path.realpath(MONTAGENS)
+            if not arq or not os.path.isfile(arq) or os.path.commonpath([os.path.realpath(arq), base]) != base:
+                return self.js(nf, 404, True)
+            with open(arq, "rb") as f:
+                data = f.read()
+        except Exception as ex:
+            print("  montagens-ia: %s" % type(ex).__name__)
+            return self.js({"error": "erro no servidor"}, 500, nostore=True)
+        self.send_response(200)
+        self.cors()
+        self.send_header("Content-Type", "image/jpeg")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "private, no-store")       # sem cache no aparelho, como o /montagem/
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(data)
+        return None
+
+    def montagens_ia_post(self):
+        """26/11: POST /montagens/nota {pid, fundo, v: "boa"|"ruim"|null, motivos, idem, fundo_v} (qualidade.u, 120 por minuto por pessoa).
+        Origem local, X-Eterna (conferido no autoriza), corpo até 1 KB. O "ver como" já parou no do_POST (403 so_ver).
+        O console nunca imprime o corpo nem o pid."""
+        if not self.origem_local():
+            return self.js({"ok": False, "error": "origem"}, 403, nostore=True)
+        quem = (self.sessao() or {}).get("usuario") or ""
+        if not limite_ok("u:" + quem, "montagens_nota", 120):
+            return self.js({"ok": False, "error": "limite"}, 429, nostore=True)
+        body, err = self.corpo(1024)
+        if err:
+            return self.js({"ok": False, "error": "corpo"}, 413 if err == 413 else 400, nostore=True)
+        try:
+            st, r = mn_gravar(quem, body)
+        except Exception as ex:
+            print("  montagens-ia: %s" % type(ex).__name__)
             return self.js({"ok": False, "error": "erro no servidor"}, 500, nostore=True)
         return self.js(r, st, nostore=True)
 
@@ -24181,6 +24503,8 @@ class H(BaseHTTPRequestHandler):
             return self.fotografos_get(u)
         if u.path in ("/lixeira", "/lixeira/medida"):
             return self.lixeira_get(u)
+        if u.path == "/montagens/dia" or u.path.startswith("/montagens/previa/"):
+            return self.montagens_ia_get(u)
         if u.path == "/pessoas/rostos":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -24393,6 +24717,8 @@ class H(BaseHTTPRequestHandler):
             return self.zerar_post()
         if u.path in ("/lixeira/recuperar", "/lixeira/config"):
             return self.lixeira_post(u.path)
+        if u.path == "/montagens/nota":
+            return self.montagens_ia_post()
         if u.path == "/compra-online/config":
             return self.compra_online_post()
         if u.path == "/vendas/canceladas":
