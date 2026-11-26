@@ -37,7 +37,7 @@ O menu fica do lado esquerdo e é dividido em grupos:
 
 | Grupo | O que tem |
 | --- | --- |
-| Venda | Posto de venda |
+| Venda | Posto de venda. Para quem atende e vende, também Procurar fotos |
 | Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
 | Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA, Montagens de IA |
 | Fotógrafo | Diário do set, Minhas fotos, Procurar fotos, Fila do fotógrafo |
@@ -348,7 +348,9 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 
 **Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**, no menu **Fotógrafo**, logo abaixo de Minhas fotos.
 
-- **Quem vê:** quem já vê Minhas fotos. A supervisora e o Admin procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. Quem só vende e a tela do cliente não têm essa tela.
+- **Quem vê:** quem já vê Minhas fotos e, desde 26/11, quem atende e vende (quem tem o Posto de venda). A supervisora, o Admin e quem atende e vende procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. A tela do cliente (Checkout) nunca mostra essa tela.
+- **Para quem atende e vende (26/11):** a tela fica no menu logo depois de **Posto de venda**. No computador do Posto, abra o menu e toque em **Procurar fotos** para achar a foto que o cliente não encontrou; depois volte ao Posto para vender. É só para olhar: o atendente não ganha Minhas fotos, não envia cartão e não muda nada nas fotos. Quem já estava cadastrado ganhou a tela sozinho, sem recadastro.
+- **Tirar a tela de alguém:** em **Sistema › Permissões**, na linha **Posto de venda**, desmarque **Procurar fotos** em **Aparece no menu** e salve. Quem tem Minhas fotos continua vendo a tela por ela.
 - **Fotógrafo:** escolha **Todos** ou um nome. Só aparece quem tem sessão hoje, com o número de sessões ao lado.
 - **Tempo:** **Últimos 30 min**, **Última 1 hora**, **Últimas 3 horas** ou **Dia todo**. Com Todos, a tela abre na última 1 hora. Com um fotógrafo escolhido, abre no dia todo. Em **Hora** dá para escolher uma hora cheia (09h, 10h).
 - **Código da sessão:** digite o código inteiro ou um pedaço. Com código digitado, o tempo não filtra.

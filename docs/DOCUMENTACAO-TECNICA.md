@@ -1005,7 +1005,7 @@ Planos: `docs/planos/2026-10-27-menus-v78.md` (com as decisões do programador) 
 | --- | --- | --- | --- | --- |
 | `admin` | Admin | tudo | todas as telas (`menu:'*'`) | Início |
 | `foto` | Fotógrafo | set C R U, diario C R U, escala R | diario, importar, escala | Upload automático |
-| `venda` | Atendimento e venda | venda C R U, quiosque C R, catalogo R | quiosque, checkout, fila, caixa, catalogo | Início |
+| `venda` | Atendimento e venda | venda C R U, quiosque C R, catalogo R | quiosque, checkout, fila, caixa, catalogo (hoje: quiosque, checkout, fila, caixa, posto, impfila e, desde 26/11, procurar) | Início |
 | `valida` | Validador | qualidade (tudo), diario R | revisao, treino, diario | Qualidade |
 | `supervisor` | Supervisor | relatorios R, desempenho R, financeiro R, diario tudo, set R, venda C R U, qualidade R U (16/11: marca no Treino da IA), estoque tudo, configuracao R U, escala R U, laboratorio R, catalogo R, galerias C R U | todas as telas desses módulos | Início |
 | `quiosque` | Checkout (tela do cliente) | quiosque C R | quiosque | Checkout |

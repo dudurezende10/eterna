@@ -24,7 +24,7 @@ const J=JSON.stringify;
 const PERFIS={
   'eduardo@eduardorezende.com':{n:'admin',g:[['Venda',['posto']],['Dashboard',['painel','estatisticas','bandeiras','estoque','impfila','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','fotografos','alertas','lixeira','montagens']],['Fotógrafo',['diario','importar','procurar','fotofila']],['Configurações',['catalogo','ajustes','ia-auto']],['Sistema',['repo','identidade','chroma','usuarios','permissoes','vestiario','chute-a-gol','fundos-teste']]],ini:'painel',ck:true},
   'carlos@eterna.photo':{n:'fotografo',g:[['',['diario','importar','procurar','fotofila']]],ini:'importar',ck:false},
-  'loja@eterna.photo':{n:'atendimento',g:[['',['posto','fotofila','catalogo']]],ini:'posto',ck:true}, // v83: Atendimento e venda começa no Posto de venda
+  'loja@eterna.photo':{n:'atendimento',g:[['',['posto','procurar','impfila']]],ini:'posto',ck:true}, // 26/11: Posto, Procurar fotos e Fila de impressão // v83: Atendimento e venda começa no Posto de venda
   'supervisor@eterna.photo':{n:'supervisor',g:[['Venda',['posto']],['Dashboard',['painel','bandeiras','estoque','impfila','vendas','vendas-lista','galerias','calendario']],['Curadoria',['revisao','treino','fotografos','alertas','lixeira','montagens']],['Fotógrafo',['diario','importar','procurar','fotofila']],['Configurações',['catalogo','ajustes','ia-auto']]],ini:'painel',ck:true}, // parte I: Fundos de IA (técnico) no Sistema; a Supervisora usa a aba de Preços e Checkout
   'qualidade@eterna.photo':{n:'validador',g:[['',['revisao','treino','diario']]],ini:'revisao',ck:false},
 };
