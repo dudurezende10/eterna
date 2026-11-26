@@ -638,6 +638,10 @@ Na confirmação ficam registrados quem deu cada cortesia, o motivo, o texto, a 
 
 O cliente faz a selfie de novo no Checkout. Se ele já comprou, aparece **Você já comprou fotos nesta visita** com dois botões: **Comprar mais fotos** começa uma venda nova, do zero, com todas as fotos dele (compradas ou não), e segue como qualquer venda; **Ver o QR das fotos compradas** mostra de novo o QR da compra anterior.
 
+### Câmera do Checkout (26/11)
+
+O Checkout usa sempre a câmera Logitech espetada no USB, mesmo com a câmera do notebook disponível. Se a Logitech estiver desconectada, a selfie continua com a câmera que houver; ao ligar a Logitech de novo, ela volta a ser a usada na próxima vez que a câmera abrir.
+
 ### Testar a impressora (26/11)
 
 No **Posto de venda**, no painel **Imprimir**, toque em **Testar impressora**. Sai uma folha da Viva Maracanã com **Testado por** (nome e usuário de quem está logado), o posto e a hora. A impressora está pronta quando a folha sai inteira, com os quatro cantos amarelos visíveis e as cores nítidas. Pode testar quantas vezes precisar: o teste não conta como venda nem gasta do rolo no sistema.
