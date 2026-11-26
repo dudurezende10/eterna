@@ -638,6 +638,14 @@ Na confirmação ficam registrados quem deu cada cortesia, o motivo, o texto, a 
 
 O cliente faz a selfie de novo no Checkout. Se ele já comprou, aparece **Você já comprou fotos nesta visita** com dois botões: **Comprar mais fotos** começa uma venda nova, do zero, com todas as fotos dele (compradas ou não), e segue como qualquer venda; **Ver o QR das fotos compradas** mostra de novo o QR da compra anterior.
 
+### Vendas do Dia por vendedor (26/11)
+
+No **Posto de venda**, em **Vendas do Dia**, escolha seu nome em **Vendedor** (o seu aparece com "você"). A lista passa a mostrar só as suas vendas e o rodapé dá a quantidade e o total vendido no dia, para acompanhar a meta. **Todos** volta a mostrar as vendas de todos.
+
+### Versão nova do Eterna (26/11)
+
+Quando sai uma versão nova, aparece embaixo da tela uma faixa azul **Nova versão do Eterna** com o botão amarelo **Atualizar**. Toque nele entre uma venda e outra, nunca no meio de uma venda. Não precisa mais apertar F5.
+
 ### Câmera do Checkout (26/11)
 
 O Checkout usa sempre a câmera Logitech espetada no USB, mesmo com a câmera do notebook disponível. Se a Logitech estiver desconectada, a selfie continua com a câmera que houver; ao ligar a Logitech de novo, ela volta a ser a usada na próxima vez que a câmera abrir.
