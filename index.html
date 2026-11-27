@@ -1086,13 +1086,16 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 .placa-gol .pl-bola i{display:block;width:48px;height:3px;border-radius:2px;background:#f5c518}
 .placa-gol .bola{width:26px;height:26px}
 .placa-gol figcaption{font-size:12px;color:var(--muted);text-align:center}
-@media (max-width:900px){
+/* 27/11 (Ronaldo, tablet deitado): menu lateral igual ao do PC até 701 px; a faixa de cima fica só no celular */
+@media (max-width:700px){
   .app{grid-template-columns:minmax(0,1fr)}
   .rail{position:sticky;top:env(safe-area-inset-top,0px);height:auto;border-right:0;border-bottom:1px solid var(--line);padding-block:12px;padding-right:max(16px,env(safe-area-inset-right,0px));gap:10px;z-index:5;overflow:visible}
   .nav{flex-direction:row;overflow-x:auto;gap:4px;margin:0 -4px;align-items:center}
   .nav .grp{padding:0 6px;white-space:nowrap}
   .nav button{white-space:nowrap;padding:8px 10px;width:auto}
   .rail .venue{display:none}
+}
+@media (max-width:900px){
   main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
   .review,.twocol,.hero{grid-template-columns:1fr}
   h1{font-size:32px}
@@ -1563,13 +1566,11 @@ body:not([data-admin]) .pw-v{display:none}
 .railck{width:100%;background:var(--fg);color:var(--bg);border-color:var(--fg)}
 :root[data-venue="maracana"] .railck{background:var(--venue2);border-color:var(--venue2);color:#0C2340;font-weight:600}
 /* celular: os nomes dos grupos quebram linha (sem arrastar) e os itens do grupo aberto ficam numa linha própria logo abaixo */
-@media (max-width:900px){.nav{flex-wrap:wrap;overflow-x:visible;row-gap:2px}.nav .navg{display:contents}.nav button.grp{order:0;flex:none;width:auto;padding:8px;gap:6px;white-space:nowrap}.nav .navitems{order:1;flex:1 1 100%;flex-direction:row;flex-wrap:wrap;align-items:center;gap:4px;padding-top:4px;border-top:1px solid rgba(127,127,127,.25)}.nav .navitems button{flex:none}.railck{width:auto;min-height:36px}}
+@media (max-width:700px){.nav{flex-wrap:wrap;overflow-x:visible;row-gap:2px}.nav .navg{display:contents}.nav button.grp{order:0;flex:none;width:auto;padding:8px;gap:6px;white-space:nowrap}.nav .navitems{order:1;flex:1 1 100%;flex-direction:row;flex-wrap:wrap;align-items:center;gap:4px;padding-top:4px;border-top:1px solid rgba(127,127,127,.25)}.nav .navitems button{flex:none}.railck{width:auto;min-height:36px}}
 @media (min-width:701px) and (pointer:coarse){.railck{min-height:44px}} /* toque (tablet em pé ou deitado): 44 px; vem depois da regra de até 900 px para valer por cima dela */
 /* v78: celular (até 700 px): cabeçalho fixo compacto (logo, Checkout em ícone e Menu); o menu abre numa gaveta por cima da tela */
 .menubtn,.navback{display:none}
 @media (min-width:701px){.railgav{display:contents}}
-/* 27/11 (tablet deitado, 701 a 900 px): sem gaveta e sem o bloco do usuário, não havia onde sair; o bloco vira uma linha na faixa de cima */
-@media (min-width:701px) and (max-width:900px){.rail .venue{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:4px 12px;margin-top:0}.rail .venue .powered{display:none}}
 @media (max-width:700px){
   .rail{flex-direction:row;align-items:center;gap:8px;height:56px;min-height:56px;max-height:56px;padding-block:6px;overflow:visible;z-index:30}
   .rail .vbrand{padding:0;margin-right:auto;max-height:44px;overflow:hidden;display:flex;align-items:center}
