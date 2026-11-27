@@ -582,6 +582,49 @@ def senha_email(ev, corpo):
     return resp({"ok": True}, 202)
 
 
+# 26/11 (Ronaldo): a auditoria diária do agente (21h) chega por e-mail. Destino fixo aqui (AUDITORIA_PARA), nunca do corpo.
+AUDITORIA_PARA = os.environ.get("AUDITORIA_PARA", "ronaldo.santos@maracatour.com.br")
+
+
+def _esc(x):
+    return str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def auditoria_email_ponto(ev, corpo):
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"erro": "nao_autorizado"}, 401)
+    dia = str(corpo.get("dia") or "")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", dia):
+        return resp({"erro": "pedido"}, 400)
+    if not contar("AUDMAIL#" + dia, 86400, 6):
+        return resp({"erro": "aguarde"}, 429)
+    if not (MAIL_FROM and AUDITORIA_PARA):
+        return resp({"erro": "envio desligado"}, 502)
+    lista = lambda k, n: [str(x)[:300] for x in (corpo.get(k) or [])[:n] if x is not None]
+    corr, desv = lista("correcoes", 50), lista("desvios", 200)
+    num = [[str(a)[:80], str(b)[:80]] for a, b in ((x + ["", ""])[:2] for x in (corpo.get("numeros") or [])[:80] if isinstance(x, list))]
+    sit = str(corpo.get("situacao") or "")[:60]
+    d = "%s/%s/%s" % (dia[8:], dia[5:7], dia[:4])
+    assunto = "Auditoria Eterna %s: %s" % (d, sit)
+    texto = "%s\n\nNúmeros\n%s\n\nDesvios\n%s\n\nCorrigido sozinho\n%s" % (
+        assunto, "\n".join("%s: %s" % (a, b) for a, b in num), "\n".join("- " + x for x in desv) or "nenhum",
+        "\n".join("- " + x for x in corr) or "nada")
+    td = "style='padding:4px 10px;border-bottom:1px solid #eee'"
+    html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:640px'><h2 style='margin:0 0 12px'>%s</h2>"
+            "<h3>Números</h3><table style='border-collapse:collapse'>%s</table><h3>Desvios</h3>%s<h3>Corrigido sozinho</h3>%s</div>") % (
+        _esc(assunto), "".join("<tr><td %s>%s</td><td %s><b>%s</b></td></tr>" % (td, _esc(a), td, _esc(b)) for a, b in num),
+        ("<ul>%s</ul>" % "".join("<li>%s</li>" % _esc(x) for x in desv)) if desv else "<p>Nenhum.</p>",
+        ("<ul>%s</ul>" % "".join("<li>%s</li>" % _esc(x) for x in corr)) if corr else "<p>Nada.</p>")
+    try:
+        _ses.send_email(FromEmailAddress="%s <%s>" % (MAIL_NOME, MAIL_FROM), Destination={"ToAddresses": [AUDITORIA_PARA]},
+                        Content={"Simple": {"Subject": {"Data": assunto, "Charset": "UTF-8"},
+                                            "Body": {"Text": {"Data": texto, "Charset": "UTF-8"}, "Html": {"Data": html, "Charset": "UTF-8"}}}})
+    except Exception as ex:
+        print("auditoria: envio falhou:", str(ex)[:200])
+        return resp({"erro": "envio"}, 502)
+    return resp({"ok": True}, 202)
+
+
 # ---------- compra online pela Imply (v99, plano docs/planos/2026-11-11-compra-online-pela-imply.md) ----------
 # A galeria monta o carrinho com os produtos do catálogo online (mesmos SKU e preço da Imply, publicados pelo ponto no
 # manifesto); a Nuvem confere, cria o pedido (PED#<ON-...>), cadastra a pessoa na Imply (setPessoa) e devolve o endereço do
@@ -1481,6 +1524,8 @@ def handler(ev, ctx):
         return publicar(ev, corpo)
     if caminho == "/auth/senha-email" and metodo == "POST":
         return senha_email(ev, corpo)
+    if caminho == "/ponto/auditoria" and metodo == "POST":
+        return auditoria_email_ponto(ev, corpo)
     if caminho == "/ponto/vendas-online" and metodo == "GET":
         return vendas_online(ev)
     if caminho == "/ponto/compra" and metodo in ("GET", "POST"):

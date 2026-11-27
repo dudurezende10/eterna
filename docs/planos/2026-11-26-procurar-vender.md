@@ -23,7 +23,10 @@ Fora do escopo: mudar a selfie do cliente, mudar os limites do Checkout, fechar 
 - Teto de 8 sessões por venda.
 - Tudo ou nada: se uma marcada não puder entrar, nada abre e o vendedor vê o motivo.
 - Sessão ainda aberta aparece com a caixa desligada e o texto "entra quando fechar (até N min)". O prazo vem da pausa de sessão do servidor (`sessPausaTxt`), não é fixo. Não há fechar à força.
-- Sessão de menor ou de escola nunca entra por aqui.
+- Sessão de menor ou de escola nunca entra por aqui. Ela continua na lista do vendedor, com a caixa desligada.
+- Checkout com a câmera ligada (cliente no meio da selfie) conta como ocupado.
+- A sessão que não é a âncora de uma venda unida aparece como vendida quando o servidor devolve as vendas do dia.
+- Na tela do vendedor, as sessões marcadas aparecem com o número da sessão (`sessCodHtml`, `sessRot`); o canal e o evento levam só o código LP.
 
 ## Onde cada passo acontece
 

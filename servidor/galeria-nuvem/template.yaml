@@ -171,6 +171,7 @@ Resources:
           ESCOLA_LOTES: !Ref EscolaLotes
           MAIL_FROM: !Ref MailFrom
           MAIL_NOME: "Viva Maracanã · Eterna"
+          AUDITORIA_PARA: ronaldo.santos@maracatour.com.br
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref Banco}
         - Statement:
@@ -305,6 +306,12 @@ Resources:
           Properties:
             ApiId: !Ref Api
             Path: "/auth/{acao}"
+            Method: POST
+        AuditoriaPonto:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/auditoria
             Method: POST
         Publicar:
           Type: HttpApi

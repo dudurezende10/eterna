@@ -3,7 +3,7 @@
 // marcadas, unidas e inteiras; "Vender esta sessão" na sessão aberta; a venda leva origem "procurar"; auditoria procurar_vender.
 // Agente falso e dados simulados (testes/_procurar_vender.js). PV_VER=1 mostra cada conferência.
 const {chromium}=require('playwright');
-const {U,J,C,F,ADMIN,FOTO,CAIXA,contexto,dupla,entrar,abrir,procurar,espera,chegou,semear,toque,marca,aviso,quiosque}=require('./_procurar_vender');
+const {hoje,U,J,C,F,ADMIN,FOTO,CAIXA,contexto,dupla,entrar,abrir,procurar,espera,chegou,semear,toque,marca,aviso,quiosque}=require('./_procurar_vender');
 const fails=[];const T0=Date.now();const ok=(c,m)=>{if(!c)fails.push(m);if(process.env.PV_VER)console.error(((Date.now()-T0)/1000).toFixed(1)+' s '+(c?'ok   ':'FALHA ')+String(m).slice(0,260));};
 const ag=l=>l.map(p=>'ag_'+p);const igual=(a,b)=>a.slice().sort().join()===b.slice().sort().join();
 (async()=>{const b=await chromium.launch();const errs=[];
@@ -64,6 +64,8 @@ try{
     ok(r.m1==='1'&&r.m2==='1'&&r.y===y0&&y0>0,'2: marcar não redesenha a lista (mesmos nós, mesma rolagem): '+J({m1:r.m1,m2:r.m2,y:r.y,y0}));
     ok(r.bt==='Iniciar venda com 2 sessões'&&r.n==='2 sessões marcadas'&&r.pa==='true'&&r.ta==='Marcada'&&igual(r.sel,[C.A,C.C])&&igual(r.minis,[C.A,C.C])&&/abrem inteiras/.test(r.inteiras),'2: a barra mostra "Iniciar venda com 2 sessões" e as marcadas: '+J(r));
     ok(r.vis,'2: a barra fica à vista no pé da tela');}
+  {const r=await V.evaluate(C=>{const m=c=>document.querySelector('#bf-barra .bf-bmini[data-card="'+c+'"]');return {num:(m(C.A).querySelector('.ss-num')||{}).textContent,lp:(m(C.A).querySelector('.ss-lp')||{}).textContent,rot:m(C.A).getAttribute('aria-label')};},C);
+    ok(r.num==='147'&&r.lp===C.A&&r.rot==='Desmarcar 147','a barra mostra o número da sessão (147) com o LP ao lado: '+J(r));}
   await V.evaluate(()=>ETERNA.render());await V.waitForTimeout(200);
   ok(await V.evaluate(()=>document.querySelector('#bf-lista').dataset.marca==='1'&&document.querySelector('#bf-lista .bf-card').dataset.marca==='1'&&document.querySelectorAll('.bf-marca[aria-pressed="true"]').length===2),'2: um redesenho geral depois de marcar não troca a lista');
   await V.setViewportSize({width:1366,height:820});await V.evaluate(()=>window.scrollTo(0,0));
@@ -86,6 +88,8 @@ try{
     R.velha=await manda(Object.assign(base(3),{em:Date.now()-11000}));R.outra=await manda(Object.assign(base(4),{para:'zzzzzzzz'}));R.menor=await manda(Object.assign(base(5),{cards:[C.A,C.MENOR]}));
     R.minusc=await manda(Object.assign(base(6),{cards:['lppva0001']}));R.origem=await manda(Object.assign(base(7),{origem:'outra'}));R.repete=await manda(Object.assign(base(8),{cards:[C.A,C.A]}));R.vazia=await manda(Object.assign(base(9),{cards:[]}));
     R.paga=await manda(Object.assign(base(10),{cards:[C.A,C.PAGA]}));R.pedido=await manda(Object.assign(base(11),{cards:[C.PEDIDO]}));R.semSessao=await manda(Object.assign(base(12),{cards:['LPNAOEXISTE']}));R.texto=await manda(Object.assign(base(13),{cards:'LPPVA0001'}));
+    await L.evaluate(()=>{ETERNA.state.kiosk.camOn=true;});R.camera=await manda(base(14));await L.evaluate(()=>{ETERNA.state.kiosk.camOn=false;});
+    ok(R.camera.resp&&R.camera.resp.ok===false&&R.camera.resp.motivo==='ocupado','9: com a câmera ligada (cliente no meio da selfie) o Checkout responde ocupado: '+J(R.camera.resp));
     ok(Object.values(R).every(r=>r.parado),'9: nenhuma mensagem recusada muda o Checkout: '+J(R));
     ok(R.semId.resp===null&&R.outra.resp===null,'9: sem id válido ou para outra janela, o Checkout nem responde');
     ok(['nove','velha','minusc','origem','repete','vazia','texto'].every(k=>R[k].resp&&R[k].resp.ok===false&&R[k].resp.motivo==='invalido'),'9: 9 sessões, mais de 10 s, formato errado: invalido: '+J(R));
@@ -104,7 +108,7 @@ try{
   {const k=await quiosque(L);ok(igual(k.cards,[C.A,C.C])&&!k.fotos.some(f=>ag(F.B).includes(f)),'6: a sessão ligada pela visita e não marcada não entra, nem depois: '+J(k.cards));}
   // ---------- 11: auditoria ----------
   {const au=await V.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender'));
-    ok(au.length===1&&au[0].por===CAIXA&&au[0].alvo==='sessoes/'+C.A&&au[0].mudancas[0].para===C.A+' + '+C.C&&au[0].posto&&au[0].porNome==='Caixa de teste'&&au[0].origem==='procurar'&&au[0].n===2,'11: auditoria procurar_vender com quem, posto e sessões: '+J(au));}
+    ok(au.length===1&&au[0].por===CAIXA&&au[0].alvo==='sessoes/'+C.A&&au[0].mudancas[0].para===hoje+'-147 ('+C.A+') + '+hoje+'-201 ('+C.C+')'&&au[0].posto&&au[0].porNome==='Caixa de teste'&&au[0].origem==='procurar'&&au[0].n===2,'11: auditoria procurar_vender com quem, posto e sessões: '+J(au));}
   // ---------- 7: Checkout com cliente ----------
   await marca(V,C.D);const antes=J(await quiosque(L));await toque(V,'#bf-barra [data-act="bf-vender"]');await V.waitForTimeout(700);
   ok(J(await quiosque(L))===antes&&await V.evaluate(C=>ETERNA.state.procurar.sel.join()===C.D,C),'7: com cliente no Checkout nada muda na tela dele e a seleção fica: '+await aviso(V));

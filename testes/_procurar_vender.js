@@ -14,7 +14,7 @@ const C={A:'LPPVA0001',B:'LPPVB0002',C:'LPPVC0003',D:'LPPVD0004',ABERTA:'LPPVABE
 const F={A:fotos('pvaa',4),B:fotos('pvbb',6),C:fotos('pvcc',3),D:fotos('pvdd',5),ABERTA:fotos('pvab',2),PAGA:fotos('pvpg',2),PEDIDO:fotos('pvpe',2),FORA:fotos('pvfo',2),MENOR:fotos('pvme',2)};
 const ADMIN='admin.teste@exemplo.com',FOTO='fotografo.teste@exemplo.com',CAIXA='caixa.teste@exemplo.com',QUIOSQUE='quiosque.teste@exemplo.com';
 function feed(){const S=[];let rev=0;const poe=(k,o)=>{S.push(sessao(Object.assign({card:C[k],fotos:F[k],rev:++rev},o)));};
-  poe('A',{min:4,fotografo:'samuel'});poe('B',{min:6,fotografo:'samuel'});poe('C',{min:8,fotografo:'carlos'});poe('D',{min:10,fotografo:'carlos'});
+  poe('A',{min:4,fotografo:'samuel',num:147});poe('B',{min:6,fotografo:'samuel'});poe('C',{min:8,fotografo:'carlos',num:201});poe('D',{min:10,fotografo:'carlos',num:202}); // A, C e D com o número da sessão; B sem (servidor antigo)
   poe('ABERTA',{min:1,status:'aberta',fechada_em:null,fechada_por:null});poe('PAGA',{min:12});poe('PEDIDO',{min:14});poe('FORA',{min:16});poe('MENOR',{min:18});return {gen:'pv1',rev,sessoes:S};}
 // troca: função que recebe o index.html e devolve o que será servido (ex.: a chave desligada)
 async function contexto(b,o){o=o||{};const FEED=o.feed||feed();const EVENTOS=[];const errs=[];
@@ -69,4 +69,4 @@ const marca=(pg,card)=>toque(pg,'#bf-lista .bf-mk[data-card="'+card+'"] .bf-marc
 const aviso=pg=>pg.evaluate(()=>{const t=document.querySelector('#toast');return t&&t.hasAttribute('data-on')?t.textContent:'';});
 const quiosque=pg=>pg.evaluate(()=>{const k=ETERNA.state.kiosk;return {step:k.step,code:k.code||'',cards:k.so?k.so.cards.slice():null,visita:k.so?k.so.visita:null,base:k.so?k.so.base:null,origem:k.so?k.so.origem||null:null,
   fotos:k.code?ETERNA.lojaItems(k.code).filter(x=>x.t==='ph').map(x=>x.id):[]};});
-module.exports={U,ORIG,J,C,F,ADMIN,FOTO,CAIXA,QUIOSQUE,contexto,dupla,entrar,abrir,procurar,espera,chegou,semear,toque,marca,aviso,quiosque,todas};
+module.exports={hoje,U,ORIG,J,C,F,ADMIN,FOTO,CAIXA,QUIOSQUE,contexto,dupla,entrar,abrir,procurar,espera,chegou,semear,toque,marca,aviso,quiosque,todas};

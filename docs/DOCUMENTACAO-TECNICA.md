@@ -1536,6 +1536,41 @@ Decisões do Eduardo (30/10): D1 sai da coluna final 15 min depois de pronto (`F
 - O agente não tem autenticação: qualquer máquina que passe na checagem de origem lê a fila e troca a função do dia (impacto só de exibição; POST com limite por minuto e registro do IP). O pid continua abrindo `/file/` para quem tem o `Host` certo (risco já existente, v85 risco 1); por isso só 6 pids por grupo aberto. A correção é o pareamento do posto (v83 A).
 - Polling de 2 s por tela; com mais de 5 telas, acrescentar 304 por `rev`.
 
+## Número da sessão (26/11/2026)
+
+Plano: `docs/planos/2026-11-26-numero-da-sessao.md`. Testes: `testes/sessao_numero_agente.py` (roda no `rodar.sh`) e `testes/sessao-numero.js`.
+
+### Agente
+
+- `sess_num` (dia -> último número dado), só com o `sess_lock`. `_sess_num_prox(dia)` soma 1, só em memória. `_sess_nova` grava `"num"` na sessão (campo público: vai para o arquivo e para `GET /sessoes`).
+- Arquivo do dia: `{"dia": "...", "num": <último número dado>, "sessoes": [...]}`. O `num` do topo é lido no mesmo `with sess_lock` que monta os lotes (`sess_gravar`) e impede o reuso do número de uma sessão que saiu.
+- `_sess_num_ok`: inteiro de 1 em diante (bool não vale), sem teto: um teto faria a sessão acima dele ser renumerada na partida seguinte. O limite de 5 dígitos é só da busca da tela (`sessQ`). `_sess_normaliza` aplica na leitura.
+- `_sess_num_arruma(topo, lista)`: regra única do boot e da migração. Parte do maior entre o topo e o maior `num` válido; sessão sem número ou com número repetido (a segunda na ordem do arquivo) recebe o próximo. Removidas também recebem.
+- `sess_carregar`: aplica a regra por dia lido, antes do reagrupamento das fotos sem sessão; quem mudou ganha `rev` novo (`_sess_toca`).
+- `sess_num_migrar()`: uma vez na partida, fora do `sess_lock`, para os arquivos de antes de ontem para trás. Grava com `.tmp` + `os.replace`; arquivo já numerado não é tocado; erro num arquivo só imprime. Uma passada sem erro deixa a marca `.num-migrado` na pasta das sessões e as partidas seguintes não releem os arquivos. Roda antes das threads de rede (o `sess_esquecer_disco` usa o mesmo `.tmp`).
+- Arquivo do dia ilegível na partida (`_sess_ilegivel`): renomeado para `AAAA-MM-DD.json.ilegivel-<hora>`, aviso no log, e `sess_num[dia]` parte do `num` do topo quando os primeiros bytes ainda o mostram (`_SESS_NUM_TOPO`).
+- `sess_gravar` e `sess_num_migrar` apagam o `.tmp` quando a gravação falha (`_sess_tmp_apaga`); `sess_limpar` tira também `.json.tmp` e `.json.ilegivel-*` com mais de 60 dias. A marca `.num-migrado` fica fora de `backup_arquivos_lista`.
+- `sess_loop`: o dia que sai da memória sai de `sess_num`.
+- Fusão (`_sess_fundir`): o destino mantém o número; o da origem fica com ela e não volta.
+- `GET /fila-fotografo`: cada grupo tem `num`.
+- Nome completo `AAAA-MM-DD-N` = `dia` + `num`, montado por quem mostra. Nenhum campo novo além do `num`.
+
+### Tela
+
+| Auxiliar | Devolve |
+| --- | --- |
+| `srvNumGuarda(x)` | guarda `{dia, num}` de cada sessão recebida em `/sessoes` (hoje e ontem) em `SRV.num`; sessão removida sai. `SRV.num` (objeto sem protótipo) é zerado na resposta completa, na troca de partida do agente e na virada do dia |
+| `sessNum(card)` | o número, só se a sessão é de hoje; senão `null` |
+| `sessId(card)` | `"2026-11-26-147"` de qualquer dia, ou `null` |
+| `sessRot(card)` | texto corrido: `"147"` hoje, o nome completo em outro dia, ou o LP |
+| `sessCodHtml(card)` | `.ss-cod` com `.ss-dn` (data pequena `.ss-dia` + número em destaque `.ss-num`, sem quebra) e `.ss-lp` (LP apagado), ou só o LP |
+| `sessQ(texto)` | `{n, exato, hoje}` para 1 a 5 dígitos ou o nome completo com ou sem traços; senão `null` |
+| `sessBusca(x, q, tem)` | filtro das listas: número de hoje pelo começo, nome completo exato, ou pedaço do LP |
+| `sessIgualPrimeiro(itens, q)` | põe no topo a sessão de número igual ao digitado |
+| `sessDeNumero(texto)` | o `card` da sessão de hoje, com foto, que tem aquele número (Juntar leva; a confirmação `ss_juntar_conf` mostra o nome, o LP, o fotógrafo, a hora e as fotos da sessão achada) |
+
+Com o agente antigo (nenhum `num` de hoje em `SRV.num`), `sessBusca` cai no pedaço do LP e as telas mostram só o LP. `lojaCodigo` e `lojaCodEspera` não mudaram: o cliente só entra com o código dele.
+
 ## Sessões por tempo e rosto (v91, 30/10/2026)
 
 Plano: `docs/planos/2026-10-30-sessoes-por-rosto-e-tempo.md`. Testes: `testes/sessoes_agente.py` (agente, critérios 1 a 20, rostos sintéticos, roda no `rodar.sh`) e `testes/sessoes-upload.js` (app, critérios 21 a 25, agente falso). Reaproveita a v85 A do Ronaldo (5fe4e5c: `_sess_codigo`, `sess`, `sess_pid`, `sess_aberta`, `sess_rev`, `sess_sujo`, gravação por dia, `sess_feed`, gancho no `ingest_file` e na LGPD, `srvPull` e `ingClose(how,srv)` no app), com as correções 1 a 11 da revisão do plano.
@@ -2912,12 +2947,16 @@ A seleção (`state.procurar.sel`) e o pedido em espera (`state.procurar.pedido`
 
 `ECO_CH.onmessage` trata `abrir` só com `state.lojaRota` e `abriu` só fora dela, antes do `ecoNorm`. `lojaAbrirMsg(q)` ignora mensagem para outra janela (`q.para!==ECO_TAB`) ou sem `id` válido, e responde `invalido` para lista fora de 1 a 8 códigos `^[A-Z0-9]{4,20}$`, código repetido, origem fora de `BF_ORIGENS` ou mensagem com mais de 10 s (`BF_ABRIR_VALE`). `lojaAbrirPedido(q)`:
 
-- `ocupado` se `k.code`, `k.step!=='code'` ou `k.mais`;
+- `ocupado` se `k.code`, `k.step!=='code'`, `k.mais` ou `k.camOn` (cliente no meio da selfie);
 - `simFresh()` e, por sessão, `protegida` (`lojaSesProtegida`), `paga`, `pedido` ou `carregando` (`psEstado`);
 - `minhas[c]=lojaTodas(c)`, âncora na sessão de mais fotos, `lojaAbrirSo(minhas, anc, {fix})` sem `base`: `so.base=null` e `so.visita=false`, então `lojaVisitaAtualiza` não mexe e sessão ligada por visita não entra;
 - grava `k.so.origem`. "Adicionar outra pessoa" mantém a origem.
 
 A resposta `abriu` leva só `id`, `ok` e `motivo`. O Checkout abre na foto ampliada (a etapa passa de `gallery` a `review` no desenho), sem a pergunta "Esta sessão também é sua?".
+
+### Número da sessão
+
+Para a equipe, a barra das marcadas mostra o número da sessão com `sessCodHtml(card)`, e os avisos usam `sessRot(card)`. A auditoria grava `sessId(card)` com o LP entre parênteses (só o LP quando a sessão não tem número). A mensagem do canal, o pedido e o evento seguem levando só o `card`.
 
 ### Dado da venda
 
