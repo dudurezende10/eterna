@@ -18,11 +18,11 @@ hoje = m._ff_hoje()
 m.pessoas_contar = lambda dia, forcar=False: {"resultado": {"pessoas": 300}, "auditoria": {"fotos_do_dia": 100, "fotos_sem_leitura": 0,
     "sessoes_com_rosto": 50, "sessoes_com_cliente": 50, "ressalvas": []}}
 m.metricas_gravar = lambda dia: {"faturamento": 320.0}
-m.vendas_do_dia = lambda: [
+m.vendas_do_dia = lambda: {"ok": True, "dia": hoje, "vendas": [
     {"venda": "a", "saleNo": "P1-001", "meio": "pix", "total": 250, "vendedor": "X", "selected": ["f"], "galeria": {"token": "t"}},
     {"venda": "b", "saleNo": "P1-002", "meio": "cartao", "total": 70, "vendedor": "", "selected": ["f"], "galeria": None},
     {"venda": "c", "saleNo": "P1-003", "meio": "cortesia", "total": None, "vendedor": "Y", "selected": ["f"] * 38, "galeria": {"token": "u"}, "posto": "Posto 17"},
-    {"venda": "d", "saleNo": "P1-004", "meio": "pix", "total": 105, "cancelada": True}]
+    {"venda": "d", "saleNo": "P1-004", "meio": "pix", "total": 105, "cancelada": True}]}
 m._auditoria_pedidos_abertos = lambda: [{"saleNo": "P18-004", "posto": "Posto 18", "criada": "2026-11-25T08:57", "total": 70}]
 m.visitantes = lambda de, ate: {"ok": True, "total": 1500}
 m.selfies_dia = lambda dia: {"por_origem": {"checkout": {"selfies": 10, "achou": 6}}}
@@ -30,6 +30,7 @@ with contextlib.redirect_stdout(io.StringIO()):
     j = m.auditoria_dia()
 d = "\n".join(j["desvios"])
 ok(os.path.exists(os.path.join(m.AUDITORIA_DIR, hoje + ".json")), "auditoria gravada no HD")
+ok(not any("não conferido" in x for x in j["desvios"]), "todas as partes conferidas: %r" % [x for x in j["desvios"] if "não conferido" in x])
 ok("P1-002: venda paga sem vendedor" in d and "P1-002: venda com fotos sem galeria online" in d, "venda sem vendedor e sem galeria")
 ok("P1-003: cortesia" in d and "P18-004" in d, "cortesia e pedido aberto aparecem")
 ok("P1-004" not in d, "cancelada não é desvio")
@@ -49,9 +50,9 @@ class R:
 m.urllib.request.urlopen = lambda rq, timeout=None: env.append(json.loads(rq.data)) or R()
 ok(m.auditoria_email(j) and env[0]["dia"] == hoje and env[0]["desvios"] == j["desvios"], "e-mail vai pela nuvem com o resultado")
 # Estatísticas que contam a venda de R$ 0 com cartão como paga: desvio no número e na venda
-m.vendas_do_dia = lambda: [
+m.vendas_do_dia = lambda: {"ok": True, "dia": hoje, "vendas": [
     {"venda": "a", "saleNo": "P1-001", "meio": "pix", "total": 250, "vendedor": "X", "posto": "Posto 15", "selected": ["f"], "galeria": {"token": "t"}},
-    {"venda": "e", "saleNo": "P1-005", "meio": "cartao", "total": 0, "vendedor": "X", "posto": "Posto 16", "selected": ["f"] * 5, "galeria": {"token": "v"}}]
+    {"venda": "e", "saleNo": "P1-005", "meio": "cartao", "total": 0, "vendedor": "X", "posto": "Posto 16", "selected": ["f"] * 5, "galeria": {"token": "v"}}]}
 m.metricas_gravar = lambda dia: {"faturamento": 250.0, "ticket_medio": 125.0, "canceladas": 0,
     "por_meio": {"pix": {"vendas": 1, "faturamento": 250, "fotos_vendidas": 1}, "cartao": {"vendas": 1, "faturamento": 0, "fotos_vendidas": 5}},
     "por_posto": {"Posto 15": {"faturamento": 250}, "Posto 16": {"faturamento": 0}}}

@@ -15882,6 +15882,7 @@ def _pessoas_dia_calc(dia, forcar=False):
 AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "21"))
 AUDITORIA_DIR = os.path.join(CONTAGENS_DIR, "auditoria")
 AUDITORIA_MEIOS = ("pix", "cartao", "dinheiro", "cortesia")
+AUDITORIA_V = 3      # versão das conferências: auditoria de hoje feita por versão anterior é refeita (e o e-mail sai de novo)
 
 
 def _auditoria_arq(dia):
@@ -15989,6 +15990,7 @@ def auditoria_dia(dia=None):
 
     def _p_vendas():
         vs = vendas_do_dia()
+        vs = (vs.get("vendas") or []) if isinstance(vs, dict) else (vs or [])     # devolve {ok, dia, vendas}
         vivas = [v for v in vs if not v.get("cancelada")]
         pagas = [v for v in vivas if v.get("meio") != "cortesia" and float(v.get("total") or 0) > 0]
         cort = [v for v in vivas if v.get("meio") == "cortesia" or not float(v.get("total") or 0)]
@@ -16123,7 +16125,7 @@ def auditoria_dia(dia=None):
             L("Selfies %s" % o, "%d, acharam %d (%.0f%%)" % (n_, a_, 100.0 * a_ / n_ if n_ else 0))
 
     _auditoria_parte("Selfies", desv, _p_selfies)
-    j = {"v": 2, "dia": dia, "feita_em": _iso(), "situacao": "sem desvios" if not desv else "%d desvios" % len(desv),
+    j = {"v": AUDITORIA_V, "dia": dia, "feita_em": _iso(), "situacao": "sem desvios" if not desv else "%d desvios" % len(desv),
          "correcoes": corr, "desvios": desv[:200], "numeros": num, "email": None}
     _auditoria_grava(j)
     print("  auditoria de %s: %s" % (dia, j["situacao"]))
@@ -16156,7 +16158,7 @@ def auditoria_loop():
             continue
         j = auditoria_ler(hoje)
         try:
-            if not j:
+            if not j or j.get("v") != AUDITORIA_V:
                 j = auditoria_dia(hoje)
             if not j.get("email") and time.time() - ult > 600:
                 ult = time.time()
