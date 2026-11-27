@@ -15256,7 +15256,8 @@ document.addEventListener('click',e=>{
     case 'pend-porta-rm':state.pend.passo={id:d.id,p:1};pendPorta(d.id,d.p,false);break;
     case 'porta-salvar':portaSalvar(+d.i);break;
     case 'porta-foto':portaFotoEscolher(+d.i);break;
-    case 'pend-pick':state.pend.pick={id:d.id,t:d.t,p:d.p||null,foto:null,fotos:[]};state.pend.passo={id:d.id,p:1};render();break; // 25/11: + na cortesia ou no porta-retrato abre a escolha da foto
+    case 'pend-pick':{const F=d.t==='porta'?pendFotos(dinPegar(d.id)||{}):[]; // 27/11 (P17-066): com uma foto só, ela já vem marcada; o "Adicionar" sem foto marcada não fazia nada à vista e o porta-retrato ficou de fora
+      state.pend.pick={id:d.id,t:d.t,p:d.p||null,foto:F.length===1?F[0].k:null,fotos:[]};state.pend.passo={id:d.id,p:1};render();break;} // 25/11: + na cortesia ou no porta-retrato abre a escolha da foto
     case 'pend-pick-foto':{const pk=state.pend.pick;if(pk){pk.mot=($('#pend-cort-mot')||{}).value||pk.mot||'';pk.nota=($('#pend-cort-nota')||{}).value||pk.nota||'';if(pk.t==='cort'){const a=pk.fotos||(pk.fotos=[]);const j=a.indexOf(d.k);if(j<0)a.push(d.k);else a.splice(j,1);}else pk.foto=d.k;render();}break;}
     case 'pend-pick-x':state.pend.pick=null;render();break;
     case 'pend-pick-ok':{const pk=state.pend.pick;if(!pk||pk.id!==d.id)break;if(pk.t==='cort'?!(pk.fotos||[]).length:!pk.foto){toast(TE('po_pick_sem_foto'));break;}
