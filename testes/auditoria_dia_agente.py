@@ -35,7 +35,7 @@ ok("P1-002: venda paga sem vendedor" in d and "P1-002: venda com fotos sem galer
 ok("P1-003: cortesia" in d and "P18-004" in d, "cortesia e pedido aberto aparecem")
 ok("P1-004" not in d, "cancelada não é desvio")
 ok(not any("Faturamento" in x for x in j["desvios"]), "faturamento bate (320)")
-ok(["Abordagem (pessoas ÷ visitantes)", "20.0%", "conferido"] in j["numeros"], "abordagem calculada")
+ok(["Abordagem (pessoas ÷ visitantes)", "20,0%", "conferido"] in j["numeros"], "abordagem calculada")
 ok(["Vendas"] in j["numeros"] and any(x[0] == "Valor" and x[2] == "conferido" for x in j["numeros"] if len(x) == 3), "números do dia com a conferência")
 try:
     m.auditoria_dia("2020-01-01"); ok(False, "passado recusado")
