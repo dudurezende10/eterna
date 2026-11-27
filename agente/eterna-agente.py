@@ -15834,6 +15834,10 @@ def _pessoas_tempos(rows):
 
 
 PESSOA_VISITA = 0.33   # 27/11: rosto fraco numa sessão da mesma visita (outro fotógrafo, outro ponto do tour)
+# 27/11 (06:26, 25/11: 7.086 rostos e 77 "pessoas da equipe"): rosto fraco comparado com as ~500 pessoas do dia sempre achava
+# alguma acima de 0,40 por acaso e sumia dentro dela. Fora da própria visita, o rosto fraco só junta com PESSOA_FRACO_DIA.
+PESSOA_FRACO_DIA = 0.50
+_pessoas_stats = {}
 
 
 def _pessoas_ligas(dia):
@@ -15888,6 +15892,8 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None, ligas=None):
         for c in cs[1:]:
             liga(cs[0], c)
     visita_g = None
+    st = {"rostos": len(rows), "bons": sum(bom), "novas_bons": 0, "novas_fracos": 0, "dia": 0, "visita": 0}
+    _pessoas_stats.clear(); _pessoas_stats.update(st)
     Cn = np.zeros((len(sem), M.shape[1]), dtype="float32")
     for i in sorted(sem, key=lambda k: (not bom[k], -larg[k])):
         pid = rows[i][0]
@@ -15898,8 +15904,9 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None, ligas=None):
             for k in na_foto.get(pid, ()):
                 sv[k] = -1
             k = int(np.argmax(sv))
-            if sv[k] >= PESSOA_JUNTA:
+            if sv[k] >= (PESSOA_JUNTA if bom[i] else PESSOA_FRACO_DIA):
                 alvo = k
+                st["dia"] += 1
             elif not bom[i] and cd:
                 if visita_g is None:   # acabaram os rostos bons: as visitas estão formadas
                     for k, cs in enumerate(g_cards):
@@ -15915,9 +15922,11 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None, ligas=None):
                     mesma = [k for k in visita_g.get(raiz(cd), ()) if sv[k] >= PESSOA_VISITA]
                 if mesma:
                     alvo = max(mesma, key=lambda k: sv[k])
+                    st["visita"] += 1
         if alvo < 0:
             G.append({"m": [i], "pids": {pid}})
             g_cards.append(set())
+            st["novas_bons" if bom[i] else "novas_fracos"] += 1
             Cn[len(G) - 1] = M[i]
             alvo = len(G) - 1
         else:
@@ -15930,6 +15939,7 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None, ligas=None):
             g_cards[alvo].add(cd)
             if visita_g is not None:
                 visita_g.setdefault(raiz(cd), set()).add(alvo)
+    _pessoas_stats.update(st)
     # 3. rostos que não criam pessoa: na mais parecida da mesma sessão, ou de qualquer uma pelo limite da selfie
     sem_id = 0
     if G:
@@ -16035,7 +16045,7 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
-PESSOAS_V = 10
+PESSOAS_V = 11
 
 
 def _contagens_base():
@@ -16130,8 +16140,8 @@ def pessoas_contar(dia, forcar=False):
     aud["segundos"] = round(time.time() - t0, 1)
     j = _pessoas_disco_grava(dia, res, aud)
     _pessoas_cache[dia] = j
-    print("  pessoas de %s: %s (rostos %s em %s fotos; maiores clientes %s fotos) · auditoria %s%s (%.0f s)" % (dia, res.get("pessoas"),
-          res.get("rostos"), res.get("fotos_com_rosto"), aud.get("maiores_clientes_fotos"), aud.get("situacao"),
+    print("  pessoas de %s: %s (rostos %s em %s fotos; agrupamento %s; maiores clientes %s fotos) · auditoria %s%s (%.0f s)" % (dia, res.get("pessoas"),
+          res.get("rostos"), res.get("fotos_com_rosto"), _pessoas_stats, aud.get("maiores_clientes_fotos"), aud.get("situacao"),
           (": " + "; ".join(aud.get("ressalvas") or [])) if aud.get("ressalvas") else "", aud["segundos"]))
     return j
 
@@ -16259,7 +16269,7 @@ def _pessoas_dia_calc(dia, forcar=False):
     cli = [p for p in P if not p["equipe"]]
     # 27/11: "pessoas" = rostos distintos nas fotos do dia, fora a equipe.
     sem_cli = aud["sessoes_sem_cliente"]
-    return {"v": 10, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
+    return {"v": 11, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
             "pessoas_grupos": len(cli),
             "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
