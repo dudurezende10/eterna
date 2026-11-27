@@ -35,36 +35,62 @@ try{
     const tab=await L.evaluate(()=>ETERNA.ecoTab());await pg.evaluate(([tab,c])=>window.__ch.postMessage({tipo:'abrir',id:'abcdefabcdef',para:tab,cards:[c],origem:'procurar',em:Date.now()}),[tab,C.A]);await L.waitForTimeout(500);
     ok((await quiosque(L)).step==='code','12: com a chave desligada o Checkout ignora o pedido');
     await x.ctx.close();}
-  // ---------- revisão: resposta atrasada, sair da tela com pedido pendente, vendedor recém-recarregado, selo e miniatura riscada ----------
-  {const x=await dupla(b);errs.push(x.errs);const {V,L,FEED}=x;const audit=()=>V.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender'));
+  // ---------- revisão: resposta atrasada e janela do vendedor recarregada logo depois do Iniciar ----------
+  // Os prazos não são alteráveis na página: o teste serve o index.html com o prazo trocado (como a chave desligada, mais abaixo).
+  const PRAZOS='const BF_ECO_MS=5500,BF_ABRIR_MS=6000;';const linhas=V=>V.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender'));
+  const envios=a=>a.filter(e=>e.mudancas[0].campo==='sessoes'),fins=a=>a.filter(e=>e.mudancas[0].campo==='resultado');
+  const olheiro=V=>V.evaluate(()=>{window.__avisos=[];new MutationObserver(()=>{const t=document.querySelector('#toast').textContent;if(t&&window.__avisos[window.__avisos.length-1]!==t)window.__avisos.push(t);}).observe(document.querySelector('#toast'),{childList:true,characterData:true,subtree:true});});
+  {const x=await dupla(b,{troca:h=>h.replace(PRAZOS,'const BF_ECO_MS=5500,BF_ABRIR_MS=1;')});errs.push(x.errs);const {V,L}=x;
     const abriu=(c,ms)=>espera(L,c=>['gallery','review'].includes(ETERNA.state.kiosk.step)&&!!ETERNA.state.kiosk.so&&ETERNA.state.kiosk.so.cards.join()===c,ms||9000,c);
-    const zera=async()=>{await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});await espera(V,()=>{const e=ETERNA.state.eco;return e&&e.m&&e.m.step==='code'&&Date.now()-e.at<3000;},9000);};
-    {const t=await V.evaluate(()=>ETERNA.bfTempos());ok(t.vale<t.espera&&t.vale>=2000,'revisão 1: a mensagem vale menos do que o vendedor espera: '+J(t));}
-    // 7: janela do vendedor recém-recarregada, antes do primeiro anúncio do Checkout
-    ok(await procurar(V),'lista depois de recarregar');
-    // (o prazo de 5,5 s desde a carga é esticado e o anúncio já ouvido é apagado, para o caso não depender do relógio do teste)
-    await V.evaluate(c=>{ETERNA.bfEcoMs(600000);ETERNA.state.eco=null;ETERNA.bfMarca(c);document.querySelector('#bf-barra [data-act="bf-vender"]').click();},C.B);
-    ok(await V.evaluate(()=>document.querySelector('#bf-barra [data-act="bf-vender"]').disabled&&ETERNA.state.view==='procurar'),'revisão 7: sem ter ouvido o Checkout ainda, o vendedor espera (botão em espera, sem cair na Venda manual)');
-    ok(await abriu(C.B),'revisão 7: quando o Checkout se anuncia, a venda abre nele');ok(await V.evaluate(()=>ETERNA.state.view==='procurar'&&ETERNA.state.procurar.sel.length===0),'revisão 7: o vendedor continua no Procurar fotos, com a seleção limpa');
-    await V.evaluate(()=>ETERNA.bfEcoMs(5500));await V.waitForTimeout(300);await zera();
-    const n0=(await audit()).length;
-    // 1: o vendedor desiste de esperar e o Checkout abre mesmo assim: a resposta atrasada audita e limpa a seleção
-    await V.evaluate(()=>{window.__avisos=[];new MutationObserver(()=>{const t=document.querySelector('#toast').textContent;if(t&&window.__avisos[window.__avisos.length-1]!==t)window.__avisos.push(t);}).observe(document.querySelector('#toast'),{childList:true,characterData:true,subtree:true});ETERNA.bfAbrirMs(0);});
+    ok(await procurar(V),'lista (prazo curto)');ok((await V.evaluate(()=>ETERNA.bfTempos().espera))===1&&await V.evaluate(()=>typeof ETERNA.bfAbrirMs==='undefined'&&typeof ETERNA.bfEcoMs==='undefined'),'os prazos não são alteráveis pela página (só leitura)');
+    await espera(V,()=>!!(ETERNA.state.eco&&ETERNA.state.eco.m),9000);await olheiro(V);
+    // 1: o vendedor desiste de esperar e o Checkout abre mesmo assim: a resposta atrasada grava o desfecho e limpa a seleção
     await marca(V,C.A);await toque(V,'#bf-barra [data-act="bf-vender"]');ok(await abriu(C.A),'revisão 1: o Checkout abriu depois do prazo do vendedor');
     ok(await espera(V,()=>ETERNA.state.procurar.sel.length===0&&document.querySelector('#bf-barra').hidden,5000),'revisão 1: a resposta atrasada limpa a seleção');
-    {const a=await audit();const av=await V.evaluate(()=>window.__avisos.slice());ok(a.length===n0+1&&a[0].por===CAIXA&&a[0].alvo==='sessoes/'+C.A,'revisão 1: a venda aberta com resposta atrasada vai para a auditoria: '+J(a.map(e=>e.alvo)));
+    {const a=await linhas(V);const e=envios(a),f=fins(a);const av=await V.evaluate(()=>window.__avisos.slice());
+      ok(e.length===1&&e[0].por===CAIXA&&e[0].alvo==='sessoes/'+C.A&&e[0].resultado==='enviado'&&/^[a-z0-9]{12}$/.test(e[0].pedido||''),'a auditoria do envio é gravada antes de falar com o Checkout: '+J(e));
+      ok(f.length===1&&f[0].pedido===e[0].pedido&&f[0].mudancas[0].para==='aberto'&&f[0].mudancas[0].de==='enviado'&&f[0].por===CAIXA,'revisão 1: o desfecho (aberto) entra numa segunda linha, ligada pelo mesmo pedido, uma vez só: '+J(f));
       ok(av.some(t=>/não respondeu/.test(t))&&/Aberto no Checkout/.test(av[av.length-1]||''),'revisão 1: o aviso final é "Aberto no Checkout" (antes: não respondeu): '+J(av));}
-    await V.evaluate(()=>ETERNA.bfAbrirMs(6000));await zera();
+    // Iniciar e recarregar a janela do vendedor no mesmo instante: o Checkout abre e o registro do envio existe
+    await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});await espera(V,()=>{const e=ETERNA.state.eco;return e&&e.m&&e.m.step==='code'&&Date.now()-e.at<3000;},9000);
+    await marca(V,C.C);await V.evaluate(()=>{document.querySelector('#bf-barra [data-act="bf-vender"]').click();location.reload();});ok(await abriu(C.C),'Iniciar e recarregar: o Checkout abriu');
+    await V.waitForLoadState('load');await V.waitForTimeout(600);
+    {const a=await linhas(V);const e=envios(a).filter(y=>y.alvo==='sessoes/'+C.C);ok(e.length===1&&e[0].por===CAIXA&&e[0].resultado==='enviado'&&e[0].origem==='procurar'&&e[0].posto,'Iniciar e recarregar: existe o registro do envio, com quem, posto e sessão: '+J(e));
+      ok(fins(a).filter(y=>y.pedido===e[0].pedido).length<=1,'Iniciar e recarregar: o desfecho, se a resposta chegou antes de a janela fechar, entra uma vez só');}
+    await x.ctx.close();}
+  // ---------- revisão: vendedor recém-recarregado, recusas, sair da tela com pedido pendente, selo e miniatura riscada ----------
+  {const x=await dupla(b,{troca:h=>h.replace(PRAZOS,'const BF_ECO_MS=600000,BF_ABRIR_MS=6000;')});errs.push(x.errs);const {V,L,FEED}=x;const audit=async()=>envios(await linhas(V));
+    const abriu=(c,ms)=>espera(L,c=>['gallery','review'].includes(ETERNA.state.kiosk.step)&&!!ETERNA.state.kiosk.so&&ETERNA.state.kiosk.so.cards.join()===c,ms||9000,c);
+    const zera=async()=>{await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});await espera(V,()=>{const e=ETERNA.state.eco;return e&&e.m&&e.m.step==='code'&&Date.now()-e.at<3000;},9000);};
+    {const t=await V.evaluate(()=>ETERNA.bfTempos());ok(t.vale<t.espera&&t.vale>=2000&&t.espera===6000,'revisão 1: a mensagem vale menos do que o vendedor espera: '+J(t));}
+    // 7: janela do vendedor que ainda não ouviu o Checkout (o prazo de 5,5 s desde a carga vem esticado no index.html servido, e o anúncio já ouvido é apagado)
+    ok(await procurar(V),'lista depois de recarregar');
+    await V.evaluate(c=>{ETERNA.state.eco=null;ETERNA.bfMarca(c);document.querySelector('#bf-barra [data-act="bf-vender"]').click();},C.B);
+    ok(await V.evaluate(()=>document.querySelector('#bf-barra [data-act="bf-vender"]').disabled&&ETERNA.state.view==='procurar'),'revisão 7: sem ter ouvido o Checkout ainda, o vendedor espera (botão em espera, sem cair na Venda manual)');
+    ok(await abriu(C.B),'revisão 7: quando o Checkout se anuncia, a venda abre nele');ok(await espera(V,()=>ETERNA.state.view==='procurar'&&ETERNA.state.procurar.sel.length===0,4000),'revisão 7: o vendedor continua no Procurar fotos, com a seleção limpa');
+    await V.waitForTimeout(300);await zera();await olheiro(V);
+    // recusa do próprio Checkout (cliente no meio da selfie): desfecho "recusado: ocupado" na auditoria
+    await L.evaluate(()=>{ETERNA.state.kiosk.camOn=true;});await marca(V,C.A);await toque(V,'#bf-barra [data-act="bf-vender"]');
+    ok(await espera(V,()=>!ETERNA.state.procurar.pedido,5000)&&/Checkout está com cliente/.test(await aviso(V)),'Checkout com a câmera ligada: o vendedor vê ocupado: '+await aviso(V));await L.evaluate(()=>{ETERNA.state.kiosk.camOn=false;});
+    {const a=await linhas(V);const e=envios(a)[0],f=fins(a)[0];ok(e&&f&&e.alvo==='sessoes/'+C.A&&f.pedido===e.pedido&&f.mudancas[0].para==='recusado: ocupado'&&await V.evaluate(c=>ETERNA.state.procurar.sel.join()===c,C.A),'a recusa também fica na auditoria, ligada ao envio, e a seleção fica: '+J(f&&f.mudancas));}
+    // revisão 3 da reconferência: resposta "expirado" (Checkout lento, entre a validade e o prazo): o texto é o de "não respondeu"
+    {const antes=await V.evaluate(()=>{const n=window.__msgs.length;ETERNA.state.eco.m.tab='zzzzzzzz';document.querySelector('#bf-barra [data-act="bf-vender"]').click();return n;}); // endereçado a uma janela que não existe: ninguém responde
+      ok(await espera(V,n=>window.__msgs.slice(n).some(s=>s.includes('"abrir"')),3000,antes),'pedido no ar');
+      const id=await V.evaluate(n=>JSON.parse(window.__msgs.slice(n).find(s=>s.includes('"abrir"'))).id,antes);await L.evaluate(id=>window.__ch.postMessage({tipo:'abriu',id,ok:false,motivo:'expirado'}),id);
+      ok(await espera(V,()=>!ETERNA.state.procurar.pedido,3000)&&/não respondeu/.test(await aviso(V))&&!/Atualize a lista/.test(await aviso(V)),'resposta "expirado": o vendedor vê "O Checkout não respondeu": '+await aviso(V));
+      const f=fins(await linhas(V))[0];ok(f&&f.pedido===id&&f.mudancas[0].para==='recusado: expirado','e a auditoria guarda "recusado: expirado": '+J(f&&f.mudancas));
+      await marca(V,C.A);await espera(V,()=>{const e=ETERNA.state.eco;return e&&e.m&&e.m.tab!=='zzzzzzzz';},9000);}
+    const n0=(await audit()).length;const t0=(await linhas(V)).length;
     // resposta "abriu ok" que não é de um pedido desta janela: nada acontece
     {const nAv=await V.evaluate(()=>window.__avisos.filter(t=>/Aberto no Checkout/.test(t)).length);
       await marca(V,C.C);await L.evaluate(()=>{window.__ch.postMessage({tipo:'abriu',id:'naoeumpedido',ok:true,motivo:null});window.__ch.postMessage({tipo:'abriu',id:'abcdefabcdef',ok:true,motivo:null});});await V.waitForTimeout(500);
       const r=await V.evaluate(()=>({sel:ETERNA.state.procurar.sel.slice(),av:window.__avisos.filter(t=>/Aberto no Checkout/.test(t)).length}));
-      ok((await audit()).length===n0+1&&r.sel.join()===C.C&&r.av===nAv,'resposta de um pedido que esta janela não fez não audita, não limpa a seleção e não avisa: '+J(r));}
+      ok((await linhas(V)).length===t0&&r.sel.join()===C.C&&r.av===nAv,'resposta de um pedido que esta janela não fez não audita, não limpa a seleção e não avisa: '+J(r));}
     await marca(V,C.C); // desmarca, para o caso seguinte marcar de novo
     // 2: o vendedor sai da tela com o pedido ainda no ar
     await marca(V,C.C);await V.evaluate(()=>{document.querySelector('#bf-barra [data-act="bf-vender"]').click();ETERNA.go('posto');});ok(await abriu(C.C),'revisão 2: o Checkout abriu com o vendedor já em outra tela');
-    ok(await espera(V,n=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender').length===n,5000,n0+2),'revisão 2: sair da tela com o pedido pendente não perde a auditoria: '+J((await audit()).map(e=>e.alvo)));
-    {const a=await audit();ok(a[0]&&a[0].por===CAIXA&&a[0].alvo==='sessoes/'+C.C&&a[0].via==='checkout','revisão 2: com quem pediu e a sessão: '+J(a[0]));}
+    ok(await espera(V,n=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender').length===n,5000,t0+2),'revisão 2: Iniciar e ir para o Posto no mesmo instante grava o envio e o desfecho: '+J((await linhas(V)).map(e=>e.mudancas[0].para)));
+    {const a=await linhas(V);const e=envios(a)[0],f=fins(a)[0];ok(e&&f&&e.por===CAIXA&&e.alvo==='sessoes/'+C.C&&e.via==='checkout'&&f.pedido===e.pedido&&f.mudancas[0].para==='aberto'&&f.por===CAIXA&&(await audit()).length===n0+1,'revisão 2: com quem pediu, a sessão e o desfecho "aberto": '+J([e&&e.alvo,f&&f.mudancas]));}
     await zera();
     // 8: a sessão aberta fecha: o selo e a caixa do cartão mudam sem redesenhar a lista; marcada que foi vendida fica riscada na barra
     await V.evaluate(()=>ETERNA.go('procurar'));await V.waitForTimeout(400);await V.evaluate(()=>{document.querySelector('#bf-lista').dataset.marca='s';});
@@ -147,7 +173,8 @@ try{
     ok(R.camera.resp&&R.camera.resp.ok===false&&R.camera.resp.motivo==='ocupado','9: com a câmera ligada (cliente no meio da selfie) o Checkout responde ocupado: '+J(R.camera.resp));
     ok(Object.values(R).every(r=>r.parado),'9: nenhuma mensagem recusada muda o Checkout: '+J(R));
     ok(R.semId.resp===null&&R.outra.resp===null,'9: sem id válido ou para outra janela, o Checkout nem responde');
-    ok(['nove','velha','minusc','origem','repete','vazia','texto'].every(k=>R[k].resp&&R[k].resp.ok===false&&R[k].resp.motivo==='invalido'),'9: 9 sessões, mais de 4 s (a validade), formato errado: invalido: '+J(R));
+    ok(['nove','minusc','origem','repete','vazia','texto'].every(k=>R[k].resp&&R[k].resp.ok===false&&R[k].resp.motivo==='invalido'),'9: 9 sessões e formato errado: invalido: '+J(R));
+    ok(R.velha.resp&&R.velha.resp.ok===false&&R.velha.resp.motivo==='expirado','9: mensagem com mais de 4 s (a validade): recusada como expirada: '+J(R.velha.resp));
     ok(R.menor.resp&&R.menor.resp.motivo==='protegida'&&R.paga.resp.motivo==='paga'&&R.pedido.resp.motivo==='pedido'&&R.semSessao.resp.motivo==='carregando','9: menor, paga, com pedido e desconhecida: tudo ou nada, com o motivo: '+J([R.menor.resp,R.paga.resp,R.pedido.resp,R.semSessao.resp]));
     ok(Object.values(R).every(r=>!r.resp||J(Object.keys(r.resp).sort())===J(['id','motivo','ok','tipo'])),'9: a resposta leva só tipo, id, ok e motivo');}
   // ---------- 5 e 6: Iniciar abre só as marcadas, unidas e inteiras ----------
@@ -162,13 +189,13 @@ try{
   await L.waitForTimeout(5600); // um ciclo do relógio do Checkout (lojaVisitaAtualiza)
   {const k=await quiosque(L);ok(igual(k.cards,[C.A,C.C])&&!k.fotos.some(f=>ag(F.B).includes(f)),'6: a sessão ligada pela visita e não marcada não entra, nem depois: '+J(k.cards));}
   // ---------- 11: auditoria ----------
-  {const au=await V.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender'));
+  {const todas=await linhas(V);const au=envios(todas);const fim=fins(todas);ok(fim.length===1&&au[0]&&fim[0].pedido===au[0].pedido&&fim[0].mudancas[0].para==='aberto','11: o desfecho "aberto" ligado ao envio: '+J(fim.map(e=>e.mudancas)));
     ok(au.length===1&&au[0].por===CAIXA&&au[0].alvo==='sessoes/'+C.A&&au[0].mudancas[0].para===hoje+'-147 ('+C.A+') + '+hoje+'-201 ('+C.C+')'&&au[0].posto&&au[0].porNome==='Caixa de teste'&&au[0].origem==='procurar'&&au[0].n===2,'11: auditoria procurar_vender com quem, posto e sessões: '+J(au));}
   // ---------- 7: Checkout com cliente ----------
   await marca(V,C.D);const antes=J(await quiosque(L));await toque(V,'#bf-barra [data-act="bf-vender"]');await V.waitForTimeout(700);
   ok(J(await quiosque(L))===antes&&await V.evaluate(C=>ETERNA.state.procurar.sel.join()===C.D,C),'7: com cliente no Checkout nada muda na tela dele e a seleção fica: '+await aviso(V));
   ok(/Checkout está com cliente/.test(await aviso(V)),'7: o vendedor vê o aviso de Checkout ocupado: '+await aviso(V));
-  ok(await V.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender').length)===1,'7: venda recusada não vai para a auditoria');
+  ok((await linhas(V)).length===2,'7: venda que nem chegou a ser enviada não vai para a auditoria');
   // ---------- 10: o pedido e o evento levam as sessões e a origem ----------
   await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');
   ok(await espera(L,()=>!!(ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend),8000),'10: pedido feito no Checkout');

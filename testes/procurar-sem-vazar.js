@@ -63,7 +63,7 @@ try{
     ok(!pior.length,'16: nenhuma chave do localStorage ganhou código ou foto de sessão não marcada com a venda: '+J(pior));
     const fora=Object.keys(g.local).filter(k=>k!=='eterna.sim.v1'&&conta(g.local[k])>0);
     ok(!fora.length,'16: fora o SIM (as sessões do dia, que já estavam lá), nenhuma chave cita sessão não marcada: '+J(fora));
-    const au=JSON.parse(g.local['eterna.users.log.v1']||'[]').filter(e=>e.acao==='procurar_vender');ok(au.length===1&&!acha(J(au)).length&&J(au).includes(C.A)&&J(au).includes(C.C),'a auditoria guarda só as sessões marcadas: '+J(au.map(e=>e.mudancas)));
+    const au=JSON.parse(g.local['eterna.users.log.v1']||'[]').filter(e=>e.acao==='procurar_vender');ok(au.length===2&&au.filter(e=>e.mudancas[0].campo==='sessoes').length===1&&!acha(J(au)).length&&J(au).includes(C.A)&&J(au).includes(C.C),'a auditoria guarda só as sessões marcadas: '+J(au.map(e=>e.mudancas)));
     ok(J(Object.keys(gL0.sessao).sort())===J(Object.keys(gl.sessao).sort()),'o Checkout não ganhou chave nova no sessionStorage: '+J(Object.keys(gl.sessao)));}
   // ---------- 15: tudo o que passou pelo canal ----------
   {const msgs=[...new Set((await L.evaluate(()=>window.__msgs.slice())).concat(await V.evaluate(()=>window.__msgs.slice())))];const tudo=msgs.join('\n');const ms=msgs.map(m=>JSON.parse(m));

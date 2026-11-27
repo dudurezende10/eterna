@@ -2940,13 +2940,13 @@ A seleção (`state.procurar.sel`) e o pedido em espera (`state.procurar.pedido`
 1. `bfVender` revalida cada sessão com `bfEstado`. Uma fora de `livre` cancela tudo, com o motivo e o código no aviso.
 2. Sem Checkout aberto (`ecoOff()`): com uma sessão, `state.posto.cortesia=false`, `go('checkout')` e `checkoutPick`; com mais de uma, aviso `bf_abra_ck`.
 3. Checkout fora da tela inicial (`state.eco.m.step!=='code'`): aviso `bf_ck_ocupado`.
-4. Senão, mensagem `abrir` pelo `BroadcastChannel` `eterna-loja`, endereçada à janela do Checkout que o Posto está ouvindo (`state.eco.m.tab`). Sem resposta em 6 s (`BF_ABRIR_MS`), aviso `bf_ck_sem_resposta`. O pedido fica guardado por 1 min em `BF_PED` (por `id`): se o `abriu` com `ok` chegar depois do prazo, ou com o vendedor já em outra tela, a auditoria é gravada do mesmo jeito (uma vez, com quem pediu), a seleção é limpa e o aviso vira `bf_ck_abriu`.
+4. Senão, mensagem `abrir` pelo `BroadcastChannel` `eterna-loja`, endereçada à janela do Checkout que o Posto está ouvindo (`state.eco.m.tab`). Sem resposta em 6 s (`BF_ABRIR_MS`), aviso `bf_ck_sem_resposta`. O pedido fica guardado por 1 min em `BF_PED` (por `id`): se a resposta chegar depois do prazo, ou com o vendedor já em outra tela, o desfecho é gravado do mesmo jeito (uma vez, com quem pediu); com `ok`, a seleção é limpa e o aviso vira `bf_ck_abriu`.
    Janela do vendedor recém-aberta, que ainda não ouviu o Checkout: `bfVender` espera o primeiro anúncio por até 5,5 s desde a carga (`BF_ECO_MS`) antes de decidir que não há Checkout.
-5. Com `ok`, `auditLog('procurar_vender', ...)`, as sessões vendidas saem da seleção e o aviso é `bf_ck_abriu`.
+5. A auditoria `procurar_vender` tem duas linhas ligadas pelo campo `pedido` (o `id` da mensagem): a do envio (`resultado: 'enviado'`, gravada antes do `postMessage`, para existir mesmo que a janela do vendedor feche ou recarregue em seguida) e a do desfecho (`campo: 'resultado'`, de `enviado` para `aberto` ou `recusado: <motivo>`), cada uma gravada uma vez só. Sem resposta em 1 min fica só a do envio. Com `ok`, as sessões vendidas saem da seleção e o aviso é `bf_ck_abriu`.
 
 ### Janela do Checkout
 
-`ECO_CH.onmessage` trata `abrir` só com `state.lojaRota` e `abriu` só fora dela, antes do `ecoNorm`. `lojaAbrirMsg(q)` ignora mensagem para outra janela (`q.para!==ECO_TAB`) ou sem `id` válido, e responde `invalido` para lista fora de 1 a 8 códigos `^[A-Z0-9]{4,20}$`, código repetido, origem fora de `BF_ORIGENS` ou mensagem com mais de 4 s (`BF_ABRIR_VALE`, menor que a espera do vendedor). `lojaAbrirPedido(q)`:
+`ECO_CH.onmessage` trata `abrir` só com `state.lojaRota` e `abriu` só fora dela, antes do `ecoNorm`. `lojaAbrirMsg(q)` ignora mensagem para outra janela (`q.para!==ECO_TAB`) ou sem `id` válido, e responde `invalido` para lista fora de 1 a 8 códigos `^[A-Z0-9]{4,20}$`, código repetido, origem fora de `BF_ORIGENS`; responde `expirado` para mensagem com mais de 4 s (`BF_ABRIR_VALE`, menor que a espera do vendedor; o vendedor vê o texto de "não respondeu"). `lojaAbrirPedido(q)`:
 
 - `ocupado` se `k.code`, `k.step!=='code'`, `k.mais` ou `k.camOn` (cliente no meio da selfie);
 - `simFresh()` e, por sessão, `protegida` (`lojaSesProtegida`), `paga`, `pedido` ou `carregando` (`psEstado`);

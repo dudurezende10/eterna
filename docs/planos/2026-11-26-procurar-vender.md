@@ -75,14 +75,14 @@ Canal `eterna-loja`:
 
 ```
 {tipo:'abrir', id:'<12 a-z0-9>', para:'<janela do Checkout>', cards:['LP…'] (1 a 8), origem:'procurar'|'procurar_selfie', em:<ms>}
-{tipo:'abriu', id, ok:true|false, motivo:null|'ocupado'|'carregando'|'paga'|'pedido'|'protegida'|'invalido'}
+{tipo:'abriu', id, ok:true|false, motivo:null|'ocupado'|'carregando'|'paga'|'pedido'|'protegida'|'invalido'|'expirado'}
 ```
 
 Evento `criar` (`POST /ponto/eventos`): `dados.origem` opcional; `dados.sessoes` como antes.
 
 Métrica do dia: `por_origem: {procurar:{vendas,faturamento}, procurar_selfie:{…}, sem_origem:{…}}`.
 
-Auditoria: `auditLog('procurar_vender','sessoes/<âncora>',[{campo:'sessoes',de:null,para:'LPa + LPb'}],{posto,porNome,origem,n,via})`, com `via` = `checkout` ou `venda_manual`.
+Auditoria `procurar_vender`, em duas linhas ligadas pelo campo `pedido`: no envio, `[{campo:'sessoes',de:null,para:'…'}]` com `{posto,porNome,origem,n,via,pedido,resultado:'enviado'}`; na resposta do Checkout, `[{campo:'resultado',de:'enviado',para:'aberto'|'recusado: <motivo>'}]`. Cada linha é gravada uma vez; sem resposta em 1 min fica só a do envio. `via` = `checkout` ou `venda_manual` (esta com uma linha só).
 
 ## Testes
 
@@ -100,6 +100,7 @@ Auditoria: `auditLog('procurar_vender','sessoes/<âncora>',[{campo:'sessoes',de:
 - O selo do cartão acompanha a sessão que fecha ou é vendida; a marcada que não pode mais entrar fica riscada na barra.
 - Avisos com "Sessão 147".
 - Agente: `_ev_origem(d)` no lugar da expressão repetida.
+- A auditoria é gravada no envio e de novo no desfecho; os prazos não são alteráveis pela página (os testes servem o `index.html` com o prazo trocado); mensagem vencida no Checkout mostra ao vendedor o texto de "não respondeu".
 
 ## O que ficou para depois
 
