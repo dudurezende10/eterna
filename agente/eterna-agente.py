@@ -15843,13 +15843,18 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
     larg = [float(r[1] or 0) for r in rows]
     # 27/11 (Ronaldo: "a quantidade de rostos distintos nas fotos, simples assim"; "mesmo não sendo nítido, cada rosto é uma
     # pessoa"): todo rosto lido cria pessoa, frontal ou não, nítido ou não, de qualquer tamanho.
+    # Para não contar a mesma pessoa duas vezes: os rostos bons (frontais e nítidos, tabela rosto_q) entram primeiro e formam
+    # as pessoas com assinatura firme; depois os outros, do maior para o menor. Rosto fraco (perfil, borrado) procura primeiro
+    # na MESMA sessão (a família fotografada junto, minutos antes ou depois) com o limite mais largo PESSOA_SESSAO, e só
+    # depois em todo o dia com PESSOA_JUNTA; sem par, vira pessoa nova. Dois rostos da mesma foto nunca são a mesma pessoa.
     sem = list(range(len(rows)))
     resto = []
-    # 2. guloso, do maior rosto para o menor: entra na pessoa de centro mais parecido (PESSOA_JUNTA), nunca em quem já está na foto
-    G, soma, na_foto = [], [], {}
+    bom = [rows[i][2] in boas and larg[i] >= PESSOA_SEMENTE for i in range(len(rows))]
+    G, soma, na_foto, card_g = [], [], {}, {}
     Cn = np.zeros((len(sem), M.shape[1]), dtype="float32")
-    for i in sorted(sem, key=lambda k: -larg[k]):
+    for i in sorted(sem, key=lambda k: (not bom[k], -larg[k])):
         pid = rows[i][0]
+        cd = sess.get(pid)
         alvo = -1
         if G:
             sv = Cn[:len(G)] @ M[i]
@@ -15858,6 +15863,10 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
             k = int(np.argmax(sv))
             if sv[k] >= PESSOA_JUNTA:
                 alvo = k
+            elif not bom[i] and cd:
+                mesma = [k for k in card_g.get(cd, ()) if sv[k] >= PESSOA_SESSAO]
+                if mesma:
+                    alvo = max(mesma, key=lambda k: sv[k])
         if alvo < 0:
             G.append({"m": [i], "pids": {pid}})
             soma.append(M[i].copy())
@@ -15868,6 +15877,8 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
             soma[alvo] = soma[alvo] + M[i]
             Cn[alvo] = soma[alvo] / max(float(np.linalg.norm(soma[alvo])), 1e-9)
         na_foto.setdefault(pid, set()).add(alvo)
+        if cd:
+            card_g.setdefault(cd, set()).add(alvo)
     # 3. rostos que não criam pessoa: na mais parecida da mesma sessão, ou de qualquer uma pelo limite da selfie
     sem_id = 0
     if G:
@@ -15973,7 +15984,7 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
-PESSOAS_V = 7
+PESSOAS_V = 8
 
 
 def _contagens_base():
@@ -16196,7 +16207,7 @@ def _pessoas_dia_calc(dia, forcar=False):
     cli = [p for p in P if not p["equipe"]]
     # 27/11: "pessoas" = rostos distintos nas fotos do dia, fora a equipe.
     sem_cli = aud["sessoes_sem_cliente"]
-    return {"v": 7, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
+    return {"v": 8, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
             "pessoas_grupos": len(cli),
             "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),

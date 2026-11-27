@@ -43,6 +43,15 @@ ok(len(P) == 401, "401 rostos distintos em 300 fotos (100 famílias de 4 e a mes
 ok(sorted(len(p["pids"]) for p in P) == [3] * 400 + [300], "cada pessoa reaparece nas 3 fotos dela, sem duplicar")
 ok(all(len({rows[k][0] for k in p["m"]}) == len(p["m"]) for p in P), "dois rostos da mesma foto nunca viram a mesma pessoa")
 ok(seg < 20, "rápido (%.1f s para %d rostos)" % (seg, len(rows)))
+# rosto de perfil (assinatura fraca, ~0,3 de semelhança) da mesma pessoa: na mesma sessão é ela; em outra sessão, não junta
+v = rng.normal(size=128).astype("float32"); v /= np.linalg.norm(v)
+w = rng.normal(size=128).astype("float32"); w -= (w @ v) * v; w /= np.linalg.norm(w)
+perfil = (0.3 * v + (1 - 0.09) ** 0.5 * w).astype("float32")
+u = rng.normal(size=128).astype("float32"); u -= (u @ v) * v + (u @ w) * w; u /= np.linalg.norm(u)
+outro = (0.3 * v + (1 - 0.09) ** 0.5 * u).astype("float32")   # outra pessoa, de perfil, com a mesma semelhança fraca
+r2 = [("p1", 150, v.tobytes()), ("p2", 60, perfil.tobytes()), ("p3", 60, outro.tobytes())]
+P2, _ = m._pessoas_agrupa(r2, np, {v.tobytes()}, {"p1": "S1", "p2": "S1", "p3": "S9"}, None)
+ok(len(P2) == 2 and any(p["pids"] == {"p1", "p2"} for p in P2), "perfil na mesma sessão é a mesma pessoa; em outra sessão conta à parte (%d)" % len(P2))
 # selfies: a do grupo conta cada rosto
 t = time.time()
 m.selfie_registra("checkout", {"rosto": True, "pessoas": 3, "fotos": [{"id": "x"}]}, t)
