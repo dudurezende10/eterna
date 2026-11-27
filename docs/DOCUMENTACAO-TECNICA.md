@@ -2969,3 +2969,39 @@ Para a equipe, a barra das marcadas mostra a miniatura e `sessRot(card)` (em tel
 - A auditoria `procurar_vender` sai do navegador (`usuarios_log`), como as demais do app.
 - O estado de sessão vendida em outro posto depende do `GET /ponto/vendas-dia`: é pedido ao entrar na tela e, depois, no máximo a cada 30 s enquanto o vendedor marca.
 - Depois do deploy, feche e abra as janelas do Checkout e do Posto: janela antiga do Checkout não responde ao pedido e o vendedor vê "O Checkout não respondeu".
+
+## Procurar por selfie no Procurar fotos, fase 2 (26/11/2026)
+
+Plano: `docs/planos/2026-11-26-procurar-vender.md`, seção "Fase 2". Testes: `testes/procurar-selfie.js`, `testes/rostos_sessoes_agente.py` e a parte da selfie de `testes/procurar-sem-vazar.js`. Chave `PROCURAR_SELFIE_ON` no `index.html` (em `false`, a tela é a da fase 1); no servidor, `ETERNA_BUSCA_VEND=0` desliga as rotas.
+
+Regras do produto (Eduardo, 26/11): quem seleciona as sessões é o vendedor, e nada do resultado da busca chega ao cliente; a imagem da câmera não é guardada; só sessões de hoje; sessão removida, de menor ou de escola nunca vem; base de IA nunca é devolvida; toda busca é registrada no servidor; a selfie do cliente no Checkout não muda.
+
+### Servidor
+
+| Peça | O que faz |
+|---|---|
+| `POST /rostos/sessoes` | `{imagens}` com 1 a 3 quadros, corpo de até 6 MB. Tipo `sessao` com `venda.c` em `ROTAS`; `rostos_vend_quem()` confere de novo a origem (`origem_local`), a pessoa e a permissão |
+| `buscar_vend`, `_buscar_maior` | busca só de hoje, o dia todo; o maior rosto de cada quadro; `varias` quando `varias_pessoas` em algum quadro; usa o mesmo `_busca_lock` da selfie do cliente |
+| `busca_vend_vetor` | fica com a pessoa que é a maior em mais quadros (empate: o rosto mais largo) e só soma os quadros dela |
+| `buscar_vetor(piso=)` | corte da busca; sem `piso`, `LIMITE_TALVEZ`, como sempre |
+| `busca_vend_sessoes` | agrupa por sessão e aplica os filtros (hoje, não removida, não protegida, foto já lida, não base de IA); níveis `certeza` e `pode_ser` |
+| `busca_vend_grava`, `busca_vend_hoje`, `busca_vend_marcar`, `busca_vend_dia` | tabela `busca_vend` do `vendas.db` |
+| `POST /rostos/sessoes/marcar` | `{busca, cards}`; uma vez, só o dono, só hoje, só sessões achadas |
+| `GET /ponto/selfies` | campo `vendedor` com as buscas do dia (exige `galerias` em Ver, como antes) |
+
+A busca do vendedor grava uma linha no diagnóstico da selfie (`origem: vendedor`, só com as fotos que saíram na resposta), mas não entra na tabela `selfie`, que alimenta a contagem das selfies dos clientes. Os vetores do rosto não ficam guardados (`_viz_tl.vets` fica nulo). Busca sem registro não devolve lista.
+
+### Tela do vendedor
+
+| Função | O que faz |
+|---|---|
+| `bfSelfiePode()` | `bfPodeVender()` e `state.agent.rostos.ligado` |
+| `bfSelfie()`, `bfSelfieCam()`, `bfSelfieFecha()` | modal `#bf-selfie-modal` (diálogo, sem `input`), câmera por `camEscolhe`, erro de câmera em palavras, câmera solta em todo fechamento e depois de `BF_SF_CAM_MS` |
+| `bfSelfieBusca()` | captura 3 quadros, chama a rota com `agLimite(BF_SF_MS)`, traduz 429, 503/404 e os demais erros, descarta resposta fora de hora |
+| `bfSelfieNorm(r)` | aceita só `card` no formato `BF_CARD`, nível conhecido e ids de foto válidos; não guarda a nota |
+| `bfSelfieRecebe(res)` | grava `state.procurar.selfie`, marca as de certeza em `livre`, mostra a lista |
+| `bfSelfieLista()`, `bfSelfieCartao(it)`, `bfMkVivo(x)` | lista em dois blocos; a caixa mostra a situação de agora (a lista é curta e é refeita quando uma sessão muda) |
+| `bfSelfieMarcar(cards, sf)` | com a venda aberta, manda as marcadas ao servidor e apaga o resultado |
+| `bfSelfieTem(card)`, `bfSelfieSess(card)`, `bfOrigem(cards)` | sessão achada pela selfie vale para Marcar, para abrir e para a lupa; origem da venda |
+
+`state.procurar.selfie` e `state.procurar.selfieVer` ficam só na memória da janela. `render()` apaga o resultado e fecha o modal fora da tela ou sem pessoa conectada; `vProcurar` zera ao trocar de pessoa. O caminho da venda, o canal e a janela do Checkout são os da fase 1: a mensagem `abrir` leva só os códigos marcados e a origem.

@@ -55,6 +55,11 @@ for t in testes/procurar_origem_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   conta "$(basename $t)" $RC "$OUT"
 done
+# 26/11: busca por selfie do vendedor no Procurar fotos (linha própria, pelo mesmo motivo)
+for t in testes/rostos_sessoes_agente.py; do
+  H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
+  conta "$(basename $t)" $RC "$OUT"
+done
 # 26/11: número da sessão (linha própria, pelo mesmo motivo)
 for t in testes/sessao_numero_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"

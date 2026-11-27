@@ -2,6 +2,8 @@
 // das sessões não marcadas ou da marcação chega à janela do cliente (#loja), ao canal eterna-loja ou ao que fica guardado no navegador,
 // além dos códigos marcados. Vendedor e Checkout são duas páginas do mesmo contexto; um gravador em cada uma guarda tudo o que passa
 // pelo canal, as etapas do Checkout e qualquer pedaço do Procurar fotos no DOM (testes/_procurar_vender.js). SV_VER=1 mostra as conferências.
+// Fase 2 (última parte): o mesmo com as sessões achadas por selfie. A lista, o "pode ser", as fotos em que o rosto apareceu, as não
+// marcadas e o id da busca ficam só na memória da janela do vendedor; a câmera do modal nunca abre na janela do cliente.
 const {chromium}=require('playwright');
 const {U,J,C,F,CAIXA,QUIOSQUE,contexto,dupla,entrar,procurar,espera,chegou,toque,marca,aviso,quiosque}=require('./_procurar_vender');
 const fails=[];const T0=Date.now();const ok=(c,m)=>{if(!c)fails.push(m);if(process.env.SV_VER)console.error(((Date.now()-T0)/1000).toFixed(1)+' s '+(c?'ok   ':'FALHA ')+String(m).slice(0,260));};
@@ -14,7 +16,7 @@ const kioskTxt=pg=>pg.evaluate(()=>{const visto=new Set();return JSON.stringify(
 const guardado=pg=>pg.evaluate(()=>{const de=s=>{const o={};for(let i=0;i<s.length;i++){const k=s.key(i);o[k]=String(s.getItem(k));}return o;};return {local:de(localStorage),sessao:de(sessionStorage)};});
 // o que a janela mostra: o corpo inteiro (com avisos e janelas por cima), sem o código do programa
 const limpo=pg=>pg.evaluate(()=>({html:(()=>{const c=document.body.cloneNode(true);c.querySelectorAll('script,style').forEach(e=>e.remove());return c.innerHTML;})(),step:ETERNA.state.kiosk.step,code:ETERNA.state.kiosk.code||'',so:!!ETERNA.state.kiosk.so,fotos:document.querySelectorAll('#main img[src*="/thumb/"],#main img[src*="/file/"],#main .lj-lbimg,#main [style*="/thumb/"],#main [style*="/file/"],#main .ph').length}));
-(async()=>{const b=await chromium.launch();const errs=[];
+(async()=>{const b=await chromium.launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});const errs=[];
 try{
   const x=await dupla(b);errs.push(x.errs);const {V,L}=x;
   ok(await procurar(V),'a lista do vendedor tem as 9 sessões');
@@ -113,8 +115,48 @@ try{
       ok(k.cards.join()===[C.B,C.D].sort().join()&&daB.length===2&&k.fotos.length===F.D.length+2&&k.origem==='procurar'&&!k.tv,'Adicionar outra pessoa: da sessão não marcada entram só as 2 fotos da selfie; a origem da venda fica: '+J({c:k.cards,b:daB.length,n:k.fotos.length,o:k.origem}));
       const r=await limpo(L);const kt=await kioskTxt(L);ok(!F.B.slice(2).some(f=>r.html.includes(f)||kt.includes(f)),'as outras fotos da sessão não marcada não aparecem no Checkout');}
     ok((await L.evaluate(()=>window.__bf))===0,'14: nesta parte também, nada do Procurar fotos no DOM do cliente');await y.ctx.close();}
+  // ---------- fase 2: sessões achadas por selfie do vendedor ----------
+  {const BUSCA='5e1f1e0a5e1f1e0a';const marc=[];const ses=(k,nivel)=>({card:C[k],nivel,sim:nivel==='certeza'?.68:.31,status:'fechada',fotografo:'samuel',ponto:null,cap0:0,cap1:0,n:F[k].length,bateu:[{id:F[k][0],sim:nivel==='certeza'?.68:.31}]});
+    const y=await dupla(b,{rotas:(p,rq)=>p==='/rostos/sessoes'?{corpo:{ok:true,busca:BUSCA,rosto:true,varias:true,fila:0,sessoes:[ses('A','certeza'),ses('C','certeza'),ses('B','pode_ser'),ses('D','pode_ser')]}}:p==='/rostos/sessoes/marcar'?(marc.push(rq.postData()||''),{corpo:{ok:true}}):null});
+    errs.push(y.errs);const V=y.V,L=y.L;ok(await procurar(V),'lista do vendedor (parte da selfie)');const g0=await guardado(V);const gL0=await guardado(L);
+    const SEG=/pode_ser|"nivel"|"bateu"|"busca"|"sim"|"selfie"|5e1f1e0a5e1f1e0a|Pode ser|Certeza|Usei o rosto|bf-sf|bf-selfie/;
+    const parado=async quando=>{const r=await limpo(L);const kt=await kioskTxt(L);const cams=await L.evaluate(()=>window.__cams.length);
+      ok(r.step==='code'&&!r.code&&!r.so&&r.fotos===0&&cams===0&&!SEG.test(r.html)&&!SEG.test(kt)&&!Object.values(C).some(c=>r.html.includes(c)),'selfie 18: '+quando+', o Checkout segue no início, sem foto, sem câmera e sem nada da busca: '+J({step:r.step,fotos:r.fotos,cams}));};
+    await toque(V,'[data-act="bf-selfie"]');ok(await espera(V,()=>ETERNA.bfSelfieAberto().cam&&document.querySelector('#bf-selfie-modal video').videoWidth>0,10000),'o modal da selfie abre na janela do vendedor');
+    await parado('com a câmera do vendedor aberta');
+    await toque(V,'#bf-selfie-modal [data-bs="buscar"]');ok(await espera(V,()=>!!document.querySelector('.bf-sf')&&!document.querySelector('#bf-selfie-modal'),8000),'a lista da selfie aparece só no vendedor');
+    ok(await V.evaluate(C=>ETERNA.state.procurar.sel.slice().sort().join()===[C.A,C.C].join()&&!!document.querySelector('#bf-sf-varias'),C),'Certeza já marcadas (A e C), com o aviso do rosto maior');
+    await parado('com a lista da selfie na tela do vendedor');
+    await toque(V,'.bf-sf .bf-mk[data-card="'+C.C+'"] .bf-marca');await toque(V,'.bf-sf .bf-mk[data-card="'+C.D+'"] .bf-marca'); // tira uma Certeza, põe um Pode ser
+    await toque(V,'[data-act="bf-selfie-filtros"]');await V.waitForTimeout(250);await toque(V,'[data-act="bf-selfie-ver"]');await V.waitForTimeout(250);
+    await L.waitForTimeout(5400);await parado('depois de desmarcar, marcar e ir e voltar dos filtros');
+    {const g=await guardado(V);const gl=await guardado(L);
+      ok(!SEG.test(J(g.sessao))&&!SEG.test(J(gl.sessao))&&!Object.keys(g.local).some(k=>SEG.test(g.local[k])&&!SEG.test(g0.local[k]||''))&&!Object.keys(gl.local).some(k=>SEG.test(gl.local[k])&&!SEG.test(gL0.local[k]||'')),'selfie 16: o resultado da busca não é gravado no navegador');
+      ok(J(Object.keys(g.local).sort())===J(Object.keys(g0.local).sort())&&J(Object.keys(g.sessao).sort())===J(Object.keys(g0.sessao).sort()),'selfie 16: nenhuma chave nova no navegador do vendedor');
+      ok(!SEG.test(await V.evaluate(()=>JSON.stringify(ETERNA.SIM))),'selfie 16: nada da busca no SIM');}
+    const FIM=[C.A,C.D];const PROIB=Object.keys(C).filter(k=>!FIM.includes(C[k])).flatMap(k=>[C[k],...F[k]]);const acha2=t=>PROIB.filter(p=>t.includes(p));
+    await toque(V,'#bf-barra [data-act="bf-vender"]');
+    ok(await espera(L,()=>['gallery','review'].includes(ETERNA.state.kiosk.step)&&!!ETERNA.state.kiosk.so,8000),'selfie: o Checkout abre a escolha');
+    const confere=async quando=>{const k=await quiosque(L);const r=await limpo(L);const kt=await kioskTxt(L);
+      ok(k.cards&&k.cards.slice().sort().join()===FIM.join()&&k.origem==='procurar_selfie'&&k.visita===false&&k.fotos.length===F.A.length+F.D.length&&k.fotos.every(f=>F.A.concat(F.D).includes(f.slice(3))),'selfie 16: '+quando+', o Checkout tem só as fotos das marcadas: '+J([k.cards,k.origem]));
+      ok(!acha2(r.html).length&&kt.length>50&&!acha2(kt).length,'selfie 16: '+quando+', o Checkout não tem código nem foto das não marcadas (a Certeza desmarcada e o Pode ser não marcado): '+J(acha2(r.html).concat(acha2(kt))));
+      ok(!SEG.test(kt)&&!SEG.test(r.html)&&!/Esta sessão também é sua/.test(r.html),'selfie 17: '+quando+', sem nível, nota, aviso, id da busca ou pergunta de sessão na janela do cliente');};
+    await confere('ao abrir');await L.click('#lj-lb [data-act="kiosk-ok"]');await L.click('#lj-lb .lj-next');ok(await espera(L,()=>!!(ETERNA.state.kiosk.paid&&ETERNA.state.kiosk.paid.pend),8000),'selfie: pedido feito no Checkout');
+    {const r=await limpo(L);const kt=await kioskTxt(L);ok(!acha2(r.html).length&&!acha2(kt).length&&!SEG.test(kt)&&!SEG.test(r.html),'selfie 16: na tela do pedido, nada das não marcadas nem da busca');}
+    {const msgs=[...new Set((await L.evaluate(()=>window.__msgs.slice())).concat(await V.evaluate(()=>window.__msgs.slice())))];const tudo=msgs.join('\n');const ab=msgs.map(m=>JSON.parse(m)).filter(m=>m.tipo==='abrir');
+      ok(ab.length===1&&J(Object.keys(ab[0]).sort())===J(['cards','em','id','origem','para','tipo'])&&ab[0].cards.slice().sort().join()===FIM.join()&&ab[0].origem==='procurar_selfie','selfie 15: o pedido no canal leva só os códigos marcados e a origem: '+J(ab[0]));
+      ok(!acha2(tudo).length&&!/pode_ser|"nivel"|"sim"|"busca"|"sel"|"nota"|"bateu"|"varias"|5e1f1e0a5e1f1e0a/.test(tudo),'selfie 15: nenhuma mensagem tem nível, nota, id da busca ou sessão não marcada: '+J(acha2(tudo)));}
+    {const g=await guardado(V);const gl=await guardado(L);const tudo=J(g)+J(gl);
+      ok(!/pode_ser|"nivel"|"bateu"|"busca"|5e1f1e0a5e1f1e0a|"selfie"|"varias"/.test(tudo),'selfie 16: depois da venda, nada da busca no localStorage nem no sessionStorage das duas janelas');
+      const pior=Object.keys(g.local).filter(k=>k!=='eterna.sim.v1'&&acha2(g.local[k]).length);ok(!pior.length,'selfie 16: fora o SIM (as sessões do dia), nenhuma chave cita sessão não marcada: '+J(pior));
+      ok(J(Object.keys(gL0.sessao).sort())===J(Object.keys(gl.sessao).sort()),'selfie: o Checkout não ganhou chave nova no sessionStorage');}
+    ok(marc.length===1&&(()=>{try{const m=JSON.parse(marc[0]);return m.busca===BUSCA&&m.cards.slice().sort().join()===FIM.join();}catch(e){return false;}})(),'selfie: quem recebe o que foi marcado é o servidor: '+J(marc));
+    {const r=await L.evaluate(()=>({steps:window.__steps.slice(),bf:window.__bf,tv:window.__tv,cams:window.__cams.length}));
+      ok(!r.steps.includes('talvez')&&r.tv===0&&r.bf===0&&r.cams===0,'selfie 14 e 17: a janela do cliente nunca teve o modal, a lista da selfie, a câmera do vendedor nem a pergunta "talvez": '+J(r));
+      ok((await V.evaluate(()=>window.__bf))>0&&(await V.evaluate(()=>window.__cams.length))===1,'(o gravador funciona: no vendedor ele viu a tela e uma câmera)');}
+    await y.ctx.close();}
   ok(!errs.flat().length,'erros de página: '+errs.flat().join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}
 if(fails.length){console.log('FALHA procurar-sem-vazar: '+fails.join(' || '));process.exit(1);}
-console.log('OK procurar-sem-vazar: a seleção fica só com o vendedor (DOM, estado e sessionStorage do Checkout, canal e localStorage sem nada das não marcadas), Checkout parado até o Iniciar, sem "talvez", tela fechada para #loja e para o perfil Checkout');process.exit(0);})();
+console.log('OK procurar-sem-vazar: a seleção fica só com o vendedor (DOM, estado e sessionStorage do Checkout, canal e localStorage sem nada das não marcadas), Checkout parado até o Iniciar, sem "talvez", tela fechada para #loja e para o perfil Checkout; o mesmo com as sessões achadas por selfie (lista, pode ser, id da busca e câmera só no vendedor)');process.exit(0);})();

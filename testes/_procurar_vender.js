@@ -1,6 +1,8 @@
 // Apoio dos testes de vender pelo Procurar fotos (procurar-vender.js e procurar-sem-vazar.js). Agente falso por page.route na própria
 // origem (/status, /sessoes, /thumb/, /file/, /ponto/eventos, /ponto/vendas-dia), sessões e fotos simuladas, cadastros de teste.
 // Vendedor e Checkout são duas páginas do MESMO contexto (mesmo computador: dividem o localStorage e o canal eterna-loja).
+// Fase 2 (busca por selfie): o.rotas(caminho, pedido) devolve {corpo,status,espera} para uma rota a mais do agente falso (ou nada);
+// o.rostos===false desliga o reconhecimento no /status; o gravador também guarda as câmeras abertas em cada janela (window.__cams).
 const entrarTeste=require('./_entrar');const fs=require('fs');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;const J=JSON.stringify;
 const JPG=fs.readFileSync(path.join(__dirname,'..','img','ativ-snap.jpg'));
@@ -25,20 +27,22 @@ async function contexto(b,o){o=o||{};const FEED=o.feed||feed();const EVENTOS=[];
   await ctx.addInitScript(()=>{Element.prototype.requestFullscreen=function(){return Promise.resolve();};
     // gravador: tudo o que passa pelo canal, as etapas do Checkout e qualquer pedaço do Procurar fotos que apareça no DOM desta janela
     window.__msgs=[];try{const ch=new BroadcastChannel('eterna-loja');ch.onmessage=e=>{try{window.__msgs.push(JSON.stringify(e.data));}catch(x){}};window.__ch=ch;}catch(e){}
-    window.__steps=[];window.__bf=0;window.__tv=0;
+    window.__steps=[];window.__bf=0;window.__tv=0;window.__cams=[];
+    try{const md=navigator.mediaDevices;if(md&&md.getUserMedia){const g=md.getUserMedia.bind(md);md.getUserMedia=function(c){if(window.__camErro)return Promise.reject(new DOMException('ocupada',window.__camErro));return g(c).then(s=>{window.__cams.push(s);return s;});};}}catch(e){}
     setInterval(()=>{try{const k=window.ETERNA&&ETERNA.state.kiosk;if(k){if(!window.__steps.includes(k.step))window.__steps.push(k.step);if(k.tv)window.__tv++;}
-      if(document.querySelector('#bf,#bf-barra,.bf-card,.bf-marca,.bf-mk,.bf-sess,.bf-bmini'))window.__bf++;}catch(e){}},40);});
+      if(document.querySelector('#bf,#bf-barra,.bf-card,.bf-marca,.bf-mk,.bf-sess,.bf-bmini,#bf-selfie-modal,.bf-sf,.bf-sfc,.bf-bateu,[data-act^="bf-selfie"]'))window.__bf++;}catch(e){}},40);});
   if(o.troca){const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');const body=o.troca(html);if(body===html)throw new Error('a troca do index.html não achou o trecho');
     await ctx.route(u=>u.pathname.endsWith('/index.html'),r=>r.request().method()==='GET'?r.fulfill({status:200,contentType:'text/html; charset=utf-8',headers:{'Cache-Control':'no-store'},body}):r.continue());}
   await ctx.route(ORIG+'/**',r=>{const rq=r.request();const u=new URL(rq.url());const p=u.pathname;const j=(x,s)=>r.fulfill({status:s||200,contentType:'application/json',body:J(x)});
     if(/\.(html|js|css|png|jpg|jpeg|webp|svg|json|woff2?|ico|wasm|onnx)$/.test(p))return r.fallback();
     if(p.startsWith('/auth/'))return r.fallback();
-    if(p==='/status')return j({ok:true,agent:'eterna-agente',version:3,boot:FEED.gen,card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:true},sessoes:{v:2,pausa:60,rostos:true,rev:FEED.rev,gen:FEED.gen,hoje:FEED.sessoes.length,abertas:1}});
+    if(p==='/status')return j({ok:true,agent:'eterna-agente',version:3,boot:FEED.gen,card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:o.rostos!==false},sessoes:{v:2,pausa:60,rostos:true,rev:FEED.rev,gen:FEED.gen,hoje:FEED.sessoes.length,abertas:1}});
     if(p==='/sessoes'){const d=+u.searchParams.get('desde')||0;return j({ok:true,gen:FEED.gen,rev:FEED.rev,pausa:60,rostos:true,completo:!d,sessoes:FEED.sessoes.filter(x=>x.rev>d&&u.searchParams.get('ontem')!=='1')});}
     if(p.startsWith('/thumb/')||p.startsWith('/file/'))return r.fulfill({status:200,contentType:'image/jpeg',body:JPG});
     if(p==='/events')return j({events:[],next:0,total:0});
     if(p==='/ponto/vendas-dia')return j({ok:true,dia:hoje,vendas:EVENTOS.filter(e=>e.tipo==='criar').map(e=>({venda:e.venda,em:e.em,posto:'Caixa 1',saleNo:e.dados.saleNo||'',card:e.dados.card,sessoes:e.dados.sessoes||[],origem:e.dados.origem||null,meio:'pix',total:e.dados.total,prints:0,vendedor:'',cart:[],selected:[],aiSel:[],galeria:null})).concat([{venda:'vfora1',em:new Date().toISOString(),posto:'Caixa 2',saleNo:'L0-900',card:C.FORA,sessoes:[C.FORA],meio:'pix',total:100,prints:1,vendedor:'Outro posto',cart:[],selected:[],aiSel:[],galeria:null}])});
     if(p==='/ponto/eventos'){let q={};try{q=JSON.parse(rq.postData()||'{}');}catch(e){}(q.eventos||[]).forEach(e=>EVENTOS.push(e));return j({ok:true,resultados:(q.eventos||[]).map(e=>({idem:e.idem,s:'ok'}))});}
+    if(o.rotas){const x=o.rotas(p,rq);if(x){if(x.espera)return void setTimeout(()=>j(x.corpo,x.status).catch(()=>{}),x.espera);return j(x.corpo,x.status);}}
     if(rq.method()!=='GET')return j({ok:true});
     return j({erro:'sem_permissao'},403);});
   const pagina=async nome=>{const pg=await ctx.newPage();pg.on('pageerror',e=>errs.push(nome+': '+e.message));pg.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource|Fetch API cannot load|ERR_|net::|onnxruntime|404|403/.test(m.text()))errs.push(nome+': '+m.text());});return pg;};
