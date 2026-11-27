@@ -65,6 +65,11 @@ for t in testes/sessao_numero_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   conta "$(basename $t)" $RC "$OUT"
 done
+# 27/11: selfie sem código na galeria pública (linha própria, pelo mesmo motivo)
+for t in testes/selfie_dia_agente.py; do
+  H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
+  conta "$(basename $t)" $RC "$OUT"
+done
 # 24/11 (testador v99.44.0): zeragem com falhas de verdade (tmpfs e usuário nobody; sem root, avisa e passa)
 for t in testes/v9944_zerar_falhas_root.py; do
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"

@@ -319,6 +319,18 @@ Resources:
             ApiId: !Ref Api
             Path: /ponto/galerias
             Method: POST
+        SelfiesPontoLeva:                                  # v99.108: selfie sem código (o estádio leva os pedidos da fila)
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/selfies
+            Method: GET
+        SelfiesPontoResultado:                             # v99.108: o estádio devolve o resultado da busca
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /ponto/selfies
+            Method: POST
 
   Orcamento:
     Type: AWS::Budgets::Budget

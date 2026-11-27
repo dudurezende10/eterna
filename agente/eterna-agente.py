@@ -1256,15 +1256,18 @@ def _mat_le(db, d):
     return (M, [r[0] for r in rows], L, mx)
 
 
-def matriz(dias):
+def matriz(dias, guardar=True):
     """(M, pids, larguras, {pid: maior largura}) dos dias. A releitura de um dia só fica em memória se nenhuma leitura nova
-    foi gravada no meio (versão do dia igual); senão tenta de novo (até 3 vezes) e, na última, usa sem guardar."""
+    foi gravada no meio (versão do dia igual); senão tenta de novo (até 3 vezes) e, na última, usa sem guardar.
+    guardar=False (v99.108, selfie sem código num dia antigo): o dia que não está em memória é lido e não fica."""
     np = _cv["np"]
     vs, ps, ls, mx = [], [], [], {}
     db = rostos_db()
     for d in dias:
         with _mat_lock:
             m = _mat.get(d)
+        if m is None and not guardar:
+            m = _mat_le(db, d)
         tent = 0
         while m is None:
             with _mat_lock:
@@ -1613,20 +1616,26 @@ def busca_janela_efetiva(janela=None):
 _viz_tl = threading.local()   # 25/11 (fotos vizinhas): os vetores da selfie desta busca, só nesta thread e só até a resposta sair
 
 
-def buscar_vetor(me, dias=1, janela=None, agora=None, piso=None):
+def buscar_vetor(me, dias=1, janela=None, agora=None, piso=None, dia=None):
     """Fotos com o rosto do vetor me (128, normalizado), nos dias da busca. Separada de _buscar para medir (v91 parte B:
     selfie até a primeira foto ampliada em menos de 2 s; testes/selfie_rapidez.py). Cada foto vem com principal: o rosto que
     bateu tem largura >= ROSTO_PRINCIPAL x a do maior rosto daquela foto (B5: quem só aparece no fundo não abre a sessão
     inteira no Checkout). Com janela (minutos) > 0, só as fotos de sessões com a última foto dentro da janela.
-    piso (26/11): só a busca do vendedor passa; sem ele vale LIMITE_TALVEZ, como sempre. Nunca abaixo de BUSCA_VEND_PISO_MIN."""
+    piso (26/11): só a busca do vendedor passa; sem ele vale LIMITE_TALVEZ, como sempre. Nunca abaixo de BUSCA_VEND_PISO_MIN.
+    dia (v99.108, selfie sem código): só aquele dia (AAAA-MM-DD), o dia todo, sem a janela; dias, janela e agora não valem."""
     np = _cv["np"]
     corte = LIMITE_TALVEZ if piso is None else max(BUSCA_VEND_PISO_MIN, min(float(piso), LIMITE_TALVEZ))
     vets = getattr(_viz_tl, "vets", None)
     if vets is not None:
         vets.append(me)
     hoje = time.time() if agora is None else agora
-    M, ps, L, mx = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
-    jan = busca_janela_efetiva(janela)
+    if dia:
+        recentes = {time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400)) for i in (0, 1)}
+        M, ps, L, mx = matriz([dia], guardar=dia in recentes)
+        jan = 0
+    else:
+        M, ps, L, mx = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
+        jan = busca_janela_efetiva(janela)
     if jan and len(ps):
         ok = sess_pids_janela(hoje - jan * 60)
         if ok is not None:                   # None = nenhuma sessão em memória (agente sem sessões): sem filtro
@@ -2152,6 +2161,14 @@ def nuvem_galeria_enfileira(token):
 nuvem_gal_acorda = threading.Event()
 
 
+def nuvem_publica_manifesto(seg, m):
+    """POST /ponto/galerias. Erro de rede ou recusa da nuvem sobe como exceção."""
+    rq = urllib.request.Request(NUVEM_API + "/ponto/galerias", data=json.dumps({"manifesto": m}).encode(), method="POST",
+                                headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=20) as r:
+        r.read()
+
+
 def nuvem_galerias_loop():
     """Publica na API da nuvem as galerias da fila; sem internet, tenta de novo com espera crescente."""
     if not NUVEM_API:
@@ -2189,10 +2206,7 @@ def nuvem_galerias_loop():
                 erro = None
                 if m:
                     try:
-                        rq = urllib.request.Request(NUVEM_API + "/ponto/galerias", data=json.dumps({"manifesto": m}).encode(), method="POST",
-                                                    headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
-                        with urllib.request.urlopen(rq, timeout=20) as r:
-                            r.read()
+                        nuvem_publica_manifesto(seg, m)
                     except Exception as ex:
                         erro = str(ex)[:200]
                 with nuvem_lock:
@@ -11593,7 +11607,7 @@ def ativ_tour_base():
             m = REPO.ler_manifesto(t)
         except Exception:
             m = None
-        if not m or m.get("tipo") != "sessao" or m.get("origem") == "ativ" or not m.get("precos"):
+        if not m or m.get("tipo") != "sessao" or m.get("origem") in ("ativ", "selfie") or not m.get("precos"):
             continue
         if not melhor or str(m.get("criada") or "") > str(melhor.get("criada") or ""):
             melhor = m
@@ -11842,6 +11856,188 @@ def ativ_tour_passa():
             except Exception as ex:
                 print("  tour: erro na busca (%s)" % str(ex)[:120])
     return n
+
+
+# ---------- v99.108: selfie sem código na galeria pública (plano docs/planos/2026-11-27-selfie-na-galeria.md) ----------
+# O cliente escolhe o dia da visita (últimos 30 dias), dá o aceite e tira a selfie em eterna.photo/#g; a nuvem guarda o pedido
+# e este servidor leva a fila de 10 em 10 s (GET /ponto/selfies). A busca é daqui, com o reconhecimento daqui: só as fotos do
+# dia escolhido, rosto principal e semelhança de "mesma pessoa" (LIMITE), fora bases de IA, sessões removidas, grupo de escola
+# e sessão de menor. Achou: galeria de venda própria (origem "selfie"), como a das fotos do Tour pela foto da venda; a foto já
+# comprada ou dada de cortesia numa venda entra liberada. A selfie fica só em memória durante a busca e nada dela é gravado.
+# Thread própria com o próprio leitor de rostos: não espera nem segura nada da venda; erro aqui vira "erro" para o cliente.
+SELFIE_DIA_MAX = 60
+SELFIE_DIA_INTERVALO = 10
+selfie_dia = {"ligada": False, "ultima": None, "pedidos": 0, "achou": 0, "nao": 0, "erro": None}
+_selfie_leitor = {"m": None}
+
+
+def selfie_dia_vetor(b64):
+    """-> ("ok", vetor) | ("varias", None) | ("sem_rosto", None). Uma pessoa por vez, como a galeria por QR."""
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    raw = base64.b64decode(str(b64 or "").split(",", 1)[-1])
+    if not raw or not img_aceita(raw):
+        return "sem_rosto", None
+    img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+    raw = None
+    if img is None:
+        return "sem_rosto", None
+    if not _selfie_leitor["m"]:
+        _selfie_leitor["m"] = leitor()
+    fs = ler_rostos(img, *_selfie_leitor["m"], minimo=60)
+    img = None
+    if varias_pessoas(fs):
+        return "varias", None
+    if not fs:
+        return "sem_rosto", None
+    return "ok", fs[0][1]
+
+
+def selfie_dia_sessoes(dia):
+    """({pid: card}, pids que nunca entram) das sessões do dia: em memória (hoje e ontem) ou do arquivo do dia."""
+    with sess_lock:
+        ss = [_sess_publico(x) for x in sess.values() if x.get("dia") == dia]
+    if not ss:
+        try:
+            with open(os.path.join(SESS_DIR, dia + ".json"), encoding="utf8") as fh:
+                ss = [x for x in json.load(fh).get("sessoes") or [] if isinstance(x, dict)]
+        except (OSError, ValueError):
+            ss = []
+    dono, fora = {}, set()
+    for x in ss:
+        pids = [p for p in (x.get("fotos") or []) + (x.get("pend") or []) if isinstance(p, str)]
+        if x.get("removida"):
+            fora.update(pids)
+            continue
+        fora.update(p for p in (x.get("ia") or []) if isinstance(p, str))     # base de IA nunca é vendida como foto
+        for p in pids:
+            dono.setdefault(p, str(x.get("card") or ""))
+    return dono, fora
+
+
+def selfie_dia_fotos(me, dia):
+    """[(id do manifesto, sessão)] das fotos do dia em que o rosto da selfie é o principal."""
+    r = buscar_vetor(me, dia=dia)
+    dono, fora = selfie_dia_sessoes(dia)
+    out = [("ag_" + f["id"], dono.get(f["id"], "")) for f in r.get("fotos") or []
+           if f["sim"] >= LIMITE and f.get("principal") and f["id"] not in fora]
+    return out[:SELFIE_DIA_MAX]
+
+
+def selfie_dia_direitos():
+    """({id: direito da foto numa venda}, ids que nunca entram). Comprada vence cortesia; grupo de escola e sessão de menor ficam fora."""
+    dirs, fora = {}, set()
+    for t in REPO.listar():
+        try:
+            m = REPO.ler_manifesto(t)
+        except Exception:
+            m = None
+        if not m or m.get("origem") == "selfie" or m.get("encerrada"):
+            continue
+        if m.get("tipo") == "evento" or m.get("menor"):
+            fora.update(f.get("id") for f in m.get("fotos") or [])
+            continue
+        for f in m.get("fotos") or []:
+            if f.get("direito") == "comprada":
+                dirs[f["id"]] = {"direito": "comprada", "canal": f.get("canal") or "loja"}
+            elif f.get("direito") == "cortesia" and dirs.get(f["id"], {}).get("direito") != "comprada":
+                dirs[f["id"]] = {"direito": "cortesia", "canal": None, **({"cortesia": f["cortesia"]} if isinstance(f.get("cortesia"), dict) else {})}
+    return dirs, fora
+
+
+def selfie_dia_galeria(dia, achados):
+    """Monta e grava a galeria da selfie. -> manifesto ou None (nada a mostrar ou sem preços de referência)."""
+    dirs, fora = selfie_dia_direitos()
+    achados = [a for a in achados if a[0] not in fora]
+    if not achados:
+        return None
+    base = ativ_tour_base()
+    if not base:
+        print("  selfie sem código: sem galeria de venda para copiar preços")
+        return None
+    tok = secrets.token_urlsafe(16)
+    fotos = [dict({"id": i, "sessao": s_, "direito": "venda", "canal": None}, **dirs.get(i, {})) for i, s_ in achados]
+    m = gal_validar({"token": tok, "tipo": "sessao", "venue": ATIV_VENUE, "sessoes": sorted({f["sessao"] for f in fotos if f["sessao"]}),
+                     "criada": _iso(), "expira": _iso(_epoch(dia + "T23:59:59") + GAL_DIAS * 86400),
+                     "precos": base["precos"], "catalogo": base["catalogo"], "fotos": fotos})
+    m["origem"] = "selfie"
+    with gal_lock:
+        REPO.salvar_manifesto(tok, m)
+    gal_fila.put(tok)
+    return m
+
+
+def selfie_dia_atende(seg, p):
+    """Um pedido da nuvem -> {"estado", "token"?}. A selfie sai da memória logo depois de lida."""
+    dia = str(p.get("dia") or "")
+    if not _re_dia.match(dia) or not rostos["ligado"]:
+        return {"estado": "erro"}
+    est, me = selfie_dia_vetor(p.pop("imagem", None))
+    if est != "ok":
+        return {"estado": est}
+    m = selfie_dia_galeria(dia, selfie_dia_fotos(me, dia))
+    if not m:
+        return {"estado": "nao"}
+    nuvem_publica_manifesto(seg, m)            # a nuvem precisa da galeria antes de dar o acesso ao cliente
+    nuvem_galeria_enfileira(m["token"])        # e as republicações (venda online) seguem pela fila de sempre
+    return {"estado": "achou", "token": m["token"], "n": len(m["fotos"])}
+
+
+def _selfie_dia_registro(pedido, dia, r):
+    """Só o resumo (sem selfie e sem o número do pedido, que é a chave do cliente): hash, dia, estado e quantas fotos."""
+    with nuvem_lock:
+        db = nuvem_db()
+        db.execute("CREATE TABLE IF NOT EXISTS selfie_dia (id TEXT PRIMARY KEY, dia TEXT, estado TEXT, token TEXT, n INTEGER, em TEXT)")
+        db.execute("INSERT OR REPLACE INTO selfie_dia (id, dia, estado, token, n, em) VALUES (?,?,?,?,?,?)",
+                   (hashlib.sha256(pedido.encode()).hexdigest()[:16], dia, r["estado"], r.get("token"), r.get("n") or 0, _iso()))
+        db.commit(); db.close()
+
+
+def selfie_dia_passa(seg):
+    """Leva os pedidos da nuvem, procura e devolve cada resultado. -> quantos atendeu."""
+    rq = urllib.request.Request(NUVEM_API + "/ponto/selfies", headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=20) as resp_:
+        ps = json.loads(resp_.read().decode("utf8")).get("pedidos") or []
+    n = 0
+    for p in ps[:10]:
+        pedido, dia = str((p or {}).get("pedido") or ""), str((p or {}).get("dia") or "")[:10]
+        if not re.match(r"^[A-Za-z0-9_-]{24}$", pedido):
+            continue
+        try:
+            r = selfie_dia_atende(seg, p)
+        except Exception as ex:
+            print("  selfie sem código: busca falhou (%s)" % type(ex).__name__)
+            r = {"estado": "erro"}
+        p = None
+        corpo = {"pedido": pedido, "estado": r["estado"], **({"token": r["token"]} if r.get("token") else {})}
+        rq = urllib.request.Request(NUVEM_API + "/ponto/selfies", data=json.dumps(corpo).encode(), method="POST",
+                                    headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(rq, timeout=20) as resp_:
+            resp_.read()
+        try:
+            _selfie_dia_registro(pedido, dia, r)
+        except Exception:
+            pass
+        selfie_dia["pedidos"] += 1
+        selfie_dia["achou" if r["estado"] == "achou" else "nao"] += 1
+        n += 1
+    return n
+
+
+def selfie_dia_loop():
+    """Só com a nuvem e a leitura de rostos ligadas: sem isso a nuvem não vê o estádio buscando e a tela não oferece a opção."""
+    if not NUVEM_API:
+        return
+    seg = nuvem_segredo()
+    nuvem["selfie_dia"] = selfie_dia             # na saúde da nuvem: ligada, última busca, contagens e último erro
+    while True:
+        selfie_dia["ligada"] = bool(rostos["ligado"])
+        if rostos["ligado"]:
+            try:
+                selfie_dia_passa(seg)
+                selfie_dia["ultima"] = _iso()
+            except Exception as ex:
+                selfie_dia["erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        time.sleep(SELFIE_DIA_INTERVALO)
 
 
 def ativ_videos_limpa(agora=None):
@@ -26411,6 +26607,7 @@ def main():
     threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=nuvem_loop, daemon=True).start()
     threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
+    threading.Thread(target=selfie_dia_loop, daemon=True).start()     # v99.108: selfie sem código na galeria pública
     threading.Thread(target=escola_loop, daemon=True).start()
     threading.Thread(target=nuvem_videos_loop, daemon=True).start()
     if IMPRESSORA and not os.environ.get("ETERNA_IMPRESSORA_TESTE"):

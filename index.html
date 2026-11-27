@@ -1051,7 +1051,7 @@ body:has(.lj-full) .toast{top:calc(var(--lj-topo,104px) + 14px);bottom:auto;z-in
 /* Galerias online (administração) */
 .galgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .galph{position:relative;display:flex;flex-direction:column;gap:6px;align-items:flex-start;padding:5px;border-radius:8px;border:1px solid var(--line);background:var(--surface);text-align:left}
-.gq-campo{display:flex;flex-direction:column;gap:4px;text-align:left;font-size:13px;width:100%}.gq-campo input{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:inherit}.gq-cesta{text-align:left;font-size:14px;opacity:.9}.gq-mkt{margin:4px 0}
+.gq-campo{display:flex;flex-direction:column;gap:4px;text-align:left;font-size:13px;width:100%}.gq-campo input,.gq-campo select{font:inherit;font-size:16px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:inherit}.gq-campo select option{color:#0C2340}.gq-sfou{margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.18);text-align:center}.gq-cesta{text-align:left;font-size:14px;opacity:.9}.gq-mkt{margin:4px 0}
 .galph .ph{width:100%;aspect-ratio:3/2;border-radius:5px}.galph .ph[data-real]{aspect-ratio:1/1}.galph.cortesia{border-color:var(--warn)}.galph.comprada{opacity:.75;cursor:default}
 .galmini{display:inline-block;width:60px;height:40px;border-radius:4px;vertical-align:middle}
 .galqr{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#0C2340}
@@ -3939,7 +3939,7 @@ function pubRead(){const h=location.hash;const m=h.match(/^#g\/(.*)$/);const pv=
   if(h==='#g'){if(!state.pub||state.pub.token||state.pub.step!=='codigo')state.pub={token:null,step:'codigo'};state.lojaRota=false;return true;}
   state.pub=null;state.lojaRota=h==='#loja';return false;}
 function pubRetry(p){clearTimeout(p.rt);p.rt=setTimeout(()=>{if(state.pub===p&&p.step==='chegando')pubLoad();},20000);}
-async function pubLoad(){const p=state.pub;if(p&&p.ref&&!p.token){pubConferir(p);return;}if(!p||!p.token){render();if(p&&p.auto){p.auto=false;pubCodigo();}return;}const tok=p.token;let r=null,net=false;
+async function pubLoad(){const p=state.pub;if(p&&p.ref&&!p.token){pubConferir(p);return;}if(!p||!p.token){if(p&&p.step==='codigo')pubSfDias(p);render();if(p&&p.auto){p.auto=false;pubCodigo();}return;}const tok=p.token;let r=null,net=false;
   try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),2500);r=await fetch(galApi()+'/g/'+tok+'/info',{cache:'no-store',signal:ctl.signal});clearTimeout(t);}catch(e){net=true;}
   if(state.pub!==p)return;let info=null;
   if(r&&r.status===200){try{info=await r.json();}catch(e){info=null;}}
@@ -3993,7 +3993,7 @@ function pubTries(p){const k='eterna.gq.'+p.token.slice(0,8);let o={n:0,ate:0};t
 function pubFalhou(p,motivo){const t=pubTries(p);t.o.n=(t.o.n||0)+1;if(t.o.n>=GQ_MAX){t.o.ate=Date.now()+GQ_BLOQ;t.o.n=0;p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;p.restam=0;}else{p.motivo=motivo;p.restam=GQ_MAX-t.o.n;}t.save();p.step='nao';}
 const GQ_PROC_N=12,GQ_PROC_MS=5000;
 function pubSelfieAbrir(p){state.guest.selfie={stream:null,ready:false,shot:null,err:null,facing:pubKid(p)?'environment':'user'};p.step='selfie';}
-async function pubMatch(src){const p=state.pub;if(!p||!p.token)return;const t=pubTries(p);
+async function pubMatch(src){const p=state.pub;if(p&&p.sfModo&&!p.token){pubSfEnvia(p,src);return;}if(!p||!p.token)return;const t=pubTries(p);
   if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;selfieStop();render();return;}
   p.step='buscando';selfieStop();render();
   try{
@@ -4206,13 +4206,58 @@ function pubTourVolta(p){const o=pubTourSalvo(p.token);return o&&/^[A-Za-z0-9_-]
 // 18/11: ajuda da galeria vai para o e-mail do Tour, que abre chamado no Zendesk
 const GQ_SUPORTE='contato@vivamaracana.com.br';
 const gqAjuda=()=>`<p class="gq-help">${T('gq_help')} <a href="mailto:${GQ_SUPORTE}">${GQ_SUPORTE}</a></p>`;
+// v99.108 (Ronaldo, 27/11): sem o código, a selfie e o dia da visita (últimos 30 dias, o que o servidor do estádio guarda).
+// O servidor do estádio procura; achou, a nuvem devolve a galeria dele (token e acesso) e o cliente entra nela como quem veio
+// pelo código, sem pedir código. A opção só aparece quando a nuvem anuncia (POST /g/selfie/dias com ligada): nuvem sem a rota
+// ou estádio fora do ar, nada aparece. Não achou: só informa, com o e-mail de ajuda. Plano docs/planos/2026-11-27-selfie-na-galeria.md
+const SF_LADO=640,SF_POLL_MS=3000,SF_POLL_MAX=210,GQ_SF_VERSAO='2026-11-27-sf1';let SF_DIAS=null;
+async function pubSfDias(p){if(SF_DIAS&&Date.now()-SF_DIAS.em<60000){p.sf=SF_DIAS.j;return;}
+  let j=null;try{const r=await fetch(galApi()+'/g/selfie/dias',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',cache:'no-store'});if(r.ok)j=await r.json();}catch(e){}
+  SF_DIAS={em:Date.now(),j:j&&j.ok&&j.ligada&&Array.isArray(j.dias)&&j.dias.length?{dias:j.dias.filter(d=>/^\d{4}-\d\d-\d\d$/.test(d)).slice(0,30)}:null};
+  if(state.pub!==p||p.token)return;p.sf=SF_DIAS.j;if(p.sf&&p.step==='codigo'){const el=$('#gq-code');if(el)p.pre=el.value;render();}}
+function sfDiaRot(d,i){if(i===0)return T('gq_sfHoje');if(i===1)return T('gq_sfOntem');
+  try{return new Date(d+'T12:00:00').toLocaleDateString(lang()==='zh'?'zh-CN':lang(),{weekday:'long',day:'numeric',month:'long'});}catch(e){return d;}}
+function pubSfVai(p){if(!p.ok)return;const dia=($('#gq-sf-dia')||{}).value||'';const em=(($('#gq-esc-email')||{}).value||'').trim().toLowerCase();
+  p.sfDia=dia;p.mkt=!!($('#gq-mkt-ck')||{}).checked;p.cli=Object.assign({},p.cli,{email:em});
+  if(!GQ_EMAIL.test(em)){p.err=T('gq_emailBad');render();return;}if(!((p.sf||{}).dias||[]).includes(dia))return;
+  p.err=null;p.modo='agente';p.sfModo=true;pubSelfieAbrir(p);render();}
+async function pubSfEnvia(p,src){p.step='sf_busca';selfieStop();render();let img=null;
+  try{const im=await loadImg(src);src=null;if(state.pub!==p)return;if(!im){pubSfFim(p,'sem_rosto');return;}
+    try{if(await selfieVarias(im)){pubSfFim(p,'varias');return;}}catch(e){} // sem detector: o servidor do estádio confere
+    const W=im.naturalWidth||im.width,H=im.naturalHeight||im.height,k=Math.min(1,SF_LADO/Math.max(W,H));const c=mkc(W*k,H*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);img=c.toDataURL('image/jpeg',.85);
+    const r=await fetch(galApi()+'/g/selfie/pedido',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({consentimento:true,dia:p.sfDia,imagem:img,email:(p.cli||{}).email||'',marketing:!!p.mkt,idioma:lang(),versao:GQ_SF_VERSAO})});img=null;
+    const j=await r.json().catch(()=>({}));if(state.pub!==p)return;
+    if(r.status===429){p.ate=Date.parse(j.ate)||0;pubSfFim(p,'bloqueado');return;}
+    if(!r.ok||!j.pedido){pubSfFim(p,'indisponivel');return;}
+    p.sfPed=j.pedido;p.sfN=0;pubSfConsulta(p);}
+  catch(e){pubSfFim(p,'indisponivel');}finally{src=img=null;}}
+// "Procurando suas fotos…": consulta de 3 em 3 s. Achou: entra na galeria pelo mesmo caminho do atalho do vídeo (acesso na sessão do navegador)
+function pubSfConsulta(p){clearTimeout(p.sfT);p.sfT=setTimeout(async()=>{if(state.pub!==p||p.step!=='sf_busca')return;let j=null;
+  try{const r=await fetch(galApi()+'/g/selfie/estado',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pedido:p.sfPed}),cache:'no-store'});j=await r.json().catch(()=>null);}catch(e){}
+  if(state.pub!==p||p.step!=='sf_busca')return;const est=j&&j.estado;
+  if(est==='achou'&&/^[A-Za-z0-9_-]{22}$/.test(j.token||'')&&j.acesso){try{sessionStorage.setItem(TOUR_KEY,JSON.stringify({token:j.token,acesso:j.acesso,em:Date.now()}));}catch(e){}location.hash='#g/'+j.token;return;}
+  if(['nao','varias','sem_rosto','erro','indisponivel','vencido'].includes(est)){pubSfFim(p,est);return;}
+  if(++p.sfN>=SF_POLL_MAX){pubSfFim(p,'indisponivel');return;}pubSfConsulta(p);},SF_POLL_MS);}
+function pubSfFim(p,motivo){if(state.pub!==p)return;p.sfMotivo=motivo;p.sfPed=null;p.step='sf_nao';render();}
 function vGaleriaQR(){const p=state.pub;const logo=venueLogo(30,'dark');
   const deco=`<div class="lj-stripe" aria-hidden="true"></div><div class="lj-dots" aria-hidden="true"></div>`;
   const top=(x,y)=>`<div class="lj-top gq-top"><div class="lj-logo">${logo}</div>${y||''}${langPick(true)}</div>${x||''}`;
   const box=(h,d,extra)=>`<div class="gq ${p.step==='galeria'?'gq-gal':''}">${deco}${top()}<div class="gq-mid"><h1 class="lj-h2 gq-h">${h}</h1>${d?`<p class="lj-sub">${d}</p>`:''}${extra||''}</div></div>`;
   const help=gqAjuda();
   if(p.step==='carregando')return box(T('gq_loading'),'','<div class="gq-spin" aria-hidden="true"></div>');
-  if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX-XXXX" maxlength="24" value="${esc(p.pre||'')}" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button><button class="lj-ghost" data-act="gq-qr">${GQ_ICO_QR} ${T('gq_qr')}</button><label class="gq-qrimg">${T('gq_qrImg')}<input type="file" id="gq-qr-img" accept="image/*" hidden></label>${help}`);
+  if(p.step==='codigo')return box(T('gq_codeH'),'',`<input type="text" class="lj-code gq-codein" id="gq-code" placeholder="XXXX-XXXX-XXXX" maxlength="24" value="${esc(p.pre||'')}" autocomplete="off" autocapitalize="characters" aria-label="${T('gq_codeH')}">${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" data-act="gq-code-go">${T('gq_open')} ${ICO.arrow}</button><button class="lj-ghost" data-act="gq-qr">${GQ_ICO_QR} ${T('gq_qr')}</button><label class="gq-qrimg">${T('gq_qrImg')}<input type="file" id="gq-qr-img" accept="image/*" hidden></label>${p.sf?`<div class="gq-sfou"><p class="lj-sub">${T('gq_sfOu')}</p><button class="lj-ghost" data-act="gq-sf">${ICO.face} ${T('gq_sfBtn')}</button></div>`:''}${help}`);
+  if(p.step==='sf_dia'){const ds=(p.sf&&p.sf.dias)||[];
+    return box(T('gq_sfH'),T('gq_sfD'),`<label class="gq-campo"><span>${T('gq_sfDia')}</span><select id="gq-sf-dia">${ds.map((d,i)=>`<option value="${esc(d)}" ${d===p.sfDia?'selected':''}>${esc(sfDiaRot(d,i))}</option>`).join('')}</select></label>
+      <label class="gq-consent"><input type="checkbox" data-act="gq-consent" ${p.ok?'checked':''}><span>${T('gq_sfConsent').split('\n').map((x,i)=>i?`<small>${x}</small>`:`<strong>${x}</strong>`).join('')}</span></label>
+      <label class="gq-campo"><span>${T('gq_emailFotos')}</span><input id="gq-esc-email" type="email" autocomplete="email" maxlength="190" value="${esc((p.cli||{}).email||'')}"></label>
+      <label class="gq-consent gq-mkt"><input type="checkbox" id="gq-mkt-ck" ${p.mkt!==false?'checked':''}><span><small>${T('gq_mkt')}</small></span></label>
+      ${p.err?`<p class="gq-err">${esc(p.err)}</p>`:''}<button class="lj-cta" id="gq-agree" data-act="gq-sf-go" ${p.ok?'':'disabled'}>${ICO.face} ${T('gq_sfTirar')}</button>
+      <button class="lj-ghost" data-act="gq-sf-volta">${ICO.back} ${T('back')}</button>${help}`);}
+  if(p.step==='sf_busca')return box(T('gq_sfBusca'),T('gq_sfBuscaD'),'<div class="gq-spin" aria-hidden="true"></div>');
+  if(p.step==='sf_nao'){const mo=p.sfMotivo,bl=mo==='bloqueado';
+    const h=bl?T('gq_locked',p.ate?hhmm(new Date(p.ate)):''):mo==='varias'?T('gq_varias'):mo==='sem_rosto'?T('gq_noFace'):mo==='nao'?T('gq_sfNao'):T('gq_sfIndisp');
+    const d=mo==='varias'?T('gq_variasD'):mo==='nao'?T('gq_sfNaoD'):bl||mo==='sem_rosto'?'':T('gq_sfIndispD');
+    return box(h,d,`${bl?'':`<button class="lj-cta" data-act="gq-sf-de-novo">${T(mo==='nao'?'gq_sfOutro':'gq_tryAgain')}</button>`}<button class="lj-ghost" data-act="gq-sf-volta">${ICO.back} ${T('back')}</button>${help}`);}
   if(p.step==='nao_existe')return box(T('gq_notFound'),'',`<button class="lj-ghost" data-act="gq-back" data-to="codigo">${T('gq_codeH')}</button>${help}`);
   if(p.step==='expirada')return box(T('gq_expired'),T('gq_expiredD'),help);
   if(p.step==='chegando')return box(T('gq_arriving'),T('gq_arrivingD'),help);
@@ -4515,6 +4560,22 @@ const I18N={
  gq_codeIs:[c=>`Seu código: ${c}`,c=>`Your code: ${c}`,c=>`Tu código: ${c}`,c=>`Votre code : ${c}`,c=>`Dein Code: ${c}`],
  gq_open:['Abrir','Open','Abrir','Ouvrir','Öffnen'],
  gq_qr:['Ler o QR do voucher ou ingresso','Scan the voucher or ticket QR','Leer el QR del voucher o la entrada','Scanner le QR du bon ou du billet','QR des Gutscheins oder Tickets scannen'],
+ gq_sfOu:['Não tem o código?','Don’t have the code?','¿No tienes el código?','Vous n’avez pas le code ?','Kein Code zur Hand?'],
+ gq_sfBtn:['Encontrar minhas fotos pela selfie','Find my photos with a selfie','Encontrar mis fotos con una selfie','Trouver mes photos avec un selfie','Meine Fotos per Selfie finden'],
+ gq_sfH:['Encontrar pela selfie','Find with a selfie','Encontrar con una selfie','Trouver avec un selfie','Per Selfie finden'],
+ gq_sfD:['Escolha o dia da sua visita. Procuramos você nas fotos desse dia.','Choose the day of your visit. We will look for you in that day’s photos.','Elige el día de tu visita. Te buscamos en las fotos de ese día.','Choisissez le jour de votre visite. Nous vous cherchons dans les photos de ce jour-là.','Wähle den Tag deines Besuchs. Wir suchen dich in den Fotos dieses Tages.'],
+ gq_sfDia:['Dia da visita','Day of the visit','Día de la visita','Jour de la visite','Tag des Besuchs'],
+ gq_sfHoje:['Hoje','Today','Hoy','Aujourd’hui','Heute'],
+ gq_sfOntem:['Ontem','Yesterday','Ayer','Hier','Gestern'],
+ gq_sfConsent:['Autorizo o uso da foto do meu rosto exclusivamente para localizar as minhas fotos do dia escolhido.\nA selfie é comparada no servidor do Viva Maracanã e apagada logo depois da busca.','I authorize the use of my face photo exclusively to find my photos from the chosen day.\nThe selfie is compared on the Viva Maracanã server and deleted right after the search.','Autorizo el uso de la foto de mi rostro exclusivamente para localizar mis fotos del día elegido.\nLa selfie se compara en el servidor de Viva Maracanã y se elimina justo después de la búsqueda.','J’autorise l’utilisation de la photo de mon visage exclusivement pour retrouver mes photos du jour choisi.\nLe selfie est comparé sur le serveur de Viva Maracanã et supprimé juste après la recherche.','Ich erlaube, das Foto meines Gesichts ausschließlich zum Finden meiner Fotos vom gewählten Tag zu verwenden.\nDas Selfie wird auf dem Server von Viva Maracanã verglichen und direkt nach der Suche gelöscht.'],
+ gq_sfTirar:['Tirar a selfie','Take the selfie','Tomar la selfie','Prendre le selfie','Selfie aufnehmen'],
+ gq_sfBusca:['Procurando suas fotos…','Looking for your photos…','Buscando tus fotos…','Recherche de vos photos…','Wir suchen deine Fotos…'],
+ gq_sfBuscaD:['Leva menos de um minuto. Não feche esta página.','It takes less than a minute. Don’t close this page.','Tarda menos de un minuto. No cierres esta página.','Cela prend moins d’une minute. Ne fermez pas cette page.','Das dauert weniger als eine Minute. Schließ diese Seite nicht.'],
+ gq_sfNao:['Não encontramos suas fotos nesse dia','We didn’t find your photos on that day','No encontramos tus fotos ese día','Nous n’avons pas trouvé vos photos ce jour-là','Wir haben an diesem Tag keine Fotos von dir gefunden'],
+ gq_sfNaoD:['Tente outro dia ou outra selfie. Se ainda não achar, mande para nós a selfie e o dia da visita.','Try another day or another selfie. If you still can’t find them, send us the selfie and the day of your visit.','Prueba otro día u otra selfie. Si aún no las encuentras, envíanos la selfie y el día de la visita.','Essayez un autre jour ou un autre selfie. Si vous ne les trouvez toujours pas, envoyez-nous le selfie et le jour de la visite.','Versuch einen anderen Tag oder ein anderes Selfie. Wenn du sie immer noch nicht findest, schick uns das Selfie und den Tag des Besuchs.'],
+ gq_sfOutro:['Tentar outro dia ou outra selfie','Try another day or selfie','Probar otro día u otra selfie','Essayer un autre jour ou selfie','Anderen Tag oder anderes Selfie versuchen'],
+ gq_sfIndisp:['A busca pela selfie não está disponível agora','Selfie search isn’t available right now','La búsqueda por selfie no está disponible ahora','La recherche par selfie n’est pas disponible pour le moment','Die Suche per Selfie ist gerade nicht verfügbar'],
+ gq_sfIndispD:['Tente de novo em alguns minutos.','Try again in a few minutes.','Vuelve a intentarlo en unos minutos.','Réessayez dans quelques minutes.','Versuch es in ein paar Minuten noch einmal.'],
  gq_qrAponte:['Aponte para o QR do voucher ou do ingresso','Point at the QR on the voucher or ticket','Apunta al QR del voucher o de la entrada','Visez le QR du bon ou du billet','Auf den QR des Gutscheins oder Tickets richten'],
  gq_qrImg:['Está no computador? Envie a imagem do QR','On a computer? Upload the QR image','¿Estás en la computadora? Sube la imagen del QR','Sur ordinateur ? Envoyez l’image du QR','Am Computer? QR-Bild hochladen'],
  gq_qrNada:['Não achamos um QR nessa imagem. Tente outra ou digite o código.','No QR found in this image. Try another one or type the code.','No encontramos un QR en esta imagen. Prueba otra o escribe el código.','Aucun QR trouvé dans cette image. Essayez-en une autre ou tapez le code.','Kein QR in diesem Bild gefunden. Versuche ein anderes oder gib den Code ein.'],
@@ -4765,6 +4826,22 @@ const I18N_ZH={
  gq_codeIs:(c)=>`你的代码：${c}`,
  gq_open:"打开",
  gq_qr:"扫描代金券或门票上的二维码",
+ gq_sfOu:"没有代码？",
+ gq_sfBtn:"用自拍找到我的照片",
+ gq_sfH:"用自拍查找",
+ gq_sfD:"选择你参观的日期。我们会在当天的照片中找你。",
+ gq_sfDia:"参观日期",
+ gq_sfHoje:"今天",
+ gq_sfOntem:"昨天",
+ gq_sfConsent:"我授权仅为查找所选日期的我的照片而使用我的面部照片。\n自拍会在 Viva Maracanã 的服务器上比对，并在查找后立即删除。",
+ gq_sfTirar:"拍自拍",
+ gq_sfBusca:"正在查找你的照片…",
+ gq_sfBuscaD:"不到一分钟。请不要关闭此页面。",
+ gq_sfNao:"那天没有找到你的照片",
+ gq_sfNaoD:"请换一天或换一张自拍再试。如果仍然找不到，请把自拍和参观日期发给我们。",
+ gq_sfOutro:"换一天或换一张自拍再试",
+ gq_sfIndisp:"自拍查找暂时不可用",
+ gq_sfIndispD:"请几分钟后再试。",
  gq_qrAponte:"请对准代金券或门票上的二维码",
  gq_qrImg:"在电脑上？上传二维码图片",
  gq_qrNada:"这张图片中没有找到二维码。请换一张或输入代码。",
@@ -5005,6 +5082,22 @@ const I18N_IT={
  gq_codeIs:c=>`Il tuo codice: ${c}`,
  gq_open:"Apri",
  gq_qr:"Leggi il QR del voucher o del biglietto",
+ gq_sfOu:"Non hai il codice?",
+ gq_sfBtn:"Trova le mie foto con un selfie",
+ gq_sfH:"Trova con un selfie",
+ gq_sfD:"Scegli il giorno della tua visita. Ti cerchiamo nelle foto di quel giorno.",
+ gq_sfDia:"Giorno della visita",
+ gq_sfHoje:"Oggi",
+ gq_sfOntem:"Ieri",
+ gq_sfConsent:"Autorizzo l’uso della foto del mio viso esclusivamente per trovare le mie foto del giorno scelto.\nIl selfie viene confrontato sul server di Viva Maracanã e cancellato subito dopo la ricerca.",
+ gq_sfTirar:"Scatta il selfie",
+ gq_sfBusca:"Stiamo cercando le tue foto…",
+ gq_sfBuscaD:"Ci vuole meno di un minuto. Non chiudere questa pagina.",
+ gq_sfNao:"Non abbiamo trovato le tue foto in quel giorno",
+ gq_sfNaoD:"Prova un altro giorno o un altro selfie. Se ancora non le trovi, mandaci il selfie e il giorno della visita.",
+ gq_sfOutro:"Prova un altro giorno o selfie",
+ gq_sfIndisp:"La ricerca con il selfie non è disponibile adesso",
+ gq_sfIndispD:"Riprova tra qualche minuto.",
  gq_qrAponte:"Inquadra il QR del voucher o del biglietto",
  gq_qrImg:"Sei al computer? Carica l’immagine del QR",
  gq_qrNada:"Nessun QR in questa immagine. Provane un’altra o digita il codice.",
@@ -15291,6 +15384,10 @@ document.addEventListener('click',e=>{
     // galeria pública (#g/<token>): sem usuário, fora do WRITE_OPS
     case 'gq-code-go':pubCodigo();break;
     case 'gq-qr':gqQrAbre();break;
+    case 'gq-sf':{const p=state.pub;if(!p||!p.sf)break;p.ok=false;p.err=null;p.step='sf_dia';render();scrollTo(0,0);break;} // v99.108: selfie sem código
+    case 'gq-sf-go':{const p=state.pub;if(p&&p.step==='sf_dia')pubSfVai(p);break;}
+    case 'gq-sf-de-novo':{const p=state.pub;if(!p)break;p.err=null;p.step='sf_dia';render();break;}
+    case 'gq-sf-volta':{const p=state.pub;if(!p)break;selfieStop();clearTimeout(p.sfT);p.sfModo=false;p.sfPed=null;p.err=null;p.step='codigo';render();break;}
     case 'gq-mais':{const p=state.pub;if(!p)break;p.ok=false;p.step='consent';render();scrollTo(0,0);break;} // v96.1: selfie para as à venda em que a pessoa aparece
     case 'gv-tour':pubTourAbre(d.pid);break;
     case 'gv-go':{const p=state.pub;if(p&&p.ok&&!p.busy)pubVideoAceite(p);break;}
@@ -15298,7 +15395,8 @@ document.addEventListener('click',e=>{
       {const em=(($('#gq-esc-email')||{}).value||'').trim().toLowerCase();if(pubEscola(p))p.mkt=true; /* 18/11: na escola o aceite de novidades está na frase do responsável */else p.mkt=!!($('#gq-mkt-ck')||{}).checked; /* 25/11 (Ronaldo): novidades já vem marcado; desmarcado não vai ao RD Station */p.cli=Object.assign({},p.cli,{email:em});if(!GQ_EMAIL.test(em)){p.err=T('gq_emailBad');render();break;}p.err=null;} // 24/11 (Ronaldo): e-mail de todo cliente, não só da escola
       p.consentAt=now().toISOString();pubSelfieAbrir(p);render();break;}
     case 'gq-snap':{const sf=state.guest.selfie;const v=$('#gself-video');if(!sf||!v||!v.videoWidth)break;const w=Math.min(960,v.videoWidth);const c=mkc(w,w*v.videoHeight/v.videoWidth);c.getContext('2d').drawImage(v,0,0,c.width,c.height);pubMatch(c.toDataURL('image/jpeg',.9));break;}
-    case 'gq-retry':{const p=state.pub;if(!p)break;const t=pubTries(p);if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;}else if(p.motivo==='processando'&&p.modo==='agente'){p.step='consent';}else pubSelfieAbrir(p);render();break;}
+    case 'gq-retry':{const p=state.pub;if(!p)break;if(p.sfModo&&!p.token){pubSelfieAbrir(p);render();break;} // v99.108: câmera da selfie sem código
+      const t=pubTries(p);if(t.o.ate&&t.o.ate>Date.now()){p.step='nao';p.motivo='bloqueado';p.ate=t.o.ate;p.teto=false;}else if(p.motivo==='processando'&&p.modo==='agente'){p.step='consent';}else pubSelfieAbrir(p);render();break;}
     case 'gq-sel':{const p=state.pub;if(!p)break;p.sel[d.pid]=!p.sel[d.pid];render();break;}
     case 'gq-all':{const p=state.pub;if(!p)break;pubGaleria().fotos.filter(f=>f.direito==='venda').forEach(f=>p.sel[f.pid]=true);render();break;}
     case 'gq-buy':{const p=state.pub;if(!p)break;p.idem=pubUUID();p.pagM=null;p.err=null;p.step='pagar';render();scrollTo(0,0);break;}

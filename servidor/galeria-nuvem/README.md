@@ -95,6 +95,9 @@ aws wafv2 update-web-acl --region us-east-1 --scope CLOUDFRONT --name eterna-gal
 Rotas novas: `POST /g/<token>/pedido`, `GET /g/pedido/<ref>`, `GET /ponto/vendas-online` (segredo do ponto) e a conferência
 agendada a cada 5 min. Registros no DynamoDB: `PED#<ref>` (pedido), `PEDPEND` (pendentes), `VONL` (vendas pagas), `LEAD#<hash do e-mail>`.
 
+## Selfie sem código (v99.108)
+Plano `docs/planos/2026-11-27-selfie-na-galeria.md`. Rotas novas: `POST /g/selfie/dias|pedido|estado` (passam pela rota `/g/{token}/{acao}` que já existe) e `GET|POST /ponto/selfies` (segredo do estádio; o de teste não leva pedido). A busca é do servidor do estádio, com o reconhecimento de lá: a selfie não vai ao Rekognition. Ela fica só no item `SFQ` da fila e sai quando o estádio leva o pedido (ou em 10 min). Estado do pedido em `SFP#<pedido>` (1 h); `SFAG` guarda a última vez que o estádio levou a fila: sem isso há 2 min, a tela não oferece a opção. Precisa de `sam deploy` (o comando de "Instalar ou atualizar").
+
 ## Ligar no ponto
 Agente com `ETERNA_GALERIA_API=<EnderecoApi>`. No app, `GAL_API` aponta para a mesma URL: o celular fora do estádio usa a nuvem, e o computador do ponto continua usando o agente.
 

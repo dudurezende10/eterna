@@ -677,6 +677,78 @@ d2 = T.d.get(("LEADDIA", dia0), {})
 ok(rr["dias"] == 1 and d2.get("captados") == 3 and d2.get("rd") == 2 and d2.get("rd_novo") == 1 and d2.get("rd_existente") == 1, "recálculo refaz o dia: %r" % rr)
 rdstation.APP_SSM = rdstation.REFRESH_SSM = rdstation.ESTADO_SSM = ""
 rdstation.CHAVE_SSM, rdstation._chave = rd0[0], rd0[1]
+# v99.108: selfie sem código. A nuvem só guarda o pedido; o estádio leva a fila, procura e devolve o resultado.
+SF_JPG = base64.b64encode(b"\xff\xd8\xff\xe0" + b"selfie-dia" * 20).decode()
+hoje_v = app._dia_venue()
+st, r = chama("POST", "/g/selfie/dias", {})
+ok(st == 200 and r["ligada"] is False and len(r["dias"]) == 30 and r["dias"][0] == hoje_v, "selfie sem código: 30 dias e estádio desligado antes da primeira busca")
+pedido_sf = {"consentimento": True, "dia": hoje_v, "imagem": "data:image/jpeg;base64," + SF_JPG, "email": "Cli@Exemplo.com", "marketing": False, "idioma": "pt", "versao": "sf1"}
+st, r = chama("POST", "/g/selfie/pedido", pedido_sf, ip="7.7.7.1")
+ok(st == 503 and r["motivo"] == "indisponivel" and not [k for k in T.d if k[0] == "SFQ"], "estádio sem buscar a fila: pedido recusado e nada guardado")
+ok(chama("GET", "/ponto/selfies", None, {"x-eterna-ponto": "errado"})[0] == 401, "fila de selfies pede o segredo do estádio")
+st_t = app.SEGREDO_TESTE_SHA256
+app.SEGREDO_TESTE_SHA256 = __import__("hashlib").sha256(b"teste").hexdigest()
+ok(chama("GET", "/ponto/selfies", None, {"x-eterna-ponto": "teste"})[0] == 401, "o servidor de teste não leva selfie de cliente")
+app.SEGREDO_TESTE_SHA256 = st_t
+st, r = chama("GET", "/ponto/selfies", None, {"x-eterna-ponto": seg})
+ok(st == 200 and r["pedidos"] == [] and chama("POST", "/g/selfie/dias", {})[1]["ligada"] is True, "estádio buscou a fila: a tela pode oferecer")
+for k_, v_, cod_ in ((("consentimento", False), None, 400), (("dia", "2020-01-01"), None, 400), (("imagem", base64.b64encode(b"GIF89a....").decode()), None, 400),
+                     (("imagem", "x" * 400000), None, 413)):
+    st, r = chama("POST", "/g/selfie/pedido", dict(pedido_sf, **{k_[0]: k_[1]}), ip="7.7.7.2")
+    ok(st == cod_, "pedido recusado (%s): %s" % (k_[0], st))
+rek0 = (R.indexadas, sorted(k for k in T.d if k[0].startswith("IDX#")))
+R.search_faces_by_image, sfb0 = (lambda **k: (_ for _ in ()).throw(AssertionError("selfie no Rekognition"))), R.search_faces_by_image
+st, r = chama("POST", "/g/selfie/pedido", pedido_sf, ip="7.7.7.1")
+R.search_faces_by_image = sfb0
+ped = r.get("pedido")
+fila = [v for k, v in T.d.items() if k[0] == "SFQ"]
+ok(st == 200 and app._re_pedido.match(ped or "") and len(fila) == 1 and fila[0]["imagem"] == SF_JPG and fila[0]["dia"] == hoje_v, "pedido guardado na fila com a selfie e o dia")
+ok(rek0 == (R.indexadas, sorted(k for k in T.d if k[0].startswith("IDX#"))), "a selfie não vai ao Rekognition")
+con_sf = [v for k, v in T.d.items() if k[0] == "CON#SFDIA"]
+ok(con_sf and con_sf[-1]["email"] == "cli@exemplo.com" and con_sf[-1]["dia"] == hoje_v, "aceite guardado com o dia e o e-mail")
+ok(not any(v.get("imagem") for k, v in T.d.items() if k[0].startswith(("SFP#", "EVT#", "CON#"))), "selfie só no item da fila")
+st, r = chama("POST", "/g/selfie/estado", {"pedido": ped})
+ok(st == 200 and r["estado"] == "esperando", "cliente consulta: esperando")
+ok(chama("POST", "/g/selfie/estado", {"pedido": "x" * 24})[0] == 404, "pedido de outro número: vencido")
+st, r = chama("GET", "/ponto/selfies", None, {"x-eterna-ponto": seg})
+ok(st == 200 and len(r["pedidos"]) == 1 and r["pedidos"][0]["imagem"] == SF_JPG and r["pedidos"][0]["dia"] == hoje_v, "o estádio leva o pedido com a selfie")
+ok(not [k for k in T.d if k[0] == "SFQ"], "a selfie sai da nuvem quando o estádio leva")
+ok(chama("GET", "/ponto/selfies", None, {"x-eterna-ponto": seg})[1]["pedidos"] == [], "o mesmo pedido não sai duas vezes")
+ok(chama("POST", "/g/selfie/estado", {"pedido": ped})[1]["estado"] == "buscando", "cliente consulta: buscando")
+# achou: a galeria da selfie (origem selfie) já publicada; a nuvem dá o acesso a ela inteira
+tsf = "SfDia" + "q" * 17
+man_sf = {"token": tsf, "tipo": "sessao", "origem": "selfie", "expira": exp, "precos": {"dig": 30, "todas": 90}, "codigo": None,
+          "fotos": [{"id": "ag_c00001", "sessao": "LPAAA", "direito": "comprada", "canal": "loja"}, {"id": "ag_c00002", "sessao": "LPAAA", "direito": "venda"}]}
+st, r = chama("POST", "/ponto/galerias", {"manifesto": man_sf}, {"x-eterna-ponto": seg})
+ok(st == 200 and app.manifesto(tsf).get("origem") == "selfie", "a galeria da selfie mantém a origem na nuvem")
+ok(chama("POST", "/ponto/selfies", {"pedido": ped, "estado": "achou", "token": tok}, {"x-eterna-ponto": seg})[0] == 400, "achou com galeria que não é da selfie: recusado")
+ok(chama("POST", "/ponto/selfies", {"pedido": ped, "estado": "talvez"}, {"x-eterna-ponto": seg})[0] == 400, "estado desconhecido: recusado")
+st, r = chama("POST", "/ponto/selfies", {"pedido": ped, "estado": "achou", "token": tsf}, {"x-eterna-ponto": seg})
+ok(st == 200 and r["estado"] == "achou", "o estádio devolve achou")
+st, r = chama("POST", "/g/selfie/estado", {"pedido": ped})
+ok(st == 200 and r["estado"] == "achou" and r["token"] == tsf and r["n"] == 2 and r["acesso"], "cliente recebe a galeria e o acesso, sem código")
+st, g = chama("POST", "/g/%s/galeria" % tsf, {"acesso": r["acesso"]})
+fs = {f["pid"]: f for f in g["galeria"]["fotos"]}
+ok(st == 200 and set(fs) == {"ag_c00001", "ag_c00002"} and fs["ag_c00001"]["original"] and not fs["ag_c00002"]["original"],
+   "galeria normal: comprada liberada para baixar, a outra à venda")
+ok(chama("POST", "/ponto/selfies", {"pedido": ped, "estado": "nao"}, {"x-eterna-ponto": seg})[1]["estado"] == "achou", "resultado repetido não troca o estado")
+# não achou e o estádio que não responde
+st, r = chama("POST", "/g/selfie/pedido", pedido_sf, ip="7.7.7.3")
+ped2 = r["pedido"]
+chama("GET", "/ponto/selfies", None, {"x-eterna-ponto": seg})
+chama("POST", "/ponto/selfies", {"pedido": ped2, "estado": "nao"}, {"x-eterna-ponto": seg})
+r = chama("POST", "/g/selfie/estado", {"pedido": ped2})[1]
+ok(r["estado"] == "nao" and "token" not in r, "não achou: só o estado, nada guardado")
+st, r = chama("POST", "/g/selfie/pedido", pedido_sf, ip="7.7.7.4")
+ped3 = r["pedido"]
+T.d[("SFP#" + ped3, "M")]["criado"] -= 700
+r = chama("POST", "/g/selfie/estado", {"pedido": ped3})[1]
+ok(r["estado"] == "indisponivel" and not [k for k in T.d if k[0] == "SFQ"], "10 min sem o estádio: indisponível e a selfie apagada")
+for i in range(7):
+    st, r = chama("POST", "/g/selfie/pedido", pedido_sf, ip="7.7.7.9")
+ok(st == 429 and r["motivo"] == "bloqueado", "6 pedidos por IP por hora")
+for k in [k for k in T.d if k[0] == "SFQ"]:
+    T.d.pop(k)
 # auditoria diária: e-mail só com o segredo do ponto, destino fixo, conteúdo escapado
 mf0 = app.MAIL_FROM
 app.MAIL_FROM = "fotos@exemplo.com"

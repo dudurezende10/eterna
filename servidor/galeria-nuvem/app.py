@@ -20,6 +20,12 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   GET  /ponto/eventos?tokens=     o agente busca quando o cliente abriu, deu play e baixou (segredo do ponto)
   GET  /ponto/leads?de=&ate=      leads por dia para o painel de gestão: só números, nenhum e-mail (segredo do ponto) (26/11)
   GET  /rd/callback?code=&state=  volta da autorização do aplicativo Eterna no RD Station (OAuth, 26/11)
+  Selfie sem código (v99.108, plano docs/planos/2026-11-27-selfie-na-galeria.md): o servidor do estádio procura, a nuvem só guarda o pedido
+  POST /g/selfie/dias             os dias que podem ser escolhidos e se o estádio está buscando pedidos (sem isso a tela não oferece)
+  POST /g/selfie/pedido           {consentimento, dia, imagem, email, marketing}: guarda o pedido na fila -> {pedido}
+  POST /g/selfie/estado           {pedido}: esperando, buscando, achou (token e acesso da galeria), nao, varias, sem_rosto, erro, indisponivel
+  GET  /ponto/selfies             o agente leva os pedidos da fila; a selfie sai da nuvem nesse momento (segredo do estádio)
+  POST /ponto/selfies             o agente devolve o resultado {pedido, estado, token} (segredo do estádio)
   Escola pelo voucher (17/11, plano docs/planos/2026-11-17-escola-pelo-voucher.md):
   GET  /g/codigo/<localizador>    o localizador do voucher de escola abre a galeria da visita (mesma rota do código)
   POST /g/<token>/cortesia        {acesso, foto, email}: a foto grátis da criança (uma por criança, até as pessoas do voucher)
@@ -791,7 +797,7 @@ def lead(email, idioma, token, marketing, versao, ref=None, origem="compra"):
     só quem marcou vai para o RD Station (25/11: fila RDPEND, rd_fila; uma vez por origem)."""
     k = {"pk": "LEAD#" + hashlib.sha256(email.encode()).hexdigest()[:32], "sk": "M"}
     velho = item(k["pk"]) or {}
-    gs = set(json.loads(velho.get("galerias") or "[]")) | {token}
+    gs = set(json.loads(velho.get("galerias") or "[]")) | ({token} if token else set())   # 27/11: selfie sem código chega sem galeria
     peds = (json.loads(velho.get("pedidos") or "[]") + ([ref] if ref else []))[-50:]
     novo = {**k, "email": email, "idioma": idioma, "galerias": json.dumps(sorted(gs)[-50:]), "pedidos": json.dumps(peds),
             "primeiro": velho.get("primeiro") or iso(), "ultimo": iso(), "ttl": int(time.time() + PED_DIAS * 86400)}
@@ -1337,8 +1343,8 @@ def publicar(ev, corpo):
             "menor": bool(m.get("menor")), "criada": str(m.get("criada") or iso())[:40], "expira": str(m.get("expira") or "")[:40],
             "precos": {"dig": max(0.0, float(pr.get("dig") or 0)), "todas": max(0.0, float(pr.get("todas") or 0))},
             "catalogo": catalogo_ok(m.get("catalogo")), "fotos": fotos}
-    if m.get("origem") == "ativ":                         # v99.23: galeria do Tour montada pela foto da venda de uma ativação
-        novo["origem"] = "ativ"
+    if m.get("origem") in ("ativ", "selfie"):             # v99.23: fotos do Tour pela foto da venda; v99.108: pela selfie sem código
+        novo["origem"] = m["origem"]
     if vo:
         novo["voucher"] = vo
     velho = manifesto(m["token"])
@@ -1494,6 +1500,155 @@ def cortesia(token, m, corpo, ip, pids):
     return resp({"ok": True, "foto": foto, "galeria": galeria_obj(token, m, pids, foto)})
 
 
+# ---------- v99.108: selfie sem código (plano docs/planos/2026-11-27-selfie-na-galeria.md) ----------
+# A selfie fica só no item da fila (SFQ), nunca no Rekognition nem no S3. O agente do estádio leva a fila de 10 em 10 s e, ao levar,
+# a selfie sai daqui. Sem busca em 10 min, a selfie é apagada e o pedido fica "indisponivel". SFP#<pedido> guarda só o estado (1 h).
+SELFIE_DIAS = 30                 # o servidor do estádio guarda 30 dias de fotos
+SELFIE_ESPERA = 600              # s sem resposta do estádio: indisponível (e a selfie é apagada)
+SELFIE_TTL = 3600                # o estado do pedido some em 1 h
+SELFIE_MAX = 350_000             # caracteres da selfie em base64 (o celular manda 640 px); cabe num item do DynamoDB
+SELFIE_VIVO = 120                # o estádio conta como ligado se levou a fila nos últimos 2 min
+SELFIE_LOTE = 5
+LIMITE_SELFIE_DIA = int(os.environ.get("LIMITE_SELFIE_DIA", "3000"))
+SELFIE_FIM = ("achou", "nao", "varias", "sem_rosto", "erro")
+_re_pedido = re.compile(r"^[A-Za-z0-9_-]{24}$")
+
+
+def selfie_dias(t=None):
+    """Os dias que o cliente pode escolher (venue): hoje e os 29 anteriores, do mais novo para o mais velho."""
+    t = time.time() if t is None else t
+    return [_dia_venue(t - i * 86400) for i in range(SELFIE_DIAS)]
+
+
+def selfie_estadio_ligado():
+    it = item("SFAG") or {}
+    return time.time() - float(it.get("em") or 0) <= SELFIE_VIVO
+
+
+def ponto_estadio(ev):
+    """Só o segredo do estádio: o servidor de teste não leva a selfie de um cliente de verdade."""
+    seg = (ev.get("headers") or {}).get("x-eterna-ponto", "")
+    h = hashlib.sha256(seg.encode()).hexdigest() if seg else ""
+    return bool(h) and hmac.compare_digest(h, SEGREDO_PONTO_SHA256)
+
+
+def selfie_estado(corpo):
+    pid = str(corpo.get("pedido") or "")
+    it = item("SFP#" + pid) if _re_pedido.match(pid) else None
+    if not it or int(it.get("ttl") or 0) < time.time():
+        return resp({"estado": "vencido"}, 404)
+    est = it.get("estado")
+    if est in ("esperando", "buscando") and time.time() - float(it.get("criado") or 0) > SELFIE_ESPERA:
+        if it.get("fq"):
+            TABELA.delete_item(Key={"pk": "SFQ", "sk": it["fq"]})          # a selfie que ninguém levou sai agora
+        TABELA.update_item(Key={"pk": "SFP#" + pid, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "indisponivel"})
+        est = "indisponivel"
+    out = {"estado": est, "dia": it.get("dia")}
+    if est == "achou":
+        out.update({"token": it["token"], "acesso": it["acesso"], "exp": iso(int(it["exp"])), "n": int(it.get("n") or 0)})
+    return resp(out)
+
+
+def selfie_pedido(corpo, ip):
+    if corpo.get("consentimento") is not True:
+        return resp({"error": "consentimento obrigatório"}, 400)
+    dia = str(corpo.get("dia") or "")
+    if dia not in selfie_dias():
+        return resp({"error": "dia inválido", "campo": "dia"}, 400)
+    img = corpo.get("imagem")
+    if not isinstance(img, str) or not img:
+        return resp({"error": "sem imagem"}, 400)
+    img = img.split(",", 1)[-1]
+    if len(img) > SELFIE_MAX:
+        return resp({"error": "imagem grande demais"}, 413)
+    try:
+        jpeg = base64.b64decode(img[:16])[:2] == b"\xff\xd8"
+    except Exception:
+        jpeg = False
+    if not jpeg:
+        return resp({"error": "imagem inválida"}, 400)
+    if not contar("SFI#" + ip_hash(ip), 3600, 6):
+        return resp({"motivo": "bloqueado", "ate": iso(time.time() // 3600 * 3600 + 3600)}, 429)
+    if not selfie_estadio_ligado():
+        return resp({"ok": False, "motivo": "indisponivel"}, 503)
+    if not contar("SFD", 86400, LIMITE_SELFIE_DIA):
+        evento("selfie-dia", "selfie_dia_teto", ip)
+        return resp({"ok": False, "motivo": "indisponivel"}, 503)
+    agora = time.time()
+    pid = secrets.token_urlsafe(18)
+    fq = "%s#%s" % (iso(agora), pid)
+    idioma, versao = str(corpo.get("idioma") or "pt")[:2], str(corpo.get("versao") or "")[:20]
+    con = {"pk": "CON#SFDIA", "sk": "%s#%s" % (iso(agora), secrets.token_hex(3)), "tipo": "titular", "versao": versao, "idioma": idioma,
+           "dia": dia, "ttl": int(agora + 400 * 86400)}
+    em = str(corpo.get("email") or "").strip().lower()[:190]
+    if EMAIL_RE.match(em):                               # como no aceite da galeria (24/11): o e-mail junto do consentimento
+        con["email"] = em
+    TABELA.put_item(Item=con)
+    if EMAIL_RE.match(em):
+        lead(em, idioma, None, corpo.get("marketing") is True, versao, origem="selfie")
+    TABELA.put_item(Item={"pk": "SFQ", "sk": fq, "pedido": pid, "dia": dia, "imagem": img, "ttl": int(agora + SELFIE_ESPERA + 300)})
+    TABELA.put_item(Item={"pk": "SFP#" + pid, "sk": "M", "estado": "esperando", "dia": dia, "criado": int(agora), "fq": fq,
+                          "ttl": int(agora + SELFIE_TTL)})
+    img = None
+    corpo.pop("imagem", None)
+    evento("selfie-dia", "selfie_dia_pedido", ip, dia=dia)
+    return resp({"ok": True, "pedido": pid, "estado": "esperando"})
+
+
+def selfie_cliente(acao, corpo, ip):
+    if acao == "dias":
+        if not contar("SFX#" + ip_hash(ip), 60, 30):
+            return resp({"motivo": "bloqueado"}, 429)
+        return resp({"ok": True, "dias": selfie_dias(), "ligada": selfie_estadio_ligado()})
+    if acao == "estado":
+        if not contar("SFE#" + ip_hash(ip), 60, 40):
+            return resp({"motivo": "bloqueado"}, 429)
+        return selfie_estado(corpo)
+    if acao == "pedido":
+        return selfie_pedido(corpo, ip)
+    return resp({"error": "not found"}, 404)
+
+
+def selfie_ponto(ev, corpo, metodo):
+    if not ponto_estadio(ev):
+        return resp({"error": "não autorizado"}, 401)
+    agora = time.time()
+    if metodo == "GET":
+        TABELA.put_item(Item={"pk": "SFAG", "sk": "M", "em": int(agora), "ttl": int(agora + 86400)})
+        out = []
+        for x in TABELA.query(KeyConditionExpression=Key("pk").eq("SFQ"), Limit=SELFIE_LOTE).get("Items", []):
+            TABELA.delete_item(Key={"pk": "SFQ", "sk": x["sk"]})               # a selfie sai da nuvem aqui
+            p = item("SFP#" + x["pedido"])
+            if agora - epoch(x["sk"].split("#")[0]) > SELFIE_ESPERA or not p or p.get("estado") != "esperando":
+                continue
+            TABELA.update_item(Key={"pk": "SFP#" + x["pedido"], "sk": "M"}, UpdateExpression="SET estado = :e, fq = :f",
+                               ExpressionAttributeValues={":e": "buscando", ":f": ""})
+            out.append({"pedido": x["pedido"], "dia": x["dia"], "imagem": x["imagem"]})
+        return resp({"pedidos": out})
+    pid, est = str(corpo.get("pedido") or ""), str(corpo.get("estado") or "")
+    p = item("SFP#" + pid) if _re_pedido.match(pid) else None
+    if not p or est not in SELFIE_FIM:
+        return resp({"error": "pedido inválido"}, 400)
+    if p.get("estado") != "buscando":
+        return resp({"ok": True, "estado": p.get("estado")})
+    if est == "achou":
+        tok = str(corpo.get("token") or "")
+        m = manifesto(tok) if _re_token.match(tok) else None
+        if not m or m.get("origem") != "selfie" or expirou(m) or not m["fotos"]:
+            return resp({"error": "galeria inválida"}, 400)
+        acesso = secrets.token_urlsafe(24)
+        exp = int(min(agora + ACESSO_TTL, epoch(m["expira"]) or agora + ACESSO_TTL))
+        TABELA.put_item(Item={"pk": "ACE#" + acesso, "sk": "M", "token": tok, "pids": json.dumps(sorted(f["id"] for f in m["fotos"])),
+                              "exp": exp, "ttl": exp})
+        TABELA.update_item(Key={"pk": "SFP#" + pid, "sk": "M"}, UpdateExpression="SET estado = :e, #tk = :t, acesso = :a, #ex = :x, #n = :n",
+                           ExpressionAttributeNames={"#tk": "token", "#ex": "exp", "#n": "n"}, ExpressionAttributeValues={":e": est, ":t": tok, ":a": acesso, ":x": exp, ":n": len(m["fotos"])})
+        evento(tok, "selfie_dia_achou", "", fotos=len(m["fotos"]))
+    else:
+        TABELA.update_item(Key={"pk": "SFP#" + pid, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": est})
+        evento("selfie-dia", "selfie_dia_" + est, "", dia=p.get("dia"))
+    return resp({"ok": True, "estado": est})
+
+
 def handler(ev, ctx):
     if ev.get("limpeza"):                                 # agendada, uma vez por dia
         try:
@@ -1554,7 +1709,11 @@ def handler(ev, ctx):
         return leads_ponto(ev)
     if caminho == "/rd/callback" and metodo == "GET":
         return rd_callback(ev)
+    if caminho == "/ponto/selfies" and metodo in ("GET", "POST"):
+        return selfie_ponto(ev, corpo, metodo)
     partes = caminho.split("/")                           # ['', 'g', token, ação]
+    if len(partes) == 4 and partes[1] == "g" and partes[2] == "selfie" and metodo == "POST":   # v99.108: selfie sem código
+        return selfie_cliente(partes[3], corpo, ip)
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "codigo" and metodo == "GET":
         if not contar("COD#" + ip_hash(ip), 60, 30):
             return resp({"motivo": "bloqueado"}, 429)
