@@ -13828,7 +13828,7 @@ _backup_vistos = {}
 
 def backup_arquivos_lista():
     out = [INDEX, METRICAS_ARQ, LGPD_EXCLUIDAS, LGPD_LOG, FF_FUNCAO, AF_FONTE, VIS_LOG, VIS_CALIB, IMP_FILA, FUNDOS_MODO_CFG]
-    for pasta, so in ((SESS_DIR, None), (MET_DIR, None), (GALERIAS, "sessao.json")):
+    for pasta, so in ((SESS_DIR, None), (MET_DIR, None), (GALERIAS, "sessao.json"), (PESSOAS_DIR, None)):
         for raiz, _dirs, arqs in os.walk(pasta):
             out += [os.path.join(raiz, a) for a in arqs if (so is None and not a.endswith(".tmp") and a != SESS_NUM_MARCA) or a == so]
     return [a for a in out if os.path.isfile(a)]
@@ -15543,43 +15543,178 @@ def pessoas_rostos(dia):
 
 
 PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronaldo): a contagem do dia roda às 19h, com o tour encerrado
+# 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
+# 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
+# no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
+PESSOAS_V = 3
+PESSOAS_DIR = os.environ.get("ETERNA_PESSOAS_DIR") or os.path.join(os.path.dirname(os.path.realpath(INBOX)), "contagens", "pessoas")
+PESSOAS_REFAZ_SEG = 600          # hoje: refaz se chegaram fotos depois da conta ou se a leitura de rostos não tinha terminado
 _pessoas_cache = {}
 _pessoas_lock = threading.Lock()
 
 
+def _pessoas_arq(dia):
+    return os.path.join(PESSOAS_DIR, dia + ".json")
+
+
+def pessoas_disco_ler(dia):
+    """{v, calc_em, resultado, auditoria} gravado no HD, ou None (sem arquivo, versão antiga ou arquivo que não abre)."""
+    try:
+        with open(_pessoas_arq(dia), encoding="utf8") as f:
+            j = json.load(f)
+        return j if isinstance(j, dict) and j.get("v") == PESSOAS_V and isinstance(j.get("resultado"), dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _pessoas_disco_grava(dia, res, aud):
+    j = {"v": PESSOAS_V, "dia": dia, "calc_em": _iso(), "resultado": res, "auditoria": aud}
+    try:
+        os.makedirs(PESSOAS_DIR, exist_ok=True)
+        tmp = _pessoas_arq(dia) + ".tmp"
+        with open(tmp, "w", encoding="utf8") as f:
+            json.dump(j, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, _pessoas_arq(dia))
+    except OSError as ex:
+        print("  pessoas de %s: não gravou no HD (%s)" % (dia, ex))
+    return j
+
+
 def pessoas_dia(dia):
-    """A contagem de pessoas do dia, guardada: calculada uma vez por dia e por uma tarefa só. A de hoje só sai pelo
-    pessoas_loop depois das PESSOAS_HORA; antes disso (e enquanto outra conta) volta None, sem ocupar o processador."""
+    """A contagem de pessoas do dia: da memória, do HD ou (dia passado sem arquivo) calculada agora e gravada. A de hoje só sai
+    pelo pessoas_loop depois das PESSOAS_HORA; antes disso (e enquanto outra conta) volta None, sem ocupar o processador."""
     if dia in _pessoas_cache:
-        return _pessoas_cache[dia]
+        return _pessoas_cache[dia]["resultado"]
+    j = pessoas_disco_ler(dia)
+    if j:
+        _pessoas_cache[dia] = j
+        return j["resultado"]
     if dia >= _ff_hoje() or not _pessoas_lock.acquire(blocking=False):
         return None
     try:
-        r = _pessoas_dia_calc(dia)
-        if r is not None:
-            _pessoas_cache[dia] = r
-        return r
+        j = pessoas_contar(dia)
+        return j["resultado"] if j else None
     finally:
         _pessoas_lock.release()
 
 
+def pessoas_contar(dia, forcar=False):
+    """Conta, audita, grava no HD e guarda na memória (chamar com o _pessoas_lock). None se não deu para ler os rostos."""
+    t0 = time.time()
+    r = _pessoas_dia_calc(dia, forcar=forcar)
+    if r is None:
+        return None
+    res, aud = r
+    aud["segundos"] = round(time.time() - t0, 1)
+    j = _pessoas_disco_grava(dia, res, aud)
+    _pessoas_cache[dia] = j
+    print("  pessoas de %s: %s · auditoria %s%s (%.0f s)" % (dia, res.get("pessoas"), aud.get("situacao"),
+          (": " + "; ".join(aud.get("ressalvas") or [])) if aud.get("ressalvas") else "", aud["segundos"]))
+    return j
+
+
+def _pessoas_hoje_refazer(hoje):
+    """Hoje depois das PESSOAS_HORA: conta se não há conta, e refaz (no máximo a cada PESSOAS_REFAZ_SEG) se a leitura de rostos
+    não tinha terminado ou se chegaram fotos depois da última conta."""
+    j = _pessoas_cache.get(hoje) or pessoas_disco_ler(hoje)
+    if not j:
+        return True
+    a = j.get("auditoria") or {}
+    if time.time() - _epoch(j.get("calc_em") or "") < PESSOAS_REFAZ_SEG:
+        return False
+    return bool(a.get("fotos_sem_leitura") or a.get("fila_leitura")) or _pessoas_fotos_do_dia(hoje) != a.get("fotos_do_dia")
+
+
 def pessoas_loop():
-    """25/11 (Ronaldo): "pode rodar por cron às 19h? o tour já acabou nesse horário". Uma vez por dia, depois das PESSOAS_HORA."""
+    """25/11 (Ronaldo): "pode rodar por cron às 19h? o tour já acabou nesse horário". Hoje depois das PESSOAS_HORA (e de novo se
+    faltava foto); ontem uma vez, se o HD ainda não tem a conta v3 (26/11: "reconta o de ontem")."""
     while True:
         time.sleep(60)
-        hoje = _ff_hoje()
-        if hoje in _pessoas_cache or time.localtime().tm_hour < PESSOAS_HORA or not _pessoas_lock.acquire(blocking=False):
+        hoje, ontem = _ff_hoje(), _ff_hoje(time.time() - 86400)
+        fazer = []
+        if not pessoas_disco_ler(ontem):
+            fazer.append((ontem, False))
+        if time.localtime().tm_hour >= PESSOAS_HORA and _pessoas_hoje_refazer(hoje):
+            fazer.append((hoje, True))
+        if not fazer or not _pessoas_lock.acquire(blocking=False):
             continue
         try:
-            t0 = time.time()
-            r = _pessoas_dia_calc(hoje, forcar=True)
-            if r is not None:
-                _pessoas_cache[hoje] = r
-                print("  pessoas de %s: %s (%.0f s)" % (hoje, r.get("pessoas"), time.time() - t0))
-        except Exception as e:
-            print("  pessoas de %s: falhou (%s)" % (hoje, e))
+            for dia, forcar in fazer:
+                try:
+                    pessoas_contar(dia, forcar=forcar)
+                except Exception as e:
+                    print("  pessoas de %s: falhou (%s)" % (dia, e))
         finally:
             _pessoas_lock.release()
+
+
+def _pessoas_fotos_do_dia(dia):
+    with lock:
+        return sum(1 for e in lib.values() if os.path.basename(os.path.dirname(e.get("file") or "")) == dia)
+
+
+def _pessoas_vendidas(dia):
+    """Sessões (card) das vendas pagas e não canceladas do dia, com as sessões juntadas pela selfie."""
+    V = {}
+    for e in _ev_ler(dia):
+        v = V.setdefault(e["venda"], {"cards": set(), "paga": False, "cancelada": False})
+        if e["tipo"] == "criar":
+            d = e["dados"] or {}
+            v["cards"].update(x for x in [d.get("card")] + list(d.get("sessoes") or []) if isinstance(x, str) and x)
+        elif e["tipo"] == "pagar":
+            v["paga"] = True
+        elif e["tipo"] == "cancelar":
+            v["cancelada"] = True
+    out = set()
+    for v in V.values():
+        if v["paga"] and not v["cancelada"]:
+            out |= v["cards"]
+    return out
+
+
+def _pessoas_auditoria(dia, rows, P, sess):
+    """26/11 (Ronaldo: "gera uma auditoria sempre após essa recontagem"). Confere se a conta pode ser usada:
+    1. leitura: todas as fotos do dia com rostos lidos e a fila de leitura vazia;
+    2. sessões: cada sessão com rosto tem ao menos um cliente contado (as que não têm somam 1 pessoa cada, veja pessoas_dia_calc);
+    3. vendas: toda sessão vendida tem rosto e cliente contado;
+    4. grupos: nenhum "cliente" com fotos demais (sinal de pessoas diferentes juntadas)."""
+    cli = [p for p in P if not p["equipe"]]
+    fotos_dia = _pessoas_fotos_do_dia(dia)
+    try:
+        db = rostos_db()
+        try:
+            lidas = db.execute("select count(*) from foto where dia = ?", (dia,)).fetchone()[0]
+        finally:
+            db.close()
+    except Exception:
+        lidas = None
+    fila = fila_rostos.qsize() if dia >= _ff_hoje() else 0
+    ses_rosto = {sess.get(r[0]) for r in rows} - {None}
+    ses_cli = set().union(*[p["cards"] for p in cli]) if cli else set()
+    sem_cli = ses_rosto - ses_cli
+    vend = _pessoas_vendidas(dia)
+    vend_sem_rosto = vend - ses_rosto
+    vend_sem_cli = (vend & ses_rosto) - ses_cli
+    maiores = sorted((len(p["pids"]) for p in cli), reverse=True)[:5]
+    sem_leitura = max(0, fotos_dia - (lidas or 0)) if lidas is not None else None
+    ress = []
+    if sem_leitura:
+        ress.append("%d fotos do dia sem leitura de rostos" % sem_leitura)
+    if fila:
+        ress.append("%d fotos na fila de leitura" % fila)
+    if vend_sem_rosto:
+        ress.append("%d sessões vendidas sem nenhum rosto lido" % len(vend_sem_rosto))
+    if vend_sem_cli:
+        ress.append("%d sessões vendidas sem cliente contado" % len(vend_sem_cli))
+    if maiores and maiores[0] > 300:
+        ress.append("um cliente com %d fotos (possível junção de pessoas diferentes)" % maiores[0])
+    if rows and len(sem_cli) > 0.5 * len(ses_rosto):
+        ress.append("%d de %d sessões com rosto sem cliente contado" % (len(sem_cli), len(ses_rosto)))
+    return {"situacao": "confiável" if not ress else "com ressalvas", "ressalvas": ress,
+            "fotos_do_dia": fotos_dia, "fotos_lidas": lidas, "fotos_sem_leitura": sem_leitura, "fila_leitura": fila,
+            "sessoes_com_rosto": len(ses_rosto), "sessoes_com_cliente": len(ses_rosto & ses_cli), "sessoes_sem_cliente": len(sem_cli),
+            "sessoes_vendidas": len(vend), "vendidas_sem_rosto": sorted(vend_sem_rosto)[:50], "vendidas_sem_cliente": sorted(vend_sem_cli)[:50],
+            "maiores_clientes_fotos": maiores}
 
 
 def _pessoas_dia_calc(dia, forcar=False):
@@ -15593,14 +15728,20 @@ def _pessoas_dia_calc(dia, forcar=False):
         np, rows, boas = _pessoas_le(dia)
     except Exception:
         return None
-    vazio = {"v": 2, "rostos": 0, "fotos_com_rosto": 0, "pessoas": 0, "equipe": 0, "sem_identificar": 0, "pessoas_perto": 0, "uma_foto": 0, "duas_ou_mais": 0}
-    if not rows:
-        return vazio
-    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia))
+    sess = _pessoas_sessoes(dia)
+    P, sem_id = _pessoas_agrupa(rows, np, boas, sess) if rows else ([], 0)
+    aud = _pessoas_auditoria(dia, rows, P, sess)
     cli = [p for p in P if not p["equipe"]]
-    return {"v": 2, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli), "equipe": len(P) - len(cli),
+    # 26/11 (Ronaldo: 166 pessoas para 524 sessões não fecha): só rosto frontal e nítido cria pessoa, então a sessão em que
+    # ninguém passou nesse filtro não contava ninguém. Cada sessão com rosto e sem cliente contado soma 1 pessoa (havia
+    # alguém ali). "pessoas_grupos" é a conta só pelos rostos, como antes.
+    sem_cli = aud["sessoes_sem_cliente"]
+    return {"v": 3, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli) + sem_cli,
+            "pessoas_grupos": len(cli), "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
-            "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2)}
+            "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2),
+            "auditoria": {k: aud[k] for k in ("situacao", "ressalvas", "fotos_do_dia", "fotos_sem_leitura", "sessoes_com_rosto",
+                                               "sessoes_com_cliente", "sessoes_vendidas") if k in aud}}, aud
 
 
 def selfies_dia(dia):
