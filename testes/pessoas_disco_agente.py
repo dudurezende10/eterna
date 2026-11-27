@@ -42,7 +42,7 @@ r = m.pessoas_dia(ontem)
 arq = os.path.join(os.environ["ETERNA_PESSOAS_DIR"], ontem + ".json")
 ok(r and r["pessoas"] == 4 and os.path.exists(arq), "dia passado calculado e gravado no HD")
 j = json.load(open(arq, encoding="utf8"))
-ok(j["v"] == 3 and j["auditoria"]["situacao"] == "com ressalvas" and "segundos" in j["auditoria"], "o arquivo traz a auditoria junto")
+ok(j["v"] == m.PESSOAS_V and j["auditoria"]["situacao"] == "com ressalvas" and "segundos" in j["auditoria"], "o arquivo traz a auditoria junto")
 ok(not any("@" in json.dumps(j) for _ in [0]), "sem e-mail no arquivo")
 # 2. reinício do agente (memória vazia): lê do HD, sem recalcular
 m._pessoas_cache.clear()
@@ -63,8 +63,8 @@ ok(m._pessoas_hoje_refazer(hoje) is False, "conta antiga com as mesmas fotos e l
 m._pessoas_fotos_do_dia = lambda dia: 12
 ok(m._pessoas_hoje_refazer(hoje) is True, "chegaram fotos depois da conta: refaz")
 # 5. arquivo de versão antiga não vale (ontem é recontado)
-json.dump({"v": 2, "resultado": {"pessoas": 1}}, open(arq, "w", encoding="utf8"))
-ok(m.pessoas_disco_ler(ontem) is None, "conta v2 no HD não vale: ontem é recontado")
+json.dump({"v": m.PESSOAS_V - 1, "resultado": {"pessoas": 1}}, open(arq, "w", encoding="utf8"))
+ok(m.pessoas_disco_ler(ontem) is None, "conta de versão antiga no HD não vale: ontem é recontado")
 # 6. auditoria de verdade com dados montados (sem OpenCV): sessão vendida sem cliente vira ressalva
 m._pessoas_fotos_do_dia = lambda dia: 4
 m._pessoas_vendidas = lambda dia: {"LPB"}

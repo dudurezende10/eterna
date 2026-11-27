@@ -15444,6 +15444,10 @@ PESSOA_SEMENTE = 60
 PESSOA_JUNTA = 0.40
 PESSOA_SESSAO = 0.25
 PESSOA_EQUIPE = 4
+# 26/11 (Ronaldo, números confiáveis): em 25/11 59 "pessoas da equipe" saíram da conta: a família fotografada em 4 pontos do tour
+# também tinha 4 sessões. Equipe agora é quem tem PESSOA_EQUIPE sessões ou mais espalhadas por PESSOA_EQUIPE_HORAS ou mais (a
+# visita leva menos que isso; fotógrafo, guia e supervisor ficam o dia todo).
+PESSOA_EQUIPE_HORAS = 3
 
 
 def _pessoas_sessoes(dia):
@@ -15461,7 +15465,20 @@ def _pessoas_sessoes(dia):
     return out
 
 
-def _pessoas_agrupa(rows, np, boas=None, sess=None):
+def _pessoas_tempos(rows):
+    """{pid: hora de chegada da foto (mtime do original)} das fotos com rosto."""
+    with lock:
+        arqs = {r[0]: (lib.get(r[0]) or {}).get("file") for r in rows}
+    out = {}
+    for pid, a in arqs.items():
+        try:
+            out[pid] = os.path.getmtime(a) if a else None
+        except OSError:
+            pass
+    return out
+
+
+def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
     """rows = [(pid, largura, emb)]; boas = set de emb (bytes) frontais e nítidos; sess = {pid: card}.
     -> lista de pessoas {pids:set, cards:set, maior, rep:(pid, vetor), equipe} e quantos rostos ficaram sem identificar."""
     boas = boas or set()
@@ -15516,8 +15533,10 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None):
     for g in G:
         r0 = max(g["m"], key=lambda k: larg[k])
         cs = {sess.get(rows[k][0]) for k in g["m"]} - {None}
+        ts = [t for t in ((tempos or {}).get(p) for p in g["pids"]) if t]
+        longe = (max(ts) - min(ts) >= PESSOA_EQUIPE_HORAS * 3600) if ts else tempos is None
         out.append({"pids": g["pids"], "cards": cs, "maior": max(larg[k] for k in g["m"]), "rep": (rows[r0][0], M[r0]),
-                    "equipe": len(cs) >= PESSOA_EQUIPE})
+                    "equipe": len(cs) >= PESSOA_EQUIPE and longe})
     out.sort(key=lambda p: -p["maior"])
     return out, sem_id
 
@@ -15542,7 +15561,7 @@ def pessoas_rostos(dia):
         return None
     if not rows:
         return {"ok": True, "dia": dia, "pessoas": []}
-    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia))
+    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia), _pessoas_tempos(rows))
     rep = [p["rep"] for p in P]
     cv2 = _cv["cv2"]
     out = []
@@ -15591,7 +15610,7 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
-PESSOAS_V = 3
+PESSOAS_V = 4
 PESSOAS_DIR = os.environ.get("ETERNA_PESSOAS_DIR") or os.path.join(os.path.dirname(os.path.realpath(INBOX)), "contagens", "pessoas")
 PESSOAS_REFAZ_SEG = 600          # hoje: refaz se chegaram fotos depois da conta ou se a leitura de rostos não tinha terminado
 _pessoas_cache = {}
@@ -15751,6 +15770,9 @@ def _pessoas_auditoria(dia, rows, P, sess):
         ress.append("%d sessões vendidas sem nenhum rosto lido" % len(vend_sem_rosto))
     if vend_sem_cli:
         ress.append("%d sessões vendidas sem cliente contado" % len(vend_sem_cli))
+    eq = len(P) - len(cli)
+    if eq > 25:
+        ress.append("%d pessoas tratadas como equipe (esperado até 25)" % eq)
     if maiores and maiores[0] > 300:
         ress.append("um cliente com %d fotos (possível junção de pessoas diferentes)" % maiores[0])
     if rows and len(sem_cli) > 0.5 * len(ses_rosto):
@@ -15759,7 +15781,7 @@ def _pessoas_auditoria(dia, rows, P, sess):
             "fotos_do_dia": fotos_dia, "fotos_lidas": lidas, "fotos_sem_leitura": sem_leitura, "fila_leitura": fila,
             "sessoes_com_rosto": len(ses_rosto), "sessoes_com_cliente": len(ses_rosto & ses_cli), "sessoes_sem_cliente": len(sem_cli),
             "sessoes_vendidas": len(vend), "vendidas_sem_rosto": sorted(vend_sem_rosto)[:50], "vendidas_sem_cliente": sorted(vend_sem_cli)[:50],
-            "maiores_clientes_fotos": maiores}
+            "maiores_clientes_fotos": maiores, "equipe": eq}
 
 
 def _pessoas_dia_calc(dia, forcar=False):
@@ -15774,14 +15796,14 @@ def _pessoas_dia_calc(dia, forcar=False):
     except Exception:
         return None
     sess = _pessoas_sessoes(dia)
-    P, sem_id = _pessoas_agrupa(rows, np, boas, sess) if rows else ([], 0)
+    P, sem_id = _pessoas_agrupa(rows, np, boas, sess, _pessoas_tempos(rows)) if rows else ([], 0)
     aud = _pessoas_auditoria(dia, rows, P, sess)
     cli = [p for p in P if not p["equipe"]]
     # 26/11 (Ronaldo: 166 pessoas para 524 sessões não fecha): só rosto frontal e nítido cria pessoa, então a sessão em que
     # ninguém passou nesse filtro não contava ninguém. Cada sessão com rosto e sem cliente contado soma 1 pessoa (havia
     # alguém ali). "pessoas_grupos" é a conta só pelos rostos, como antes.
     sem_cli = aud["sessoes_sem_cliente"]
-    return {"v": 3, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli) + sem_cli,
+    return {"v": 4, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli) + sem_cli,
             "pessoas_grupos": len(cli), "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
             "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2),
