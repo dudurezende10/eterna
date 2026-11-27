@@ -5111,15 +5111,15 @@ function vQuiosque(){
         <div class="lj-eyebrow">${T('relive')}</div>
         <h1 class="lj-h1">${T('yourPhotos')}</h1>
         ${emerg?`<p class="lj-sub">${T('typeCode')}</p>
-          <input type="text" class="lj-code" id="kcode" placeholder="XXXX-XXXX" value="${esc(k.codTxt||k.code)}" aria-label="${T('receiptCode')}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="14" inputmode="text" autofocus>
-          <div class="lj-row"><button class="lj-cta" data-act="kiosk-go"${k.codEsp?' disabled aria-busy="true"':''}>${k.codEsp?T('codeSearching'):T('seeMine')+' '+ICO.arrow}</button>${ljVoltar('kiosk-back','')}</div>`
+          <input type="text" class="lj-code" id="kcode" placeholder="XXXX-XXXX" value="${esc(k.codTxt||(k.mais?'':k.code))}" aria-label="${T('receiptCode')}" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="14" inputmode="text" autofocus>
+          <div class="lj-row"><button class="lj-cta" data-act="kiosk-go"${k.codEsp?' disabled aria-busy="true"':''}>${k.codEsp?T('codeSearching'):T('seeMine')+' '+ICO.arrow}</button>${k.mais?`<button class="lj-ghost" data-act="kiosk-mais-volta">${T('backMine')}</button>`:ljVoltar('kiosk-back','')}</div>`
         // 15/11 (Ronaldo): foto do grupo, alternativa à selfie: cada rosto da foto é buscado como uma selfie e as fotos se somam
         :k.camOn&&k.grupo?`<p class="lj-sub">${T('ljGrupoSub')}</p>
           <div class="lj-cam lj-cam-grupo">${camBox()}</div>
           <div class="lj-row"><button class="lj-cta" data-act="kiosk-grupo-foto">${ICO.grupo} ${T('ljGrupoFoto')}</button><button class="lj-ghost lj-alt" data-act="kiosk-selfie">${ICO.face} ${T('ljUmaPessoa')}</button>${k.mais?`<button class="lj-ghost lj-alt" data-act="kiosk-mais-volta">${T('backMine')}</button>`:ljVoltar('kiosk-back','lj-alt')}</div>`
         :k.mais?`<p class="lj-sub">${T('addPersonSub')}</p>
           ${k.camOn?`<div class="lj-cam">${camBox()}</div>`:`<button class="lj-start" data-act="kiosk-start">${ICO.face}<span>${T('ljStart')}</span></button>`}
-          <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-grupo">${ICO.grupo} ${T('ljGrupo')}</button><button class="lj-ghost lj-alt" data-act="kiosk-mais-volta">${T('backMine')}</button></div>`
+          <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-grupo">${ICO.grupo} ${T('ljGrupo')}</button><button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button><button class="lj-ghost lj-alt" data-act="kiosk-mais-volta">${T('backMine')}</button></div>`
         :k.camOn?`<p class="lj-sub">${T('lookCam')}</p>
           <div class="lj-cam">${camBox()}</div>
           <div class="lj-row"><button class="lj-ghost lj-alt" data-act="kiosk-grupo">${ICO.grupo} ${T('ljGrupo')}</button><button class="lj-ghost lj-alt" data-act="kiosk-emerg">${ICO.keys} ${T('ljTypeCode')}</button>${ljVoltar('kiosk-back','lj-alt')}</div>`
@@ -15181,7 +15181,8 @@ document.addEventListener('click',e=>{
     case 'caixa-back-fila':{const s=simOf(state.caixa.session);s.status='pronta';saveSim();state.caixa.session=null;render();break;}
     case 'caixa-reprint':{const c=state.caixa.session;state.caixa.reprint=state.caixa.reprint===c?null:c;render();break;} // v83: abre o painel de impressão desta venda (sem baixa aqui)
     case 'kiosk-go':{lojaCliente();const k=state.kiosk;if(k.codEsp)break;const txt=($('#kcode')||{}).value||'';
-      const abre=()=>{const r=lojaCodigo(txt);if(!r)return;lojaPickLimpa(r.card);k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;ljTempo(r.card,'inicio');ljAbrirEd(k);ljPrepara(r.card);render();};
+      // 27/11 (Ronaldo): somando outra pessoa, o número da sessão digitado entra junto com as fotos já abertas, com as marcas
+      const abre=()=>{const r=lojaCodigo(txt);if(!r)return;if(k.mais){k.codTxt='';const m={};((r.so&&r.so.cards)||[r.card]).forEach(c=>{m[c]=lojaTodas(c).slice();});lojaAbrirSo(m,r.card);return;}lojaPickLimpa(r.card);k.code=r.card;k.so=r.so;k.step='review';k.i=0;k.ver=0;k.pkg=null;k.pay=null;ljTempo(r.card,'inicio');ljAbrirEd(k);ljPrepara(r.card);render();};
       const p=lojaCodEspera(txt);if(!p){abre();break;}const passo=k.step,n=k.codN=(k.codN||0)+1;k.codEsp=true;k.codTxt=txt;render(); // botão desativado com "Buscando suas fotos…"; codTxt guarda o que o cliente digitou
       p.then(()=>{if(k.codN!==n)return;k.codEsp=false;if(state.kiosk!==k||k.step!==passo)return;abre();if(k.step===passo)render();});break;} // lojaReset troca codN: a espera de um cliente nunca abre a sessão depois que a tela voltou ao início
     case 'kiosk-back':lojaReset();render();break;
