@@ -4,7 +4,7 @@
 # imagem no disco, chaves para desligar, e a selfie do cliente (POST /rostos/buscar) respondendo como antes.
 # Rostos sintéticos (vetor unitário aleatório de 128, semente fixa) e leitor de imagem falso. Nunca foto de convidado.
 # Roda sozinho:  USER=teste HOME=$(mktemp -d) python3 -I testes/rostos_sessoes_agente.py agente/eterna-agente.py
-import array, base64, http.client, importlib.util, json, os, random, sys, tempfile, threading, time
+import array, base64, http.client, importlib.util, inspect, json, os, random, sys, tempfile, threading, time
 from http.server import ThreadingHTTPServer
 
 sys.dont_write_bytecode = True
@@ -396,8 +396,71 @@ nd = len(DECODIFICADAS)
 grande = ["data:image/png;base64," + base64.b64encode(png(b"so-a", 3000, 2000)).decode()]
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a") + grande}, cookie=vend2)
 ok(st == 413 and r.get("erro") == "grande" and "sessoes" not in r and len(DECODIFICADAS) == nd and linhas()[-1][5] == "imagem_grande", "5: imagem acima de 4 MP: 413 sem decodificar nada: %s %r" % (st, r))
-st, r = pede("POST", "/rostos/sessoes", {"imagens": ["data:image/jpeg;base64," + base64.b64encode(b"so-a").decode(), base64.b64encode(b"GIF89a" + b"so-a").decode()]}, cookie=vend2)
-ok(st == 200 and r.get("rosto") is False and r.get("sessoes") == [] and len(DECODIFICADAS) == nd, "5: o que não é JPEG nem PNG não é decodificado: %s %r" % (st, r))
+b64 = lambda raw: "data:image/jpeg;base64," + base64.b64encode(raw).decode()
+for nome, raw in (("texto", b"so-a"), ("GIF", b"GIF89a" + b"so-a"), ("base64 quebrado", None)):
+    m._janelas.clear()
+    st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a") + [b64(raw) if raw is not None else "data:image/jpeg;base64,@@@="]}, cookie=vend2)
+    ok(st == 400 and r.get("erro") == "invalido" and "sessoes" not in r and len(DECODIFICADAS) == nd and linhas()[-1][5] == "imagem_invalida",
+       "5: quadro que não é JPEG nem PNG (%s): 400 sem decodificar nada: %s %r" % (nome, st, r))
+
+
+# JPEG montado à mão. seg(marcador, corpo) = um segmento com o tamanho certo; sof(l, a) = o quadro com as dimensões
+def seg(mk, corpo):
+    return b"\xff" + bytes([mk]) + (len(corpo) + 2).to_bytes(2, "big") + corpo
+
+
+def sof(larg, alt, mk=0xC0):
+    return seg(mk, b"\x08" + alt.to_bytes(2, "big") + larg.to_bytes(2, "big") + b"\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01")
+
+
+SOI, APP0, DQT = b"\xff\xd8", seg(0xE0, b"JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"), seg(0xDB, b"\x00" + b"\x10" * 64)
+normal = SOI + APP0 + DQT + sof(640, 480) + b"so-a"
+progressivo = SOI + APP0 + seg(0xFE, b"comentario comum") + DQT + sof(960, 540, 0xC2) + b"so-a"
+truques = {
+    # o SOF pequeno está DENTRO de um comentário; as dimensões de verdade (o primeiro SOF real) são grandes
+    "SOF falso dentro de um COM": SOI + seg(0xFE, b"xx" + sof(64, 64) + b"yy") + DQT + sof(6000, 4000) + b"so-a",
+    # FF 00 depois do início: a leitura comum toma por segmento com tamanho e cai dentro do comentário seguinte
+    "FF 00 antes de um SOF falso": SOI + b"\xff\x00\x00\x04" + seg(0xFE, sof(64, 64)) + sof(6000, 4000) + b"so-a",
+    "lixo antes do marcador": SOI + b"\x00\x00\x00" + sof(64, 64) + sof(6000, 4000) + b"so-a",
+    "enchimento FF FF": SOI + b"\xff\xff" + sof(64, 64) + b"so-a",
+    "segundo início de imagem": SOI + SOI + sof(64, 64) + b"so-a",
+    "dados da imagem antes do quadro": SOI + seg(0xDA, b"\x00" * 6) + sof(64, 64) + b"so-a",
+    "segmento com tamanho menor que 2": SOI + b"\xff\xe0\x00\x01" + sof(64, 64) + b"so-a",
+    "sem quadro nenhum": SOI + APP0 + DQT,
+    "PNG sem IHDR": b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rtEXt" + (64).to_bytes(4, "big") + (64).to_bytes(4, "big") + b"so-a",
+}
+ok(m.img_dims_estrito(normal) == (640, 480) and m.img_dims_estrito(progressivo) == (960, 540) and m.img_dims_estrito(png(b"x", 800, 600)) == (800, 600),
+   "leitura estrita: JPEG comum, JPEG progressivo com comentário e PNG têm as dimensões lidas: %r %r" % (m.img_dims_estrito(normal), m.img_dims_estrito(progressivo)))
+ok(m.img_dims_estrito(truques["SOF falso dentro de um COM"]) == (6000, 4000), "leitura estrita: vale o primeiro quadro de verdade, não o escrito num comentário: %r" % (m.img_dims_estrito(truques["SOF falso dentro de um COM"]),))
+ok(m.img_dims(truques["FF 00 antes de um SOF falso"]) == (64, 64) and m.img_dims_estrito(truques["FF 00 antes de um SOF falso"]) is None,
+   "(o caso do FF 00 engana a leitura comum e não a estrita): %r" % (m.img_dims(truques["FF 00 antes de um SOF falso"]),))
+for nome, raw in truques.items():
+    m._janelas.clear()
+    st, r = pede("POST", "/rostos/sessoes", {"imagens": [b64(raw)]}, cookie=vend2)
+    grande = nome == "SOF falso dentro de um COM"
+    ok(st == (413 if grande else 400) and r.get("erro") == ("grande" if grande else "invalido") and "sessoes" not in r and len(DECODIFICADAS) == nd
+       and linhas()[-1][5] == ("imagem_grande" if grande else "imagem_invalida"), "5: JPEG montado à mão (%s) é recusado sem decodificar: %s %r" % (nome, st, r))
+# um JPEG normal continua passando (aqui o "decodificador" do teste devolve o rótulo depois do cabeçalho)
+QUADROS[normal[24:]] = QUADROS[progressivo[24:]] = [(300, A)]
+m._janelas.clear()
+st, r = pede("POST", "/rostos/sessoes", {"imagens": [b64(normal), b64(progressivo)]}, cookie=vend2)
+ok(st == 200 and r.get("rosto") is True and len(DECODIFICADAS) == nd + 2 and S_CERTA in {o["card"] for o in r.get("sessoes") or []}, "5: JPEG normal continua passando: %s %r" % (st, r.get("rosto")))
+# a leitura das outras rotas não mudou: a selfie do cliente aceita o que aceitava
+ok(m.img_dims(truques["lixo antes do marcador"]) == (64, 64) and m.img_aceita(truques["lixo antes do marcador"]) is True and m.img_aceita(b"so-a") is True
+   and m.img_dims(normal) == (640, 480) and m.img_dims(b"so-a") is None, "o img_dims e o img_aceita do Checkout seguem como eram (a leitura estrita é só da busca do vendedor)")
+st, rb = pede("POST", "/rostos/buscar", {"imagens": [base64.b64encode(b"so-a").decode()]}, cookie=vend)
+ok(st in (200, 500) and "erro" not in rb, "/rostos/buscar não ganhou a leitura estrita: %s" % st)
+# 2: a limpeza diária (a mesma das sessões) também tira as buscas antigas, sem depender de haver busca
+with m.ev_lock:
+    db = m.vendas_db()
+    for idv, dias in (("c" * 16, 31), ("d" * 16, 29)):
+        d_ = m._ff_hoje(time.time() - dias * 86400)
+        db.execute("insert into busca_vend (id, em, dia, por, posto, resultado, certeza, talvez, achadas) values (?, ?, ?, 'antiga-bv', 'Caixa 1', 'achou', 1, 0, '[]')", (idv, d_ + "T10:00:00", d_))
+    db.commit()
+    db.close()
+m.sess_limpar()
+ids_ = {x[0] for x in linhas()}
+ok("c" * 16 not in ids_ and "d" * 16 in ids_ and "b" * 16 in ids_ and "busca_vend_limpar" in inspect.getsource(m.sess_limpar), "2: a limpeza diária apaga as buscas com mais de 30 dias: %r" % (sorted(i for i in ids_ if len(set(i)) == 1),))
 ok(m.BUSCA_VEND_PIXELS == 4000000, "teto de 4 MP por quadro")
 m._janelas.clear()
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=sup)
@@ -504,7 +567,6 @@ ok(st == 500 and r.get("erro") == "registro" and "sessoes" not in r, "sem conseg
 
 ok(all(o == "checkout" for o, _n in selfies_bi()), "até o fim, a tabela das selfies dos clientes só tem as do Checkout: %r" % (selfies_bi(),))
 # ---------- 2: Zerar fase de teste leva a tabela das buscas ----------
-import inspect
 ok(len(linhas()) > 5 and '"buscas_vendedor"' in inspect.getsource(m) and "delete from busca_vend\")" in inspect.getsource(m._zp_vendas), "2: o Zerar fase de teste conta e apaga as buscas do vendedor")
 try:
     m._zp_vendas({})

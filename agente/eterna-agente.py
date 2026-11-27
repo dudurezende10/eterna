@@ -1363,6 +1363,47 @@ class BuscaVendGrande(Exception):
     """Quadro acima de BUSCA_VEND_PIXELS: a rota responde 413 sem decodificar nada."""
 
 
+class BuscaVendInvalida(Exception):
+    """Quadro que não é um JPEG ou PNG bem formado: a rota responde 400 sem decodificar nada."""
+
+
+_SOF_JPEG = (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF)
+
+
+def img_dims_estrito(raw):
+    """(largura, altura) lendo só o cabeçalho, ou None. Leitura ESTRITA, só da busca do vendedor (o img_dims das outras
+    rotas não muda): no JPEG anda de segmento em segmento pelo tamanho declarado, exige FF onde começa cada marcador,
+    recusa os marcadores 00 e FF e um segundo início de imagem, e vale o primeiro quadro (SOF) de verdade, antes dos
+    dados da imagem. Um SOF escrito dentro de um comentário ou de outro segmento não é lido. No PNG exige o bloco IHDR."""
+    try:
+        if raw[:8] == b"\x89PNG\r\n\x1a\n":
+            if len(raw) < 24 or raw[12:16] != b"IHDR":
+                return None
+            w, h = int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
+            return (w, h) if w > 0 and h > 0 else None
+        if raw[:2] != b"\xff\xd8":
+            return None
+        i, n = 2, len(raw)
+        while i + 4 <= n:
+            if raw[i] != 0xFF:
+                return None
+            mk = raw[i + 1]
+            if mk in (0x00, 0xFF, 0xD8, 0xD9, 0xDA) or mk == 0x01 or 0xD0 <= mk <= 0xD7:
+                return None              # enchimento, marcador sem tamanho, outro início, fim ou dados antes do quadro
+            ln = int.from_bytes(raw[i + 2:i + 4], "big")
+            if ln < 2:
+                return None
+            if mk in _SOF_JPEG:
+                if ln < 7 or i + 9 > n:
+                    return None
+                h, w = int.from_bytes(raw[i + 5:i + 7], "big"), int.from_bytes(raw[i + 7:i + 9], "big")
+                return (w, h) if w > 0 and h > 0 else None
+            i += 2 + ln
+    except Exception:
+        pass
+    return None
+
+
 def _buscar_maior(imagens, det, rec):
     np = _cv["np"]; cv2 = _cv["cv2"]
     achados, varias = [], False          # (largura do maior rosto do quadro, vetor)
@@ -1371,10 +1412,10 @@ def _buscar_maior(imagens, det, rec):
         try:
             raw = base64.b64decode(b.split(",", 1)[-1])
         except Exception:
-            continue
-        d = img_dims(raw)                # só o cabeçalho: nada é decodificado antes de conferir o tamanho
-        if d is None:                    # não é JPEG nem PNG: o quadro não é lido
-            continue
+            raise BuscaVendInvalida()
+        d = img_dims_estrito(raw)        # só o cabeçalho: nada é decodificado antes de conferir o tamanho
+        if d is None:                    # não é um JPEG ou PNG bem formado: a busca é recusada
+            raise BuscaVendInvalida()
         if d[0] * d[1] > BUSCA_VEND_PIXELS:
             raise BuscaVendGrande()
         brutos.append(raw)
@@ -7782,6 +7823,10 @@ def sess_limpar(agora=None):
                 except OSError:
                     pass
     vis_logs_poda(agora)
+    try:
+        busca_vend_limpar(agora)         # 27/11: as buscas por selfie do vendedor também saem aqui, mesmo sem busca nova
+    except Exception:
+        pass
     return n
 
 
@@ -13468,6 +13513,22 @@ def busca_vend_reserva(bid, por, posto, minuto_ok=True):
                            (bid, em, dia, por, posto, motivo or "iniciada"))
             db.commit()
             return motivo
+        finally:
+            db.close()
+
+
+def busca_vend_limpar(agora=None):
+    """Apaga as linhas de busca_vend com mais de BUSCA_VEND_RETENCAO dias. Chamada pela limpeza diária (sess_limpar);
+    a reserva de cada busca faz o mesmo. Sem o banco de vendas, não cria nada. -> linhas apagadas."""
+    if not os.path.exists(VENDAS_DB):
+        return 0
+    agora = time.time() if agora is None else agora
+    with ev_lock:
+        db = vendas_db()
+        try:
+            n = db.execute("delete from busca_vend where dia < ?", (_ff_hoje(agora - BUSCA_VEND_RETENCAO * 86400),)).rowcount
+            db.commit()
+            return n
         finally:
             db.close()
 
@@ -25940,6 +26001,12 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
             return self.js({"ok": False, "erro": "grande"}, 413, True)
+        except BuscaVendInvalida:
+            try:
+                busca_vend_grava(bid, "imagem_invalida", [])
+            except Exception:
+                pass
+            return self.js({"ok": False, "erro": "invalido"}, 400, True)
         except Exception as ex:
             try:
                 busca_vend_grava(bid, "erro", [])

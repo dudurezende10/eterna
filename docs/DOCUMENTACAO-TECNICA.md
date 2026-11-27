@@ -2980,12 +2980,12 @@ Regras do produto (Eduardo, 26/11): quem seleciona as sessões é o vendedor, e 
 
 | Peça | O que faz |
 |---|---|
-| `POST /rostos/sessoes` | `{imagens}` com 1 a 3 quadros, corpo de até 6 MB, cada quadro JPEG ou PNG de até `BUSCA_VEND_PIXELS` (acima disso, 413 antes de decodificar). Tipo `sessao` com `venda.c` em `ROTAS`; `rostos_vend_quem()` confere de novo a origem (`origem_local`), a pessoa, a permissão e a regra do fotógrafo com Minhas fotos. A resposta não leva a nota |
+| `POST /rostos/sessoes` | `{imagens}` com 1 a 3 quadros, corpo de até 6 MB, cada quadro JPEG ou PNG bem formado (`img_dims_estrito`; senão 400) de até `BUSCA_VEND_PIXELS` (acima disso, 413), sempre antes de decodificar. Tipo `sessao` com `venda.c` em `ROTAS`; `rostos_vend_quem()` confere de novo a origem (`origem_local`), a pessoa, a permissão e a regra do fotógrafo com Minhas fotos. A resposta não leva a nota |
 | `buscar_vend`, `_buscar_maior` | busca só de hoje, o dia todo; o maior rosto de cada quadro; `varias` quando `varias_pessoas` em algum quadro; usa o mesmo `_busca_lock` da selfie do cliente |
 | `busca_vend_vetor` | fica com a pessoa que é a maior em mais quadros (empate: o rosto mais largo) e só soma os quadros dela |
 | `buscar_vetor(piso=)` | corte da busca; sem `piso`, `LIMITE_TALVEZ`, como sempre |
 | `busca_vend_sessoes` | agrupa por sessão e aplica os filtros (hoje, não removida, não protegida, foto já lida, não base de IA); níveis `certeza` e `pode_ser` |
-| `busca_vend_reserva`, `busca_vend_grava`, `busca_vend_marcar`, `busca_vend_dia`, `busca_vend_resumo` | tabela `busca_vend` do `vendas.db`: a reserva conta o dia e grava a linha na mesma transação (teto do dia sem corrida, recusa registrada, retenção de `BUSCA_VEND_RETENCAO` dias); o resumo é por pessoa |
+| `busca_vend_reserva`, `busca_vend_grava`, `busca_vend_marcar`, `busca_vend_dia`, `busca_vend_resumo` | tabela `busca_vend` do `vendas.db`: a reserva conta o dia e grava a linha na mesma transação (teto do dia sem corrida, recusa registrada, retenção de `BUSCA_VEND_RETENCAO` dias, também na limpeza diária por `busca_vend_limpar`); o resumo é por pessoa |
 | `POST /rostos/sessoes/marcar` | `{busca, cards}`; uma vez, só o dono, só hoje, só sessões achadas |
 | `GET /ponto/selfies` | campos `vendedor` (as buscas do dia) e `vendedor_resumo` (por pessoa: buscas, acharam, sem venda marcada, vezes no limite); exige `galerias` em Ver, como antes |
 

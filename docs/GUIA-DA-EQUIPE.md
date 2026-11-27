@@ -412,7 +412,7 @@ Na tela **Procurar fotos**, ao lado dos filtros, existe o botão **Procurar por 
 
 Passo a passo:
 
-1. **Peça ao cliente antes de apontar a câmera.** Explique que é para achar as fotos dele e que a imagem não é guardada. Se ele não quiser, procure pelos filtros.
+1. **Peça ao cliente antes de apontar a câmera.** Explique que é para achar as fotos dele e que a imagem não é guardada. Se ele não quiser, procure pelos filtros. **Não aponte a câmera para criança sem o responsável ao lado e de acordo.**
 2. Toque em **Procurar por selfie**. Abre uma janela com a câmera. A imagem aparece como a câmera vê, sem espelho.
 3. Aponte a câmera para o cliente. **De preferência, uma pessoa por vez.** Toque em **Procurar**. A imagem não é guardada.
 4. A lista vem em dois blocos:
