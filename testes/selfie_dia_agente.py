@@ -1,6 +1,6 @@
 # v99.108: selfie sem código na galeria pública (plano docs/planos/2026-11-27-selfie-na-galeria.md). O servidor do estádio
 # leva o pedido da nuvem, procura só no dia escolhido (rosto principal, semelhança de mesma pessoa, fora base de IA, sessão
-# removida, grupo de escola e sessão de menor) e monta a galeria de venda da selfie: a comprada numa venda entra liberada.
+# removida e base de IA; escola e menor entram) e monta a galeria de venda da selfie: a comprada numa venda entra liberada.
 # Os rostos são vetores gravados à mão no banco de rostos; a leitura da selfie é simulada (selfie_dia_vetor).
 #   HOME=$(mktemp -d) python3 -I testes/selfie_dia_agente.py agente/eterna-agente.py
 import importlib.util, io, json, os, sqlite3, sys, time
@@ -114,11 +114,11 @@ try:
     m.selfie_dia_vetor = lambda b: ("ok", e0)
     ped = {"pedido": "x" * 24, "dia": DIA, "imagem": "data:image/jpeg;base64,/9j/AAAA"}
     res = m.selfie_dia_atende("seg", ped)
-    ok(res.get("estado") == "achou" and res.get("n") == 3 and "imagem" not in ped, "achou, e a selfie saiu do pedido: %s" % res)
+    ok(res.get("estado") == "achou" and res.get("n") == 4 and "imagem" not in ped, "achou, e a selfie saiu do pedido: %s" % res)
     g = m.REPO.ler_manifesto(res.get("token")) or {}
     fs = {f["id"]: f for f in g.get("fotos") or []}
     ok(g.get("tipo") == "sessao" and g.get("origem") == "selfie" and not g.get("codigo"), "galeria de venda própria, sem código: %s" % {k: g.get(k) for k in ("tipo", "origem", "codigo")})
-    ok(set(fs) == {"ag_" + P[k] for k in ("frente", "comprada", "semsessao")}, "grupo de escola fica fora: %s" % sorted(fs))
+    ok(set(fs) == {"ag_" + P[k] for k in ("frente", "comprada", "escola", "semsessao")}, "foto da galeria de escola entra também: %s" % sorted(fs))
     ok(fs.get("ag_" + P["comprada"], {}).get("direito") == "comprada" and fs.get("ag_" + P["frente"], {}).get("direito") == "venda",
        "comprada numa venda sai liberada; a outra à venda: %s" % fs)
     ok(g.get("precos") == {"dig": 30.0, "todas": 90.0} and g.get("catalogo") == cat, "preços e catálogo da galeria de venda mais recente")

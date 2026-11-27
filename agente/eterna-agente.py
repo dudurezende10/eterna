@@ -11974,7 +11974,8 @@ def selfie_dia_fotos(me, dia):
 
 
 def selfie_dia_direitos():
-    """({id: direito da foto numa venda}, ids que nunca entram). Comprada vence cortesia; grupo de escola e sessão de menor ficam fora."""
+    """({id: direito da foto numa venda}, ids que nunca entram). Comprada vence cortesia. 27/11 (Ronaldo): foto é foto, a selfie
+    não separa galeria de escola nem de menor; a escola segue abrindo a dela pelo voucher."""
     dirs, fora = {}, set()
     for t in REPO.listar():
         try:
@@ -11982,9 +11983,6 @@ def selfie_dia_direitos():
         except Exception:
             m = None
         if not m or m.get("origem") == "selfie" or m.get("encerrada"):
-            continue
-        if m.get("tipo") == "evento" or m.get("menor"):
-            fora.update(f.get("id") for f in m.get("fotos") or [])
             continue
         for f in m.get("fotos") or []:
             if f.get("direito") == "comprada":
