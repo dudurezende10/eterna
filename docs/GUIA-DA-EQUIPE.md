@@ -398,8 +398,13 @@ O que pode aparecer:
 | **O Checkout está com cliente** | Espere o cliente da vez terminar e toque em Iniciar de novo. As marcadas ficam. |
 | **Abra o Checkout para vender mais de uma sessão** | A janela do Checkout está fechada. Abra o Checkout e tente de novo. Com uma sessão só, a venda segue pela Venda manual do Posto. |
 | **O Checkout não respondeu** | Feche e abra a janela do Checkout e tente de novo. |
+| **No máximo 8 sessões por venda** | Desmarque alguma. |
+
+Se uma das sessões marcadas não puder entrar, nenhuma abre e a tela diz qual foi e por quê. As marcadas somem quando você sai da tela ou sai da conta. Cada venda iniciada por aqui fica no histórico com quem iniciou, o posto e as sessões.
 
 ### Procurar por selfie, na tela do vendedor (26/11)
+
+**Esta função está pronta, mas desligada.** O botão só aparece depois que a supervisão avisar que foi ligada.
 
 Na tela **Procurar fotos**, ao lado dos filtros, existe o botão **Procurar por selfie**. Serve para achar de uma vez as sessões de um cliente, inclusive aquelas em que ele aparece de lado, de boné ou com a taça. Os filtros continuam valendo: a selfie é um jeito a mais.
 
@@ -407,38 +412,40 @@ Na tela **Procurar fotos**, ao lado dos filtros, existe o botão **Procurar por 
 
 Passo a passo:
 
-1. Toque em **Procurar por selfie**. Abre uma janela com a câmera.
-2. Aponte a câmera para o cliente. **De preferência, uma pessoa por vez.** Toque em **Procurar**. A imagem não é guardada.
-3. A lista vem em dois blocos:
+1. **Peça ao cliente antes de apontar a câmera.** Explique que é para achar as fotos dele e que a imagem não é guardada. Se ele não quiser, procure pelos filtros.
+2. Toque em **Procurar por selfie**. Abre uma janela com a câmera. A imagem aparece como a câmera vê, sem espelho.
+3. Aponte a câmera para o cliente. **De preferência, uma pessoa por vez.** Toque em **Procurar**. A imagem não é guardada.
+4. A lista vem em dois blocos:
    - **Certeza**: sessões em que o sistema reconheceu o cliente. Já vêm **marcadas**.
    - **Pode ser**: sessões em que talvez seja ele. Vêm **desmarcadas**.
    As fotos com contorno são as em que o rosto apareceu. Ao lado ficam as outras fotos da sessão.
-4. Confira cada sessão. Toque na miniatura para ver a foto grande, ou em **Ver sessão** para ver todas.
-5. **Tire a família vizinha:** se uma sessão de Certeza for de outra família (o cliente só passou ao fundo), toque em **Marcada** para desmarcar.
-6. **Marque a taça:** se uma sessão de Pode ser for mesmo do cliente, toque em **Marcar**.
-7. Faltou alguma sessão? Toque em **Adicionar pelos filtros**. Você volta aos filtros com as marcadas guardadas e a barra no pé da tela. Marque a que faltava. Para rever a lista da selfie, toque em **Voltar às sessões da selfie**.
-8. Toque em **Iniciar venda com N sessões**. O Checkout abre com essas sessões e a sua tela avisa **Aberto no Checkout**.
+5. Confira cada sessão. Toque na miniatura para ver a foto grande, ou em **Ver sessão** para ver todas.
+6. **Tire a família vizinha:** se uma sessão de Certeza for de outra família (o cliente só passou ao fundo), toque em **Marcada** para desmarcar.
+7. **Marque a taça:** se uma sessão de Pode ser for mesmo do cliente, toque em **Marcar**.
+8. Faltou alguma sessão? Toque em **Adicionar pelos filtros**. Você volta aos filtros com as marcadas guardadas e a barra no pé da tela. Marque a que faltava. Para rever a lista da selfie, toque em **Voltar às sessões da selfie**.
+9. Toque em **Iniciar venda com N sessões**. O Checkout abre com essas sessões e a sua tela avisa **Aberto no Checkout**.
 
 O que pode aparecer:
 
 | Aviso | O que fazer |
 |---|---|
-| **Usei o rosto maior. Se não for o cliente, enquadre só ele.** | Havia mais de uma pessoa na câmera. Confira se as sessões são do cliente certo. Se não forem, toque em **Nova selfie** com só ele no quadro. |
+| **Usei o rosto maior. Se não for o cliente, enquadre só ele.** | Havia mais de uma pessoa na câmera. Nesse caso **nada vem marcado**, nem as de Certeza: confira e marque você mesmo as do cliente. Se as sessões não forem dele, toque em **Nova selfie** com só ele no quadro. |
 | **Não achei um rosto** | Aproxime o cliente da câmera, de frente, e tente de novo. |
 | **Nenhuma sessão de hoje com esse rosto** | Tente de novo ou procure pelos filtros. A busca só olha as fotos de hoje. |
 | **A câmera está em uso** | O Checkout está usando a câmera (um cliente fazendo a selfie dele). Espere terminar e toque em **Tentar a câmera de novo**. |
 | **Muitas buscas em pouco tempo** | Espere um minuto. |
+| **Limite de buscas por selfie de hoje atingido** | Procure pelos filtros e avise a supervisão. |
+| **Você não tem permissão para a busca por selfie** | Procure pelos filtros e avise a supervisão. |
+| **No máximo 8 sessões por venda** logo depois da busca | Havia mais sessões de Certeza do que cabem numa venda. As que ficaram de fora estão na lista, desmarcadas. |
 | **A busca por selfie está desligada no servidor do ponto** | Procure pelos filtros e avise a supervisão. |
 | Uma sessão com a caixa apagada | Vale o mesmo da tabela acima: ainda aberta, já vendida, com pedido em aberto ou protegida. |
 
 Para saber:
 
 - Sessão de menor ou de escola não aparece nessa busca.
-- Cada busca fica registrada no servidor com o seu nome, o posto e a hora. Use só para atender o cliente que está na sua frente.
+- Cada busca fica registrada no servidor por 30 dias, com o seu nome, o posto e a hora, e o Admin vê quantas cada pessoa fez e quantas terminaram sem venda. Use só para atender o cliente que está na sua frente.
+- A câmera da janela se fecha sozinha depois de 1 minuto parada.
 - **Descartar resultado** apaga a lista e tira da barra as sessões que vieram da selfie. Sair da tela também apaga.
-| **No máximo 8 sessões por venda** | Desmarque alguma. |
-
-Se uma das sessões marcadas não puder entrar, nenhuma abre e a tela diz qual foi e por quê. As marcadas somem quando você sai da tela ou sai da conta. Cada venda iniciada por aqui fica no histórico com quem iniciou, o posto e as sessões.
 
 ### Sessões de hoje (v91)
 

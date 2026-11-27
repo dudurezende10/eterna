@@ -2972,7 +2972,7 @@ Para a equipe, a barra das marcadas mostra a miniatura e `sessRot(card)` (em tel
 
 ## Procurar por selfie no Procurar fotos, fase 2 (26/11/2026)
 
-Plano: `docs/planos/2026-11-26-procurar-vender.md`, seção "Fase 2". Testes: `testes/procurar-selfie.js`, `testes/rostos_sessoes_agente.py` e a parte da selfie de `testes/procurar-sem-vazar.js`. Chave `PROCURAR_SELFIE_ON` no `index.html` (em `false`, a tela é a da fase 1); no servidor, `ETERNA_BUSCA_VEND=0` desliga as rotas.
+Plano: `docs/planos/2026-11-26-procurar-vender.md`, seção "Fase 2". Testes: `testes/procurar-selfie.js`, `testes/rostos_sessoes_agente.py` e a parte da selfie de `testes/procurar-sem-vazar.js`. **Entregue desligada.** Chave `PROCURAR_SELFIE_ON` no `index.html` (nasce em `false`: a tela é a da fase 1); no servidor, as rotas só existem com `ETERNA_BUSCA_VEND=1` (sem ela, 404). O `/status` leva `rostos.busca_vend` e a tela só mostra o botão com as duas ligadas.
 
 Regras do produto (Eduardo, 26/11): quem seleciona as sessões é o vendedor, e nada do resultado da busca chega ao cliente; a imagem da câmera não é guardada; só sessões de hoje; sessão removida, de menor ou de escola nunca vem; base de IA nunca é devolvida; toda busca é registrada no servidor; a selfie do cliente no Checkout não muda.
 
@@ -2980,14 +2980,14 @@ Regras do produto (Eduardo, 26/11): quem seleciona as sessões é o vendedor, e 
 
 | Peça | O que faz |
 |---|---|
-| `POST /rostos/sessoes` | `{imagens}` com 1 a 3 quadros, corpo de até 6 MB. Tipo `sessao` com `venda.c` em `ROTAS`; `rostos_vend_quem()` confere de novo a origem (`origem_local`), a pessoa e a permissão |
+| `POST /rostos/sessoes` | `{imagens}` com 1 a 3 quadros, corpo de até 6 MB, cada quadro JPEG ou PNG de até `BUSCA_VEND_PIXELS` (acima disso, 413 antes de decodificar). Tipo `sessao` com `venda.c` em `ROTAS`; `rostos_vend_quem()` confere de novo a origem (`origem_local`), a pessoa, a permissão e a regra do fotógrafo com Minhas fotos. A resposta não leva a nota |
 | `buscar_vend`, `_buscar_maior` | busca só de hoje, o dia todo; o maior rosto de cada quadro; `varias` quando `varias_pessoas` em algum quadro; usa o mesmo `_busca_lock` da selfie do cliente |
 | `busca_vend_vetor` | fica com a pessoa que é a maior em mais quadros (empate: o rosto mais largo) e só soma os quadros dela |
 | `buscar_vetor(piso=)` | corte da busca; sem `piso`, `LIMITE_TALVEZ`, como sempre |
 | `busca_vend_sessoes` | agrupa por sessão e aplica os filtros (hoje, não removida, não protegida, foto já lida, não base de IA); níveis `certeza` e `pode_ser` |
-| `busca_vend_grava`, `busca_vend_hoje`, `busca_vend_marcar`, `busca_vend_dia` | tabela `busca_vend` do `vendas.db` |
+| `busca_vend_reserva`, `busca_vend_grava`, `busca_vend_marcar`, `busca_vend_dia`, `busca_vend_resumo` | tabela `busca_vend` do `vendas.db`: a reserva conta o dia e grava a linha na mesma transação (teto do dia sem corrida, recusa registrada, retenção de `BUSCA_VEND_RETENCAO` dias); o resumo é por pessoa |
 | `POST /rostos/sessoes/marcar` | `{busca, cards}`; uma vez, só o dono, só hoje, só sessões achadas |
-| `GET /ponto/selfies` | campo `vendedor` com as buscas do dia (exige `galerias` em Ver, como antes) |
+| `GET /ponto/selfies` | campos `vendedor` (as buscas do dia) e `vendedor_resumo` (por pessoa: buscas, acharam, sem venda marcada, vezes no limite); exige `galerias` em Ver, como antes |
 
 A busca do vendedor grava uma linha no diagnóstico da selfie (`origem: vendedor`, só com as fotos que saíram na resposta), mas não entra na tabela `selfie`, que alimenta a contagem das selfies dos clientes. Os vetores do rosto não ficam guardados (`_viz_tl.vets` fica nulo). Busca sem registro não devolve lista.
 
@@ -2995,13 +2995,14 @@ A busca do vendedor grava uma linha no diagnóstico da selfie (`origem: vendedor
 
 | Função | O que faz |
 |---|---|
-| `bfSelfiePode()` | `bfPodeVender()` e `state.agent.rostos.ligado` |
-| `bfSelfie()`, `bfSelfieCam()`, `bfSelfieFecha()` | modal `#bf-selfie-modal` (diálogo, sem `input`), câmera por `camEscolhe`, erro de câmera em palavras, câmera solta em todo fechamento e depois de `BF_SF_CAM_MS` |
+| `bfSelfiePode()` | a chave, `bfPodeVender()`, `state.agent.rostos.ligado` e `rostos.busca_vend` |
+| `bfSelfie()`, `bfSelfieCam()`, `bfSelfieFecha()`, `bfSelfiePrazo()` | modal `#bf-selfie-modal` (diálogo, sem `input`, linha fixa de pedir ao cliente, vídeo sem espelho, Esc pelo `document`, Tab preso, foco devolvido ao botão), câmera por `camEscolhe`, erro de câmera em palavras, câmera solta em todo fechamento e depois de `BF_SF_CAM_MS` parado |
 | `bfSelfieBusca()` | captura 3 quadros, chama a rota com `agLimite(BF_SF_MS)`, traduz 429, 503/404 e os demais erros, descarta resposta fora de hora |
 | `bfSelfieNorm(r)` | aceita só `card` no formato `BF_CARD`, nível conhecido e ids de foto válidos; não guarda a nota |
-| `bfSelfieRecebe(res)` | grava `state.procurar.selfie`, marca as de certeza em `livre`, mostra a lista |
+| `bfSelfieRecebe(res)` | grava `state.procurar.selfie`, marca as de certeza em `livre` (nenhuma com `varias`; até o teto da venda), mostra a lista |
 | `bfSelfieLista()`, `bfSelfieCartao(it)`, `bfMkVivo(x)` | lista em dois blocos; a caixa mostra a situação de agora (a lista é curta e é refeita quando uma sessão muda) |
-| `bfSelfieMarcar(cards, sf)` | com a venda aberta, manda as marcadas ao servidor e apaga o resultado |
+| `bfSelfieMarcar(cards, sf)` | com a venda aberta, manda as marcadas ao servidor (uma segunda tentativa em falha de rede ou 5xx) e apaga o resultado |
+| `bfSelfieAss()`, `bfEstUpd()` | a lista é redesenhada quando a situação de uma sessão muda (vendida em outro posto, pedido, fechou) |
 | `bfSelfieTem(card)`, `bfSelfieSess(card)`, `bfOrigem(cards)` | sessão achada pela selfie vale para Marcar, para abrir e para a lupa; origem da venda |
 
 `state.procurar.selfie` e `state.procurar.selfieVer` ficam só na memória da janela. `render()` apaga o resultado e fecha o modal fora da tela ou sem pessoa conectada; `vProcurar` zera ao trocar de pessoa. O caminho da venda, o canal e a janela do Checkout são os da fase 1: a mensagem `abrir` leva só os códigos marcados e a origem.

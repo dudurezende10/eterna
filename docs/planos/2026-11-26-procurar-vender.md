@@ -11,7 +11,7 @@ Regra do Eduardo (26/11): **a seleção de sessões é só do vendedor.** O clie
 | Fase | O que entra | Situação |
 |---|---|---|
 | 1 | Marcar sessões pelos filtros, "Iniciar venda com N sessões", "Vender esta sessão", origem da venda no evento e na métrica do dia | Feita (v99.104.0) |
-| 2 | "Procurar por selfie" na tela do vendedor, com a lista de sessões achadas para ele conferir | Feita (seção "Fase 2" abaixo); publicar depois da revisão de segurança e de LGPD |
+| 2 | "Procurar por selfie" na tela do vendedor, com a lista de sessões achadas para ele conferir | Feita e DESLIGADA (seção "Fase 2" abaixo): as duas chaves nascem desligadas |
 | 3 | Ajustes do que abre nas sessões achadas por selfie | Depois |
 
 Fora do escopo: mudar a selfie do cliente, mudar os limites do Checkout, fechar sessão à força, mexer na Venda manual.
@@ -104,7 +104,11 @@ Auditoria `procurar_vender`, em duas linhas ligadas pelo campo `pedido`: no envi
 
 ## Fase 2: Procurar por selfie (26/11/2026)
 
-Botão **Procurar por selfie** no Procurar fotos, ao lado dos filtros (não os substitui). Regras do Eduardo para esta fase:
+Botão **Procurar por selfie** no Procurar fotos, ao lado dos filtros (não os substitui).
+
+**A entrega fica pronta e desligada.** Para ligar são precisas as duas chaves: `ETERNA_BUSCA_VEND=1` no servidor do ponto (sem ela as rotas respondem 404) e `PROCURAR_SELFIE_ON=true` no `index.html`. O `/status` leva `rostos.busca_vend`, e a tela só mostra o botão com as duas ligadas.
+
+Regras do Eduardo para esta fase:
 
 1. Quem seleciona as sessões é o vendedor. A lista achada, o nível de cada sessão, as não marcadas e o identificador da busca ficam só na memória da janela do vendedor. O Checkout recebe só os códigos marcados, como na fase 1.
 2. LGPD: a imagem da câmera não é guardada (como já é no Checkout); só câmera ao vivo, sem escolher arquivo; só sessões de hoje; sessão removida, de menor ou de escola nunca vem; foto que é base dos fundos de IA nunca é devolvida; toda busca é registrada no servidor.
@@ -112,32 +116,34 @@ Botão **Procurar por selfie** no Procurar fotos, ao lado dos filtros (não os s
 
 ### Passo a passo do vendedor
 
-1. Toca **Procurar por selfie**, enquadra o cliente e toca **Procurar**.
-2. A lista vem com as sessões **Certeza** já marcadas e as **Pode ser** desmarcadas, cada uma com as fotos em que o rosto apareceu em destaque e as outras fotos da sessão ao lado. Ele desmarca a que não for do cliente e marca o "pode ser" que reconhecer.
+1. Pede ao cliente antes de apontar a câmera (o modal lembra, com uma linha fixa). Toca **Procurar por selfie**, enquadra o cliente e toca **Procurar**.
+2. A lista vem com as sessões **Certeza** já marcadas e as **Pode ser** desmarcadas (com mais de um rosto na câmera, nada vem marcado), cada uma com as fotos em que o rosto apareceu em destaque e as outras fotos da sessão ao lado. Ele desmarca a que não for do cliente e marca o "pode ser" que reconhecer.
 3. Faltou alguma: **Adicionar pelos filtros** volta aos filtros com a seleção e a barra; **Voltar às sessões da selfie** retorna à lista.
 4. **Iniciar venda com N sessões**: o mesmo `bfVender` da fase 1. A venda leva `origem: procurar_selfie` quando alguma marcada veio da selfie.
 
 ### `agente/eterna-agente.py`
 
-- `POST /rostos/sessoes` com `{imagens: [1 a 3 quadros]}`. Só pessoa conectada com `venda` em Criar (tipo `sessao` em `ROTAS`): posto pareado sem pessoa, perfil Checkout e "ver como" não entram. A rota confere de novo origem e permissão.
+- `POST /rostos/sessoes` com `{imagens: [1 a 3 quadros]}`. Só pessoa conectada com `venda` em Criar (tipo `sessao` em `ROTAS`): posto pareado sem pessoa, perfil Checkout e "ver como" não entram. A rota confere de novo origem e permissão, e recusa também quem tem vínculo de fotógrafo e Minhas fotos (a regra `impPreso` da tela; Admin e Supervisora fora dela).
+- Quadro que não é JPEG nem PNG não é lido; quadro acima de `BUSCA_VEND_PIXELS` é recusado com 413 antes de decodificar.
+- A resposta não leva a nota: só o nível em palavras e as fotos. A nota fica no banco.
 - `buscar_vend` e `_buscar_maior`: sempre só hoje e o dia todo (sem a janela do Checkout e sem `ETERNA_BUSCA_DIAS`); o maior rosto de cada quadro; `busca_vend_vetor` fica com a pessoa que é a maior em mais quadros e não mistura duas pessoas na média; `varias: true` na resposta quando havia mais de um rosto.
 - `buscar_vetor(..., piso=None)`: sem `piso`, o corte de sempre (`LIMITE_TALVEZ`). A busca do vendedor passa `BUSCA_VEND_PISO`, ajustável por `ETERNA_BUSCA_VEND_PISO` e travado numa faixa fixa no código (nunca acima de `LIMITE_TALVEZ`).
 - `busca_vend_sessoes(fotos)`: agrupa por sessão, com o `sess_lock`. Só `dia == hoje`, sem `removida`, sem `_vis_protegida` (menor ou escola), só foto que já está em `fotos` e que não é base de IA. `certeza` = alguma foto com nota a partir de `LIMITE` em que o rosto é dos principais da foto; o resto é `pode_ser`. Tetos: `BUSCA_VEND_CERTEZA_MAX`, `BUSCA_VEND_MAX` e `BUSCA_VEND_BATEU` fotos por sessão.
-- Tabela `busca_vend` (`vendas.db`): `id, em, dia, por, posto, resultado, certeza, talvez, achadas, marcadas, marcada_em`. `por`, `posto` e as horas vêm da sessão e do servidor, nunca do corpo. Sem conseguir gravar, a rota não devolve lista.
-- Limite por pessoa: `BUSCA_VEND_POR_MIN` por minuto e `BUSCA_VEND_POR_DIA` por dia (este contado no banco). Acima disso, 429 `muitas_buscas`.
+- Tabela `busca_vend` (`vendas.db`): `id, em, dia, por, posto, resultado, certeza, talvez, achadas, marcadas, marcada_em`. `por`, `posto` e as horas vêm da sessão e do servidor, nunca do corpo; sem posto pareado, `posto` guarda o endereço do aparelho. Sem conseguir gravar, a rota não roda a busca nem devolve lista. Guarda `BUSCA_VEND_RETENCAO` dias (limpa a cada busca) e entra no Zerar fase de teste.
+- Limite por pessoa: `BUSCA_VEND_POR_MIN` por minuto (429 `muitas_buscas`) e `BUSCA_VEND_POR_DIA` por dia (429 `limite_dia`). `busca_vend_reserva` conta e grava a linha da busca na mesma transação, então buscas simultâneas não passam do teto. A recusa por limite também fica registrada (`limite_min`, `limite_dia`), com teto por pessoa e por dia.
 - `POST /rostos/sessoes/marcar` com `{busca, cards}`: vale uma vez, só para quem fez a busca, só busca de hoje e só com sessões que estavam nas achadas.
-- `GET /ponto/selfies` ganha `vendedor` (as linhas de `busca_vend` do dia) e as linhas de diagnóstico com `origem: vendedor`. A tabela `selfie` (contagem das selfies dos clientes nas Estatísticas) não recebe a busca do vendedor.
-- Para desligar: `ETERNA_BUSCA_VEND=0` (as duas rotas respondem 404). Com o reconhecimento desligado, 503.
+- `GET /ponto/selfies` ganha `vendedor` (as linhas de `busca_vend` do dia), `vendedor_resumo` (por pessoa: `buscas`, `acharam`, `sem_venda` e `limite`, para o Admin conferir o uso; a tela fica para depois) e as linhas de diagnóstico com `origem: vendedor`. A tabela `selfie` (contagem das selfies dos clientes nas Estatísticas) não recebe a busca do vendedor.
+- Nasce desligada: sem `ETERNA_BUSCA_VEND=1` as duas rotas respondem 404. Com o reconhecimento desligado, 503.
 
 ### `index.html`
 
-- Chave `PROCURAR_SELFIE_ON` (ao lado de `PROCURAR_VENDER_ON`). Em `false`, a tela é a da fase 1.
-- `bfSelfiePode()`: `bfPodeVender()` e reconhecimento ligado no servidor.
-- `bfSelfie()`: modal `#bf-selfie-modal` na janela do vendedor, com a câmera ao vivo e sem campo de arquivo. `bfSelfieCam()` escolhe a câmera como o Checkout (`camEscolhe`); câmera em uso por outro programa ou pela janela do Checkout vira o aviso "A câmera está em uso..." com **Tentar a câmera de novo**, sem mexer no Checkout. `bfSelfieFecha()` solta a câmera ao fechar, ao achar, ao sair da tela ou da conta e sozinho depois de 1 minuto.
+- Chave `PROCURAR_SELFIE_ON` (ao lado de `PROCURAR_VENDER_ON`), que nasce em `false`: a tela é a da fase 1.
+- `bfSelfiePode()`: a chave, `bfPodeVender()`, reconhecimento ligado e `rostos.busca_vend` no `/status`. Sem isso o botão não aparece.
+- `bfSelfie()`: modal `#bf-selfie-modal` na janela do vendedor, com a câmera ao vivo e sem campo de arquivo. `bfSelfieCam()` escolhe a câmera como o Checkout (`camEscolhe`); câmera em uso por outro programa ou pela janela do Checkout vira o aviso "A câmera está em uso..." com **Tentar a câmera de novo**, sem mexer no Checkout. `bfSelfieFecha()` solta a câmera ao fechar, ao achar, ao sair da tela ou da conta e sozinho depois de 1 minuto parado (`bfSelfiePrazo`, rearmado ao fim de cada busca sem resultado). O modal traz a linha fixa "Peça ao cliente antes de apontar a câmera.", fecha com Esc de qualquer lugar da página, prende o Tab nos próprios botões, devolve o foco ao botão que o abriu e mostra o vídeo sem espelho.
 - `bfSelfieBusca()`: 3 quadros de até 960 px para o servidor; resposta que chega com o modal fechado, com outra pessoa conectada ou fora da tela é descartada. `bfSelfieNorm()` só aceita o formato esperado e não guarda a nota.
-- `bfSelfieRecebe()`: o resultado vai para `state.procurar.selfie` (só memória); as de `certeza` que podem entrar (`bfEstado` em `livre`) chegam em `state.procurar.sel`; resultado novo tira as sessões que só estavam marcadas pela busca anterior.
-- `bfSelfieLista()`, `bfSelfieCartao()`, `bfMkVivo()`: blocos Certeza e Pode ser, fotos do rosto com contorno (`.bf-bateu`) antes das outras, a mesma caixa Marcar e a mesma barra. Ações `bf-selfie`, `bf-selfie-filtros`, `bf-selfie-ver`, `bf-selfie-limpa`. Nenhuma está em `WRITE_OPS` (a busca não grava nada no app e a tela segue sem ação de gravar à vista): quem barra é `bfSelfiePode()` e, de verdade, o servidor.
-- `bfVender`: a origem é `procurar_selfie` quando alguma sessão marcada veio da selfie (`bfOrigem`). Quando a venda abre (Checkout respondeu, ou Venda manual com uma sessão), `bfSelfieMarcar()` manda ao servidor quais das achadas foram marcadas e apaga o resultado da tela.
+- `bfSelfieRecebe()`: o resultado vai para `state.procurar.selfie` (só memória); as de `certeza` que podem entrar (`bfEstado` em `livre`) chegam em `state.procurar.sel`, até o teto da venda (acima dele, aviso `bf_max`); com `varias` nada chega marcado; resultado novo tira as sessões que só estavam marcadas pela busca anterior.
+- `bfSelfieLista()`, `bfSelfieCartao()`, `bfMkVivo()`: blocos Certeza e Pode ser, fotos do rosto com contorno (`.bf-bateu`) antes das outras, a mesma caixa Marcar e a mesma barra. `bfEstUpd` redesenha a lista quando a situação de uma sessão muda (vendida em outro posto, pedido, fechou), comparando com `data-ass` (`bfSelfieAss`). Ações `bf-selfie`, `bf-selfie-filtros`, `bf-selfie-ver`, `bf-selfie-limpa`. Nenhuma está em `WRITE_OPS` (a busca não grava nada no app e a tela segue sem ação de gravar à vista): quem barra é `bfSelfiePode()` e, de verdade, o servidor.
+- `bfVender`: a origem é `procurar_selfie` quando alguma sessão marcada veio da selfie (`bfOrigem`). Quando a venda abre (Checkout respondeu, ou Venda manual com uma sessão), `bfSelfieMarcar()` manda ao servidor quais das achadas foram marcadas (com uma segunda tentativa se a rede ou o servidor falhar) e apaga o resultado da tela.
 - Textos `bf_selfie*`, `bf_certeza*`, `bf_pode_ser*` e `bf_bateu` no `EQ`, nas 5 línguas. Nenhum texto novo para o cliente.
 
 ### Contratos da fase 2
@@ -145,9 +151,9 @@ Botão **Procurar por selfie** no Procurar fotos, ao lado dos filtros (não os s
 ```
 POST /rostos/sessoes {imagens:[dataURL x 1..3]}
 200 {ok:true, busca:'<16 hex>', rosto:true|false, varias:true|false, fila:N,
-     sessoes:[{card, nivel:'certeza'|'pode_ser', sim, status:'aberta'|'separada'|'fechada',
-               fotografo, ponto, cap0, cap1, n, bateu:[{id,sim}]}]}
-Erros: 400 invalido, 401, 403, 404 (rota desligada), 413, 429 muitas_buscas, 500 busca|registro, 503 desligado
+     sessoes:[{card, nivel:'certeza'|'pode_ser', status:'aberta'|'separada'|'fechada',
+               fotografo, ponto, cap0, cap1, n, bateu:[{id}]}]}
+Erros: 400 invalido, 401, 403, 404 (rota desligada), 413 grande, 429 muitas_buscas|limite_dia, 500 busca|registro, 503 desligado
 
 POST /rostos/sessoes/marcar {busca, cards:[…]}  ->  {ok:true}
 Erros: 400 invalido|fora, 404 busca, 409 ja_marcada
@@ -166,12 +172,13 @@ O canal `eterna-loja`, o evento `criar` e a métrica `por_origem` são os da fas
 - A marcação vai ao servidor quando a venda abre (não antes do envio): assim fica gravado o conjunto que realmente abriu, e uma recusa do Checkout não gasta a marcação.
 - "Certeza" exige que o rosto seja dos principais da foto. Quem só passa ao fundo de uma foto, mesmo com nota alta, fica em "Pode ser" e chega desmarcado.
 - Foto que é base de IA não conta para achar a sessão nesta busca.
-- A nota não aparece na tela do vendedor nem fica na memória do navegador: o nível vem em palavras.
+- A nota não sai do servidor: a resposta leva o nível em palavras.
 
 ## O que ficou para depois
 
 - Fase 3 (o que abre nas sessões achadas por selfie).
-- Definir quem confere as buscas do vendedor (`GET /ponto/selfies`) e com que frequência.
+- Calibrar o piso do "pode ser" com dado real antes de ligar.
+- Tela para o Admin ver o resumo das buscas por pessoa (o dado já sai em `GET /ponto/selfies`).
 - Testar no Windows do posto a câmera do modal com o Checkout aberto no mesmo computador.
 - A Venda manual não leva `origem` (a venda aberta por ela, sem o Checkout, entra em `sem_origem`).
 - As sessões do dia continuam no SIM de todo navegador do ponto, como antes desta entrega. O que esta entrega garante é que a lista e a marcação do vendedor não são gravadas em lugar nenhum.

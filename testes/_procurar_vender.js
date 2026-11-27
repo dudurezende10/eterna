@@ -2,7 +2,8 @@
 // origem (/status, /sessoes, /thumb/, /file/, /ponto/eventos, /ponto/vendas-dia), sessões e fotos simuladas, cadastros de teste.
 // Vendedor e Checkout são duas páginas do MESMO contexto (mesmo computador: dividem o localStorage e o canal eterna-loja).
 // Fase 2 (busca por selfie): o.rotas(caminho, pedido) devolve {corpo,status,espera} para uma rota a mais do agente falso (ou nada);
-// o.rostos===false desliga o reconhecimento no /status; o gravador também guarda as câmeras abertas em cada janela (window.__cams).
+// o.rostos===false desliga o reconhecimento no /status e o.buscaVend===false a busca do vendedor no servidor; ligaSelfie liga a chave da
+// tela (que nasce desligada) no index.html servido ao teste; o gravador também guarda as câmeras abertas em cada janela (window.__cams).
 const entrarTeste=require('./_entrar');const fs=require('fs');const path=require('path');
 const U=process.env.U||'http://127.0.0.1:8890/index.html';const ORIG=new URL(U).origin;const J=JSON.stringify;
 const JPG=fs.readFileSync(path.join(__dirname,'..','img','ativ-snap.jpg'));
@@ -36,7 +37,7 @@ async function contexto(b,o){o=o||{};const FEED=o.feed||feed();const EVENTOS=[];
   await ctx.route(ORIG+'/**',r=>{const rq=r.request();const u=new URL(rq.url());const p=u.pathname;const j=(x,s)=>r.fulfill({status:s||200,contentType:'application/json',body:J(x)});
     if(/\.(html|js|css|png|jpg|jpeg|webp|svg|json|woff2?|ico|wasm|onnx)$/.test(p))return r.fallback();
     if(p.startsWith('/auth/'))return r.fallback();
-    if(p==='/status')return j({ok:true,agent:'eterna-agente',version:3,boot:FEED.gen,card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:o.rostos!==false},sessoes:{v:2,pausa:60,rostos:true,rev:FEED.rev,gen:FEED.gen,hoje:FEED.sessoes.length,abertas:1}});
+    if(p==='/status')return j({ok:true,agent:'eterna-agente',version:3,boot:FEED.gen,card:null,copied:0,dups:0,events:0,ftp:null,rostos:{ligado:o.rostos!==false,busca_vend:o.buscaVend!==false},sessoes:{v:2,pausa:60,rostos:true,rev:FEED.rev,gen:FEED.gen,hoje:FEED.sessoes.length,abertas:1}});
     if(p==='/sessoes'){const d=+u.searchParams.get('desde')||0;return j({ok:true,gen:FEED.gen,rev:FEED.rev,pausa:60,rostos:true,completo:!d,sessoes:FEED.sessoes.filter(x=>x.rev>d&&u.searchParams.get('ontem')!=='1')});}
     if(p.startsWith('/thumb/')||p.startsWith('/file/'))return r.fulfill({status:200,contentType:'image/jpeg',body:JPG});
     if(p==='/events')return j({events:[],next:0,total:0});
@@ -59,6 +60,7 @@ const abrir=async(pg,h)=>{await pg.goto('about:blank');await pg.goto(U+h);await 
 // a página recarrega: espera o agente falso devolver as sessões e a lista aparecer
 const procurar=async(pg,n)=>{await abrir(pg,'#procurar');return espera(pg,n=>document.querySelectorAll('#bf-lista .bf-card').length>=n,20000,n||9);};
 const todas=Object.values(C);
+const ligaSelfie=h=>h.replace('const PROCURAR_SELFIE_ON=false;','const PROCURAR_SELFIE_ON=true;');
 const chegou=(pg,ms)=>espera(pg,cs=>cs.every(c=>ETERNA.SRV.sess[c])&&cs.filter(c=>ETERNA.SRV.sess[c].status==='fechada').every(c=>{const s=ETERNA.SIM.sessions[c];return s&&(s.photos||[]).length;}),ms||25000,todas);
 // estados das sessões que não são livres: gravados no SIM pela janela do vendedor (a do Checkout adota pelo evento storage)
 async function semear(V,L){await V.evaluate(C=>{const S=ETERNA.SIM;S.invalid={};Object.values(S.sessions).forEach(s=>(s.photos||[]).forEach(p=>delete p.invalid));
@@ -76,4 +78,4 @@ const marca=(pg,card)=>toque(pg,'#bf-lista .bf-mk[data-card="'+card+'"] .bf-marc
 const aviso=pg=>pg.evaluate(()=>{const t=document.querySelector('#toast');return t&&t.hasAttribute('data-on')?t.textContent:'';});
 const quiosque=pg=>pg.evaluate(()=>{const k=ETERNA.state.kiosk;return {step:k.step,code:k.code||'',cards:k.so?k.so.cards.slice():null,visita:k.so?k.so.visita:null,base:k.so?k.so.base:null,origem:k.so?k.so.origem||null:null,
   fotos:k.code?ETERNA.lojaItems(k.code).filter(x=>x.t==='ph').map(x=>x.id):[]};});
-module.exports={hoje,U,ORIG,J,C,F,ADMIN,FOTO,CAIXA,QUIOSQUE,contexto,dupla,entrar,abrir,procurar,espera,chegou,semear,toque,marca,aviso,quiosque,todas};
+module.exports={ligaSelfie,hoje,U,ORIG,J,C,F,ADMIN,FOTO,CAIXA,QUIOSQUE,contexto,dupla,entrar,abrir,procurar,espera,chegou,semear,toque,marca,aviso,quiosque,todas};

@@ -853,7 +853,7 @@ BUSCA_JANELA_PADRAO, BUSCA_JANELA_MIN_OK, BUSCA_JANELA_MAX_OK = 90, 15, 480
 # Devolve SESSÕES de hoje para o vendedor conferir: "certeza" (nota a partir de LIMITE, a faixa que o Checkout já aceita) e
 # "pode_ser" (entre o piso abaixo e LIMITE). O piso só vale nesta busca: a selfie do cliente (POST /rostos/buscar) segue com
 # LIMITE_TALVEZ. ETERNA_BUSCA_VEND_PISO ajusta sem publicar (reiniciar o agente), sempre dentro da faixa travada aqui.
-# ETERNA_BUSCA_VEND=0 desliga a rota (404).
+# A rota nasce DESLIGADA (404): só existe com ETERNA_BUSCA_VEND=1 no servidor. O /status diz à tela se está ligada.
 BUSCA_VEND_PISO_MIN, BUSCA_VEND_PISO_PADRAO = 0.25, 0.30
 
 
@@ -871,7 +871,17 @@ def _busca_vend_piso(v=None):
 
 
 BUSCA_VEND_PISO = _busca_vend_piso()
-BUSCA_VEND_ON = os.environ.get("ETERNA_BUSCA_VEND") != "0"
+
+
+def busca_vend_env():
+    """Ligada só com ETERNA_BUSCA_VEND=1 (qualquer outro valor, ou sem a variável, é desligada)."""
+    return (os.environ.get("ETERNA_BUSCA_VEND") or "").strip() == "1"
+
+
+BUSCA_VEND_ON = busca_vend_env()
+BUSCA_VEND_PIXELS = 4 * 1000 * 1000   # quadro da câmera acima disso é recusado antes de decodificar (a tela manda até 960 px de largura)
+BUSCA_VEND_RETENCAO = 30         # dias que a tabela busca_vend guarda
+BUSCA_VEND_RECUSAS_DIA = 40      # recusas por limite registradas por pessoa e por dia (acima disso só responde 429)
 BUSCA_VEND_CERTEZA_MAX = 20      # sessões "certeza" por busca (a venda leva até 8)
 BUSCA_VEND_MAX = 12              # sessões "pode ser" por busca (as de maior nota)
 BUSCA_VEND_BATEU = 12            # fotos em que o rosto bateu, por sessão
@@ -1349,16 +1359,26 @@ def buscar_vend(imagens):
         return _buscar_maior(imagens, *_busca["m"])
 
 
+class BuscaVendGrande(Exception):
+    """Quadro acima de BUSCA_VEND_PIXELS: a rota responde 413 sem decodificar nada."""
+
+
 def _buscar_maior(imagens, det, rec):
     np = _cv["np"]; cv2 = _cv["cv2"]
     achados, varias = [], False          # (largura do maior rosto do quadro, vetor)
+    brutos = []
     for b in imagens[:BUSCA_VEND_IMGS]:
         try:
             raw = base64.b64decode(b.split(",", 1)[-1])
         except Exception:
             continue
-        if not img_aceita(raw):
+        d = img_dims(raw)                # só o cabeçalho: nada é decodificado antes de conferir o tamanho
+        if d is None:                    # não é JPEG nem PNG: o quadro não é lido
             continue
+        if d[0] * d[1] > BUSCA_VEND_PIXELS:
+            raise BuscaVendGrande()
+        brutos.append(raw)
+    for raw in brutos:
         try:
             img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
         except Exception:
@@ -1369,7 +1389,7 @@ def _buscar_maior(imagens, det, rec):
         if fs:
             varias = varias or varias_pessoas(fs)
             achados.append((fs[0][0], fs[0][1]))
-    del imagens
+    del imagens, brutos
     if not achados:
         return {"rosto": False, "varias": False, "fotos": []}
     return dict(buscar_vetor(busca_vend_vetor(achados), 1, 0, piso=BUSCA_VEND_PISO), varias=bool(varias))
@@ -13425,29 +13445,46 @@ def busca_vend_sessoes(fotos, agora=None):
         + [o for o in ordem if o["nivel"] != "certeza"][:BUSCA_VEND_MAX]
 
 
-def busca_vend_hoje(por):
-    """Quantas buscas esta pessoa já fez hoje (do banco: reiniciar o agente não zera)."""
+BUSCA_VEND_FORA = ("limite_min", "limite_dia")     # linhas que registram uma recusa por limite: não contam como busca
+
+
+def busca_vend_reserva(bid, por, posto, minuto_ok=True):
+    """Conta as buscas de hoje desta pessoa e grava a linha desta busca NA MESMA transação (duas buscas ao mesmo tempo não
+    passam juntas do teto do dia). -> None se a busca pode seguir (linha gravada como "iniciada"), ou "limite_min" /
+    "limite_dia". A recusa também fica registrada (até BUSCA_VEND_RECUSAS_DIA por pessoa e por dia). Aproveita para apagar
+    as linhas com mais de BUSCA_VEND_RETENCAO dias. Erro aqui sobe: busca sem registro não roda."""
+    agora = time.time()
+    dia, em = _ff_hoje(agora), time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora))
     with ev_lock:
         db = vendas_db()
         try:
-            return int(db.execute("select count(*) from busca_vend where dia = ? and por = ?", (_ff_hoje(), por)).fetchone()[0] or 0)
+            db.execute("begin immediate")
+            db.execute("delete from busca_vend where dia < ?", (_ff_hoje(agora - BUSCA_VEND_RETENCAO * 86400),))
+            n, rec = db.execute("select sum(resultado not in ('limite_min', 'limite_dia')), sum(resultado in ('limite_min', 'limite_dia'))"
+                                " from busca_vend where dia = ? and por = ?", (dia, por)).fetchone()
+            motivo = None if minuto_ok and int(n or 0) < BUSCA_VEND_POR_DIA else "limite_dia" if int(n or 0) >= BUSCA_VEND_POR_DIA else "limite_min"
+            if motivo is None or int(rec or 0) < BUSCA_VEND_RECUSAS_DIA:
+                db.execute("insert into busca_vend (id, em, dia, por, posto, resultado, certeza, talvez, achadas) values (?, ?, ?, ?, ?, ?, 0, 0, '[]')",
+                           (bid, em, dia, por, posto, motivo or "iniciada"))
+            db.commit()
+            return motivo
         finally:
             db.close()
 
 
-def busca_vend_grava(bid, por, posto, resultado, sessoes):
-    """Uma linha por busca. Erro aqui sobe: busca sem registro não devolve nada."""
-    agora = time.time()
+def busca_vend_grava(bid, resultado, sessoes):
+    """O desfecho da busca na linha que a reserva gravou. Erro aqui sobe: busca sem registro não devolve nada."""
     with ev_lock:
         db = vendas_db()
         try:
-            db.execute("insert into busca_vend (id, em, dia, por, posto, resultado, certeza, talvez, achadas) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                       (bid, time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), _ff_hoje(agora), por, posto, resultado,
-                        sum(1 for o in sessoes if o["nivel"] == "certeza"), sum(1 for o in sessoes if o["nivel"] != "certeza"),
-                        json.dumps([[o["card"], o["nivel"], o["sim"]] for o in sessoes])))
+            n = db.execute("update busca_vend set resultado = ?, certeza = ?, talvez = ?, achadas = ? where id = ?",
+                           (resultado, sum(1 for o in sessoes if o["nivel"] == "certeza"), sum(1 for o in sessoes if o["nivel"] != "certeza"),
+                            json.dumps([[o["card"], o["nivel"], o["sim"]] for o in sessoes]), bid)).rowcount
             db.commit()
         finally:
             db.close()
+    if n != 1:
+        raise RuntimeError("busca sem linha")
 
 
 def busca_vend_marcar(bid, por, cards):
@@ -13500,6 +13537,21 @@ def busca_vend_dia(dia):
             return None
     return [{"busca": r[0], "em": r[1], "por": r[2], "posto": r[3], "resultado": r[4], "certeza": r[5], "talvez": r[6],
              "achadas": js(r[7]) or [], "marcadas": js(r[8]), "marcada_em": r[9]} for r in rs][-3000:]
+
+
+def busca_vend_resumo(linhas):
+    """Por pessoa, no dia: quantas buscas fez, quantas acharam sessão, quantas terminaram sem venda marcada e quantas vezes
+    bateu no limite. linhas = busca_vend_dia(dia). Para o Admin conferir o uso (GET /ponto/selfies)."""
+    por = {}
+    for x in linhas:
+        o = por.setdefault(x.get("por") or "?", {"por": x.get("por") or "?", "buscas": 0, "acharam": 0, "sem_venda": 0, "limite": 0})
+        if x.get("resultado") in BUSCA_VEND_FORA:
+            o["limite"] += 1
+            continue
+        o["buscas"] += 1
+        o["acharam"] += 1 if x.get("resultado") == "achou" else 0
+        o["sem_venda"] += 0 if x.get("marcada_em") else 1
+    return sorted(por.values(), key=lambda o: (-o["buscas"], o["por"]))
 
 
 def _ev_dia(em):
@@ -14361,6 +14413,7 @@ def zerar_inventario():
     vai["recortes"] = len(_zerar_ls(RECORTES))
     vai["montagens"] = len(_zerar_ls(MONTAGENS))
     vai["selfies"] = _zerar_n(VENDAS_DB, "select count(*) from selfie")
+    vai["buscas_vendedor"] = _zerar_n(VENDAS_DB, "select count(*) from busca_vend")
     vai["fotografo_dias"] = _zerar_n(OPERACAO_DB, "select count(*) from fotografo_dia")
     vai["fila_nuvem"] = _zerar_n(NUVEM_DB, "select count(*) from fila")
     tablet = _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='eterna'")
@@ -14652,6 +14705,7 @@ def _zp_vendas(ctx):
                     n += c.execute("delete from %s" % t).rowcount
             n += c.execute("delete from evento").rowcount
             n += c.execute("delete from selfie").rowcount
+            n += c.execute("delete from busca_vend").rowcount
         return n
     finally:
         c.close()
@@ -25211,7 +25265,7 @@ class H(BaseHTTPRequestHandler):
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
                            platform=sys.platform, ftp=ftp_,
-                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
+                           rostos={**rostos, "fila": fila_rostos.qsize(), "busca_vend": bool(BUSCA_VEND_ON)}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
                            estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"], "fot": fot_status()}, fuso=fuso_info(),
@@ -25294,9 +25348,12 @@ class H(BaseHTTPRequestHandler):
                         except ValueError:
                             pass
             except OSError as ex:
-                return self.js({"ok": False, "dia": dia, "erro": str(ex)[:160], "buscas": [], "vendedor": busca_vend_dia(dia)}, nostore=True)
-            # 26/11: "vendedor" = as buscas por selfie feitas pelo vendedor no Procurar fotos (quem, posto, achadas e marcadas)
-            return self.js({"ok": True, "dia": dia, "buscas": linhas[-3000:], "vendedor": busca_vend_dia(dia)}, nostore=True)
+                bv = busca_vend_dia(dia)
+                return self.js({"ok": False, "dia": dia, "erro": str(ex)[:160], "buscas": [], "vendedor": bv, "vendedor_resumo": busca_vend_resumo(bv)}, nostore=True)
+            # 26/11: "vendedor" = as buscas por selfie feitas pelo vendedor no Procurar fotos (quem, posto, achadas e marcadas);
+            # "vendedor_resumo" = por pessoa, quantas buscas fez e quantas terminaram sem venda marcada
+            bv = busca_vend_dia(dia)
+            return self.js({"ok": True, "dia": dia, "buscas": linhas[-3000:], "vendedor": bv, "vendedor_resumo": busca_vend_resumo(bv)}, nostore=True)
         if u.path == "/ponto/vendas-dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -25834,7 +25891,11 @@ class H(BaseHTTPRequestHandler):
             self.js({"error": "origem não autorizada"}, 403)
             return None
         eu = self.sessao()
-        if not eu or eu.get("assumido_por") or not auth_pode(eu["cadastro"], "venda", "c"):
+        cad = (eu or {}).get("cadastro") or {}
+        # a mesma regra da tela (impPreso): quem tem vínculo de fotógrafo e Minhas fotos (set em Ver) só vê as próprias
+        # sessões, e esta busca devolve as de todos. Admin e Supervisora ficam de fora da regra
+        preso = bool(cad.get("key")) and cad.get("preset") not in ("admin", "supervisor") and auth_pode(cad, "set", "r")
+        if not eu or eu.get("assumido_por") or not auth_pode(cad, "venda", "c") or preso:
             self.close_connection = True
             self.js({"erro": "sem_permissao"}, 403, True)
             return None
@@ -25857,30 +25918,38 @@ class H(BaseHTTPRequestHandler):
         if not isinstance(imgs, list) or not 1 <= len(imgs) <= BUSCA_VEND_IMGS or not all(isinstance(i, str) and i for i in imgs):
             return self.js({"ok": False, "erro": "invalido"}, 400, True)
         por = eu["usuario"]
+        pa = self.posto_atual()
+        # aparelho não pareado: fica ao menos o endereço de onde veio o pedido
+        posto = str(pa.get("nome") or "")[:30] if pa else ("ip " + str(self.client_address[0] if self.client_address else "?"))[:45]
+        bid = secrets.token_hex(8)
         try:
-            if not limite_ok(por, "rostos-sessoes", BUSCA_VEND_POR_MIN) or busca_vend_hoje(por) >= BUSCA_VEND_POR_DIA:
-                return self.js({"ok": False, "erro": "muitas_buscas"}, 429, True)
+            motivo = busca_vend_reserva(bid, por, posto, limite_ok(por, "rostos-sessoes", BUSCA_VEND_POR_MIN))
         except Exception:
             return self.js({"ok": False, "erro": "registro"}, 500, True)
+        if motivo:
+            return self.js({"ok": False, "erro": "limite_dia" if motivo == "limite_dia" else "muitas_buscas"}, 429, True)
         t0 = time.time()
-        pa = self.posto_atual()
-        posto = str(pa.get("nome") or "")[:30] if pa else None
-        bid = secrets.token_hex(8)
         _viz_tl.vets = None                     # os vetores desta busca não ficam guardados em lugar nenhum
         try:
             r = buscar_vend(imgs)
             del imgs, body
             ss = busca_vend_sessoes(r.get("fotos")) if r.get("rosto") else []
+        except BuscaVendGrande:
+            try:
+                busca_vend_grava(bid, "imagem_grande", [])
+            except Exception:
+                pass
+            return self.js({"ok": False, "erro": "grande"}, 413, True)
         except Exception as ex:
             try:
-                busca_vend_grava(bid, por, posto, "erro", [])
+                busca_vend_grava(bid, "erro", [])
             except Exception:
                 pass
             selfie_diagnostico("vendedor", {"error": type(ex).__name__}, t0, "erro", posto, por)
             return self.js({"ok": False, "erro": "busca"}, 500, True)
         res = "sem_rosto" if not r.get("rosto") else "achou" if ss else "nao_achou"
         try:
-            busca_vend_grava(bid, por, posto, res, ss)
+            busca_vend_grava(bid, res, ss)
         except Exception as ex:
             print("  busca do vendedor: não registrou (%s): nada devolvido" % type(ex).__name__)
             return self.js({"ok": False, "erro": "registro"}, 500, True)
@@ -25888,8 +25957,12 @@ class H(BaseHTTPRequestHandler):
         # resposta. Não entra na tabela "selfie": aquela conta as selfies dos clientes (Estatísticas) e não muda
         selfie_diagnostico("vendedor", {"rosto": bool(r.get("rosto")), "fotos": sorted((b for o in ss for b in o["bateu"]), key=lambda b: -b["sim"]),
                                         "janela_min": 0, "fila": r.get("fila")}, t0, res, posto, por)
+        # a nota fica só no banco e no diagnóstico do servidor: a resposta leva o nível em palavras e as fotos, sem número
+        fora = [{k: v for k, v in o.items() if k != "sim"} for o in ss]
+        for o in fora:
+            o["bateu"] = [{"id": b["id"]} for b in o["bateu"]]
         return self.js({"ok": True, "busca": bid, "rosto": bool(r.get("rosto")), "varias": bool(r.get("varias")),
-                        "fila": int(r.get("fila") or 0), "sessoes": ss}, 200, True)
+                        "fila": int(r.get("fila") or 0), "sessoes": fora}, 200, True)
 
     def rostos_sessoes_marcar_post(self):
         """POST /rostos/sessoes/marcar {busca, cards} -> {ok}. Guarda quais das achadas o vendedor marcou para a venda."""

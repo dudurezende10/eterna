@@ -24,6 +24,7 @@ os.environ.update(HOME=HA, USERPROFILE=HA, ETERNA_SEM_OPENCV="1")
 for k in ("ETERNA_SESSAO_PAUSA", "ETERNA_SESS_LIMITES", "ETERNA_VIZINHAS", "ETERNA_ORIGENS", "ETERNA_BUSCA_DIAS", "ETERNA_BUSCA_JANELA_MIN",
           "ETERNA_BUSCA_VEND", "ETERNA_BUSCA_VEND_PISO", "ETERNA_SELFIE_LOG"):
     os.environ.pop(k, None)
+os.environ["ETERNA_BUSCA_VEND"] = "1"            # a busca nasce desligada: o teste liga pela variável, como o servidor
 os.makedirs(os.path.join(HA, "Eterna"), exist_ok=True)
 json.dump({"users": {n: "x" * 12 for n in ("carlos", "samuel")}}, open(os.path.join(HA, "Eterna", "ftp.json"), "w"))
 sp = importlib.util.spec_from_file_location("ag", AG)
@@ -36,6 +37,13 @@ import _agente_sessao as S
 PISO = m.BUSCA_VEND_PISO
 ok(m.LIMITE == 0.45 and m.LIMITE_TALVEZ == 0.38, "os limites da selfie do cliente não mudaram: %r %r" % (m.LIMITE, m.LIMITE_TALVEZ))
 ok(m.BUSCA_VEND_PISO_MIN <= PISO < m.LIMITE_TALVEZ and m.BUSCA_VEND_ON is True, "piso do pode ser dentro da faixa travada: %r" % PISO)
+for val, esperado in ((None, False), ("", False), ("0", False), ("true", False), ("sim", False), ("2", False), (" 1 ", True), ("1", True)):
+    if val is None:
+        os.environ.pop("ETERNA_BUSCA_VEND", None)
+    else:
+        os.environ["ETERNA_BUSCA_VEND"] = val
+    ok(m.busca_vend_env() is esperado, "a busca do vendedor só liga com ETERNA_BUSCA_VEND=1: %r -> %r" % (val, m.busca_vend_env()))
+os.environ["ETERNA_BUSCA_VEND"] = "1"
 ok(m._busca_vend_piso("0.01") == m.BUSCA_VEND_PISO_MIN and m._busca_vend_piso("0.9") == m.LIMITE_TALVEZ and m._busca_vend_piso("-3") == m.BUSCA_VEND_PISO_MIN
    and m._busca_vend_piso("abc") == m.BUSCA_VEND_PISO_PADRAO and m._busca_vend_piso("nan") == m.BUSCA_VEND_PISO_PADRAO and m._busca_vend_piso("") == m.BUSCA_VEND_PISO_PADRAO
    and m._busca_vend_piso("0,33") == 0.33, "piso por variável de ambiente fica travado na faixa")
@@ -56,6 +64,18 @@ so_ck = S.cookie_sessao(m, "checkout-bv", {"quiosque": {"c": True, "r": True, "u
 so_ler = S.cookie_sessao(m, "leitura-bv", {"venda": {"r": True, "u": True}, "galerias": {"c": True, "r": True}})
 vercomo = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("vendedora-bv", por="admin-bv"))
 posto = S.cookie_posto(m, "Caixa 7")
+# vendedor com vínculo de fotógrafo e Minhas fotos (na tela, só vê as próprias sessões): não usa a busca, que devolve as de todos
+m.estado_gravar({"docs": [{"col": "usuarios", "id": "fotovend-bv", "valor": {"v": 2, "email": "fotovend-bv", "name": "fotovend-bv", "active": True, "preset": "custom", "key": "carlos",
+                                                                           "perms": dict(VENDA, set={"r": True})}},
+                          {"col": "usuarios", "id": "superv-bv", "valor": {"v": 2, "email": "superv-bv", "name": "superv-bv", "active": True, "preset": "supervisor", "key": "carlos",
+                                                                         "perms": dict(VENDA, set={"r": True})}}]})
+preso = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("fotovend-bv"))
+sup = "%s=%s" % (m.AUTH_COOKIE, m.auth_sessao_nova("superv-bv"))
+
+
+def png(rotulo, w=640, h=480):
+    """Um "quadro" de teste: cabeçalho de PNG com o tamanho (é só o que o agente lê antes de decodificar) e um rótulo."""
+    return b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + w.to_bytes(4, "big") + h.to_bytes(4, "big") + rotulo
 
 
 def pede(metodo, rota, corpo=None, cookie=None, extra=None, xe=True, cru=None):
@@ -86,7 +106,7 @@ def linhas():
         db.close()
 
 
-IMG0 = ["data:image/jpeg;base64," + base64.b64encode(b"quadro-sem-rosto").decode()]
+IMG0 = ["data:image/png;base64," + base64.b64encode(png(b"sem-rosto")).decode()]
 
 # ---------- 23: quem entra ----------
 for rota, corpo in (("/rostos/sessoes", {"imagens": IMG0}), ("/rostos/sessoes/marcar", {"busca": "0" * 16, "cards": []})):
@@ -100,6 +120,8 @@ for rota, corpo in (("/rostos/sessoes", {"imagens": IMG0}), ("/rostos/sessoes/ma
     ok(st == 403, "23: %s no perfil Checkout com posto pareado: %s %r" % (rota, st, r))
     st, r = pede("POST", rota, corpo, cookie=so_ler)
     ok(st == 403, "23: %s com venda só em Ver: %s %r" % (rota, st, r))
+    st, r = pede("POST", rota, corpo, cookie=preso)
+    ok(st == 403 and r.get("erro") == "sem_permissao", "6: %s com vínculo de fotógrafo e Minhas fotos: %s %r" % (rota, st, r))
     st, r = pede("POST", rota, corpo, cookie=vercomo)
     ok(st == 403 and r.get("erro") == "so_ver", '23: %s no "ver como": %s %r' % (rota, st, r))
     st, r = pede("POST", rota, corpo, cookie=vend, extra={"Origin": "http://evil.example"})
@@ -204,13 +226,17 @@ class Cv2Falso:
 
     @staticmethod
     def imdecode(buf, _flag):
-        return bytes(buf)
+        DECODIFICADAS.append(len(buf))
+        return bytes(buf)[24:]            # o rótulo, depois do cabeçalho de PNG do teste
+
+
+DECODIFICADAS = []
 
 
 m._cv.update(np=np, cv2=Cv2Falso)
 m._busca["m"] = (None, None)
 m.ler_rostos = lambda img, det, rec, minimo=40, **k: [(l, np.asarray(v, "float32")) for l, v in QUADROS[img]]
-img = lambda *nomes: ["data:image/jpeg;base64," + base64.b64encode(n).decode() for n in nomes]
+img = lambda *nomes: ["data:image/png;base64," + base64.b64encode(png(n)).decode() for n in nomes]
 
 
 def arquivos():
@@ -231,17 +257,20 @@ ok(set(ss) == {S_CERTA, S_ABERTA, S_TACA, S_DUVIDA, S_FUNDO}, "25: só as sessõ
 for nome, c in (("de ontem", S_ONTEM), ("removida", S_REMOVIDA), ("de menor", S_MENOR), ("de escola", S_ESCOLA), ("só com base de IA", S_SO_IA),
                 ("só com foto na fila", S_PEND), ("abaixo do piso", S_BAIXA), ("de outra pessoa", S_B)):
     ok(c not in ss and c not in json.dumps(r), "25: sessão %s nunca vem" % nome)
-ok(all(set(o) == {"card", "nivel", "sim", "status", "fotografo", "ponto", "cap0", "cap1", "n", "bateu"} for o in ss.values()), "contrato de cada sessão: %r" % (list(ss.values())[:1],))
+ok(all(set(o) == {"card", "nivel", "status", "fotografo", "ponto", "cap0", "cap1", "n", "bateu"} and all(set(b) == {"id"} for b in o["bateu"]) for o in ss.values()),
+   "contrato de cada sessão, sem a nota: %r" % (list(ss.values())[:1],))
+ok('"sim"' not in json.dumps(r) and not any(isinstance(v, float) and 0 < v < 1 for o in ss.values() for v in o.values()), "4: a resposta não leva nota nenhuma (nem por sessão, nem por foto)")
+NOTAS = {a[0]: a[2] for a in json.loads(m.busca_vend_dia(HOJE)[-1]["achadas"] if isinstance(m.busca_vend_dia(HOJE)[-1]["achadas"], str) else json.dumps(m.busca_vend_dia(HOJE)[-1]["achadas"]))}
 c_ = ss.get(S_CERTA) or {}
 ok(c_.get("nivel") == "certeza" and c_.get("status") == "fechada" and c_.get("fotografo") == "carlos" and c_.get("ponto") == "campo2" and c_.get("n") == 3
-   and [b["id"] for b in c_.get("bateu") or []] == [P_CERTA[0], P_CERTA[1]] and abs(c_["sim"] - c_["bateu"][0]["sim"]) < 1e-9 and c_["sim"] >= 0.6,
+   and [b["id"] for b in c_.get("bateu") or []] == [P_CERTA[0], P_CERTA[1]] and NOTAS.get(S_CERTA, 0) >= 0.6,
    "24: certeza com as fotos em que o rosto bateu, sem a base de IA: %r" % (c_,))
 ok(P_CERTA[3] not in json.dumps(r), "25: foto que é base de IA nunca é devolvida")
 ok((ss.get(S_ABERTA) or {}).get("status") == "aberta" and ss[S_ABERTA]["nivel"] == "certeza", "25: sessão aberta vem com status aberta: %r" % (ss.get(S_ABERTA),))
 t_ = ss.get(S_TACA) or {}
-ok(t_.get("nivel") == "pode_ser" and PISO <= t_.get("sim", 0) < m.LIMITE_TALVEZ and [b["id"] for b in t_.get("bateu") or []] == [P_TACA[0]], "24: nota 0,33 aparece em pode_ser: %r" % (t_,))
+ok(t_.get("nivel") == "pode_ser" and PISO <= NOTAS.get(S_TACA, 0) < m.LIMITE_TALVEZ and [b["id"] for b in t_.get("bateu") or []] == [P_TACA[0]], "24: nota 0,33 aparece em pode_ser: %r" % (t_,))
 ok((ss.get(S_DUVIDA) or {}).get("nivel") == "pode_ser", "24: a faixa de dúvida (0,38 a 0,45) é pode_ser: %r" % (ss.get(S_DUVIDA),))
-ok((ss.get(S_FUNDO) or {}).get("nivel") == "pode_ser" and ss[S_FUNDO]["sim"] >= m.LIMITE, "nota alta com a pessoa só ao fundo não chega marcada: %r" % (ss.get(S_FUNDO),))
+ok((ss.get(S_FUNDO) or {}).get("nivel") == "pode_ser" and NOTAS.get(S_FUNDO, 0) >= m.LIMITE, "nota alta com a pessoa só ao fundo não chega marcada: %r" % (ss.get(S_FUNDO),))
 niveis = [o["nivel"] for o in r["sessoes"]]
 ok(niveis == sorted(niveis, key=lambda n: n != "certeza") and niveis.count("certeza") == 2, "certeza vem antes de pode_ser: %r" % (niveis,))
 BUSCA1 = r["busca"]
@@ -251,6 +280,7 @@ L = linhas()
 ok(len(L) == 1 and L[0][0] == BUSCA1 and L[0][3] == "vendedora-bv" and L[0][4] == "Caixa 7" and L[0][2] == HOJE and L[0][5] == "achou" and L[0][6] == 2 and L[0][7] == 3
    and {a[0] for a in json.loads(L[0][8])} == set(ss) and L[0][9] is None and L[0][10] is None and "outra-pessoa" not in json.dumps(L) and "Posto falso" not in json.dumps(L),
    "26: uma linha em busca_vend, com quem e posto vindos da sessão e não do corpo: %r" % (L,))
+ok(all(isinstance(a[2], float) for a in json.loads(L[0][8])), "4: a nota fica só no banco")
 
 # ---------- 24: a selfie do cliente responde como antes ----------
 st, rb = pede("POST", "/rostos/buscar", {"imagens": img(b"so-a", b"a-de-novo")}, cookie=vend + "; " + posto)
@@ -299,7 +329,7 @@ ok(st == 200 and r.get("rosto") is True and r.get("sessoes") == [] and linhas()[
 # ---------- 28: nada de imagem no disco ----------
 novos = arquivos() - antes
 ok(all(x.endswith((".jsonl", ".db", ".db-wal", ".db-shm")) for x in novos), "28: nenhum arquivo novo além de registro e banco: %r" % (sorted(novos),))
-marcas = [base64.b64encode(n) for n in QUADROS] + list(QUADROS)
+marcas = [base64.b64encode(png(n)) for n in QUADROS] + list(QUADROS)
 for x in arquivos():
     try:
         d = open(x, "rb").read()
@@ -320,15 +350,58 @@ sts = [pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend)[0
 ok(sts == [200] * 6 + [429], "26: a sétima busca no mesmo minuto dá 429: %r" % (sts,))
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend)
 ok(st == 429 and r.get("erro") == "muitas_buscas" and "sessoes" not in r, "26: 429 muitas_buscas, sem lista: %s %r" % (st, r))
-ok(len(linhas()) == n0 + 6 and all(x[3] == "vendedora-bv" for x in linhas()), "26: cada busca aceita grava uma linha; a recusada não: %d" % (len(linhas()) - n0))
+buscas = lambda quem="vendedora-bv": [x for x in linhas() if x[3] == quem and x[5] not in m.BUSCA_VEND_FORA]
+recusas = lambda quem="vendedora-bv": [x for x in linhas() if x[3] == quem and x[5] in m.BUSCA_VEND_FORA]
+ok(len([x for x in linhas() if x[5] not in m.BUSCA_VEND_FORA]) == n0 + 6 and all(x[3] == "vendedora-bv" for x in linhas()), "26: cada busca aceita grava uma linha de busca")
+ok([x[5] for x in recusas()] == ["limite_min", "limite_min"] and all(x[6] == 0 and x[8] == "[]" for x in recusas()), "7: a recusa por limite também fica registrada: %r" % ([x[5] for x in recusas()],))
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend2)
-ok(st == 200 and linhas()[-1][3] == "vendedor2-bv" and linhas()[-1][4] is None, "26: o limite é por pessoa (a outra vendedora busca): %s" % st)
+ok(st == 200 and linhas()[-1][3] == "vendedor2-bv" and linhas()[-1][4] == "ip 127.0.0.1", "26 e 17: o limite é por pessoa; sem posto pareado fica o endereço do aparelho: %s %r" % (st, linhas()[-1][4]))
 BUSCA2 = r["busca"]
 m._janelas.clear()
-dia_max, m.BUSCA_VEND_POR_DIA = m.BUSCA_VEND_POR_DIA, sum(1 for x in linhas() if x[3] == "vendedora-bv")
+dia_max, m.BUSCA_VEND_POR_DIA = m.BUSCA_VEND_POR_DIA, len(buscas())
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend)
-ok(st == 429 and r.get("erro") == "muitas_buscas", "26: teto do dia por pessoa, contado no banco: %s %r" % (st, r))
+ok(st == 429 and r.get("erro") == "limite_dia" and "sessoes" not in r and linhas()[-1][5] == "limite_dia" and linhas()[-1][3] == "vendedora-bv",
+   "7: teto do dia por pessoa, contado no banco, com erro próprio e registrado: %s %r" % (st, r))
+# 7: seis buscas ao mesmo tempo com 2 de folga no teto do dia: passam exatamente 2
+m._janelas.clear()
+m.BUSCA_VEND_POR_DIA = len(buscas()) + 2
+saida = []
+ts = [threading.Thread(target=lambda: saida.append(pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend))) for _ in range(6)]
+[t.start() for t in ts]
+[t.join() for t in ts]
+ok(sorted(x[0] for x in saida) == [200, 200, 429, 429, 429, 429] and all(x[1].get("erro") == "limite_dia" for x in saida if x[0] == 429) and len(buscas()) == m.BUSCA_VEND_POR_DIA,
+   "7: buscas ao mesmo tempo não passam do teto do dia: %r" % (sorted(x[0] for x in saida),))
+# as recusas registradas têm teto por pessoa e por dia (um laço de pedidos não enche o banco)
+rec_max, m.BUSCA_VEND_RECUSAS_DIA = m.BUSCA_VEND_RECUSAS_DIA, len(recusas())
+nr = len(linhas())
+st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend)
+ok(st == 429 and len(linhas()) == nr, "7: acima do teto de recusas registradas, só responde 429: %s" % st)
+m.BUSCA_VEND_RECUSAS_DIA = rec_max
 m.BUSCA_VEND_POR_DIA = dia_max
+# 2: retenção de 30 dias, limpa a cada busca
+with m.ev_lock:
+    db = m.vendas_db()
+    for idv, dias in (("a" * 16, 45), ("b" * 16, 10)):
+        d_ = m._ff_hoje(time.time() - dias * 86400)
+        db.execute("insert into busca_vend (id, em, dia, por, posto, resultado, certeza, talvez, achadas) values (?, ?, ?, 'antiga-bv', 'Caixa 1', 'achou', 1, 0, '[]')", (idv, d_ + "T10:00:00", d_))
+    db.commit()
+    db.close()
+m._janelas.clear()
+st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend2)
+ids_ = {x[0] for x in linhas()}
+ok(st == 200 and "a" * 16 not in ids_ and "b" * 16 in ids_ and m.BUSCA_VEND_RETENCAO == 30, "2: a tabela guarda 30 dias (a linha de 45 dias saiu, a de 10 ficou)")
+# 5: quadro acima de 4 MP é recusado antes de decodificar; o que não é JPEG nem PNG não é lido
+m._janelas.clear()
+nd = len(DECODIFICADAS)
+grande = ["data:image/png;base64," + base64.b64encode(png(b"so-a", 3000, 2000)).decode()]
+st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a") + grande}, cookie=vend2)
+ok(st == 413 and r.get("erro") == "grande" and "sessoes" not in r and len(DECODIFICADAS) == nd and linhas()[-1][5] == "imagem_grande", "5: imagem acima de 4 MP: 413 sem decodificar nada: %s %r" % (st, r))
+st, r = pede("POST", "/rostos/sessoes", {"imagens": ["data:image/jpeg;base64," + base64.b64encode(b"so-a").decode(), base64.b64encode(b"GIF89a" + b"so-a").decode()]}, cookie=vend2)
+ok(st == 200 and r.get("rosto") is False and r.get("sessoes") == [] and len(DECODIFICADAS) == nd, "5: o que não é JPEG nem PNG não é decodificado: %s %r" % (st, r))
+ok(m.BUSCA_VEND_PIXELS == 4000000, "teto de 4 MP por quadro")
+m._janelas.clear()
+st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=sup)
+ok(st == 200 and r.get("ok") is True, "6: Supervisora com vínculo de fotógrafo segue podendo (como na tela): %s" % st)
 ok(dia_max == 150 and m.BUSCA_VEND_POR_MIN == 6, "limites: 6 por minuto e 150 por dia")
 
 # ---------- corpo ----------
@@ -366,6 +439,7 @@ l1 = [x for x in linhas() if x[0] == BUSCA1][0]
 ok(st == 200 and r == {"ok": True} and json.loads(l1[9]) == [S_CERTA, S_TACA] and l1[10] and l1[10][:10] == HOJE and l1[3] == "vendedora-bv", "27: marcar grava as marcadas, com a hora do servidor: %s %r" % (st, l1[9:]))
 st, r = mc({"busca": BUSCA1, "cards": [S_CERTA]})
 ok(st == 409 and r.get("erro") == "ja_marcada" and json.loads([x for x in linhas() if x[0] == BUSCA1][0][9]) == [S_CERTA, S_TACA], "27: marcar vale uma vez: %s %r" % (st, r))
+ok([x for x in linhas() if x[0] == BUSCA2][0][9] is None, "a busca da outra pessoa segue sem marcação")
 st, r = mc({"busca": BUSCA2, "cards": []}, vend2)
 ok(st == 200 and json.loads([x for x in linhas() if x[0] == BUSCA2][0][9]) == [], "marcar sem nenhuma das achadas (o vendedor desmarcou todas): %s" % st)
 with m.ev_lock:
@@ -385,11 +459,20 @@ ok(st == 200 and r.get("ok") is True and isinstance(r.get("buscas"), list) and a
    and len(v1) == 1 and v1[0]["por"] == "vendedora-bv" and v1[0]["posto"] == "Caixa 7" and v1[0]["marcadas"] == [S_CERTA, S_TACA] and v1[0]["certeza"] == 2 and v1[0]["talvez"] == 3
    and {a[0] for a in v1[0]["achadas"]} == set(ss) and set(v1[0]) == {"busca", "em", "por", "posto", "resultado", "certeza", "talvez", "achadas", "marcadas", "marcada_em"},
    "/ponto/selfies traz as buscas do vendedor: %s %r" % (st, v1))
+# 8: por pessoa, quantas buscas fez e quantas terminaram sem venda marcada
+rs_ = {x["por"]: x for x in r.get("vendedor_resumo") or []}
+eu_ = rs_.get("vendedora-bv") or {}
+ok(set(eu_) == {"por", "buscas", "acharam", "sem_venda", "limite"} and eu_["buscas"] == len(buscas()) and eu_["sem_venda"] == eu_["buscas"] - 1 and eu_["limite"] == len(recusas()) >= 3
+   and 0 < eu_["acharam"] <= eu_["buscas"] and "vendedor2-bv" in rs_ and rs_["vendedor2-bv"]["sem_venda"] == rs_["vendedor2-bv"]["buscas"]
+   and [x["buscas"] for x in r["vendedor_resumo"]] == sorted((x["buscas"] for x in r["vendedor_resumo"]), reverse=True),
+   "8: /ponto/selfies traz o resumo por pessoa (buscas, sem venda marcada, vezes no limite): %r" % (r.get("vendedor_resumo"),))
 st, r = pede("GET", "/ponto/selfies?dia=" + HOJE, cookie=vend)
 ok(st == 403, "/ponto/selfies segue só para quem tem galerias em Ver: %s" % st)
 
 # ---------- chaves para desligar ----------
 m._janelas.clear()
+st, r = pede("GET", "/status", cookie=vend)
+ok(st == 200 and (r.get("rostos") or {}).get("busca_vend") is True, "B1: o /status diz que a busca do vendedor está ligada: %r" % ((r.get("rostos") or {}).get("busca_vend"),))
 n0 = len(linhas())
 m.rostos["ligado"] = False
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend)
@@ -398,7 +481,9 @@ m.rostos["ligado"] = True
 m.BUSCA_VEND_ON = False
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a")}, cookie=vend)
 st2, r2 = mc({"busca": BUSCA1, "cards": []})
-ok(st == 404 and st2 == 404 and "sessoes" not in r, "ETERNA_BUSCA_VEND=0: as duas rotas respondem 404: %s %s" % (st, st2))
+ok(st == 404 and st2 == 404 and "sessoes" not in r, "B1: desligada (como nasce), as duas rotas respondem 404: %s %s" % (st, st2))
+st, r = pede("GET", "/status", cookie=vend)
+ok(st == 200 and (r.get("rostos") or {}).get("busca_vend") is False, "B1: desligada, o /status avisa a tela: %r" % ((r.get("rostos") or {}).get("busca_vend"),))
 st, rb = pede("POST", "/rostos/buscar", {"imagens": img(b"so-a")}, cookie=vend)
 ok(st == 200 and rb.get("rosto") is True and len(rb.get("fotos") or []) >= 5, "com a busca do vendedor desligada, a selfie do cliente segue: %s" % st)
 m.BUSCA_VEND_ON = True
@@ -418,9 +503,18 @@ m.busca_vend_grava = orig
 ok(st == 500 and r.get("erro") == "registro" and "sessoes" not in r, "sem conseguir registrar, a busca não devolve nada: %s %r" % (st, r))
 
 ok(all(o == "checkout" for o, _n in selfies_bi()), "até o fim, a tabela das selfies dos clientes só tem as do Checkout: %r" % (selfies_bi(),))
+# ---------- 2: Zerar fase de teste leva a tabela das buscas ----------
+import inspect
+ok(len(linhas()) > 5 and '"buscas_vendedor"' in inspect.getsource(m) and "delete from busca_vend\")" in inspect.getsource(m._zp_vendas), "2: o Zerar fase de teste conta e apaga as buscas do vendedor")
+try:
+    m._zp_vendas({})
+    ok(linhas() == [], "2: depois do Zerar fase de teste, a tabela das buscas fica vazia: %d" % len(linhas()))
+except Exception as ex:
+    ok(False, "2: _zp_vendas falhou: %r" % (ex,))
 srv.shutdown()
 if falhas:
     print("FALHA rostos_sessoes_agente: " + " | ".join(falhas))
     sys.exit(1)
 print("OK rostos_sessoes_agente: acesso (pessoa com venda em Criar), certeza e pode_ser, só hoje e sem removida, menor, escola, base de IA ou foto na fila, "
-      "rosto maior com aviso, limite por pessoa, registro pelo servidor, marcar uma vez e só do dono, nada de imagem no disco, chaves de desligar e /rostos/buscar igual")
+      "rosto maior com aviso, resposta sem nota, limite por pessoa (minuto e dia, sem corrida), registro pelo servidor com 30 dias, resumo por pessoa, marcar uma vez e só do dono, "
+      "nada de imagem no disco, imagem grande recusada, nasce desligada (404) e /rostos/buscar igual")

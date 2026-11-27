@@ -155,7 +155,7 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 #st-modal .st-box,#bf-selfie-modal .st-box{background:var(--surface,#fff);color:var(--fg,#0c2340);border-radius:10px;padding:20px;width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto;display:flex;flex-direction:column;gap:12px}
 #st-modal video,#bf-selfie-modal video{width:100%;aspect-ratio:4/3;object-fit:cover;background:#000;border-radius:8px;transform:scaleX(-1)}
 #st-modal .st-acoes,#bf-selfie-modal .st-acoes{gap:8px;flex-wrap:wrap}
-#bf-selfie-modal .btn{min-height:44px}#bf-selfie-modal .bf-sf-msg{min-height:20px;font-size:14px}#bf-selfie-modal .bf-sf-msg[data-erro]{color:var(--warn);font-weight:600}
+#bf-selfie-modal video{transform:none}#bf-selfie-modal .bf-sf-peca{font-weight:600}#bf-selfie-modal .btn{min-height:44px}#bf-selfie-modal .bf-sf-msg{min-height:20px;font-size:14px}#bf-selfie-modal .bf-sf-msg[data-erro]{color:var(--warn);font-weight:600}
 .btn.ver-btn{background:#FFB800;color:#134078;border-color:#FFB800;font-weight:700}
 .chip.at-chip{display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;font-weight:600}.at-ico{flex:none;width:44px;height:44px}
 .at-ico .dr-corpo{animation:atPaira 2.6s ease-in-out infinite}@keyframes atPaira{50%{transform:translateY(-3px)}}
@@ -1917,8 +1917,9 @@ const PROCURAR_VENDER_ON=true;const BF_ECO_MS=5500,BF_ABRIR_MS=6000; // quanto o
 const BF_SEL_MAX=8,BF_ABRIR_VALE=4000,BF_PED=new Map(),BF_MOTIVOS=['ocupado','carregando','paga','pedido','protegida','invalido','expirado'],BF_ORIGENS=['procurar','procurar_selfie'],BF_CARD=/^[A-Z0-9]{4,20}$/;
 // 26/11 (fase 2 do mesmo plano): "Procurar por selfie" no Procurar fotos. A câmera abre num modal da janela do vendedor, o servidor devolve
 // as sessões de hoje em que o rosto apareceu ("Certeza" já marcadas, "Pode ser" desmarcadas) e o vendedor confere antes de iniciar a venda.
-// O resultado mora só em state.procurar.selfie (memória desta janela). PROCURAR_SELFIE_ON=false devolve a tela da fase 1, sem o botão.
-const PROCURAR_SELFIE_ON=true;const BF_SF_MS=9000,BF_SF_CAM_MS=60000,BF_SF_MINIS=8; // espera da busca; a câmera do modal se solta sozinha depois de 1 min
+// O resultado mora só em state.procurar.selfie (memória desta janela). A chave nasce DESLIGADA: com PROCURAR_SELFIE_ON=false a tela é a da
+// fase 1, sem o botão. Ligada, o botão ainda depende de o servidor do ponto estar com a busca ligada (/status, rostos.busca_vend).
+const PROCURAR_SELFIE_ON=false;const BF_SF_MS=9000,BF_SF_CAM_MS=60000,BF_SF_MINIS=8; // espera da busca; a câmera do modal se solta sozinha depois de 1 min
 // 25/11: Procurar fotos (tela parada; funções junto das Sessões de hoje, antes do upSessBloco). Declarado aqui para o render e o srvPull acharem desde a carga.
 const BF_PASSO=24,BF_JANS=[30,60,180],BF_REM={};let BF_HTML=null,BF_ENV=['',''],BF_REM_N=0; // BF_REM: sessão removida pela LGPD depois do retrato sai da lista na hora
 const bfZero=()=>({key:'todos',hora:null,q:'',ord:'desc',n:BF_PASSO,snap:null,aberta:null,rol:0,user:null,sel:[],pedido:null,inv:{},selfie:null,selfieVer:false}); // sel e pedido (26/11): sessões marcadas para vender; só na memória desta janela
@@ -6464,6 +6465,7 @@ function bfLimpa(){const p=state.procurar;const era=p.sel.slice();p.sel=[];era.f
 // A situação de uma sessão à vista mudou (fechou, foi vendida, ganhou pedido): troca só o cartão dela (selo e caixa), sem redesenhar a
 // lista; a marcada que não pode mais entrar fica riscada na barra. O retrato guarda a situação nova, para o HTML da tela continuar o mesmo.
 function bfEstUpd(){const p=state.procurar,s=p.snap;if(state.view!=='procurar'||!state.user||!bfPodeVender())return;let mudou=false;
+  if(p.selfie&&p.selfieVer&&!p.aberta){const el=document.querySelector('#bf.bf-sf');if(el&&el.dataset.ass!==bfSelfieAss()){bfInvUpd();BF_HTML=null;render();return;}} // lista da selfie: sessão vendida em outro posto, com pedido ou que fechou
   if(p.sel.length&&bfInvUpd()){const el=document.getElementById('bf-barra');if(el){el.outerHTML=bfBarra();mudou=true;}}
   if(!p.aberta&&s&&s.est)psComCache(()=>{let pos=null;
     document.querySelectorAll('#bf-lista .bf-mk').forEach(el=>{const c=el.dataset.card;if(!(c in s.est))return;if(!pos){pos=new Map();s.itens.forEach((y,i)=>pos.set(y.card,i));}const i=pos.get(c);if(i==null)return;let x=s.itens[i];const e=bfTrava(bfEstado(x));if(e===s.est[c])return;
@@ -6513,11 +6515,15 @@ function bfVender(cards,origem,esperou){const p=state.procurar;if(!bfPodeVender(
 // state.procurar.selfie, memória desta janela: nunca vai ao SIM, ao localStorage, ao sessionStorage nem ao canal. O Checkout recebe, como
 // na fase 1, só os códigos marcados. A nota de cada sessão nem é guardada aqui: a tela mostra o nível em palavras.
 const BS={el:null,stream:null,busy:false,t:0,n:0};
-function bfSelfiePode(){const a=state.agent;return PROCURAR_SELFIE_ON&&bfPodeVender()&&!!(a.rostos&&a.rostos.ligado);}
+function bfSelfiePode(){const a=state.agent;return PROCURAR_SELFIE_ON&&bfPodeVender()&&!!(a.rostos&&a.rostos.ligado&&a.rostos.busca_vend===true);}
 function bfSelfieTem(card){const s=state.procurar.selfie;return !!(s&&s.itens.some(i=>i.card===card));}
 function bfSelfieSess(card){const p=state.procurar;const x=p.selfieVer&&bfSelfieTem(card)?SRV.sess[card]:null;return x&&!x.removida&&!BF_REM[card]&&bfFotos(x).length?x:null;}
 const bfOrigem=cards=>cards.some(bfSelfieTem)?'procurar_selfie':'procurar';
-function bfSelfieFecha(){clearTimeout(BS.t);BS.n++;if(BS.stream)BS.stream.getTracks().forEach(t=>t.stop());BS.stream=null;if(BS.el)BS.el.remove();BS.el=null;BS.busy=false;}
+function bfSelfieFecha(){clearTimeout(BS.t);BS.n++;if(BS.stream)BS.stream.getTracks().forEach(t=>t.stop());BS.stream=null;const era=BS.el;if(BS.el)BS.el.remove();BS.el=null;BS.busy=false;
+  if(BS.tecla){document.removeEventListener('keydown',BS.tecla,true);BS.tecla=null;}
+  if(era)setTimeout(()=>{if(BS.el||state.view!=='procurar')return;const b=document.querySelector('#bf [data-act="bf-selfie"]');if(b)b.focus();},0);} // o foco volta ao botão que abriu
+// a câmera nunca fica presa: o prazo é rearmado quando ela abre e ao fim de cada busca sem resultado; durante uma busca, espera ela acabar
+function bfSelfiePrazo(){clearTimeout(BS.t);BS.t=setTimeout(()=>{if(!BS.el)return;if(BS.busy){bfSelfiePrazo();return;}bfSelfieFecha();},BF_SF_CAM_MS);}
 function bfSelfieMsg(t,erro){const m=BS.el&&BS.el.querySelector('.bf-sf-msg');if(!m)return;m.textContent=t||'';if(erro)m.setAttribute('data-erro','1');else m.removeAttribute('data-erro');}
 function bfSelfieBt(){if(!BS.el)return;const b=BS.el.querySelector('[data-bs="buscar"]'),c=BS.el.querySelector('[data-bs="cam"]');b.disabled=BS.busy||!BS.stream;b.textContent=TE(BS.busy?'bf_selfie_procurando':'bf_selfie_procurar');c.hidden=!!BS.stream||BS.busy;}
 // A câmera do modal e a do Checkout podem ser o mesmo aparelho no mesmo computador: câmera ocupada vira aviso claro aqui e o Checkout
@@ -6531,15 +6537,20 @@ async function bfSelfieCam(){if(!BS.el||BS.stream)return;const n=BS.n;bfSelfieMs
       if(id2&&at&&id2!==at){try{const st2=await navigator.mediaDevices.getUserMedia({video:Object.assign({deviceId:{exact:id2}},tam),audio:false});st.getTracks().forEach(t=>t.stop());st=st2;}catch(e2){}}}
     if(!BS.el||BS.n!==n||BS.stream){st.getTracks().forEach(t=>t.stop());return;}
     BS.stream=st;BS.el.querySelector('video').srcObject=st;bfSelfieMsg(TE('bf_selfie_dica'));bfSelfieBt();
-    clearTimeout(BS.t);BS.t=setTimeout(()=>{if(BS.el&&!BS.busy)bfSelfieFecha();},BF_SF_CAM_MS);}
+    bfSelfiePrazo();}
   catch(e){if(!BS.el||BS.n!==n)return;const nome=String(e&&e.name||'');bfSelfieMsg(TE(/NotReadable|TrackStart|Abort|SourceUnavailable/i.test(nome)?'bf_selfie_cam_ocupada':'bf_selfie_sem_camera'),true);bfSelfieBt();}}
 function bfSelfie(){if(!PROCURAR_SELFIE_ON||BS.el||state.lojaRota||state.pub)return;if(!bfSelfiePode()){toast(TE(PROCURAR_SELFIE_ON&&bfPodeVender()?'bf_selfie_desligada':'bf_sem_servidor'));return;}
   const d=document.createElement('div');d.id='bf-selfie-modal';d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');d.setAttribute('aria-labelledby','bf-sf-t');
-  d.innerHTML=`<div class="st-box"><h2 id="bf-sf-t">${esc(TE('bf_selfie_titulo'))}</h2><video autoplay muted playsinline></video><div class="note bf-sf-msg" role="status" aria-live="polite"></div>
+  d.innerHTML=`<div class="st-box"><h2 id="bf-sf-t">${esc(TE('bf_selfie'))}</h2><div class="note bf-sf-peca" id="bf-sf-peca">${esc(TE('bf_selfie_peca'))}</div><video autoplay muted playsinline></video><div class="note bf-sf-msg" role="status" aria-live="polite"></div>
     <div class="row st-acoes"><button class="btn primary" data-bs="buscar" disabled>${esc(TE('bf_selfie_procurar'))}</button><button class="btn ghost" data-bs="cam" hidden>${esc(TE('bf_selfie_cam_de_novo'))}</button><button class="btn ghost" data-bs="fechar">${esc(TE('st_fechar'))}</button></div></div>`;
   document.body.appendChild(d);BS.el=d;BS.busy=false;
   d.addEventListener('click',e=>{const x=e.target.closest('[data-bs]');if(!x)return;e.stopPropagation();if(x.dataset.bs==='fechar')bfSelfieFecha();else if(x.dataset.bs==='cam')bfSelfieCam();else bfSelfieBusca();});
-  d.addEventListener('keydown',e=>{if(e.key==='Escape'){e.stopPropagation();bfSelfieFecha();}});
+  d.setAttribute('aria-describedby','bf-sf-peca');
+  // Esc fecha de qualquer lugar da página e o Tab fica preso nos botões do modal
+  BS.tecla=e=>{if(!BS.el)return;if(e.key==='Escape'){e.preventDefault();e.stopPropagation();bfSelfieFecha();return;}
+    if(e.key!=='Tab')return;const bs=[...BS.el.querySelectorAll('button')].filter(b=>!b.disabled&&!b.hidden);if(!bs.length){e.preventDefault();return;}
+    const i=bs.indexOf(document.activeElement);e.preventDefault();bs[(i<0?0:i+(e.shiftKey?-1:1)+bs.length)%bs.length].focus();};
+  document.addEventListener('keydown',BS.tecla,true);
   const f=d.querySelector('[data-bs="fechar"]');if(f)f.focus();bfSelfieCam();}
 // do servidor só entra o que tem o formato esperado; a nota (sim) não é guardada
 function bfSelfieNorm(r){const pid=/^[\w.-]{1,64}$/;const vistos=new Set();
@@ -6554,22 +6565,27 @@ async function bfSelfieBusca(){const v=BS.el&&BS.el.querySelector('video');if(BS
   imgs.length=0;
   // modal fechado, outra pessoa, outra tela ou sem a permissão: a resposta é descartada
   if(!BS.el||BS.n!==n)return;if(!state.user||state.user.email!==quem||state.view!=='procurar'||!bfSelfiePode()){bfSelfieFecha();return;}
-  BS.busy=false;bfSelfieBt();const erro=k=>bfSelfieMsg(TE(k),true);
-  if(st===429)return erro('bf_selfie_muitas');if(st===503||st===404)return erro('bf_selfie_desligada');if(st!==200||!r||r.ok!==true)return erro('bf_selfie_erro');
+  BS.busy=false;bfSelfieBt();const erro=k=>{bfSelfieMsg(TE(k),true);bfSelfiePrazo();};
+  if(st===429)return erro(r&&r.erro==='limite_dia'?'bf_selfie_limite_dia':'bf_selfie_muitas');if(st===503||st===404)return erro('bf_selfie_desligada');
+  if(st===401||st===403)return erro('bf_selfie_sem_perm');if(st!==200||!r||r.ok!==true)return erro('bf_selfie_erro');
   if(r.rosto!==true)return erro('bf_selfie_sem_rosto');const res=bfSelfieNorm(r);if(!res.itens.length)return erro(res.varias?'bf_selfie_nada_varias':'bf_selfie_nada');
   bfSelfieFecha();bfSelfieRecebe(res);}
 // Resultado novo: saem da seleção as sessões que só estavam marcadas por causa da selfie anterior; as de "Certeza" que podem entrar na
 // venda chegam marcadas (o vendedor desmarca a que não for do cliente); as de "Pode ser" chegam desmarcadas.
 function bfSelfieRecebe(res){const p=state.procurar;const era=p.selfie;if(era)p.sel=p.sel.filter(c=>!era.itens.some(i=>i.card===c));
-  psComCache(()=>res.itens.forEach(i=>{if(i.nivel!=='certeza'||p.sel.includes(i.card)||p.sel.length>=BF_SEL_MAX)return;const x=SRV.sess[i.card];if(x&&bfEstado(x)==='livre')p.sel.push(i.card);}));
-  p.selfie=res;p.selfieVer=true;p.aberta=null;bfInvUpd();BF_HTML=null;render();window.scrollTo({top:0,behavior:'instant'});bfVendasPull();}
+  // havia mais de um rosto na câmera (varias): o sistema pode ter usado a pessoa errada, então nada chega marcado e o vendedor marca à mão
+  let sobrou=false;if(!res.varias)psComCache(()=>res.itens.forEach(i=>{if(i.nivel!=='certeza'||p.sel.includes(i.card))return;const x=SRV.sess[i.card];if(!x||bfEstado(x)!=='livre')return;if(p.sel.length>=BF_SEL_MAX){sobrou=true;return;}p.sel.push(i.card);}));
+  p.selfie=res;p.selfieVer=true;p.aberta=null;bfInvUpd();BF_HTML=null;render();window.scrollTo({top:0,behavior:'instant'});bfVendasPull();if(sobrou)toast(TE('bf_max',BF_SEL_MAX));}
 // A venda abriu: o servidor guarda quais das achadas foram marcadas (vale uma vez; falha aqui não segura a venda) e o resultado some.
 function bfSelfieMarcar(cards,sf){const p=state.procurar;if(!sf)return false;const era=p.selfie===sf;if(era){p.selfie=null;p.selfieVer=false;}
-  if(sf.busca&&!sf.marcada){sf.marcada=true;const a=state.agent;try{agFetch(a.url+'/rostos/sessoes/marcar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({busca:sf.busca,cards:cards.filter(c=>sf.itens.some(i=>i.card===c))}),signal:agLimite(6000)}).catch(()=>{});}catch(e){}}
+  if(sf.busca&&!sf.marcada){sf.marcada=true;const url=state.agent.url+'/rostos/sessoes/marcar';const corpo=JSON.stringify({busca:sf.busca,cards:cards.filter(c=>sf.itens.some(i=>i.card===c))});
+    // falha de rede ou do servidor (5xx): uma segunda tentativa, 2 s depois; recusa (4xx) não se repete
+    const manda=n=>{let p2;try{p2=agFetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:corpo,signal:agLimite(6000)});}catch(e){p2=Promise.reject(e);}
+      p2.then(x=>{if(x.status>=500&&n<2)setTimeout(()=>manda(n+1),2000);},()=>{if(n<2)setTimeout(()=>manda(n+1),2000);});};manda(1);}
   return era;}
 function bfSelfieLimpa(){const p=state.procurar;const era=p.selfie;if(!era)return;p.sel=p.sel.filter(c=>!era.itens.some(i=>i.card===c));p.selfie=null;p.selfieVer=false;bfInvUpd();BF_HTML=null;render();}
-function bfSelfieBotoes(){if(!PROCURAR_SELFIE_ON||!bfPodeVender())return '';const s=state.procurar.selfie;
-  return `<button class="btn primary bf-selfie-b" data-act="bf-selfie">${TE('bf_selfie')}</button>${s?`<button class="chip bf-sf-volta" data-act="bf-selfie-ver">${TE('bf_selfie_ver',s.itens.length)}</button>`:''}`;}
+function bfSelfieBotoes(){if(!bfSelfiePode())return '';const s=state.procurar.selfie;
+  return `<button class="btn primary bf-selfie-b" data-act="bf-selfie">${TE('bf_selfie')}</button>${s?`<button class="chip bf-sf-volta" data-act="bf-selfie-ver">${TE('bf_selfie_ver',bfSelfieVivos().length)}</button>`:''}`;}
 // caixa de marcar com a situação de agora (a lista da selfie é curta e é refeita quando uma sessão fecha ou é vendida)
 function bfMkVivo(x){const c=x.card,e=bfTrava(bfEstado(x)),on=state.procurar.sel.includes(c);const t=bfEstTxt(e);
   return `<div class="bf-mk" data-card="${esc(c)}" data-est="${e}"><button class="chip bf-marca" data-act="bf-marca" data-card="${esc(c)}" aria-pressed="${on}"${e&&!on?' disabled':''}>${TE(on?'bf_marcada':'bf_marcar')}</button>${t?`<span class="note bf-est">${esc(t)}</span>`:''}</div>`;}
@@ -6581,11 +6597,14 @@ function bfSelfieCartao(it){const x=SRV.sess[it.card];const u=state.agent.url||'
   return `<div class="scard ps-card bf-card bf-sfc" data-card="${esc(x.card)}" data-nivel="${it.nivel}"><button class="bf-abre" data-act="bf-abrir" data-card="${esc(x.card)}"><span class="ps-top"><b class="ps-hora">${esc(bfIntervalo(x))}</b><span class="ps-fot">${esc(bfNome(bfKey(x)))}</span>${bfSelo(x.status,paga)}</span>
     <span class="ps-meta"><span class="ps-cod">${sessCodHtml(x.card)}</span><span class="bf-nf">${TE('n_fotos',f.length)}</span><span class="bf-ver">${TE('bf_ver')}</span></span></button>
     <div class="ps-thumbs bf-thumbs">${minis.map((pid,i)=>{const b=bt.includes(pid);return `<button class="bf-mini${b?' bf-bateu':''}" data-act="bf-zoom" data-card="${esc(x.card)}" data-pid="${esc(pid)}" aria-label="${esc(b?TE('bf_bateu'):TE('rv_foto_n',i+1))}"${b?` title="${esc(TE('bf_bateu'))}"`:''}><img loading="lazy" decoding="async" alt="" src="${esc(u+'/thumb/'+encodeURIComponent(pid))}"></button>`;}).join('')}</div>${bfMkVivo(x)}</div>`;}
-function bfSelfieLista(){const p=state.procurar,s=p.selfie;const vivos=s.itens.filter(i=>{const x=SRV.sess[i.card];return !BF_REM[i.card]&&!(x&&x.removida);});
+const bfSelfieVivos=()=>{const s=state.procurar.selfie;return s?s.itens.filter(i=>{const x=SRV.sess[i.card];return !BF_REM[i.card]&&!(x&&x.removida);}):[];};
+// a situação de cada sessão da lista, para o bfEstUpd saber quando redesenhar
+function bfSelfieAss(){return psComCache(()=>bfSelfieVivos().map(i=>{const x=SRV.sess[i.card];return i.card+':'+(x?bfEstado(x)+':'+x.status+':'+bfFotos(x).length:'-');}).join(' '));}
+function bfSelfieLista(){const p=state.procurar,s=p.selfie;const vivos=bfSelfieVivos();
   const bloco=(nivel,tit,dica)=>{const l=vivos.filter(i=>i.nivel===nivel);return l.length?`<h3 class="bf-sf-h" data-nivel="${nivel}">${TE(tit)} (${l.length})</h3><div class="note bf-sf-leg">${TE(dica)}</div><div class="ps-lista bf-sf-lista" data-nivel="${nivel}">${l.map(bfSelfieCartao).join('')}</div>`:'';};
-  return `<div class="panel ps-painel bf-sf" id="bf"><div class="bf-sf-topo"><b>${TE('bf_selfie_res')}</b><button class="chip" data-act="bf-selfie-filtros">${TE('bf_selfie_filtros')}</button><button class="chip" data-act="bf-selfie">${TE('bf_selfie_nova')}</button><button class="chip" data-act="bf-selfie-limpa">${TE('bf_selfie_descartar')}</button></div>
+  return `<div class="panel ps-painel bf-sf" id="bf" data-ass="${esc(bfSelfieAss())}"><div class="bf-sf-topo"><b>${TE('bf_selfie_res')}</b><button class="chip" data-act="bf-selfie-filtros">${TE('bf_selfie_filtros')}</button><button class="chip" data-act="bf-selfie">${TE('bf_selfie_nova')}</button><button class="chip" data-act="bf-selfie-limpa">${TE('bf_selfie_descartar')}</button></div>
     ${s.varias?`<div class="bf-sf-aviso" id="bf-sf-varias" role="status">${TE('bf_selfie_varias')}</div>`:''}<div class="note bf-sf-leg">${TE('bf_selfie_leg')}</div>
-    ${psComCache(()=>bloco('certeza','bf_certeza','bf_certeza_dica')+bloco('pode_ser','bf_pode_ser','bf_pode_ser_dica'))}${vivos.length?'':`<div class="note">${TE('bf_selfie_nada')}</div>`}${bfBarra()}</div>`;}
+    ${psComCache(()=>bloco('certeza','bf_certeza',s.varias?'bf_certeza_dica_varias':'bf_certeza_dica')+bloco('pode_ser','bf_pode_ser','bf_pode_ser_dica'))}${vivos.length?'':`<div class="note">${TE('bf_selfie_nada')}</div>`}${bfBarra()}</div>`;}
 function vProcurar(){const p=state.procurar;const em=state.user?state.user.email:null;if(p.user!==em){Object.assign(p,bfZero());p.user=em;} // outra pessoa neste navegador: filtros e retrato novos
   const doFoto=canView('importar'); // sem Minhas fotos (atendimento e venda): cabeçalho do grupo Venda e sem o Trocar de fotógrafo
   const cab=`<div class="head"><div><div class="eyebrow">${doFoto?TE('ga_fotografo'):esc(grpLabel('Venda'))}</div><h1>${esc(viewLabel('procurar'))}</h1></div>${doFoto?fotoQuem():''}</div>`;
@@ -13210,7 +13229,9 @@ const EQ={
   bf_rec_protegida:[(c)=>`${c?"Sessão "+c:"Uma sessão"} é protegida (menor ou escola) e não abre por aqui.`,(c)=>`${c?"Session "+c:"A session"} is protected (minor or school) and cannot be opened from here.`,(c)=>`${c?"Sesión "+c:"Una sesión"} está protegida (menor o escuela) y no se abre por aquí.`,(c)=>`${c?"Séance "+c:"Une séance"} est protégée (mineur ou école) et ne s'ouvre pas ici.`,(c)=>`${c?"Sitzung "+c:"Eine Sitzung"} ist geschützt (minderjährig oder Schule) und lässt sich hier nicht öffnen.`],
   bf_rec_invalido:["Não deu para abrir no Checkout. Atualize a lista e tente de novo.","Could not open on the Checkout. Refresh the list and try again.","No se pudo abrir en el Checkout. Actualice la lista e intente de nuevo.","Impossible d'ouvrir sur le Checkout. Actualisez la liste et réessayez.","Öffnen im Checkout nicht möglich. Aktualisieren Sie die Liste und versuchen Sie es erneut."],
   bf_selfie:["Procurar por selfie","Search by selfie","Buscar por selfie","Rechercher par selfie","Per Selfie suchen"],
-  bf_selfie_titulo:["Procurar por selfie","Search by selfie","Buscar por selfie","Rechercher par selfie","Per Selfie suchen"],
+  bf_selfie_peca:["Peça ao cliente antes de apontar a câmera.","Ask the customer before pointing the camera.","Pida permiso al cliente antes de apuntar la cámara.","Demandez au client avant de pointer la caméra.","Fragen Sie den Kunden, bevor Sie die Kamera auf ihn richten."],
+  bf_selfie_limite_dia:["Limite de buscas por selfie de hoje atingido. Procure pelos filtros e avise a supervisão.","Today's limit of selfie searches was reached. Search with the filters and tell the supervisor.","Se alcanzó el límite de búsquedas por selfie de hoy. Busque con los filtros y avise a la supervisión.","La limite de recherches par selfie d'aujourd'hui est atteinte. Cherchez avec les filtres et prévenez la supervision.","Das heutige Limit für Selfie-Suchen ist erreicht. Suchen Sie mit den Filtern und informieren Sie die Aufsicht."],
+  bf_selfie_sem_perm:["Você não tem permissão para a busca por selfie. Procure pelos filtros.","You do not have permission for the selfie search. Search with the filters.","No tiene permiso para la búsqueda por selfie. Busque con los filtros.","Vous n'avez pas l'autorisation pour la recherche par selfie. Cherchez avec les filtres.","Sie haben keine Berechtigung für die Selfie-Suche. Suchen Sie mit den Filtern."],
   bf_selfie_dica:["Enquadre só o cliente, uma pessoa por vez, e toque em Procurar. A imagem não é guardada.","Frame only the customer, one person at a time, and tap Search. The image is not stored.","Encuadre solo al cliente, una persona a la vez, y toque Buscar. La imagen no se guarda.","Cadrez uniquement le client, une personne à la fois, puis touchez Rechercher. L'image n'est pas conservée.","Nur den Kunden ins Bild nehmen, eine Person nach der anderen, und auf Suchen tippen. Das Bild wird nicht gespeichert."],
   bf_selfie_abrindo:["Abrindo a câmera","Opening the camera","Abriendo la cámara","Ouverture de la caméra","Kamera wird geöffnet"],
   bf_selfie_procurar:["Procurar","Search","Buscar","Rechercher","Suchen"],
@@ -13229,6 +13250,7 @@ const EQ={
   bf_selfie_leg:["As fotos com contorno são as em que o rosto apareceu. Confira cada sessão antes de iniciar a venda.","Outlined photos are the ones where the face appeared. Check each session before starting the sale.","Las fotos con contorno son aquellas en las que apareció el rostro. Revise cada sesión antes de iniciar la venta.","Les photos encadrées sont celles où le visage est apparu. Vérifiez chaque séance avant de démarrer la vente.","Umrandete Fotos sind die, auf denen das Gesicht erschienen ist. Prüfen Sie jede Sitzung, bevor Sie den Verkauf starten."],
   bf_certeza:["Certeza","Sure","Seguro","Sûr","Sicher"],
   bf_certeza_dica:["Já marcadas. Desmarque a que não for do cliente.","Already selected. Unselect any that is not the customer's.","Ya marcadas. Desmarque la que no sea del cliente.","Déjà sélectionnées. Désélectionnez celle qui n'est pas au client.","Bereits ausgewählt. Wählen Sie ab, was nicht dem Kunden gehört."],
+  bf_certeza_dica_varias:["Não vieram marcadas, porque havia mais de uma pessoa na câmera. Marque as que forem do cliente.","Not selected, because there was more than one person on camera. Select the ones that are the customer's.","No vinieron marcadas, porque había más de una persona en la cámara. Marque las que sean del cliente.","Non sélectionnées, car il y avait plusieurs personnes devant la caméra. Sélectionnez celles du client.","Nicht ausgewählt, weil mehr als eine Person vor der Kamera war. Wählen Sie die des Kunden aus."],
   bf_pode_ser:["Pode ser","Maybe","Puede ser","Peut-être","Vielleicht"],
   bf_pode_ser_dica:["Desmarcadas. Marque só as que você reconhecer como do cliente.","Not selected. Select only the ones you recognize as the customer's.","Desmarcadas. Marque solo las que reconozca como del cliente.","Non sélectionnées. Sélectionnez seulement celles que vous reconnaissez comme celles du client.","Nicht ausgewählt. Wählen Sie nur die aus, die Sie als die des Kunden erkennen."],
   bf_bateu:["Foto em que o rosto apareceu","Photo where the face appeared","Foto en la que apareció el rostro","Photo où le visage est apparu","Foto, auf dem das Gesicht erschienen ist"],

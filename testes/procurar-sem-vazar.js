@@ -5,7 +5,7 @@
 // Fase 2 (última parte): o mesmo com as sessões achadas por selfie. A lista, o "pode ser", as fotos em que o rosto apareceu, as não
 // marcadas e o id da busca ficam só na memória da janela do vendedor; a câmera do modal nunca abre na janela do cliente.
 const {chromium}=require('playwright');
-const {U,J,C,F,CAIXA,QUIOSQUE,contexto,dupla,entrar,procurar,espera,chegou,toque,marca,aviso,quiosque}=require('./_procurar_vender');
+const {ligaSelfie,U,J,C,F,CAIXA,QUIOSQUE,contexto,dupla,entrar,procurar,espera,chegou,toque,marca,aviso,quiosque}=require('./_procurar_vender');
 const fails=[];const T0=Date.now();const ok=(c,m)=>{if(!c)fails.push(m);if(process.env.SV_VER)console.error(((Date.now()-T0)/1000).toFixed(1)+' s '+(c?'ok   ':'FALHA ')+String(m).slice(0,260));};
 const MARCADAS=['A','C'];const FORA=Object.keys(C).filter(k=>!MARCADAS.includes(k));
 // tudo o que denuncia uma sessão não marcada: o código e o id de cada foto dela
@@ -116,8 +116,8 @@ try{
       const r=await limpo(L);const kt=await kioskTxt(L);ok(!F.B.slice(2).some(f=>r.html.includes(f)||kt.includes(f)),'as outras fotos da sessão não marcada não aparecem no Checkout');}
     ok((await L.evaluate(()=>window.__bf))===0,'14: nesta parte também, nada do Procurar fotos no DOM do cliente');await y.ctx.close();}
   // ---------- fase 2: sessões achadas por selfie do vendedor ----------
-  {const BUSCA='5e1f1e0a5e1f1e0a';const marc=[];const ses=(k,nivel)=>({card:C[k],nivel,sim:nivel==='certeza'?.68:.31,status:'fechada',fotografo:'samuel',ponto:null,cap0:0,cap1:0,n:F[k].length,bateu:[{id:F[k][0],sim:nivel==='certeza'?.68:.31}]});
-    const y=await dupla(b,{rotas:(p,rq)=>p==='/rostos/sessoes'?{corpo:{ok:true,busca:BUSCA,rosto:true,varias:true,fila:0,sessoes:[ses('A','certeza'),ses('C','certeza'),ses('B','pode_ser'),ses('D','pode_ser')]}}:p==='/rostos/sessoes/marcar'?(marc.push(rq.postData()||''),{corpo:{ok:true}}):null});
+  {const BUSCA='5e1f1e0a5e1f1e0a';const marc=[];const ses=(k,nivel)=>({card:C[k],nivel,status:'fechada',fotografo:'samuel',ponto:null,cap0:0,cap1:0,n:F[k].length,bateu:[{id:F[k][0]}]});
+    const y=await dupla(b,{troca:ligaSelfie,rotas:(p,rq)=>p==='/rostos/sessoes'?{corpo:{ok:true,busca:BUSCA,rosto:true,varias:false,fila:0,sessoes:[ses('A','certeza'),ses('C','certeza'),ses('B','pode_ser'),ses('D','pode_ser')]}}:p==='/rostos/sessoes/marcar'?(marc.push(rq.postData()||''),{corpo:{ok:true}}):null});
     errs.push(y.errs);const V=y.V,L=y.L;ok(await procurar(V),'lista do vendedor (parte da selfie)');const g0=await guardado(V);const gL0=await guardado(L);
     const SEG=/pode_ser|"nivel"|"bateu"|"busca"|"sim"|"selfie"|5e1f1e0a5e1f1e0a|Pode ser|Certeza|Usei o rosto|bf-sf|bf-selfie/;
     const parado=async quando=>{const r=await limpo(L);const kt=await kioskTxt(L);const cams=await L.evaluate(()=>window.__cams.length);
@@ -125,7 +125,7 @@ try{
     await toque(V,'[data-act="bf-selfie"]');ok(await espera(V,()=>ETERNA.bfSelfieAberto().cam&&document.querySelector('#bf-selfie-modal video').videoWidth>0,10000),'o modal da selfie abre na janela do vendedor');
     await parado('com a câmera do vendedor aberta');
     await toque(V,'#bf-selfie-modal [data-bs="buscar"]');ok(await espera(V,()=>!!document.querySelector('.bf-sf')&&!document.querySelector('#bf-selfie-modal'),8000),'a lista da selfie aparece só no vendedor');
-    ok(await V.evaluate(C=>ETERNA.state.procurar.sel.slice().sort().join()===[C.A,C.C].join()&&!!document.querySelector('#bf-sf-varias'),C),'Certeza já marcadas (A e C), com o aviso do rosto maior');
+    ok(await V.evaluate(C=>ETERNA.state.procurar.sel.slice().sort().join()===[C.A,C.C].join(),C),'Certeza já marcadas (A e C)');
     await parado('com a lista da selfie na tela do vendedor');
     await toque(V,'.bf-sf .bf-mk[data-card="'+C.C+'"] .bf-marca');await toque(V,'.bf-sf .bf-mk[data-card="'+C.D+'"] .bf-marca'); // tira uma Certeza, põe um Pode ser
     await toque(V,'[data-act="bf-selfie-filtros"]');await V.waitForTimeout(250);await toque(V,'[data-act="bf-selfie-ver"]');await V.waitForTimeout(250);
