@@ -681,7 +681,8 @@ rdstation.CHAVE_SSM, rdstation._chave = rd0[0], rd0[1]
 mf0 = app.MAIL_FROM
 app.MAIL_FROM = "fotos@exemplo.com"
 aud = {"dia": "2026-11-26", "situacao": "2 desvios", "correcoes": ["Métricas recalculadas"], "desvios": ["P1: <b>x</b>", "Pedido aberto"],
-       "numeros": [["Vendas pagas", "127"], ["Valor", "R$ 22.570,00"]], "para": "outro@exemplo.com"}
+       "numeros": [["Vendas"], ["Vendas pagas", "127", "conferido"], ["Valor", "R$ 22.570,00", "desvio: Estatísticas dizem R$ 1,00"]],
+       "para": "outro@exemplo.com"}
 ok(chama("POST", "/ponto/auditoria", aud, {"x-eterna-ponto": "errado"})[0] == 401, "auditoria sem segredo é recusada")
 del emails[:]
 st, _ = chama("POST", "/ponto/auditoria", aud, {"x-eterna-ponto": seg})
@@ -690,6 +691,7 @@ h = c.get("Content", {}).get("Simple", {}).get("Body", {}).get("Html", {}).get("
 ok(st == 202 and c["Destination"]["ToAddresses"] == [app.AUDITORIA_PARA] and "26/11/2026" in c["Content"]["Simple"]["Subject"]["Data"],
    "auditoria vai para o destino fixo, nunca o do corpo")
 ok("&lt;b&gt;" in h and "<b>x</b>" not in h and "22.570" in h, "conteúdo da auditoria escapado no e-mail")
+ok("conferido" in h and "desvio: Estatísticas" in h and "Leads" in h and "Contatos captados" in h, "números com a conferência e os leads do dia")
 ok(chama("POST", "/ponto/auditoria", dict(aud, dia="x"), {"x-eterna-ponto": seg})[0] == 400, "dia inválido recusado")
 app.MAIL_FROM = mf0
 print("\ntudo certo")

@@ -377,7 +377,7 @@ echo "https://api.rd.services/auth/dialog?client_id=$CI&redirect_uri=https%3A%2F
 
 ## Auditoria diária por e-mail (v99.102.0)
 
-- `POST /ponto/auditoria` com o segredo do ponto (`x-eterna-ponto`). Corpo `{dia, situacao, correcoes[], desvios[], numeros[[rótulo, valor]], feita_em}`.
+- `POST /ponto/auditoria` com o segredo do ponto (`x-eterna-ponto`). Corpo `{dia, situacao, correcoes[], desvios[], numeros[[título] | [rótulo, valor, conferência]], feita_em}`.
 - Manda pelo SES para `AUDITORIA_PARA` (fixo no template, `ronaldo.santos@maracatour.com.br`); o destino nunca vem do corpo.
-  Conteúdo escapado no HTML. Até 6 envios por dia (`AUDMAIL#<dia>`).
+  Conteúdo escapado no HTML. Até 6 envios por dia (`AUDMAIL#<dia>`). A nuvem acrescenta o grupo Leads do dia (`LEADDIA/<dia>`).
 - Quem chama é o agente do estádio depois da auditoria das 21h (`ETERNA_AUDITORIA_HORA`), que tenta de novo a cada 10 min até a nuvem aceitar.
