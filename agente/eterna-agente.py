@@ -13828,7 +13828,7 @@ _backup_vistos = {}
 
 def backup_arquivos_lista():
     out = [INDEX, METRICAS_ARQ, LGPD_EXCLUIDAS, LGPD_LOG, FF_FUNCAO, AF_FONTE, VIS_LOG, VIS_CALIB, IMP_FILA, FUNDOS_MODO_CFG]
-    for pasta, so in ((SESS_DIR, None), (MET_DIR, None), (GALERIAS, "sessao.json"), (PESSOAS_DIR, None)):
+    for pasta, so in ((SESS_DIR, None), (MET_DIR, None), (GALERIAS, "sessao.json"), (PESSOAS_DIR, None), (AUDITORIA_DIR, None)):
         for raiz, _dirs, arqs in os.walk(pasta):
             out += [os.path.join(raiz, a) for a in arqs if (so is None and not a.endswith(".tmp") and a != SESS_NUM_MARCA) or a == so]
     return [a for a in out if os.path.isfile(a)]
@@ -15809,6 +15809,172 @@ def _pessoas_dia_calc(dia, forcar=False):
             "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2),
             "auditoria": {k: aud[k] for k in ("situacao", "ressalvas", "fotos_do_dia", "fotos_sem_leitura", "sessoes_com_rosto",
                                                "sessoes_com_cliente", "sessoes_vendidas") if k in aud}}, aud
+
+
+# 26/11 (Ronaldo): "uma auditoria de todos os números minuciosa pra corrigir qualquer desvio, diária, sempre a do dia para não
+# mexer no passado, às 21h", com o resultado por e-mail. Uma vez por dia depois de AUDITORIA_HORA: refaz o que é refazível (métricas
+# do dia e contagem de pessoas), confere tudo e lista o que precisa de gente para corrigir. Grava no HD
+# (contagens/auditoria/<dia>.json) e a nuvem manda o e-mail (POST /ponto/auditoria, destino fixo na nuvem). Só hoje: o passado
+# nunca é alterado. A conferência com a Imply continua fora daqui (precisa da sessão do Ronaldo na Imply).
+AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "21"))
+AUDITORIA_DIR = os.path.join(os.path.dirname(PESSOAS_DIR), "auditoria")
+AUDITORIA_MEIOS = ("pix", "cartao", "dinheiro", "cortesia")
+
+
+def _auditoria_arq(dia):
+    return os.path.join(AUDITORIA_DIR, dia + ".json")
+
+
+def auditoria_ler(dia):
+    try:
+        with open(_auditoria_arq(dia), encoding="utf8") as f:
+            j = json.load(f)
+        return j if isinstance(j, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _auditoria_grava(j):
+    try:
+        os.makedirs(AUDITORIA_DIR, exist_ok=True)
+        tmp = _auditoria_arq(j["dia"]) + ".tmp"
+        with open(tmp, "w", encoding="utf8") as f:
+            json.dump(j, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, _auditoria_arq(j["dia"]))
+    except OSError as ex:
+        print("  auditoria de %s: não gravou no HD (%s)" % (j.get("dia"), ex))
+
+
+def _auditoria_pedidos_abertos():
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            rows = db.execute("select valor from pedido where estado in ('aguardando','escolha') order by criada").fetchall()
+        finally:
+            db.close()
+    out = []
+    for (v,) in rows:
+        try:
+            x = json.loads(v)
+        except ValueError:
+            continue
+        out.append({"saleNo": x.get("saleNo") or x.get("id"), "posto": x.get("posto"), "criada": str(x.get("criada") or "")[:16],
+                    "total": x.get("total")})
+    return out
+
+
+def auditoria_dia(dia=None):
+    """Roda a auditoria de hoje. Devolve o registro gravado no HD."""
+    dia = dia or _ff_hoje()
+    if dia != _ff_hoje():
+        raise ValueError("a auditoria é só do dia")
+    corr, desv, num = [], [], []
+    br = lambda x: ("R$ %.2f" % float(x or 0)).replace(".", ",")
+    # 1. o que se refaz sozinho: contagem de pessoas e métricas do dia
+    with _pessoas_lock:
+        try:
+            jp = pessoas_contar(dia, forcar=True)
+            corr.append("Contagem de pessoas refeita: %s" % ((jp or {}).get("resultado") or {}).get("pessoas"))
+        except Exception as ex:
+            jp = None
+            desv.append("Contagem de pessoas falhou (%s)" % str(ex)[:80])
+    try:
+        m = metricas_gravar(dia)
+        corr.append("Métricas do dia recalculadas a partir das vendas")
+    except Exception as ex:
+        m = {}
+        desv.append("Métricas do dia não recalcularam (%s)" % str(ex)[:80])
+    # 2. vendas
+    vs = vendas_do_dia()
+    pagas = [v for v in vs if not v.get("cancelada") and v.get("meio") != "cortesia" and float(v.get("total") or 0) > 0]
+    cort = [v for v in vs if not v.get("cancelada") and (v.get("meio") == "cortesia" or not float(v.get("total") or 0))]
+    canc = [v for v in vs if v.get("cancelada")]
+    tot = sum(float(v.get("total") or 0) for v in pagas)
+    por_meio = {}
+    for v in pagas:
+        por_meio[v.get("meio")] = por_meio.get(v.get("meio"), 0) + float(v.get("total") or 0)
+    num += [["Vendas pagas", str(len(pagas))], ["Valor", br(tot)]] + [["  " + k, br(x)] for k, x in sorted(por_meio.items())] + \
+           [["Cortesias", str(len(cort))], ["Canceladas", str(len(canc))]]
+    fat = float((m or {}).get("faturamento") or 0)
+    if m and abs(fat - tot) > 0.01:
+        desv.append("Faturamento das Estatísticas (%s) diferente da soma das vendas pagas (%s)" % (br(fat), br(tot)))
+    for v in vs:
+        n = v.get("saleNo") or v.get("venda")
+        if v.get("cancelada"):
+            continue
+        if v.get("meio") not in AUDITORIA_MEIOS:
+            desv.append("%s: meio de pagamento \"%s\"" % (n, v.get("meio")))
+        if v in pagas and not (v.get("vendedor") or v.get("por")):
+            desv.append("%s: venda paga sem vendedor" % n)
+        if (v.get("selected") or v.get("aiSel")) and not v.get("galeria"):
+            desv.append("%s: venda com fotos sem galeria online" % n)
+        if v in cort:
+            desv.append("%s: cortesia (%s, %d fotos): confirmar autorização" % (n, v.get("posto"), len(v.get("selected") or [])))
+    ab = _auditoria_pedidos_abertos()
+    for x in ab:
+        desv.append("Pedido aberto %s (%s, %s, %s): cobrar ou cancelar" % (x["saleNo"], x["posto"], x["criada"], br(x["total"])))
+    # 3. fotos, pessoas, visitantes, selfies
+    pa = (jp or {}).get("auditoria") or {}
+    num += [["Fotos do dia", str(pa.get("fotos_do_dia", "—"))], ["Fotos sem leitura de rostos", str(pa.get("fotos_sem_leitura", "—"))],
+            ["Pessoas fotografadas", str(((jp or {}).get("resultado") or {}).get("pessoas", "—"))],
+            ["Sessões com rosto / com cliente", "%s / %s" % (pa.get("sessoes_com_rosto", "—"), pa.get("sessoes_com_cliente", "—"))]]
+    for r_ in pa.get("ressalvas") or []:
+        desv.append("Pessoas: " + r_)
+    vi = visitantes(dia, dia) or {}
+    if vi.get("ok"):
+        num.append(["Visitantes do Tour", str(vi.get("total"))])
+        if vi.get("guardado"):
+            desv.append("Visitantes: Maraca Acessos fora; número guardado de %s" % str(vi.get("lido_em") or "")[11:16])
+        pes = ((jp or {}).get("resultado") or {}).get("pessoas")
+        if pes and vi.get("total"):
+            num.append(["Abordagem (pessoas ÷ visitantes)", "%.1f%%" % (100.0 * pes / vi["total"])])
+    else:
+        desv.append("Visitantes do Tour indisponíveis (%s)" % str(vi.get("erro") or "sem resposta")[:60])
+    se = (selfies_dia(dia) or {}).get("por_origem") or {}
+    for o, x in sorted(se.items()):
+        num.append(["Selfies %s (acharam)" % o, "%d (%d)" % (x.get("selfies", 0), x.get("achou", 0))])
+    j = {"v": 1, "dia": dia, "feita_em": _iso(), "situacao": "sem desvios" if not desv else "%d desvios" % len(desv),
+         "correcoes": corr, "desvios": desv[:200], "numeros": num, "email": None}
+    _auditoria_grava(j)
+    print("  auditoria de %s: %s" % (dia, j["situacao"]))
+    return j
+
+
+def auditoria_email(j):
+    """A nuvem manda o e-mail com o resultado (SES; destino fixo na nuvem). True se a nuvem aceitou."""
+    if not NUVEM_API:
+        return False
+    corpo = {k: j.get(k) for k in ("dia", "situacao", "correcoes", "desvios", "numeros", "feita_em")}
+    rq = urllib.request.Request(NUVEM_API + "/ponto/auditoria", data=json.dumps(corpo, ensure_ascii=False).encode(), method="POST",
+                                headers={"Content-Type": "application/json", "X-Eterna-Ponto": nuvem_segredo(), "User-Agent": "eterna-agente"})
+    try:
+        with urllib.request.urlopen(rq, timeout=30) as r:
+            r.read()
+        return True
+    except Exception as ex:
+        print("  auditoria: e-mail não saiu (%s)" % str(ex)[:80])
+        return False
+
+
+def auditoria_loop():
+    """Uma vez por dia, depois das AUDITORIA_HORA (o tour já fechou). O e-mail tenta de novo a cada 10 min até sair."""
+    ult = 0
+    while True:
+        time.sleep(60)
+        hoje = _ff_hoje()
+        if time.localtime().tm_hour < AUDITORIA_HORA:
+            continue
+        j = auditoria_ler(hoje)
+        try:
+            if not j:
+                j = auditoria_dia(hoje)
+            if not j.get("email") and time.time() - ult > 600:
+                ult = time.time()
+                if auditoria_email(j):
+                    j["email"] = _iso()
+                    _auditoria_grava(j)
+        except Exception as ex:
+            print("  auditoria de %s: falhou (%s)" % (hoje, str(ex)[:120]))
 
 
 def selfies_dia(dia):
@@ -25363,6 +25529,7 @@ def main():
     threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=painel_fotos_loop, daemon=True).start()   # 25/11: aba Fotografia e BI do Caio (Roverpix saiu)
     threading.Thread(target=pessoas_loop, daemon=True).start()
+    threading.Thread(target=auditoria_loop, daemon=True).start()
     # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
     # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.
     try:

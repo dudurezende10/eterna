@@ -374,3 +374,10 @@ echo "https://api.rd.services/auth/dialog?client_id=$CI&redirect_uri=https%3A%2F
 - **Dias de antes (uma vez, no deploy):** `aws lambda invoke --region us-east-2 --function-name eterna-galeria --cli-binary-format raw-in-base64-out --payload '{"leads_recalcular": true}' /dev/stdout`
   refaz `LEADDIA` a partir dos leads. Até 26/11 não havia consulta: esses dias saem com `rd_sem_consulta` e o `rd` conta pelo
   último envio (`rd_em`), não pelo primeiro.
+
+## Auditoria diária por e-mail (v99.102.0)
+
+- `POST /ponto/auditoria` com o segredo do ponto (`x-eterna-ponto`). Corpo `{dia, situacao, correcoes[], desvios[], numeros[[rótulo, valor]], feita_em}`.
+- Manda pelo SES para `AUDITORIA_PARA` (fixo no template, `ronaldo.santos@maracatour.com.br`); o destino nunca vem do corpo.
+  Conteúdo escapado no HTML. Até 6 envios por dia (`AUDMAIL#<dia>`).
+- Quem chama é o agente do estádio depois da auditoria das 21h (`ETERNA_AUDITORIA_HORA`), que tenta de novo a cada 10 min até a nuvem aceitar.
