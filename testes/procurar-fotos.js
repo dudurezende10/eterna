@@ -221,7 +221,7 @@ try{
     ok(await pg.evaluate(()=>document.querySelector('#modal').hasAttribute('data-open')&&!document.querySelector('#modal-tools').innerHTML.trim()&&/Carlos/.test(document.querySelector('#modal-cap').textContent)),nome+': a miniatura abre a foto grande, sem ferramentas');
     await pg.keyboard.press('Escape');await pg.waitForTimeout(200);if(await pg.evaluate(()=>document.querySelector('#modal').hasAttribute('data-open')))await pg.evaluate(()=>document.querySelector('#modal').removeAttribute('data-open'));
     await clica(pg,'#bf-lista .bf-card .bf-abre');await pg.waitForTimeout(250);
-    ok(await pg.evaluate(()=>!!document.querySelector('.bf-sess')&&document.querySelectorAll('.bf-sess .photos .ph').length===6&&![...document.querySelectorAll('#main [data-act]')].some(x=>ETERNA.WRITE_OPS[x.dataset.act])),nome+': Ver sessão abre as fotos, sem ação que grava');
+    ok(await pg.evaluate(()=>!!document.querySelector('.bf-sess')&&document.querySelectorAll('.bf-sess .photos .ph').length===6&&![...document.querySelectorAll('#main [data-act]')].some(x=>ETERNA.WRITE_OPS[x.dataset.act]&&x.dataset.act!=='bf-vender-uma')),nome+': Ver sessão abre as fotos, sem ação que grava (fora o Vender esta sessão de 26/11, de quem tem venda em Criar: testes/procurar-vender.js)');
     await clica(pg,'[data-act="bf-voltar"]');
     // com o Checkout do cliente aberto neste computador (atendente conectado), nada da tela aparece para o cliente
     if(email===CAIXA){await pg.goto('about:blank');await pg.goto(U+'#loja');await pg.waitForTimeout(2500);

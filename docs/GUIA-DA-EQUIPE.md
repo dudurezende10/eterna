@@ -356,7 +356,7 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 **Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**, no menu **Fotógrafo**, logo abaixo de Minhas fotos.
 
 - **Quem vê:** quem já vê Minhas fotos e, desde 26/11, quem atende e vende (quem tem o Posto de venda). A supervisora, o Admin e quem atende e vende procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. A tela do cliente (Checkout) nunca mostra essa tela.
-- **Para quem atende e vende (26/11):** a tela fica no menu logo depois de **Posto de venda**. No computador do Posto, abra o menu e toque em **Procurar fotos** para achar a foto que o cliente não encontrou; depois volte ao Posto para vender. É só para olhar: o atendente não ganha Minhas fotos, não envia cartão e não muda nada nas fotos. Quem já estava cadastrado ganhou a tela sozinho, sem recadastro.
+- **Para quem atende e vende (26/11):** a tela fica no menu logo depois de **Posto de venda**. No computador do Posto, abra o menu e toque em **Procurar fotos** para achar a foto que o cliente não encontrou e, desde 26/11, vender por ali mesmo (veja **Vender pelo Procurar fotos**, logo abaixo). O atendente não ganha Minhas fotos, não envia cartão e não muda nada nas fotos. Quem já estava cadastrado ganhou a tela sozinho, sem recadastro.
 - **Tirar a tela de alguém:** em **Sistema › Permissões**, na linha **Posto de venda**, desmarque **Procurar fotos** em **Aparece no menu** e salve. Quem tem Minhas fotos continua vendo a tela por ela.
 - **Fotógrafo:** escolha **Todos** ou um nome. Só aparece quem tem sessão hoje, com o número de sessões ao lado.
 - **Tempo:** **Últimos 30 min**, **Última 1 hora**, **Últimas 3 horas** ou **Dia todo**. Com Todos, a tela abre na última 1 hora. Com um fotógrafo escolhido, abre no dia todo. Em **Hora** dá para escolher uma hora cheia (09h, 10h).
@@ -366,7 +366,39 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 - **Ver a sessão inteira:** toque no alto do cartão (**Ver sessão**). **Voltar** devolve à lista no mesmo lugar, com os mesmos filtros.
 - **A tela não se mexe sozinha.** Quando chegam sessões novas, aparece no alto o aviso **N sessões novas** com o botão **Atualizar**. A lista só muda quando você toca em Atualizar ou troca um filtro.
 
-A tela mostra só as sessões de hoje e precisa do computador do ponto ligado. Nada se vende por ela.
+A tela mostra só as sessões de hoje e precisa do computador do ponto ligado.
+
+### Vender pelo Procurar fotos (26/11)
+
+Para quando a selfie do cliente não trouxe todas as fotos dele (a foto com a taça, de lado, de boné) ou quando a família fez fotos em mais de um ponto. Quem atende e vende acha as sessões do cliente, marca e abre o Checkout só com elas, já juntas.
+
+**Atenção: a tela Procurar fotos é só do vendedor.** Ela mostra as fotos de todos os visitantes do dia. O monitor do vendedor nunca fica espelhado no monitor do cliente nem virado para ele. No Windows, a tela fica em **Estender**, nunca em **Duplicar**. O cliente só vê o monitor do Checkout.
+
+Passo a passo:
+
+1. Abra o menu e toque em **Procurar fotos**.
+2. Ache as sessões do cliente: escolha o fotógrafo e o horário, ou digite o código. Toque numa miniatura para ver a foto grande e ter certeza de que é ele.
+3. Em cada sessão do cliente, toque em **Marcar**. O botão vira **Marcada** e aparece uma barra no pé da tela com as sessões marcadas. Pode trocar o filtro à vontade: as marcadas ficam.
+4. Marcou errado? Toque de novo em **Marcada**, ou na miniatura da sessão na barra. **Limpar** desmarca todas.
+5. Confira as fotos das sessões marcadas. Elas abrem inteiras no Checkout: se outra família aparece na mesma sessão, o cliente vai ver.
+6. Toque em **Iniciar venda com N sessões**. O monitor do Checkout abre nas fotos dessas sessões e a sua tela avisa **Aberto no Checkout**.
+7. O cliente escolhe as fotos no Checkout, como sempre. O pedido chega ao **Posto de venda**, onde você escolhe o pacote e recebe.
+
+Para vender uma sessão só, abra a sessão (**Ver sessão**) e toque em **Vender esta sessão**.
+
+O que pode aparecer:
+
+| Aviso ou situação | O que fazer |
+|---|---|
+| A caixa **Marcar** está apagada, com **entra quando fechar** | A sessão ainda está recebendo fotos. Espere o tempo indicado; a caixa acende sozinha. |
+| **Já vendida** ou **Pedido em aberto** | A sessão já foi vendida ou já tem pedido no Posto. Resolva pelo Posto de venda. |
+| **Sessão protegida (menor ou escola)** | Não abre por aqui. |
+| **O Checkout está com cliente** | Espere o cliente da vez terminar e toque em Iniciar de novo. As marcadas ficam. |
+| **Abra o Checkout para vender mais de uma sessão** | A janela do Checkout está fechada. Abra o Checkout e tente de novo. Com uma sessão só, a venda segue pela Venda manual do Posto. |
+| **O Checkout não respondeu** | Feche e abra a janela do Checkout e tente de novo. |
+| **No máximo 8 sessões por venda** | Desmarque alguma. |
+
+Se uma das sessões marcadas não puder entrar, nenhuma abre e a tela diz qual foi e por quê. As marcadas somem quando você sai da tela ou sai da conta. Cada venda iniciada por aqui fica no histórico com quem iniciou, o posto e as sessões.
 
 ### Sessões de hoje (v91)
 

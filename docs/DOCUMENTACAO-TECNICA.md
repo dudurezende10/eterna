@@ -2876,3 +2876,56 @@ A equipe vê as montagens com fundo de IA que o servidor já fez e dá a nota (B
 **Tela** (view `montagens`, módulo `qualidade`): `vMontagens`, `mnPull` (junta os pedaços da lista), `mnSnap` (retrato do filtro), `mnCartao`, `mnNota` (mostra na hora, grava e desfaz se falhar), `mnRuim` (painel de motivos), `mnZoom` (montagem e original no zoom), `mnLote` (lotes de 24 na rolagem), `mnAtualiza` (troca só o cartão e os contadores). Ações `mn-*`; gravam `mn-boa`, `mn-grava` e `mn-desfaz` (`WRITE_OPS` em `u`, `ACT_MOD` `qualidade`). Textos `mn_*` no `EQ`. CSS com prefixo `mn-`. Nada no SIM nem no `localStorage`.
 
 Testes: `testes/montagens_ia_agente.py`, `testes/montagens-ia.js`, `testes/seguranca_rotas_agente.py`.
+
+## Vender a partir do Procurar fotos, fase 1 (26/11/2026)
+
+Plano: `docs/planos/2026-11-26-procurar-vender.md`. Testes: `testes/procurar-vender.js`, `testes/procurar-sem-vazar.js`, `testes/procurar_origem_agente.py` (apoio em `testes/_procurar_vender.js`). Chave `PROCURAR_VENDER_ON` no `index.html`; em `false` a tela Procurar fotos volta a ser só leitura e o Checkout ignora o pedido.
+
+Regra do produto (Eduardo, 26/11): a seleção de sessões é só do vendedor. O cliente nunca vê a lista, as sessões não marcadas nem a marcação.
+
+### Tela do vendedor
+
+| Função | O que faz |
+|---|---|
+| `bfPodeVender()` | `venda` em Criar, fora do "ver como", fora de `impPreso`, com `bfOn()` e fora da demonstração; falso na aba `#loja` |
+| `bfEstado(x)` | `removida`, `aberta` (situação diferente de `fechada`), `protegida` (`lojaSesProtegida`), `paga`, `pedido`, `carregando` ou `livre`; a venda de outro posto vem de `MVS.vendas` (`card` e `sessoes`, fora as canceladas) |
+| `bfMk(x,s)` | caixa Marcar do cartão (`.bf-mk`, `data-est`), botão irmão do cabeçalho e das miniaturas; desligada fora de `livre`/`carregando`, com o motivo em palavras |
+| `bfSessaoVenda(x)` | "Vender esta sessão" e Marcar na sessão aberta |
+| `bfMarca(card)` | marca ou desmarca sem `render()`; só aceita sessão do retrato da pessoa e em `livre`; teto `BF_SEL_MAX` (8) |
+| `bfBarra()`, `bfBarraUpd()` | barra `#bf-barra` (contador, miniaturas que desmarcam, aviso de sessões inteiras, Limpar, Iniciar venda) |
+| `bfEstUpd()` | a cada ciclo do servidor e a cada redesenho, troca só a caixa da sessão à vista cuja situação mudou |
+| `bfVender(cards,origem)` | revalida, decide o caminho e devolve uma promessa com `true` ou `false` |
+
+A tela continua parada: o estado de cada caixa fica no retrato (`snap.est`), e tanto `bfMarca` quanto `bfEstUpd` refazem `BF_HTML` depois de mexer no DOM, para o próximo `render()` não trocar a lista. `carregando` não desliga a caixa (passa sozinho); é conferido no toque.
+
+A seleção (`state.procurar.sel`) e o pedido em espera (`state.procurar.pedido`) ficam só na memória da janela. `render()` zera os dois fora da tela ou sem pessoa conectada; `vProcurar` zera ao trocar de pessoa.
+
+### Caminho da venda
+
+1. `bfVender` revalida cada sessão com `bfEstado`. Uma fora de `livre` cancela tudo, com o motivo e o código no aviso.
+2. Sem Checkout aberto (`ecoOff()`): com uma sessão, `go('checkout')` e `checkoutPick`; com mais de uma, aviso `bf_abra_ck`.
+3. Checkout fora da tela inicial (`state.eco.m.step!=='code'`): aviso `bf_ck_ocupado`.
+4. Senão, mensagem `abrir` pelo `BroadcastChannel` `eterna-loja`, endereçada à janela do Checkout que o Posto está ouvindo (`state.eco.m.tab`). Sem resposta em 6 s (`BF_ABRIR_MS`), aviso `bf_ck_sem_resposta`.
+5. Com `ok`, `auditLog('procurar_vender', ...)`, as sessões vendidas saem da seleção e o aviso é `bf_ck_abriu`.
+
+### Janela do Checkout
+
+`ECO_CH.onmessage` trata `abrir` só com `state.lojaRota` e `abriu` só fora dela, antes do `ecoNorm`. `lojaAbrirMsg(q)` ignora mensagem para outra janela (`q.para!==ECO_TAB`) ou sem `id` válido, e responde `invalido` para lista fora de 1 a 8 códigos `^[A-Z0-9]{4,20}$`, código repetido, origem fora de `BF_ORIGENS` ou mensagem com mais de 10 s (`BF_ABRIR_VALE`). `lojaAbrirPedido(q)`:
+
+- `ocupado` se `k.code`, `k.step!=='code'` ou `k.mais`;
+- `simFresh()` e, por sessão, `protegida` (`lojaSesProtegida`), `paga`, `pedido` ou `carregando` (`psEstado`);
+- `minhas[c]=lojaTodas(c)`, âncora na sessão de mais fotos, `lojaAbrirSo(minhas, anc, {fix})` sem `base`: `so.base=null` e `so.visita=false`, então `lojaVisitaAtualiza` não mexe e sessão ligada por visita não entra;
+- grava `k.so.origem`. "Adicionar outra pessoa" mantém a origem.
+
+A resposta `abriu` leva só `id`, `ok` e `motivo`. O Checkout abre na foto ampliada (a etapa passa de `gallery` a `review` no desenho), sem a pergunta "Esta sessão também é sua?".
+
+### Dado da venda
+
+`lojaPedido` grava `origem` no pedido (`SIM.caixaDin`) e `pvDados` repassa ao evento `criar`. No agente, `EV_ORIGENS = ("procurar", "procurar_selfie")`; `_ev_limpo` descarta origem fora da lista e mantém a venda; `met_v2` devolve `por_origem` (`{origem: {vendas, faturamento}}`, com `sem_origem`), somando as mesmas vendas pagas do `por_canal`; `vendas_do_dia` devolve `origem` em cada venda. `procurar_selfie` já está na lista para a fase 2, que ainda não tem tela nem rota.
+
+### Limites conhecidos
+
+- A Venda manual (sem Checkout aberto) não leva `origem`.
+- A auditoria `procurar_vender` sai do navegador (`usuarios_log`), como as demais do app.
+- O estado de sessão vendida em outro posto depende do `GET /ponto/vendas-dia`: é pedido ao entrar na tela e, depois, no máximo a cada 30 s enquanto o vendedor marca.
+- Depois do deploy, feche e abra as janelas do Checkout e do Posto: janela antiga do Checkout não responde ao pedido e o vendedor vê "O Checkout não respondeu".

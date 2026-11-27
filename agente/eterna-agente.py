@@ -9506,6 +9506,7 @@ def vendas_do_dia(posto=None, agora=None):
                      cart=[{"id": x.get("id")} for x in (d.get("cart") or []) if isinstance(x, dict)][:40],
                      selected=[str(p)[:60] for p in (d.get("selected") or [])][:200], aiSel=[str(p)[:80] for p in (d.get("aiSel") or [])][:40],
                      sessoes=[str(c)[:20] for c in (d.get("sessoes") or [])][:20],
+                     origem=d.get("origem") if isinstance(d.get("origem"), str) and d.get("origem") in EV_ORIGENS else None,
                      galeria=({"token": str(g.get("token") or "")[:40], "codigo": str(g.get("codigo") or "")[:20]}
                               if isinstance(g, dict) and g.get("token") else
                               ({"token": str(d["token"])[:40], "codigo": str(d.get("codigo") or "")[:20]} if d.get("token") else None)))
@@ -13165,6 +13166,8 @@ def _ev_ler(dia):
 
 EV_LANGS = ("pt", "en", "es", "fr", "de", "it", "zh")   # 24/11: italiano e chinês do Checkout também contam
 EV_CANAIS = ("checkout", "balcao")
+# 26/11: de onde a venda partiu quando o vendedor achou as sessões no Procurar fotos (plano docs/planos/2026-11-26-procurar-vender.md)
+EV_ORIGENS = ("procurar", "procurar_selfie")
 EV_CART_MAX = 30
 _re_cart_id = re.compile(r"^[a-z0-9_-]{1,20}$")
 
@@ -13243,7 +13246,8 @@ def _ev_limpo(e):
     # v92 (estatísticas): produtos, idioma, canal e a hora em que o cliente começou no Checkout. Campo inválido sai; a venda fica.
     em = txt(e.get("em"), 30) or _iso()
     dd.update(cart=_ev_cart(d.get("cart")), lang=d.get("lang") if d.get("lang") in EV_LANGS else None,
-              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em))
+              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em),
+              origem=d.get("origem") if isinstance(d.get("origem"), str) and d.get("origem") in EV_ORIGENS else None)
     if dd.get("vendedor") in CHAVES_PROIBIDAS:
         dd["vendedor"] = None
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
@@ -14968,7 +14972,7 @@ def met_v2(dia, ss, evs):
     """Campos v2 do resumo do dia. ss = sessões do arquivo do dia (None se o arquivo não existe mais); evs = eventos de
     _ev_ler(dia). As vendas entram pela mesma regra da v1 (paga = tem "pagar"), para as somas baterem."""
     tempos = {k: h_novo() for k in ("cliente_s", "pagamento_s", "clique_checkout_s", "transferencia_s")}
-    out = {"v": 2, "por_hora": {}, "por_produto": {}, "por_canal": {}, "por_idioma": {}, "tempos": tempos,
+    out = {"v": 2, "por_hora": {}, "por_produto": {}, "por_canal": {}, "por_origem": {}, "por_idioma": {}, "tempos": tempos,
            "por_confirmador": {}, "por_fotografo": {}}
     ph = lambda h: out["por_hora"].setdefault(h, {"vendas": 0, "faturamento": 0.0, "sessoes": 0, "fotos": 0})
     for x in ss or []:
@@ -15032,6 +15036,10 @@ def met_v2(dia, ss, evs):
             except (TypeError, ValueError):
                 pass
         g = out["por_canal"].setdefault(canal, {"vendas": 0, "faturamento": 0.0})
+        g["vendas"] += 1
+        g["faturamento"] = round(g["faturamento"] + tot, 2)
+        origem = c.get("origem") if isinstance(c.get("origem"), str) and c.get("origem") in EV_ORIGENS else "sem_origem"
+        g = out["por_origem"].setdefault(origem, {"vendas": 0, "faturamento": 0.0})   # 26/11: venda aberta pelo Procurar fotos
         g["vendas"] += 1
         g["faturamento"] = round(g["faturamento"] + tot, 2)
         if canal == "checkout" and c.get("lang") in EV_LANGS:   # S3: idioma só do Checkout
