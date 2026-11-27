@@ -14092,7 +14092,10 @@ def metricas_dia(dia):
             m["online"]["fotos"] += int(v.get("n") or 0)
     m["conversao_sessoes"] = round(m["sessoes_com_venda"] / m["sessoes"], 4) if m["sessoes"] else None
     m["conversao_fotos"] = round(m["fotos_vendidas"] / m["fotos"], 4) if m["fotos"] else None
-    m["ticket_medio"] = round(m["faturamento"] / m["vendas"], 2) if m["vendas"] else None
+    # 27/11 (auditoria do dia: R$ 179,07 nas vendas x R$ 174,10 nas Estatísticas): o valor médio é por venda PAGA; a cortesia
+    # (valor zero) entrava na divisão e puxava a média para baixo
+    _pagas = m["vendas"] - int(((m.get("por_meio") or {}).get("cortesia") or {}).get("vendas") or 0)
+    m["ticket_medio"] = round(m["faturamento"] / _pagas, 2) if _pagas > 0 else None
     m["cancelamentos"].sort(key=lambda x: str(x.get("em") or ""))
     for pf in m["por_fotografo"].values():
         pf["conversao"] = round(pf["sessoes_com_venda"] / pf["sessoes"], 4) if pf["sessoes"] else None

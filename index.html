@@ -6763,7 +6763,7 @@ function painelEterna(from,to,pdv){const dias={};const acc=pnAcc();const st={fin
       Object.entries(d.por_meio||{}).forEach(([m,v])=>{if(v&&typeof v==='object')acc.addPay(m,v.vendas,v.faturamento);});
       if(safeN(on.vendas))acc.addPay('online',on.vendas,on.faturamento);
       Object.entries(d.por_produto||{}).forEach(([k,v])=>{if(!v||typeof v!=='object')return;const id=k==='sem_detalhe'?'outros':String(k);acc.addProd(id,v.n,0,v.receita,id==='outros'?TE('pn_sem_detalhe_srv'):catName(id));});}
-    dias[dia]={date:dia,receita,vendas,fotosVendidas:fv,fotos:pdv?null:safeN(d.fotos),sessoes:pdv?null:safeN(d.sessoes),compraram:pdv?null:safeN(d.sessoes_com_venda)};
+    dias[dia]={date:dia,receita,vendas,cort:pdv?0:safeN(((d.por_meio||{}).cortesia||{}).vendas),fotosVendidas:fv,fotos:pdv?null:safeN(d.fotos),sessoes:pdv?null:safeN(d.sessoes),compraram:pdv?null:safeN(d.sessoes_com_venda)};
     st.finalizadas+=vendas;ft.vendidas+=fv;});
   return {dias,st,ft,acc,ag,vendas:st.finalizadas,srv:ok};}
 let PN_PONTOS=null; // pontos vistos na Roverpix: recalcula só quando o LIVE muda (revisão 1)
@@ -6780,12 +6780,13 @@ function painelDados(f,sales){f=f||{};PN_PRECO={};[...PROD_CAT,'fundo','dig'].fo
 function painelDados0(f,sales){f=f||{};const from=ISO_DIA.test(f.from)?f.from:DMIN,to=ISO_DIA.test(f.to)?f.to:DMAX;const fonte=['tudo','roverpix','eterna'].includes(f.fonte)?f.fonte:'tudo';const pdv=typeof f.pdv==='string'?f.pdv:'';
   const R=fonte!=='eterna'?painelRover(from,to,pdv):null;const E=fonte!=='roverpix'?painelEterna(from,to,pdv):null;const nd=diasEntre(from,to).length;
   const map={};(R?R.dias:[]).forEach(x=>{map[x.date]={...x};});
-  if(E)Object.values(E.dias).forEach(x=>{const m=map[x.date]||(map[x.date]={date:x.date,receita:0,vendas:0,fotos:null,fotosVendidas:0,sessoes:null,viram:null,compraram:null,pax:null});m.receita+=x.receita;m.vendas+=x.vendas;m.fotosVendidas=(m.fotosVendidas||0)+x.fotosVendidas;
+  if(E)Object.values(E.dias).forEach(x=>{const m=map[x.date]||(map[x.date]={date:x.date,receita:0,vendas:0,fotos:null,fotosVendidas:0,sessoes:null,viram:null,compraram:null,pax:null});m.receita+=x.receita;m.vendas+=x.vendas;m.cort=numF(m.cort)+numF(x.cort);m.fotosVendidas=(m.fotosVendidas||0)+x.fotosVendidas;
     for(const k of ['fotos','sessoes','compraram'])if(x[k]!=null)m[k]=numF(m[k])+x[k];});   // 25/11: fotos e sessões do servidor do ponto
   const dias=Object.values(map).sort((a,b)=>a.date.localeCompare(b.date)).map(x=>({...x,receita:safeN(x.receita)}));
   const rc=(R&&R.cob.length>0)||!!(E&&E.srv&&!pdv);const S=k=>dias.reduce((a,x)=>a+numF(x[k]),0);
   const kpi={receita:safeN(S('receita')),vendas:safeN(S('vendas')),fotos:rc?safeN(S('fotos')):null,fotosVendidas:safeN(S('fotosVendidas')),sessoes:rc?safeN(S('sessoes')):null,compraram:rc?safeN(S('compraram')):null,viram:R&&R.cob.length>0&&!pdv?safeN(S('viram')):null,pax:null,paxDias:0,gastoVisitante:null,captura:null};
-  kpi.ticket=kpi.vendas?safeN(kpi.receita/kpi.vendas):0;
+  // 27/11 (auditoria: R$ 179,07 x R$ 174,10): o ticket é por venda paga; a cortesia (valor zero) não entra na divisão
+  {const pg=kpi.vendas-safeN(S('cort'));kpi.ticket=pg>0?safeN(kpi.receita/pg):0;}
   if(!pdv){const pd=dias.filter(x=>x.pax>0);if(pd.length){kpi.pax=safeN(pnSum(pd,'pax'));kpi.paxDias=pd.length;kpi.gastoVisitante=safeN(pnSum(pd,'receita')/kpi.pax);kpi.captura=rc?safeN(100*pnSum(pd,'sessoes')/kpi.pax):null;}}
   // D9: comparação só com o período anterior inteiro nos dados da Roverpix e fonte diferente de Eterna
   const prev={from:addDays(from,-nd),to:addDays(from,-1),coberto:false};let prevKpi=null;
