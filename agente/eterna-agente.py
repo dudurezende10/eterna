@@ -15884,7 +15884,7 @@ def _pessoas_dia_calc(dia, forcar=False):
 AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "21"))
 AUDITORIA_DIR = os.path.join(CONTAGENS_DIR, "auditoria")
 AUDITORIA_MEIOS = ("pix", "cartao", "dinheiro", "cortesia")
-AUDITORIA_V = 3      # versão das conferências: auditoria de hoje feita por versão anterior é refeita (e o e-mail sai de novo)
+AUDITORIA_V = 4      # versão das conferências: auditoria de hoje feita por versão anterior é refeita (e o e-mail sai de novo)
 
 
 def _auditoria_arq(dia):
