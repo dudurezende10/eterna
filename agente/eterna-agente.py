@@ -13513,8 +13513,11 @@ def busca_vend_sessoes(fotos, agora=None):
                 y = dono.get(pid)
                 if y is not None and y is not x:
                     x = y; errados += 1
-            if not x or x.get("dia") != hoje or x.get("removida") or _vis_protegida(x):
-                k = "sem_sessao" if not x else "outro_dia" if x.get("dia") != hoje else "removida" if x.get("removida") else "protegida"
+            # 27/11 (casal da sessão 123): a galeria da escola pega toda sessão que começou no horário do voucher e as levas
+            # viram protegidas; a família que estava no mesmo horário sumia da busca. Aqui (vendedor, atendimento da equipe)
+            # a leva de escola entra, sempre como "pode_ser" (nunca marcada sozinha). A leva com menor marcado segue fora.
+            if not x or x.get("dia") != hoje or x.get("removida") or x.get("menor"):
+                k = "sem_sessao" if not x else "outro_dia" if x.get("dia") != hoje else "removida" if x.get("removida") else "menor"
                 fora.setdefault(k, set()).add(x["card"] if x else "-")
                 continue
             if pid not in x["fotos"] or pid in (x.get("ia") or ()):      # pendente de leitura ou base de IA: nunca sai
@@ -13529,7 +13532,7 @@ def busca_vend_sessoes(fotos, agora=None):
                                       "cap1": _num(x.get("cap1")), "n": sum(1 for p in x["fotos"] if p not in ia), "bateu": []}
             o["bateu"].append({"id": pid, "sim": round(nota, 3)})
             o["sim"] = max(o["sim"], round(nota, 3))
-            if nota >= LIMITE and f.get("principal") is True:
+            if nota >= LIMITE and f.get("principal") is True and not _vis_protegida(x):
                 o["nivel"] = "certeza"
     if errados:
         print("  busca do vendedor: %d foto(s) com o índice de sessão desatualizado, achadas pela sessão de hoje" % errados)

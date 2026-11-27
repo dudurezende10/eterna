@@ -253,8 +253,9 @@ st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-a", b"a-de-novo", b
 ss = {o["card"]: o for o in r.get("sessoes") or []}
 ok(st == 200 and r.get("ok") is True and r.get("rosto") is True and r.get("varias") is False and set(r) == {"ok", "busca", "rosto", "varias", "fila", "sessoes"}
    and isinstance(r.get("busca"), str) and len(r["busca"]) == 16, "contrato da resposta: %s %r" % (st, {k: r.get(k) for k in r if k != "sessoes"}))
-ok(set(ss) == {S_CERTA, S_ABERTA, S_TACA, S_DUVIDA, S_FUNDO}, "25: só as sessões de hoje que podem sair: %r" % (sorted(ss),))
-for nome, c in (("de ontem", S_ONTEM), ("removida", S_REMOVIDA), ("de menor", S_MENOR), ("de escola", S_ESCOLA), ("só com base de IA", S_SO_IA),
+ok(set(ss) == {S_CERTA, S_ABERTA, S_TACA, S_DUVIDA, S_FUNDO, S_ESCOLA}, "25: só as sessões de hoje que podem sair: %r" % (sorted(ss),))
+ok(ss[S_ESCOLA]["nivel"] == "pode_ser", "27/11: leva de escola (no horário do voucher) vem, mas só como pode_ser, mesmo com nota alta: %r" % (ss[S_ESCOLA],))
+for nome, c in (("de ontem", S_ONTEM), ("removida", S_REMOVIDA), ("de menor", S_MENOR), ("só com base de IA", S_SO_IA),
                 ("só com foto na fila", S_PEND), ("abaixo do piso", S_BAIXA), ("de outra pessoa", S_B)):
     ok(c not in ss and c not in json.dumps(r), "25: sessão %s nunca vem" % nome)
 ok(all(set(o) == {"card", "nivel", "status", "fotografo", "ponto", "cap0", "cap1", "n", "bateu"} and all(set(b) == {"id"} for b in o["bateu"]) for o in ss.values()),
@@ -277,7 +278,7 @@ BUSCA1 = r["busca"]
 
 # ---------- 26: o registro é carimbado pelo servidor ----------
 L = linhas()
-ok(len(L) == 1 and L[0][0] == BUSCA1 and L[0][3] == "vendedora-bv" and L[0][4] == "Caixa 7" and L[0][2] == HOJE and L[0][5] == "achou" and L[0][6] == 2 and L[0][7] == 3
+ok(len(L) == 1 and L[0][0] == BUSCA1 and L[0][3] == "vendedora-bv" and L[0][4] == "Caixa 7" and L[0][2] == HOJE and L[0][5] == "achou" and L[0][6] == 2 and L[0][7] == 4
    and {a[0] for a in json.loads(L[0][8])} == set(ss) and L[0][9] is None and L[0][10] is None and "outra-pessoa" not in json.dumps(L) and "Posto falso" not in json.dumps(L),
    "26: uma linha em busca_vend, com quem e posto vindos da sessão e não do corpo: %r" % (L,))
 ok(all(isinstance(a[2], float) for a in json.loads(L[0][8])), "4: a nota fica só no banco")
@@ -345,7 +346,7 @@ diag = open(os.path.join(m.SELFIE_LOG_DIR, HOJE + ".jsonl"), encoding="utf-8").r
 dl = [json.loads(x) for x in diag.strip().splitlines()]
 dv = [x for x in dl if x.get("origem") == "vendedor"]
 ok(len(dv) == 6 and dv[0]["vendedor"] == "vendedora-bv" and dv[0]["posto"] == "Caixa 7" and dv[0]["resultado"] == "achou"
-   and not any(c in json.dumps(dv) for c in (S_ONTEM, S_MENOR, S_ESCOLA)) and P_CERTA[3] not in json.dumps(dv), "diagnóstico da busca do vendedor, só com o que saiu: %r" % (dv[:1],))
+   and not any(c in json.dumps(dv) for c in (S_ONTEM, S_MENOR)) and P_CERTA[3] not in json.dumps(dv), "diagnóstico da busca do vendedor, só com o que saiu: %r" % (dv[:1],))
 
 # ---------- 26: limite por pessoa ----------
 m._janelas.clear()
@@ -523,7 +524,7 @@ st, r = pede("GET", "/ponto/selfies?dia=" + HOJE, cookie=adm)
 vd = r.get("vendedor") or []
 v1 = [x for x in vd if x.get("busca") == BUSCA1]
 ok(st == 200 and r.get("ok") is True and isinstance(r.get("buscas"), list) and any(x.get("origem") == "vendedor" for x in r["buscas"]) and any(x.get("origem") == "checkout" for x in r["buscas"])
-   and len(v1) == 1 and v1[0]["por"] == "vendedora-bv" and v1[0]["posto"] == "Caixa 7" and v1[0]["marcadas"] == [S_CERTA, S_TACA] and v1[0]["certeza"] == 2 and v1[0]["talvez"] == 3
+   and len(v1) == 1 and v1[0]["por"] == "vendedora-bv" and v1[0]["posto"] == "Caixa 7" and v1[0]["marcadas"] == [S_CERTA, S_TACA] and v1[0]["certeza"] == 2 and v1[0]["talvez"] == 4
    and {a[0] for a in v1[0]["achadas"]} == set(ss) and set(v1[0]) == {"busca", "em", "por", "posto", "resultado", "certeza", "talvez", "achadas", "marcadas", "marcada_em"},
    "/ponto/selfies traz as buscas do vendedor: %s %r" % (st, v1))
 # 8: por pessoa, quantas buscas fez e quantas terminaram sem venda marcada
