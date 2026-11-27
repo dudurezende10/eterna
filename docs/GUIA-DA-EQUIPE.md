@@ -372,7 +372,7 @@ A tela mostra só as sessões de hoje e precisa do computador do ponto ligado. N
 
 Com o computador do ponto ligado, **Minhas fotos** mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. O fotógrafo vê as sessões dele. A supervisora e o Admin veem as sessões de todos os fotógrafos (o seletor Fotógrafo saiu em 24/11 e o filtro por ponto em 18/11; sessão sem ponto aparece).
 
-Cada sessão tem uma linha com: o código (LP...), o fotógrafo, o ponto, a hora do primeiro e do último clique, o número de fotos e o motivo de ter começado. Quando aparece "chegada" depois da hora, a câmera não mandou a hora do clique e vale a hora em que a foto chegou.
+Cada sessão tem uma linha com: o número do dia (com a data e o código LP pequenos ao lado), o fotógrafo, o ponto, a hora do primeiro e do último clique, o número de fotos e o motivo de ter começado. Quando aparece "chegada" depois da hora, a câmera não mandou a hora do clique e vale a hora em que a foto chegou.
 
 | Como aparece | Quer dizer |
 | --- | --- |
@@ -602,6 +602,17 @@ No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 
 Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Configurações › Preços e Checkout**.
 
+### Número da sessão (26/11)
+
+Cada sessão tem um **número do dia**: a primeira do dia é a 1, a seguinte é a 2, e assim por diante. O nome completo da sessão é a data e o número, por exemplo **2026-11-26-147**. No dia, basta **falar e digitar 147**.
+
+- Na tela o número aparece grande, com a data pequena antes e o código LP pequeno depois.
+- Para achar uma sessão em **Procurar sessão** ou em **Procurar fotos**, digite o número. Digitando 14 aparecem a 14 e as de 140 a 149. Também vale colar o nome completo (2026-11-26-147).
+- O código LP continua valendo na busca, como antes.
+- O número não muda e não se repete no dia. Se uma sessão for apagada ou juntada a outra, o número dela não volta: pode faltar um número na sequência.
+- No dia seguinte a contagem recomeça do 1. Sessão de outro dia aparece sempre com a data na frente.
+- **O cliente não usa esse número.** No Checkout e na galeria ele entra com o código que está no recibo dele.
+
 ### Procurar sessão no Posto de venda (25/11)
 
 Para quando o cliente chega ao caixa sem o código e a selfie do Checkout não achou as fotos.
@@ -618,7 +629,7 @@ O que os avisos do cartão querem dizer:
 - **Já vendida**: essa sessão já foi paga. Para ver o recibo ou imprimir de novo, use o botão **Recibo** em Minhas vendas.
 - **Pedido em aberto**: o cliente já fez o pedido no Checkout. Atenda pela lista **Aguardando pagamento**.
 
-Se souber parte do código (LP...), digite no campo: a busca passa a valer para o dia todo. A lista mostra só as sessões de hoje.
+Se souber o número da sessão (por exemplo 147) ou parte do código (LP...), digite no campo: a busca passa a valer para o dia todo. A lista mostra só as sessões de hoje.
 
 Depois da atualização, feche e abra de novo o Posto de venda em todos os caixas.
 

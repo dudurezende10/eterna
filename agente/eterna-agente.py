@@ -6719,7 +6719,7 @@ def ff_json(agora=None):
             else:
                 ian, iam = _sess_ia_regra(x)
                 iab = sorted(todos, key=lambda p: (ts.get(p) or (0, 0)))[:ian] if ian else []
-            out.append({"id": x["card"], "estado": e, "fotografo": x.get("fotografo"), "fonte": x.get("fonte"),
+            out.append({"id": x["card"], "num": x.get("num"), "estado": e, "fotografo": x.get("fotografo"), "fonte": x.get("fonte"),
                         "funcao": dict(x["funcao"]) if isinstance(x.get("funcao"), dict) else None,
                         "inicio": x.get("aberta_em"), "ultima_chegada": x.get("ultima_chegada"),
                         "ultimo_clique": x.get("cap1") or x.get("ultima_chegada"), "pronta_em": pe, "n": len(todos),
@@ -6771,10 +6771,13 @@ sess_faces_pid = {}              # pid pendente -> rostos lidos (só memória)
 sess_rostos_mem = {}             # card não fechada -> [(pid, vetor)] (S9, só memória)
 sess_rev = [0]
 sess_seq = [0]
+sess_num = {}                    # 26/11: dia -> último número curto dado (1, 2, 3...); só com o sess_lock
 sess_sujo = set()                # dias com mudança ainda não gravada
 sess_limpo = [""]                # dia da última limpeza de arquivos (S14)
 sess_ia_novos = collections.deque(maxlen=IA_NOVOS_MAX)   # v93: (pid, prioridade) das bases de IA novas, para o rec_ia_loop
 _SESS_DIA = re.compile(r"^(\d{4}-\d\d-\d\d)\.json$")
+_SESS_RESTO = re.compile(r"^(\d{4}-\d\d-\d\d)\.json\.(?:tmp|ilegivel-\d+)$")
+_SESS_NUM_TOPO = re.compile(r'^\s*\{\s*"dia"\s*:\s*"[^"]*"\s*,\s*"num"\s*:\s*(\d{1,9})\s*,')
 
 
 def _sess_codigo():
@@ -6782,6 +6785,46 @@ def _sess_codigo():
         c = "LP" + "".join(secrets.choice(SESS_ALFA) for _ in range(7))
         if c not in sess:
             return c
+
+
+# 26/11 (Eduardo): número curto da sessão. O código LP + 7 caracteres é grande demais para falar e digitar com pressa:
+# cada sessão ganha "num", o número do dia (1, 2, 3...), dado aqui e guardado no arquivo do dia, estável para sempre.
+# O nome completo de exibição é dia + num ("2026-11-26-147"), montado por quem mostra; nada além do num é gravado.
+# O card LP não muda (segue chave interna e código do cliente). Número de sessão fundida ou removida nunca volta a ser
+# dado (buraco na sequência é aceito): o último número do dia vai no topo do arquivo ("num").
+SESS_NUM_MARCA = ".num-migrado"   # marca na pasta das sessões: os arquivos dos dias anteriores já têm número
+
+
+def _sess_num_ok(v):
+    """O número da sessão lido de arquivo: inteiro de 1 em diante (bool não vale), ou None. Sem teto aqui: um teto faria
+    a sessão acima dele ser renumerada na partida seguinte. O limite de dígitos é só da busca da tela."""
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 1 else None
+
+
+def _sess_num_prox(dia):
+    """O próximo número do dia. Só memória (nada de disco ou banco aqui). Com o sess_lock."""
+    n = sess_num.get(dia, 0) + 1
+    sess_num[dia] = n
+    return n
+
+
+def _sess_num_arruma(topo, lista):
+    """Regra única da numeração de um dia lido de arquivo (boot e migração): parte do maior entre o "num" do topo e o maior
+    "num" válido; a sessão sem número ou com número repetido (a segunda na ordem do arquivo) recebe o próximo, na ordem
+    do arquivo. Removidas também recebem. Devolve (último número, [sessões que mudaram])."""
+    ult = _sess_num_ok(topo) or 0
+    vistos, falta = set(), []
+    for x in lista:
+        n = _sess_num_ok(x.get("num"))
+        if n is None or n in vistos:
+            falta.append(x)
+        else:
+            vistos.add(n)
+            ult = max(ult, n)
+    for x in falta:
+        ult += 1
+        x["num"] = ult
+    return ult, falta
 
 
 def _sess_toca(x):
@@ -6878,7 +6921,8 @@ def _sess_nova(trilha, t, u, motivo, m, chave, fonte, fonte_t, atrasada):
     card = _sess_codigo()
     f = _ff_func_snapshot(chave)
     sess_seq[0] += 1
-    x = {"card": card, "dia": trilha.split("|", 1)[0], "k": trilha, "fotografo": chave, "fonte": fonte,
+    dia = trilha.split("|", 1)[0]
+    x = {"card": card, "num": _sess_num_prox(dia), "dia": dia, "k": trilha, "fotografo": chave, "fonte": fonte,
          "ponto": f.get("point") if f and f.get("tipo") == "campo" else None, "funcao": f,
          "trilha": "atrasada" if atrasada else "vivo", "atrasada": bool(atrasada), "status": "aberta", "motivo": motivo,
          "origem": "agente", "aberta_em": u, "ultima_chegada": u, "cap0": t, "cap1": t, "fonte_t": fonte_t,
@@ -7225,7 +7269,8 @@ def _sess_fecha_uma(x, agora, por):
 
 
 def _sess_fundir(dest, orig, agora):
-    """S7: as fotos, as pendentes e os rostos da origem vão para o destino (a mais antiga); a origem vira removida."""
+    """S7: as fotos, as pendentes e os rostos da origem vão para o destino (a mais antiga); a origem vira removida.
+    26/11: o destino mantém o número curto; o da origem fica com ela (aposentado, nunca é dado de novo)."""
     for pid in orig["fotos"]:
         t, u = orig["_t"].get(pid, (agora, agora))
         _sess_entra(dest, pid, t, u, orig["dec"].get(pid, "t"))
@@ -7621,7 +7666,7 @@ def sess_limpar(agora=None):
         except OSError:
             continue
         for nome in nomes:
-            mm = _SESS_DIA.match(nome)
+            mm = _SESS_DIA.match(nome) or _SESS_RESTO.match(nome)   # 26/11: e o .tmp que sobrou e o arquivo ilegível guardado
             if mm and mm.group(1) < lim:
                 try:
                     os.remove(os.path.join(pasta, nome))
@@ -7657,21 +7702,31 @@ def sess_tick(agora=None):
         _sess_tick(time.time() if agora is None else agora)
 
 
+def _sess_tmp_apaga(tmp):
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+
+
 def sess_gravar():
     vis_gravar()                                     # v97: as arestas das visitas junto das sessões
     with sess_lock:
         dias = list(sess_sujo)
         sess_sujo.clear()
         lotes = {d: [_sess_publico(x, disco=True) for x in sess.values() if x["dia"] == d] for d in dias}
+        # 26/11: o último número dado no dia vai no topo do arquivo (número de sessão que saiu nunca é reusado)
+        nums = {d: max([sess_num.get(d, 0)] + [_sess_num_ok(x.get("num")) or 0 for x in lotes[d]]) for d in dias}
     for d, lista in lotes.items():
         try:
             os.makedirs(SESS_DIR, exist_ok=True)
             f = os.path.join(SESS_DIR, d + ".json")
             tmp = f + ".tmp"
             with open(tmp, "w", encoding="utf8") as fh:
-                json.dump({"dia": d, "sessoes": lista}, fh)
+                json.dump({"dia": d, "num": nums[d], "sessoes": lista}, fh)
             os.replace(tmp, f)
         except Exception as ex:
+            _sess_tmp_apaga(os.path.join(SESS_DIR, d + ".json.tmp"))   # disco cheio: o .tmp pela metade não fica
             with sess_lock:
                 sess_sujo.add(d)
             print("  sessões: não gravei %s (%s)" % (d, str(ex)[:80]))
@@ -7696,6 +7751,9 @@ def sess_loop():
                         sess_ultima.pop(x["k"], None)
                     vis_rostos.pop(card, None)
                     vis_de.pop(card, None)
+                na_mem = {x["dia"] for x in sess.values()}
+                for d in [d for d in sess_num if d < ontem and d not in na_mem]:   # 26/11: o número do dia sai junto
+                    sess_num.pop(d, None)
                 for d in [d for d in vis_arestas if d < ontem]:   # v97: visitas também só de hoje e ontem na memória
                     vis_arestas.pop(d, None)
                 for vid in [k for k, v in vis_info.items() if v["dia"] < ontem]:
@@ -7721,6 +7779,7 @@ def _sess_normaliza(x):
     x["ia"] = [p for p in (x.get("ia") or []) if isinstance(p, str)] if isinstance(x.get("ia"), list) else []   # v93: nada retroativo
     x["aberta_em"] = _num(x.get("aberta_em"))
     x["ultima_chegada"] = _num(x.get("ultima_chegada")) or x["aberta_em"]
+    x["num"] = _sess_num_ok(x.get("num"))            # 26/11: número curto do dia; sem ele o sess_carregar dá o próximo
     sess_seq[0] += 1
     x.update(_t={}, _guardar=set(), _rfim=0.0, _n=sess_seq[0], _fonte={}, _ia_vistos=set())
     return x
@@ -7890,14 +7949,25 @@ def sess_carregar(agora=None):
     vis_cfg()                                        # B1: as visitas do boot já respeitam o interruptor
     with sess_lock:
         for d in dias:
+            arq_d = os.path.join(SESS_DIR, d + ".json")
             try:
-                j = json.load(open(os.path.join(SESS_DIR, d + ".json"), encoding="utf8"))
-            except Exception:
+                with open(arq_d, encoding="utf8") as fh:
+                    j = json.load(fh)
+                if not isinstance(j, dict):
+                    raise ValueError("não é um objeto")
+            except FileNotFoundError:
                 continue
+            except Exception as ex:
+                # 26/11: arquivo do dia ilegível. Fica guardado à parte (o sess_gravar não o sobrescreve) e o número do
+                # topo é aproveitado quando dá para ler, para a numeração do dia não recomeçar do 1
+                sess_num[d] = max(sess_num.get(d, 0), _sess_ilegivel(arq_d, d, ex))
+                continue
+            do_dia = []
             for x in j.get("sessoes") or []:
                 if not isinstance(x, dict) or not x.get("card") or not x.get("k") or not x.get("dia"):
                     continue
                 x = _sess_normaliza(x)
+                do_dia.append(x)
                 sess[x["card"]] = x
                 for p in x["fotos"] + x["pend"]:
                     sess_pid[p] = x["card"]
@@ -7913,6 +7983,11 @@ def sess_carregar(agora=None):
                 if not x.get("removida"):
                     sess_ultima[x["k"]] = x["card"]
                 n_lidas += 1
+            # 26/11: número curto. Antes do reagrupamento das fotos sem sessão (as criadas lá recebem os seguintes)
+            ult, sem_num = _sess_num_arruma(j.get("num"), do_dia)
+            sess_num[d] = max(sess_num.get(d, 0), ult)
+            for x in sem_num:
+                _sess_toca(x)
     ini = time.mktime(time.strptime(dias[0], "%Y-%m-%d"))
     itens = []
     with lock:
@@ -7960,6 +8035,78 @@ def sess_carregar(agora=None):
         print("  sessões: dono das fotos não conferido (%s)" % type(ex).__name__)
     sess_gravar()
     return n_lidas, novas, hoje
+
+
+def _sess_ilegivel(arq, d, ex):
+    """Arquivo de sessões do dia que não pôde ser lido na partida: é renomeado para <dia>.json.ilegivel-<hora> (nada é
+    apagado) e devolve o último número do dia quando o começo do arquivo ainda mostra o "num" do topo; senão 0."""
+    ult = 0
+    try:
+        with open(arq, "rb") as fh:
+            mm = _SESS_NUM_TOPO.match(fh.read(200).decode("utf8", "replace"))
+        ult = int(mm.group(1)) if mm else 0
+    except Exception:
+        ult = 0
+    novo = "%s.ilegivel-%s" % (arq, time.strftime("%H%M%S"))
+    try:
+        os.replace(arq, novo)
+        guardado = os.path.basename(novo)
+    except OSError:
+        guardado = None
+    print("  SESSÕES: ATENÇÃO, o arquivo de %s não pôde ser lido (%s). %s. %s" % (
+        d, type(ex).__name__,
+        ("Guardado como %s" % guardado) if guardado else "Não consegui guardar uma cópia",
+        ("A numeração do dia continua do %d" % (ult + 1)) if ult else "A numeração do dia recomeça do 1: confira os números já falados hoje"))
+    return ult
+
+
+def sess_num_migrar():
+    """26/11: uma vez no boot, depois do sess_carregar e fora do sess_lock. Os arquivos de sessão dos dias fora da memória
+    (antes de ontem para trás) ganham o número curto pela mesma regra do boot (_sess_num_arruma), gravados com .tmp +
+    os.replace. Arquivo já numerado não é tocado; erro num arquivo só imprime e segue. Devolve quantos arquivos mudaram.
+    Uma passada sem erro deixa a marca SESS_NUM_MARCA na pasta, e as partidas seguintes não releem nada (arquivo novo já
+    nasce numerado pelo sess_gravar). Roda na partida antes das threads de rede: o sess_esquecer_disco usa o mesmo .tmp."""
+    marca = os.path.join(SESS_DIR, SESS_NUM_MARCA)
+    if os.path.exists(marca):
+        return 0
+    with sess_lock:
+        em_mem = {x["dia"] for x in sess.values()} | set(sess_num)
+    em_mem |= {_ff_hoje(), _ff_hoje(time.time() - 86400)}     # hoje e ontem são sempre do sess_carregar
+    try:
+        nomes = sorted(os.listdir(SESS_DIR))
+    except OSError:
+        return 0
+    n, erros = 0, 0
+    for nome in nomes:
+        mm = _SESS_DIA.match(nome)
+        if not mm or mm.group(1) in em_mem:
+            continue
+        f = os.path.join(SESS_DIR, nome)
+        try:
+            with open(f, encoding="utf8") as fh:
+                j = json.load(fh)
+            if not isinstance(j, dict):
+                continue
+            ult, mudou = _sess_num_arruma(j.get("num"), [x for x in (j.get("sessoes") or []) if isinstance(x, dict)])
+            if not mudou:
+                continue
+            j["num"] = ult
+            tmp = f + ".tmp"
+            with open(tmp, "w", encoding="utf8") as fh:
+                json.dump(j, fh)
+            os.replace(tmp, f)
+            n += 1
+        except Exception as ex:
+            erros += 1
+            _sess_tmp_apaga(f + ".tmp")
+            print("  sessões (número): não numerei %s (%s)" % (nome, str(ex)[:80]))
+    if not erros:
+        try:
+            with open(marca, "w", encoding="utf8") as fh:
+                fh.write(_iso(time.time()))
+        except Exception as ex:
+            print("  sessões (número): marca não gravada (%s)" % type(ex).__name__)
+    return n
 
 
 def sess_feed(desde=0, ontem=False):
@@ -13683,7 +13830,7 @@ def backup_arquivos_lista():
     out = [INDEX, METRICAS_ARQ, LGPD_EXCLUIDAS, LGPD_LOG, FF_FUNCAO, AF_FONTE, VIS_LOG, VIS_CALIB, IMP_FILA, FUNDOS_MODO_CFG]
     for pasta, so in ((SESS_DIR, None), (MET_DIR, None), (GALERIAS, "sessao.json")):
         for raiz, _dirs, arqs in os.walk(pasta):
-            out += [os.path.join(raiz, a) for a in arqs if (so is None and not a.endswith(".tmp")) or a == so]
+            out += [os.path.join(raiz, a) for a in arqs if (so is None and not a.endswith(".tmp") and a != SESS_NUM_MARCA) or a == so]
     return [a for a in out if os.path.isfile(a)]
 
 
@@ -24955,6 +25102,12 @@ def main():
         print(f"  Sessões: {hoje} hoje (montadas aqui, pausa de {SESS_PAUSA} s e rostos; {novas} fotos agrupadas agora)")
     except Exception as ex:
         print("  sessões: não carreguei (%s)" % str(ex)[:120])
+    try:
+        nm = sess_num_migrar()                       # 26/11: número curto nos arquivos dos dias anteriores (uma vez)
+        if nm:
+            print("  Sessões: %d arquivos de dias anteriores ganharam o número curto" % nm)
+    except Exception as ex:
+        print("  sessões: número curto dos dias anteriores não gravado (%s)" % type(ex).__name__)
     threading.Thread(target=sess_loop, daemon=True).start()
     threading.Thread(target=app_preaquecer, daemon=True).start()     # v97: app, fontes e Checkout em disco para abrir sem internet
     threading.Thread(target=app_revisar_loop, daemon=True).start()
