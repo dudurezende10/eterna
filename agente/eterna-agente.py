@@ -15784,7 +15784,8 @@ PESSOA_PERTO = 80   # largura do rosto (px na foto lida, lado 1600) a partir da 
 
 # 16/11 (v2, conferência do Ronaldo nos rostos de 15/11: muita gente repetida). A v1 agrupava todos os rostos pelo limite
 # da selfie e cada rosto de perfil, de costas, tapado (câmera, taça, mão) ou pequeno virava uma pessoa nova. Agora:
-#  1. Só rosto bom cria pessoa: frontal e nítido (tabela rosto_q) e com pelo menos PESSOA_SEMENTE px.
+#  1. Só rosto bom cria pessoa: frontal e nítido (tabela rosto_q) e com pelo menos PESSOA_SEMENTE px. (27/11: saiu; todo rosto
+#     visível cria pessoa, veja _pessoas_agrupa.)
 #  2. Os rostos bons se juntam por média do grupo (não pelo melhor par), com PESSOA_JUNTA; dois rostos da mesma foto nunca.
 #  3. Os outros rostos (perfil, pequenos) não criam pessoa: entram na pessoa mais parecida da MESMA sessão (a família que
 #     estava junto) com PESSOA_SESSAO, ou de qualquer sessão com LIMITE; sem par, ficam como "sem identificar".
@@ -15835,25 +15836,36 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
     M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128).copy()
     M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
     larg = [float(r[1] or 0) for r in rows]
-    sem = [i for i in range(len(rows)) if rows[i][2] in boas and larg[i] >= PESSOA_SEMENTE]
+    # 27/11 (Ronaldo: "a quantidade de rostos distintos nas fotos, simples assim"): todo rosto visível cria pessoa, frontal ou
+    # não. Só fica de fora quem está ao fundo (menor que PESSOA_CONTA_MIN px ou que PESSOA_JUNTO_RAZAO do maior rosto da foto).
+    maior_foto = {}
+    for i in range(len(rows)):
+        maior_foto[rows[i][0]] = max(maior_foto.get(rows[i][0], 0.0), larg[i])
+    sem = [i for i in range(len(rows)) if larg[i] >= PESSOA_CONTA_MIN and larg[i] >= PESSOA_JUNTO_RAZAO * maior_foto[rows[i][0]]]
     resto = [i for i in range(len(rows)) if i not in set(sem)]
-    # 2. agrupamento por média (aglomerativo): começa cada rosto bom sozinho e junta o par de grupos mais parecido
-    G = [{"m": [i], "pids": {rows[i][0]}} for i in sem]
-    while len(G) > 1:
-        C = np.stack([M[g["m"]].mean(axis=0) for g in G])
-        C /= np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
-        S = C @ C.T
-        np.fill_diagonal(S, -1)
-        for a in range(len(G)):
-            for b in range(a + 1, len(G)):
-                if G[a]["pids"] & G[b]["pids"]:
-                    S[a, b] = S[b, a] = -1
-        a, b = np.unravel_index(int(np.argmax(S)), S.shape)
-        if S[a, b] < PESSOA_JUNTA:
-            break
-        a, b = min(a, b), max(a, b)
-        G[a]["m"] += G[b]["m"]; G[a]["pids"] |= G[b]["pids"]
-        G.pop(b)
+    # 2. guloso, do maior rosto para o menor: entra na pessoa de centro mais parecido (PESSOA_JUNTA), nunca em quem já está na foto
+    G, soma, na_foto = [], [], {}
+    Cn = np.zeros((len(sem), M.shape[1]), dtype="float32")
+    for i in sorted(sem, key=lambda k: -larg[k]):
+        pid = rows[i][0]
+        alvo = -1
+        if G:
+            sv = Cn[:len(G)] @ M[i]
+            for k in na_foto.get(pid, ()):
+                sv[k] = -1
+            k = int(np.argmax(sv))
+            if sv[k] >= PESSOA_JUNTA:
+                alvo = k
+        if alvo < 0:
+            G.append({"m": [i], "pids": {pid}})
+            soma.append(M[i].copy())
+            Cn[len(G) - 1] = M[i]
+            alvo = len(G) - 1
+        else:
+            G[alvo]["m"].append(i); G[alvo]["pids"].add(pid)
+            soma[alvo] = soma[alvo] + M[i]
+            Cn[alvo] = soma[alvo] / max(float(np.linalg.norm(soma[alvo])), 1e-9)
+        na_foto.setdefault(pid, set()).add(alvo)
     # 3. rostos que não criam pessoa: na mais parecida da mesma sessão, ou de qualquer uma pelo limite da selfie
     sem_id = 0
     if G:
@@ -15959,7 +15971,7 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
-PESSOAS_V = 5
+PESSOAS_V = 6
 
 
 def _contagens_base():
@@ -16165,73 +16177,9 @@ def _pessoas_auditoria(dia, rows, P, sess):
             "maiores_clientes_fotos": maiores, "equipe": eq}
 
 
-# 27/11 (Ronaldo: "de 1.200 visitantes só fotografamos 396 pessoas em 5 mil fotos?"): em 26/11 foram 413 sessões e 396 pessoas.
-# Só rosto frontal e nítido cria pessoa, então na foto da família de 4 em que só um rosto passava no filtro contava 1. Agora a conta
-# é por visita: sessões ligadas pelo mesmo cliente reconhecido ou pela mesma venda são uma visita (a família fotografada em vários
-# pontos do tour). Cada visita tem pelo menos tantas pessoas quanto o maior número de rostos juntos numa foto dela (rosto com
-# PESSOA_JUNTO_RAZAO da largura do maior da foto e PESSOA_JUNTO_MIN px; quem está ao fundo, na fila, não conta; rosto da equipe
-# não conta) e pelo menos 1 (sessão só de costas). O que passa dos clientes reconhecidos na visita soma na conta.
+# Quem está ao fundo (a fila) não conta: rosto menor que PESSOA_CONTA_MIN px ou que PESSOA_JUNTO_RAZAO do maior rosto da foto.
 PESSOA_JUNTO_RAZAO = 0.4
-PESSOA_JUNTO_MIN = 24
-
-
-def _pessoas_visitas(dia, rows, P, sess):
-    """-> (pessoas a somar além dos clientes reconhecidos, visitas, sessões)."""
-    cards = set(sess.values())
-    pai = {c: c for c in cards}
-
-    def raiz(c):
-        while pai[c] != c:
-            pai[c] = pai[pai[c]]
-            c = pai[c]
-        return c
-
-    def junta(cs):
-        cs = [c for c in cs if c in pai]
-        for c in cs[1:]:
-            a, b = raiz(cs[0]), raiz(c)
-            if a != b:
-                pai[b] = a
-    cli = [p for p in P if not p["equipe"]]
-    for p in cli:
-        junta(sorted(p["cards"]))
-    V = {}
-    try:
-        for e in _ev_ler(dia):
-            if e["tipo"] == "criar":
-                d = e["dados"] or {}
-                V.setdefault(e["venda"], set()).update(x for x in [d.get("card")] + list(d.get("sessoes") or []) if isinstance(x, str) and x)
-    except Exception:
-        pass
-    for cs in V.values():
-        junta(sorted(cs))
-    eq = set()
-    for p in P:
-        if p["equipe"]:
-            eq.update(p["m"])
-    por_foto = {}
-    for i, r in enumerate(rows):
-        if i not in eq:
-            por_foto.setdefault(r[0], []).append(float(r[1] or 0))
-    n_card = {c: 1 for c in cards}
-    for pid, ls in por_foto.items():
-        c = sess.get(pid)
-        if c is None:
-            continue
-        mx = max(ls)
-        n = sum(1 for x in ls if x >= PESSOA_JUNTO_MIN and x >= PESSOA_JUNTO_RAZAO * mx)
-        n_card[c] = max(n_card[c], n)
-    vis_n, vis_cli = {}, {}
-    for c in cards:
-        r = raiz(c)
-        vis_n[r] = max(vis_n.get(r, 0), n_card[c])
-    for p in cli:
-        cs = [c for c in p["cards"] if c in pai]
-        if cs:
-            r = raiz(cs[0])
-            vis_cli[r] = vis_cli.get(r, 0) + 1
-    extra = sum(max(0, n - vis_cli.get(r, 0)) for r, n in vis_n.items())
-    return extra, len(vis_n), len(cards)
+PESSOA_CONTA_MIN = 40
 
 
 def _pessoas_dia_calc(dia, forcar=False):
@@ -16249,12 +16197,10 @@ def _pessoas_dia_calc(dia, forcar=False):
     P, sem_id = _pessoas_agrupa(rows, np, boas, sess, _pessoas_tempos(rows)) if rows else ([], 0)
     aud = _pessoas_auditoria(dia, rows, P, sess)
     cli = [p for p in P if not p["equipe"]]
-    # "pessoas_grupos" é a conta só pelos rostos reconhecidos; "pessoas" soma o que cada visita mostra a mais (_pessoas_visitas).
+    # 27/11: "pessoas" = rostos distintos nas fotos do dia, fora a equipe.
     sem_cli = aud["sessoes_sem_cliente"]
-    extra, visitas, n_sess = _pessoas_visitas(dia, rows, P, sess)
-    aud.update(visitas=visitas, sessoes=n_sess, pessoas_nas_fotos=extra)
-    return {"v": 5, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli) + extra,
-            "pessoas_grupos": len(cli), "pessoas_nas_fotos": extra, "visitas": visitas, "sessoes": n_sess,
+    return {"v": 6, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
+            "pessoas_grupos": len(cli),
             "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
             "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2),
@@ -16482,10 +16428,7 @@ def auditoria_dia(dia=None):
         # 4. pessoas, visitantes, selfies
         G("Pessoas e visitantes")
         rp = (jp or {}).get("resultado") or {}
-        L("Pessoas fotografadas", rp.get("pessoas", "—"), "conferido" if not pa.get("ressalvas") else "com ressalvas (abaixo)")
-        if rp.get("visitas") is not None:
-            L("Visitas fotografadas (sessões da mesma família juntas)", "%s, em %s sessões" % (rp["visitas"], rp.get("sessoes", "—")))
-            L("Reconhecidas pelo rosto / contadas pelos rostos juntos na foto", "%s / %s" % (rp.get("pessoas_grupos", "—"), rp.get("pessoas_nas_fotos", "—")))
+        L("Pessoas fotografadas (rostos distintos)", rp.get("pessoas", "—"), "conferido" if not pa.get("ressalvas") else "com ressalvas (abaixo)")
         L("Sessões com rosto / com cliente contado", "%s / %s" % (pa.get("sessoes_com_rosto", "—"), pa.get("sessoes_com_cliente", "—")))
         if rp.get("equipe") is not None:
             L("Tratadas como equipe", rp["equipe"])
