@@ -10494,7 +10494,8 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("flags|", ("estoque",)), ("flagList", ("estoque",)),
            # gravados ao montar as sessões e no Upload (fotógrafo), no caixa e na Curadoria
            ("flagUse|", ("set", "estoque", "venda")), ("invalid|", ("set", "qualidade", "venda", "estoque")),
-           ("edits|", ("set", "qualidade")), ("discarded|", ("set", "qualidade")), ("ai|", ("venda", "qualidade")),
+           ("edits|", ("set", "qualidade", "venda")),   # 27/11 (Eduardo): o vendedor clareia a foto para imprimir (Posto)
+           ("discarded|", ("set", "qualidade")), ("ai|", ("venda", "qualidade")),
            ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
            ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("bgOn2", ("configuracao",)), ("fundosModo", ("configuracao",)),
            ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
@@ -12203,6 +12204,13 @@ def doc_recusa(db, quem, d):
         r = d["valor"]["r"]
         if type(r) is not int or not 0 <= r <= 100 or r % 10:
             return "invalido"
+    # 27/11: com o vendedor também gravando o ajuste, os campos numéricos do ajuste têm de ser número (nunca texto)
+    if col == "sim" and id_doc.startswith("edits|") and not apaga and isinstance(d.get("valor"), dict):
+        for k in ("b", "h", "c", "s", "t", "z", "x", "y"):
+            if k in d["valor"]:
+                n = d["valor"][k]
+                if isinstance(n, bool) or not isinstance(n, (int, float)) or n != n or n in (float("inf"), float("-inf")):
+                    return "invalido"
     letras = ("d", "u") if apaga else ("u",) if existe else ("c", "u")
     return None if any(auth_pode(quem["cadastro"], mo, le) for mo in mods for le in letras) else "sem_permissao"
 

@@ -351,6 +351,17 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 - **Desativar**: o leitor para de enviar na hora. As fotos que estavam na fila dele ficam naquele computador até a TI apagar; depois de 7 dias desativado, o próprio leitor apaga a fila. A tabela continua mostrando o tamanho da fila do leitor desativado.
 - A tabela mostra se cada leitor está **Ligado**, **Desligado desde…**, **Aguardando instalação** ou **Desativado**, o último cartão (lendo, pronto, quantas já estavam no servidor, quantas ficaram sem fotógrafo), a fila e o aviso, se houver.
 
+### Clarear para imprimir (27/11)
+
+A impressão sai um pouco mais escura que a tela. Quando uma foto escura (fim de tarde, gramado na sombra) vai para o papel, o vendedor pode clarear antes:
+
+1. No Posto, na lista de impressão da venda (ou em Reimprimir), toque no ☀ da foto.
+2. Use **Exposição** para clarear tudo, **Sombras** para abrir as partes escuras (gramado, roupa escura) e **Altas luzes** para segurar o que estourou (céu, camisa branca).
+3. Segure **Segure para ver o original** para comparar. **Voltar ao original** desfaz só esses três.
+4. Toque em **Pronto** e imprima ou reimprima. A foto sai com o ajuste, e as próximas impressões dela também.
+
+O cliente não vê essa janela. Fica registrado quem ajustou.
+
 ### Procurar fotos (25/11)
 
 **Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**. Para quem vende (caixa, vendedores, Supervisora e Admin) ela fica no menu **Venda**, logo depois do Posto; para o fotógrafo, no menu **Fotógrafo**.

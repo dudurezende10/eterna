@@ -171,7 +171,7 @@ try:
              "supervisor": ["stock|Caixa 2", "flagUse|pt", "invalid|ag_x3", "bgAtivo|podio", "bgOn", "bgOn2", "bgTelaoV97", "bgTunelV2", "fundosModo", "cortesiaLog|abc"]}
     # 16/11: a lista dos fundos (bgOn2) e a marca do túnel v2 (bgTunelV2) são de quem altera Configurações; fotógrafo e vendedor não gravam
     # 24/11 (Eduardo): o Ajuste automático (autoAj, autoAjPor) só o Admin grava; o fotógrafo, mesmo com set.u, e a Supervisora não
-    nao = {"foto": ["prices|zona", "lojaFimSeg", "pagProv", "bgOn2", "bgTunelV2", "autoAj", "autoAjPor"], "venda": ["prices|zona", "lojaFimSeg", "edits|ag_x9", "bgOn2", "bgTunelV2", "autoAj"],
+    nao = {"foto": ["prices|zona", "lojaFimSeg", "pagProv", "bgOn2", "bgTunelV2", "autoAj", "autoAjPor"], "venda": ["prices|zona", "lojaFimSeg", "bgOn2", "bgTunelV2", "autoAj"],
            "supervisor": ["prices|zona", "lojaFimSeg", "catalogoV", "autoAj", "autoAjPor"]}
     for nome, perms in perfis.items():
         ck = S.cookie_sessao(m, "perfil-" + nome, perms)
@@ -180,6 +180,13 @@ try:
         for i in nao[nome]:
             st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "sim", "id": i, "valor": 2}]}, cookie=ck)
             ok(j.get("recusados") == 1, "perfil %s não deveria gravar %s: %s" % (nome, i, j))
+    # 27/11 (Eduardo): o vendedor clareia a foto para imprimir, então grava o ajuste (edits|); campo do ajuste que não é número é recusado
+    ck = S.cookie_sessao(m, "perfil-venda", perfis["venda"])
+    st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "sim", "id": "edits|ag_x9", "valor": {"b": 120, "h": 30, "r": 10, "c": 100, "s": 100, "t": 0, "z": 100, "x": 0, "y": 0, "auto": False}}]}, cookie=ck)
+    ok(j.get("gravados") == 1 and j.get("recusados") == 0, "perfil venda grava o ajuste da foto: %s" % j)
+    for ruim in ({"x": "1\" onload=x"}, {"b": True}, {"z": "120"}, {"y": [1]}):
+        st, j, _ = pede("POST", "/ponto/docs", {"docs": [{"col": "sim", "id": "edits|ag_x9", "valor": dict({"b": 100}, **ruim)}]}, cookie=ck)
+        ok(j.get("recusados") == 1, "ajuste com campo que não é número é recusado %s: %s" % (ruim, j))
     # galeria publicada pelo posto: cortesia nova vira venda; validade no máximo 30 dias; menor do servidor não é desmarcado
     import time as _t
     tok = "b" * 22
