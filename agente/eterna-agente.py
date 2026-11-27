@@ -348,6 +348,36 @@ def imp_destinos(j):
 ORIGENS_REDE = {x.strip().rstrip("/").lower() for x in os.environ.get("ETERNA_ORIGENS", "").split(",") if x.strip()}
 ORIGENS_REDE_HOSTS = {urlparse(x).netloc for x in ORIGENS_REDE} - {""}   # v87 (segurança I1): entrada sem esquema não vira Host vazio
 ORIGENS_SEM_ESQUEMA = sorted(x for x in ORIGENS_REDE if not urlparse(x).netloc)
+
+
+def _meus_ips_rede():
+    """27/11 (tablet na rede do ponto, sem internet e sem DNS): os IPv4 privados desta máquina. Abrir o Eterna por
+    https://<IP do servidor> (o nginx na 443) vale como ETERNA_ORIGENS. Não abre brecha de DNS rebinding: um nome de fora
+    que aponte para cá chega com o Host do nome, nunca com o IP."""
+    ips = set()
+    try:
+        ips |= set(subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout.split())
+    except Exception:
+        pass
+    try:
+        ips |= {i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
+    except Exception:
+        pass
+    out = set()
+    for ip in ips:
+        try:
+            a = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if a.version == 4 and a.is_private and not a.is_loopback and not a.is_link_local:
+            out.add(ip)
+    return out
+
+
+if sys.platform.startswith("linux") and os.environ.get("ETERNA_ORIGENS_IP", "1") != "0":
+    _ips_eu = _meus_ips_rede()
+    ORIGENS_REDE |= {"https://" + ip for ip in _ips_eu}
+    ORIGENS_REDE_HOSTS |= _ips_eu
 INBOX = os.path.join(HOME, "inbox")
 THUMBS = os.path.join(HOME, "thumbs")
 INDEX = os.path.join(HOME, "index.json")
