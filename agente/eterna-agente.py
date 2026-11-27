@@ -15355,6 +15355,42 @@ def balcao_dia(dia, evs):
 # ingresso). Substitui a importação de CSV de entradas. Sem internet ou com o Maraca Acessos fora, responde sem os números.
 ACESSOS_API = os.environ.get("ETERNA_ACESSOS_API", "https://maraca-acessos.onrender.com").rstrip("/")
 _acessos_cache = {}
+# 26/11 (Ronaldo: "não dá pra ter falha nisso"): o painel do Maraca Acessos passou a exigir login e o /api/stats respondia 401.
+# O Eterna manda a chave dele em X-Eterna-Chave (gerada aqui na primeira vez, só o dono lê); o Maraca Acessos guarda só o
+# SHA-256 (ETERNA_STATS_SHA256 no Render), que aparece em GET /visitantes. O último número bom de cada período fica no disco:
+# falha de rede, Render dormindo ou reinício do agente não apagam os visitantes do funil.
+ACESSOS_CHAVE = os.path.join(HOME, "acessos-chave.txt")
+ACESSOS_CACHE_ARQ = os.path.join(HOME, "ponto", "visitantes-cache.json")
+
+
+def acessos_chave():
+    if not os.path.exists(ACESSOS_CHAVE):
+        _grava_privado(ACESSOS_CHAVE, secrets.token_urlsafe(32))
+    return open(ACESSOS_CHAVE, encoding="utf8").read().strip()
+
+
+def _acessos_disco(k, v=None):
+    """Sem v: o último número bom do período k no disco (ou None). Com v: grava (até 120 períodos)."""
+    try:
+        d = json.load(open(ACESSOS_CACHE_ARQ, encoding="utf8"))
+        d = d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        d = {}
+    if v is None:
+        x = d.get(k)
+        return x if isinstance(x, dict) and x.get("ok") else None
+    d[k] = v
+    if len(d) > 120:
+        for kk in sorted(d, key=lambda z: str((d[z] or {}).get("lido_em") or ""))[:len(d) - 120]:
+            d.pop(kk, None)
+    try:
+        os.makedirs(os.path.dirname(ACESSOS_CACHE_ARQ), exist_ok=True)
+        tmp = ACESSOS_CACHE_ARQ + ".tmp"
+        with open(tmp, "w", encoding="utf8") as f:
+            json.dump(d, f)
+        os.replace(tmp, ACESSOS_CACHE_ARQ)
+    except OSError:
+        pass
 
 
 def visitantes(de, ate):
@@ -15367,18 +15403,27 @@ def visitantes(de, ate):
         return c[1]
     try:
         rq = urllib.request.Request(ACESSOS_API + "/api/stats?" + urllib.parse.urlencode({"de": de, "ate": ate}),
-                                    headers={"User-Agent": "eterna-agente"})
+                                    headers={"User-Agent": "eterna-agente", "X-Eterna-Chave": acessos_chave()})
         with urllib.request.urlopen(rq, timeout=25) as r:
             j = json.loads(r.read(400000).decode("utf8"))
         ph = (j.get("por_hora") or {})
         out = {"ok": True, "de": de, "ate": ate, "total": int(j.get("total_hoje") or 0), "anterior": int(j.get("total_ontem") or 0),
                "por_hora": [int(x or 0) for x in (ph.get("hoje") or [])][:24],
                "por_canal": [{"canal": str(x.get("canal") or "")[:40], "n": int(x.get("n") or 0)} for x in (j.get("por_canal") or [])][:10],
-               "atualizado": j.get("atualizado_em"), "fonte": "Maraca Acessos"}
+               "atualizado": j.get("atualizado_em"), "fonte": "Maraca Acessos", "lido_em": _iso()}
     except Exception as ex:
+        print("  visitantes (Maraca Acessos): %s" % str(ex)[:120])
         if c:
             return c[1]
-        return {"ok": False, "erro": str(ex)[:120]}
+        d = _acessos_disco(k)
+        if d:
+            return dict(d, guardado=True)
+        try:
+            sha = hashlib.sha256(acessos_chave().encode()).hexdigest()
+        except Exception:
+            sha = None
+        return {"ok": False, "erro": str(ex)[:120], "chave_sha256": sha}
+    _acessos_disco(k, out)
     if len(_acessos_cache) > 60:
         _acessos_cache.clear()
     _acessos_cache[k] = (time.time(), out)
