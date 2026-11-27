@@ -886,6 +886,8 @@ BUSCA_VEND_CERTEZA_MAX = 20      # sessões "certeza" por busca (a venda leva at
 BUSCA_VEND_MAX = 12              # sessões "pode ser" por busca (as de maior nota)
 BUSCA_VEND_BATEU = 12            # fotos em que o rosto bateu, por sessão
 BUSCA_VEND_IMGS = 3              # quadros da câmera por busca
+BUSCA_VEND_DIAS_MAT = 2          # 27/11: leituras de rosto de hoje e de ontem (foto do cartão com o dia do relógio da câmera);
+                                 # as sessões continuam só as de hoje (busca_vend_sessoes)
 BUSCA_VEND_CORPO = 6 * 1024 * 1024
 BUSCA_VEND_POR_MIN, BUSCA_VEND_POR_DIA = 6, 150   # por pessoa conectada
 BUSCA_VEND_MARCAR_MAX = 20       # sessões no /rostos/sessoes/marcar (o mesmo teto do evento da venda)
@@ -1447,9 +1449,9 @@ def _buscar_maior(imagens, det, rec):
     # não saiu. Havendo mais de uma pessoa, cada rosto é buscado e as fotos se somam, como na foto do grupo do Checkout
     # (a tela não marca sozinha quando varias=true: o vendedor escolhe).
     if varias and len(grp) > 1:
-        rs = [buscar_vetor(v, 1, 0, piso=BUSCA_VEND_PISO) for _l, v in grp]
+        rs = [buscar_vetor(v, BUSCA_VEND_DIAS_MAT, 0, piso=BUSCA_VEND_PISO) for _l, v in grp]
         return {"rosto": True, "fotos": grupo_juntar(rs), "varias": True, "pessoas": len(grp), "fila": rs[0].get("fila") if rs else 0}
-    return dict(buscar_vetor(busca_vend_vetor(achados), 1, 0, piso=BUSCA_VEND_PISO), varias=bool(varias))
+    return dict(buscar_vetor(busca_vend_vetor(achados), BUSCA_VEND_DIAS_MAT, 0, piso=BUSCA_VEND_PISO), varias=bool(varias))
 
 
 def busca_vend_vetor(achados):
@@ -13493,10 +13495,24 @@ def busca_vend_sessoes(fotos, agora=None):
     não deixa a sessão de outra família já marcada); o resto é "pode_ser", até BUSCA_VEND_MAX."""
     hoje = _ff_hoje(agora)
     por = {}
+    dono, errados = None, 0
     with sess_lock:                                  # só copia; nenhuma consulta a banco aqui dentro
         for f in fotos or []:
             pid = f.get("id") if isinstance(f, dict) else None
             x = sess.get(sess_pid.get(pid) or "") if isinstance(pid, str) else None
+            # 27/11 (casal da sessão 123, fotos do cartão): o índice foto -> sessão apontava para outra sessão e a sessão
+            # certa sumia da busca do vendedor (o Checkout, que olha as fotos de cada sessão, achava). Vale a sessão de hoje
+            # que tem a foto.
+            if isinstance(pid, str) and (not x or pid not in x["fotos"] or x.get("dia") != hoje or x.get("removida")):
+                if dono is None:
+                    dono = {}
+                    for y in sess.values():
+                        if y.get("dia") == hoje and not y.get("removida"):
+                            for q in y["fotos"]:
+                                dono[q] = y
+                y = dono.get(pid)
+                if y is not None and y is not x:
+                    x = y; errados += 1
             if not x or x.get("dia") != hoje or x.get("removida") or _vis_protegida(x):
                 continue
             if pid not in x["fotos"] or pid in (x.get("ia") or ()):      # pendente de leitura ou base de IA: nunca sai
@@ -13512,6 +13528,8 @@ def busca_vend_sessoes(fotos, agora=None):
             o["sim"] = max(o["sim"], round(nota, 3))
             if nota >= LIMITE and f.get("principal") is True:
                 o["nivel"] = "certeza"
+    if errados:
+        print("  busca do vendedor: %d foto(s) com o índice de sessão desatualizado, achadas pela sessão de hoje" % errados)
     for o in por.values():
         o["bateu"] = sorted(o["bateu"], key=lambda b: -b["sim"])[:BUSCA_VEND_BATEU]
         if o["status"] not in ("aberta", "separada", "fechada"):
