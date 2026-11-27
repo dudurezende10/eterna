@@ -13495,7 +13495,7 @@ def busca_vend_sessoes(fotos, agora=None):
     não deixa a sessão de outra família já marcada); o resto é "pode_ser", até BUSCA_VEND_MAX."""
     hoje = _ff_hoje(agora)
     por = {}
-    dono, errados = None, 0
+    dono, errados, fora = None, 0, {}
     with sess_lock:                                  # só copia; nenhuma consulta a banco aqui dentro
         for f in fotos or []:
             pid = f.get("id") if isinstance(f, dict) else None
@@ -13514,8 +13514,11 @@ def busca_vend_sessoes(fotos, agora=None):
                 if y is not None and y is not x:
                     x = y; errados += 1
             if not x or x.get("dia") != hoje or x.get("removida") or _vis_protegida(x):
+                k = "sem_sessao" if not x else "outro_dia" if x.get("dia") != hoje else "removida" if x.get("removida") else "protegida"
+                fora.setdefault(k, set()).add(x["card"] if x else "-")
                 continue
             if pid not in x["fotos"] or pid in (x.get("ia") or ()):      # pendente de leitura ou base de IA: nunca sai
+                fora.setdefault("base_ou_pendente", set()).add(x["card"])
                 continue
             nota = _num(f.get("sim"))
             o = por.get(x["card"])
@@ -13530,6 +13533,8 @@ def busca_vend_sessoes(fotos, agora=None):
                 o["nivel"] = "certeza"
     if errados:
         print("  busca do vendedor: %d foto(s) com o índice de sessão desatualizado, achadas pela sessão de hoje" % errados)
+    if fora:      # 27/11: por que uma sessão com o rosto não saiu (só códigos de sessão, nada do cliente)
+        print("  busca do vendedor: fora da lista: %s" % "; ".join("%s=%s" % (k, ",".join(sorted(v))[:200]) for k, v in sorted(fora.items())))
     for o in por.values():
         o["bateu"] = sorted(o["bateu"], key=lambda b: -b["sim"])[:BUSCA_VEND_BATEU]
         if o["status"] not in ("aberta", "separada", "fechada"):
