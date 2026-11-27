@@ -34,7 +34,8 @@ ok("P1-002: venda paga sem vendedor" in d and "P1-002: venda com fotos sem galer
 ok("P1-003: cortesia" in d and "P18-004" in d, "cortesia e pedido aberto aparecem")
 ok("P1-004" not in d, "cancelada não é desvio")
 ok(not any("Faturamento" in x for x in j["desvios"]), "faturamento bate (320)")
-ok(["Abordagem (pessoas ÷ visitantes)", "20.0%"] in j["numeros"], "abordagem calculada")
+ok(["Abordagem (pessoas ÷ visitantes)", "20.0%", "conferido"] in j["numeros"], "abordagem calculada")
+ok(["Vendas"] in j["numeros"] and any(x[0] == "Valor" and x[2] == "conferido" for x in j["numeros"] if len(x) == 3), "números do dia com a conferência")
 try:
     m.auditoria_dia("2020-01-01"); ok(False, "passado recusado")
 except ValueError:
@@ -47,5 +48,18 @@ class R:
     def __exit__(s, *a): return False
 m.urllib.request.urlopen = lambda rq, timeout=None: env.append(json.loads(rq.data)) or R()
 ok(m.auditoria_email(j) and env[0]["dia"] == hoje and env[0]["desvios"] == j["desvios"], "e-mail vai pela nuvem com o resultado")
+# Estatísticas que contam a venda de R$ 0 com cartão como paga: desvio no número e na venda
+m.vendas_do_dia = lambda: [
+    {"venda": "a", "saleNo": "P1-001", "meio": "pix", "total": 250, "vendedor": "X", "posto": "Posto 15", "selected": ["f"], "galeria": {"token": "t"}},
+    {"venda": "e", "saleNo": "P1-005", "meio": "cartao", "total": 0, "vendedor": "X", "posto": "Posto 16", "selected": ["f"] * 5, "galeria": {"token": "v"}}]
+m.metricas_gravar = lambda dia: {"faturamento": 250.0, "ticket_medio": 125.0, "canceladas": 0,
+    "por_meio": {"pix": {"vendas": 1, "faturamento": 250, "fotos_vendidas": 1}, "cartao": {"vendas": 1, "faturamento": 0, "fotos_vendidas": 5}},
+    "por_posto": {"Posto 15": {"faturamento": 250}, "Posto 16": {"faturamento": 0}}}
+with contextlib.redirect_stdout(io.StringIO()):
+    j2 = m.auditoria_dia()
+d2 = "\n".join(j2["desvios"])
+ok("Vendas pagas: vendas somam 1, Estatísticas dizem 2" in d2 and "Valor médio por venda paga" in d2, "contagem e valor médio das Estatísticas com a venda de R$ 0: %s" % d2)
+ok("P1-005: R$ 0 com meio" in d2, "venda de R$ 0 no cartão aparece")
+ok(any(x[0] == "Valor" and x[2] == "conferido" for x in j2["numeros"] if len(x) == 3), "valor total bate")
 print("\n" + ("tudo certo" if not falhas else "%d falha(s)" % len(falhas)))
 sys.exit(1 if falhas else 0)

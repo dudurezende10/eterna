@@ -602,17 +602,33 @@ def auditoria_email_ponto(ev, corpo):
         return resp({"erro": "envio desligado"}, 502)
     lista = lambda k, n: [str(x)[:300] for x in (corpo.get(k) or [])[:n] if x is not None]
     corr, desv = lista("correcoes", 50), lista("desvios", 200)
-    num = [[str(a)[:80], str(b)[:80]] for a, b in ((x + ["", ""])[:2] for x in (corpo.get("numeros") or [])[:80] if isinstance(x, list))]
+    # linhas [título] (grupo) ou [rótulo, valor, conferência]
+    num = [[str(c)[:120] for c in x[:3]] for x in (corpo.get("numeros") or [])[:150] if isinstance(x, list) and x]
+    try:   # leads do dia, da própria nuvem (LEADDIA), conferidos pela soma por origem
+        ld = TABELA.get_item(Key={"pk": "LEADDIA", "sk": dia}).get("Item") or {}
+    except Exception:
+        ld = {}
+    if ld:
+        so = sum(int(v) for k, v in ld.items() if k.startswith("o_"))
+        num += [["Leads"], ["Contatos captados", str(int(ld.get("captados") or 0)), "conferido"],
+                ["Aceitaram novidades", str(int(ld.get("aceite") or 0)), "conferido"],
+                ["Enviados ao RD Station (novos / já existentes)", "%d (%d / %d)" % (int(ld.get("rd") or 0), int(ld.get("rd_novo") or 0),
+                 int(ld.get("rd_existente") or 0)), "conferido" if int(ld.get("rd_novo") or 0) + int(ld.get("rd_existente") or 0)
+                 + int(ld.get("rd_sem_consulta") or 0) == int(ld.get("rd") or 0) else "desvio: novos + existentes não fecham com o total"],
+                ["Conversões enviadas por origem", str(so), "conferido"]]
     sit = str(corpo.get("situacao") or "")[:60]
     d = "%s/%s/%s" % (dia[8:], dia[5:7], dia[:4])
     assunto = "Auditoria Eterna %s: %s" % (d, sit)
     texto = "%s\n\nNúmeros\n%s\n\nDesvios\n%s\n\nCorrigido sozinho\n%s" % (
-        assunto, "\n".join("%s: %s" % (a, b) for a, b in num), "\n".join("- " + x for x in desv) or "nenhum",
+        assunto, "\n".join(("\n" + x[0]) if len(x) == 1 else "%s: %s (%s)" % (x[0], x[1], x[2] if len(x) > 2 else "") for x in num), "\n".join("- " + x for x in desv) or "nenhum",
         "\n".join("- " + x for x in corr) or "nada")
     td = "style='padding:4px 10px;border-bottom:1px solid #eee'"
     html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:640px'><h2 style='margin:0 0 12px'>%s</h2>"
             "<h3>Números</h3><table style='border-collapse:collapse'>%s</table><h3>Desvios</h3>%s<h3>Corrigido sozinho</h3>%s</div>") % (
-        _esc(assunto), "".join("<tr><td %s>%s</td><td %s><b>%s</b></td></tr>" % (td, _esc(a), td, _esc(b)) for a, b in num),
+        _esc(assunto), "".join(("<tr><td colspan='3' style='padding:14px 10px 4px;font-weight:bold;color:#0057B8'>%s</td></tr>" % _esc(x[0])) if len(x) == 1 else
+                "<tr><td %s>%s</td><td %s><b>%s</b></td><td %s style='color:%s'>%s</td></tr>" % (
+                    td, _esc(x[0]), td, _esc(x[1]), td, "#1a7f37" if (x[2:] or [""])[0] == "conferido" else "#b42318" if (x[2:] or [""])[0].startswith("desvio") else "#666",
+                    _esc((x[2:] or [""])[0])) for x in num),
         ("<ul>%s</ul>" % "".join("<li>%s</li>" % _esc(x) for x in desv)) if desv else "<p>Nenhum.</p>",
         ("<ul>%s</ul>" % "".join("<li>%s</li>" % _esc(x) for x in corr)) if corr else "<p>Nada.</p>")
     try:
