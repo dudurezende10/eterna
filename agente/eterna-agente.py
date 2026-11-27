@@ -13104,7 +13104,7 @@ def venda_ajustar(body, quem):
     if not _re_pedido.match(venda):
         return {"error": "venda inválida"}, 400
     meio = body.get("meio")
-    if meio not in ("pix", "cartao", "dinheiro"):
+    if meio not in ("pix", "cartao", "dinheiro", "cortesia"):      # 26/11: cortesia (R$ 0) gravada com cartão vira cortesia
         return {"error": "meio inválido"}, 400
     cart = []
     for x in (body.get("cart") if isinstance(body.get("cart"), list) else [])[:50]:
@@ -13123,6 +13123,8 @@ def venda_ajustar(body, quem):
         return {"error": "total inválido"}, 400
     if not cart or abs(sum(x["v"] for x in cart) - total) > 0.009:
         return {"error": "o total tem de ser a soma dos itens"}, 400
+    if (meio == "cortesia") != (total == 0):
+        return {"error": "cortesia é R$ 0, e R$ 0 só como cortesia"}, 400
     ref = str(body.get("ref") or "").strip()[:60] or None
     motivo = str(body.get("motivo") or "").strip()[:200] or None
     with ev_lock:
@@ -16200,7 +16202,7 @@ def _pessoas_dia_calc(dia, forcar=False):
 AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "21"))
 AUDITORIA_DIR = os.path.join(CONTAGENS_DIR, "auditoria")
 AUDITORIA_MEIOS = ("pix", "cartao", "dinheiro", "cortesia")
-AUDITORIA_V = 3      # versão das conferências: auditoria de hoje feita por versão anterior é refeita (e o e-mail sai de novo)
+AUDITORIA_V = 4      # versão das conferências: auditoria de hoje feita por versão anterior é refeita (e o e-mail sai de novo)
 
 
 def _auditoria_arq(dia):
@@ -16270,7 +16272,7 @@ def auditoria_dia(dia=None):
     if dia != _ff_hoje():
         raise ValueError("a auditoria é só do dia")
     corr, desv, num = [], [], []
-    br = lambda x: ("R$ %.2f" % float(x or 0)).replace(".", ",")
+    br = lambda x: "R$ " + ("{:,.2f}".format(float(x or 0))).replace(",", "#").replace(".", ",").replace("#", ".")
     # 1. o que se refaz sozinho: contagem de pessoas e métricas do dia
     with _pessoas_lock:
         try:
@@ -16397,12 +16399,10 @@ def auditoria_dia(dia=None):
             fd = pa.get("fotos_do_dia")
             L("Fotos do dia", M["fotos"], "conferido" if fd in (None, M["fotos"]) else "contagem de pessoas leu %s" % fd)
             sl = int(M["fotos"]) - int(M.get("fotos_indexadas") or 0)
-            L("Fotos sem leitura de rostos", max(0, sl), "conferido" if sl <= 0 else "desvio: leitura não terminou")
-            if sl > 0:
-                desv.append("%d fotos do dia sem leitura de rostos" % sl)
+            L("Fotos sem leitura de rostos", max(0, sl), "conferido" if sl <= 0 else "desvio (na contagem de pessoas, abaixo)")
         if M.get("sessoes") is not None:
             L("Sessões", M["sessoes"])
-            L("Sessões com venda", "%s (%.1f%%)" % (M.get("sessoes_com_venda"), 100.0 * float(M.get("conversao_sessoes") or 0)), "das Estatísticas")
+            L("Sessões com venda", "%s (%s%%)" % (M.get("sessoes_com_venda"), ("%.1f" % (100.0 * float(M.get("conversao_sessoes") or 0))).replace(".", ",")), "das Estatísticas")
         if M.get("impressoes") is not None:
             fi = int(M.get("impressoes_falhas") or 0)
             L("Impressões", "%s (%d falhas)" % (M["impressoes"], fi), "conferido" if not fi else "%d falhas de impressão" % fi)
@@ -16427,7 +16427,7 @@ def auditoria_dia(dia=None):
                 desv.append("Visitantes: Maraca Acessos fora; número guardado de %s" % str(vi.get("lido_em") or "")[11:16])
             pes = rp.get("pessoas")
             if pes and vi.get("total"):
-                L("Abordagem (pessoas ÷ visitantes)", "%.1f%%" % (100.0 * pes / vi["total"]))
+                L("Abordagem (pessoas ÷ visitantes)", ("%.1f%%" % (100.0 * pes / vi["total"])).replace(".", ","))
         else:
             L("Visitantes do Tour", "—", "desvio: indisponível")
             desv.append("Visitantes do Tour indisponíveis (%s)" % str(vi.get("erro") or "sem resposta")[:60])
