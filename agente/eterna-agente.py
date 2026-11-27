@@ -15796,7 +15796,7 @@ PESSOA_PERTO = 80   # largura do rosto (px na foto lida, lado 1600) a partir da 
 #     estava junto) com PESSOA_SESSAO, ou de qualquer sessão com LIMITE; sem par, ficam como "sem identificar".
 #  4. Quem aparece em PESSOA_EQUIPE sessões ou mais é a equipe (fotógrafo, guia, supervisor), contada à parte.
 PESSOA_SEMENTE = 60
-PESSOA_JUNTA = 0.40
+PESSOA_JUNTA = LIMITE   # 27/11 (06:33, 26/11 com 84 "pessoas da equipe"): 0,40 ainda juntava gente diferente; o mesmo limite da selfie
 PESSOA_SESSAO = 0.25
 PESSOA_EQUIPE = 4
 # 26/11 (Ronaldo, números confiáveis): em 25/11 59 "pessoas da equipe" saíram da conta: a família fotografada em 4 pontos do tour
@@ -16045,7 +16045,7 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
-PESSOAS_V = 11
+PESSOAS_V = 12
 
 
 def _contagens_base():
@@ -16269,7 +16269,7 @@ def _pessoas_dia_calc(dia, forcar=False):
     cli = [p for p in P if not p["equipe"]]
     # 27/11: "pessoas" = rostos distintos nas fotos do dia, fora a equipe.
     sem_cli = aud["sessoes_sem_cliente"]
-    return {"v": 11, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
+    return {"v": 12, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
             "pessoas_grupos": len(cli),
             "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
