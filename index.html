@@ -207,6 +207,8 @@ details.tec{margin-top:16px;border:1px solid var(--line);border-radius:6px;paddi
 .bf-selfie-b{min-height:44px;align-self:flex-end}.bf-sf-volta{min-height:44px;align-self:flex-end}
 .bf-sf-topo{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.bf-sf-topo b{font-size:16px;margin-right:auto}.bf-sf-topo .chip{min-height:44px}
 .bf-sf-h{margin:14px 0 2px;font-size:15px}.bf-sf-aviso{padding:8px 10px;border:1px solid var(--warn);border-radius:6px;font-size:14px}
+/* 27/11 (Ronaldo: miniaturas muito pequenas no Procurar fotos): uma sessão por linha e as fotos lado a lado, grandes, no formato da foto */
+#bf-lista{grid-template-columns:minmax(0,1fr)}#bf-lista .bf-thumbs{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}#bf-lista .bf-thumbs img{aspect-ratio:3/2}
 .bf-sf .bf-thumbs{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.bf-sf .ps-lista{grid-template-columns:minmax(0,1fr)}
 .bf-sf-ref{margin:10px 0;display:flex;align-items:flex-end;gap:10px}.bf-sf-ref img{max-height:280px;max-width:100%;border-radius:8px;border:3px solid var(--accent)}.bf-sf-ref figcaption{font-weight:600;font-size:14px}
 .bf-grandes{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
