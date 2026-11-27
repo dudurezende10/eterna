@@ -14176,6 +14176,41 @@ backup = {"em": None, "ok": None, "erro": None}
 # função do dia, visitas, fila de impressão e agenda. Só o que mudou desde a última rodada; chave backup/<pc>/arquivos/<caminho>.
 # Fica de fora de propósito: rostos (biometria), chaves e segredos, recortes e miniaturas (refeitos a partir do original).
 _backup_vistos = {}
+# 27/11 (Ronaldo: "o backup está falhando toda hora"; AWS: parado de 21:49 a 22:50 de 26/11, com 7 religamentos do agente no
+# meio): o que já subiu ficava só na memória. A cada religamento (publicação, queda de energia) o agente recomeçava a subir todos
+# os arquivos, era cortado antes de terminar e o "último backup bom" não andava. Agora: (1) o que já subiu fica no disco
+# (BACKUP_VISTOS_ARQ) e o religamento só manda o que mudou; (2) os bancos (as vendas) vão primeiro e os arquivos depois, com
+# BACKUP_ARQ_PRAZO_S por rodada: o que não coube fica para a rodada seguinte, sem contar como falha; (3) cópia local de cada banco
+# no HD das fotos (BACKUP_LOCAL) antes da nuvem: sem internet, a cópia do momento fica no servidor.
+BACKUP_VISTOS_ARQ = os.path.join(HOME, "backup-vistos.json")
+BACKUP_ARQ_PRAZO_S = 60
+BACKUP_LOCAL = os.path.join(os.path.realpath(INBOX), ".backup-local")   # o ponto esconde a pasta da inbox e da cópia dos originais
+BACKUP_LOCAL_DIAS = 30
+_backup_vistos_lido = [False]
+
+
+def _backup_vistos_le():
+    if _backup_vistos_lido[0]:
+        return
+    _backup_vistos_lido[0] = True
+    try:
+        with open(BACKUP_VISTOS_ARQ, encoding="utf8") as f:
+            j = json.load(f)
+        for a, v in (j.items() if isinstance(j, dict) else ()):     # caminho completo: a contagem de pessoas fica no HD, fora da pasta Eterna
+            if isinstance(v, list) and len(v) == 2:
+                _backup_vistos[a] = (v[0], v[1])
+    except Exception:
+        pass
+
+
+def _backup_vistos_grava():
+    try:
+        j = {a: list(v) for a, v in _backup_vistos.items()}
+        with open(BACKUP_VISTOS_ARQ + ".tmp", "w", encoding="utf8") as f:
+            json.dump(j, f)
+        os.replace(BACKUP_VISTOS_ARQ + ".tmp", BACKUP_VISTOS_ARQ)
+    except Exception as ex:
+        print("  backup (lista do que já subiu):", str(ex)[:160])
 
 
 def backup_arquivos_lista():
@@ -14186,24 +14221,40 @@ def backup_arquivos_lista():
     return [a for a in out if os.path.isfile(a)]
 
 
-def backup_arquivos(pc):
+def backup_arquivos(pc, prazo_s=None):
+    """Sobe os arquivos que mudaram desde a última subida. Com prazo_s, para ao passar do prazo (o resto fica para a rodada
+    seguinte). -> (enviados, pendentes)"""
+    _backup_vistos_le()
     novos = []
     for a in backup_arquivos_lista():
-        st = os.stat(a)
+        try:
+            st = os.stat(a)
+        except OSError:
+            continue
         if _backup_vistos.get(a) != (st.st_size, st.st_mtime):
             novos.append((a, (st.st_size, st.st_mtime)))
     if not novos:
-        return 0
+        return 0, 0
     s3 = _s3_cliente()
-    for a, marca in novos:
-        with open(a, "rb") as f:
-            corpo = f.read()
-        rel = os.path.relpath(a, HOME).replace(os.sep, "/")
-        s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/arquivos/%s" % (pc, rel), Body=corpo,
-                      ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
-        _backup_vistos[a] = marca
-    backup.update(em=_iso(), ok=True, erro=None)
-    return len(novos)
+    t0, n = time.time(), 0
+    try:
+        for a, marca in novos:
+            if prazo_s is not None and n and time.time() - t0 > prazo_s:
+                break
+            try:
+                with open(a, "rb") as f:
+                    corpo = f.read()
+            except OSError:
+                continue
+            rel = os.path.relpath(a, HOME).replace(os.sep, "/")
+            s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/arquivos/%s" % (pc, rel), Body=corpo,
+                          ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
+            _backup_vistos[a] = marca
+            n += 1
+    finally:
+        if n:
+            _backup_vistos_grava()
+    return n, len(novos) - n
 
 
 # 16/11 (alarme falso das 10:44): a hora do último backup bom ficava só na memória e o pulso sai antes da primeira rodada;
@@ -14264,12 +14315,32 @@ def backup_bancos(s3, pc, ultimo, hoje=None):
             ultimo[banco] = (marca, hoje, md5)
             continue
         nome = os.path.basename(banco)
+        backup_local(nome, corpo, hoje)
         for chave in ("backup/%s/%s" % (pc, nome), "backup/%s/dia/%s/%s" % (pc, hoje, nome)):
             s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
                           ContentMD5=base64.b64encode(md5).decode())
         ultimo[banco] = (marca, hoje, md5)
         enviados.append(nome)
     return enviados
+
+
+def backup_local(nome, corpo, hoje):
+    """Cópia do banco no HD das fotos: a mais nova em BACKUP_LOCAL/<banco> e a do dia em BACKUP_LOCAL/dia/<dia>/<banco>
+    (BACKUP_LOCAL_DIAS dias). Falha aqui não impede a nuvem."""
+    try:
+        for pasta in (BACKUP_LOCAL, os.path.join(BACKUP_LOCAL, "dia", hoje)):
+            os.makedirs(pasta, exist_ok=True)
+            a = os.path.join(pasta, nome)
+            with open(a + ".tmp", "wb") as f:
+                f.write(corpo)
+            os.replace(a + ".tmp", a)
+        dd = os.path.join(BACKUP_LOCAL, "dia")
+        limite = _ff_hoje(time.time() - BACKUP_LOCAL_DIAS * 86400)
+        for d in os.listdir(dd):
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", d) and d < limite:
+                shutil.rmtree(os.path.join(dd, d), ignore_errors=True)
+    except Exception as ex:
+        print("  backup local:", str(ex)[:160])
 
 
 def backup_rodada(pc, ultimo, est):
@@ -14279,36 +14350,41 @@ def backup_rodada(pc, ultimo, est):
     envelhece e o alerta da AWS dispara)."""
     falhou = False
     try:
-        backup_arquivos(pc)
+        backup_bancos_json(pc, ultimo, est)
+    except Exception as ex:
+        falhou = True
+        backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
+        print("  backup na nuvem:", str(ex)[:160])
+    try:
+        enviados, pend = backup_arquivos(pc, BACKUP_ARQ_PRAZO_S)
+        if pend:
+            print("  backup na nuvem (arquivos): %d enviados, %d ficam para a próxima rodada" % (enviados, pend))
     except Exception as ex:
         falhou = True
         backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
         print("  backup na nuvem (arquivos):", str(ex)[:160])
-    try:
-        s3 = _s3_cliente()
-        hoje = _ff_hoje()
-        # 24/11: só o banco que mudou (cada um com a sua marca), não todos quando um muda
-        if backup_bancos(s3, pc, ultimo, hoje):
-            est["json_pend"] = True
-        if not est.get("json_pend"):
-            if not falhou:
-                est["ok_em"] = time.time()
-                _backup_ok_grava(est["ok_em"])
-            return
-        for d in (_ff_hoje(time.time() - 86400), hoje):
-            for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
-                a = os.path.join(pasta, d + ".json")
-                if os.path.exists(a):
-                    s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
-                                  ContentType="application/json")
-        est["json_pend"] = False
-        if not falhou:
-            est["ok_em"] = time.time()
-            _backup_ok_grava(est["ok_em"])
-            backup.update(em=_iso(), ok=True, erro=None)
-    except Exception as ex:
-        backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
-        print("  backup na nuvem:", str(ex)[:160])
+    if not falhou and not est.get("json_pend"):
+        est["ok_em"] = time.time()
+        _backup_ok_grava(est["ok_em"])
+        backup.update(em=_iso(), ok=True, erro=None)
+
+
+def backup_bancos_json(pc, ultimo, est):
+    """Bancos que mudaram e, junto, os JSON de métricas e sessões de ontem e hoje (repetidos enquanto json_pend)."""
+    s3 = _s3_cliente()
+    hoje = _ff_hoje()
+    # 24/11: só o banco que mudou (cada um com a sua marca), não todos quando um muda
+    if backup_bancos(s3, pc, ultimo, hoje):
+        est["json_pend"] = True
+    if not est.get("json_pend"):
+        return
+    for d in (_ff_hoje(time.time() - 86400), hoje):
+        for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
+            a = os.path.join(pasta, d + ".json")
+            if os.path.exists(a):
+                s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
+                              ContentType="application/json")
+    est["json_pend"] = False
 
 
 def backup_loop():
