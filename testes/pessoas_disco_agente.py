@@ -78,5 +78,10 @@ m._pessoas_vendidas = lambda dia: {"LPA"}
 a = m._pessoas_auditoria(ontem, rows, P, sess)
 ok(a["situacao"] == "com ressalvas" and any("sessões com rosto sem cliente" in x for x in a["ressalvas"]), "maioria das sessões sem cliente vira ressalva")
 ok(os.environ["ETERNA_PESSOAS_DIR"] in [x for x in [m.PESSOAS_DIR]], "pasta do HD configurável")
+# 7. resumo gravado de um dia passado mostra a contagem do HD, não a antiga
+os.makedirs(m.MET_DIR, exist_ok=True)
+json.dump({"v": 2, "dia": ontem, "t3": m.T3_VER, "pessoas": {"v": 2, "pessoas": 166}}, open(os.path.join(m.MET_DIR, ontem + ".json"), "w", encoding="utf8"))
+m._pessoas_cache[ontem] = {"v": m.PESSOAS_V, "resultado": {"v": 4, "pessoas": 77}}
+ok(m.metricas_periodo(ontem, ontem)[0]["pessoas"]["pessoas"] == 77, "Estatísticas de dia passado com a contagem do HD")
 print("\n" + ("tudo certo" if not falhas else "%d falha(s)" % len(falhas)))
 sys.exit(1 if falhas else 0)

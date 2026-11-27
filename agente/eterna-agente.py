@@ -14927,6 +14927,10 @@ def metricas_periodo(de, ate):
             if m is not None:
                 if isinstance(m, dict) and m.get("v") == 2 and (m.get("t3") or 0) < T3_VER:
                     met_t3_agenda(d)                 # os tempos novos entram em segundo plano; a leitura segue rápida (critério 27)
+                # 26/11: a contagem de pessoas do HD (recontada e auditada) vale sobre a do resumo gravado no dia
+                jp = _pessoas_cache.get(d) or pessoas_disco_ler(d)
+                if isinstance(m, dict) and jp and jp.get("resultado"):
+                    m["pessoas"] = jp["resultado"]
                 out.append(m)
         t += 86400
     return out
