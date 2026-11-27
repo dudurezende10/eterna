@@ -15833,8 +15833,24 @@ def _pessoas_tempos(rows):
     return out
 
 
-def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
-    """rows = [(pid, largura, emb)]; boas = set de emb (bytes) frontais e nítidos; sess = {pid: card}.
+PESSOA_VISITA = 0.33   # 27/11: rosto fraco numa sessão da mesma visita (outro fotógrafo, outro ponto do tour)
+
+
+def _pessoas_ligas(dia):
+    """[cards] de cada venda do dia: a venda (pela selfie do Checkout) junta as sessões da mesma família."""
+    out = {}
+    try:
+        for e in _ev_ler(dia):
+            if e["tipo"] == "criar":
+                d = e["dados"] or {}
+                out.setdefault(e["venda"], set()).update(x for x in [d.get("card")] + list(d.get("sessoes") or []) if isinstance(x, str) and x)
+    except Exception:
+        pass
+    return [sorted(v) for v in out.values() if len(v) > 1]
+
+
+def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None, ligas=None):
+    """rows = [(pid, largura, emb)]; boas = set de emb (bytes) frontais e nítidos; sess = {pid: card}; ligas = [cards] da mesma venda.
     -> lista de pessoas {pids:set, cards:set, maior, rep:(pid, vetor), equipe} e quantos rostos ficaram sem identificar."""
     boas = boas or set()
     sess = sess or {}
@@ -15847,10 +15863,31 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
     # as pessoas com assinatura firme; depois os outros, do maior para o menor. Rosto fraco (perfil, borrado) procura primeiro
     # na MESMA sessão (a família fotografada junto, minutos antes ou depois) com o limite mais largo PESSOA_SESSAO, e só
     # depois em todo o dia com PESSOA_JUNTA; sem par, vira pessoa nova. Dois rostos da mesma foto nunca são a mesma pessoa.
+    # 27/11 (Ronaldo: "a mesma pessoa pode tirar foto com a Marinara e com o Yago"): as sessões da mesma visita (outro fotógrafo,
+    # outro ponto do tour) ficam ligadas pela venda (a selfie do Checkout junta as sessões da família) e pelo rosto bom reconhecido
+    # nas duas (pessoa com até PESSOA_EQUIPE - 1 sessões: a equipe, que aparece em todas, não liga famílias diferentes). Rosto
+    # fraco procura na própria sessão (PESSOA_SESSAO), depois nas sessões ligadas (PESSOA_VISITA), depois no dia (PESSOA_JUNTA).
     sem = list(range(len(rows)))
     resto = []
     bom = [rows[i][2] in boas and larg[i] >= PESSOA_SEMENTE for i in range(len(rows))]
-    G, soma, na_foto, card_g = [], [], {}, {}
+    G, na_foto, card_g, g_cards = [], {}, {}, []
+    pai = {}
+
+    def raiz(c):
+        pai.setdefault(c, c)
+        while pai[c] != c:
+            pai[c] = pai[pai[c]]
+            c = pai[c]
+        return c
+
+    def liga(a, b):
+        a, b = raiz(a), raiz(b)
+        if a != b:
+            pai[b] = a
+    for cs in ligas or []:
+        for c in cs[1:]:
+            liga(cs[0], c)
+    visita_g = None
     Cn = np.zeros((len(sem), M.shape[1]), dtype="float32")
     for i in sorted(sem, key=lambda k: (not bom[k], -larg[k])):
         pid = rows[i][0]
@@ -15864,21 +15901,35 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
             if sv[k] >= PESSOA_JUNTA:
                 alvo = k
             elif not bom[i] and cd:
+                if visita_g is None:   # acabaram os rostos bons: as visitas estão formadas
+                    for k, cs in enumerate(g_cards):
+                        if 1 < len(cs) < PESSOA_EQUIPE:
+                            cs = sorted(cs)
+                            for c in cs[1:]:
+                                liga(cs[0], c)
+                    visita_g = {}
+                    for c, ks in card_g.items():
+                        visita_g.setdefault(raiz(c), set()).update(ks)
                 mesma = [k for k in card_g.get(cd, ()) if sv[k] >= PESSOA_SESSAO]
+                if not mesma:
+                    mesma = [k for k in visita_g.get(raiz(cd), ()) if sv[k] >= PESSOA_VISITA]
                 if mesma:
                     alvo = max(mesma, key=lambda k: sv[k])
         if alvo < 0:
             G.append({"m": [i], "pids": {pid}})
-            soma.append(M[i].copy())
+            g_cards.append(set())
             Cn[len(G) - 1] = M[i]
             alvo = len(G) - 1
         else:
+            # 27/11 (06:22, 26/11 com 83 "pessoas da equipe"): comparar com a média dos rostos da pessoa fazia a média virar
+            # "qualquer um" e juntar gente diferente num bolo só. A pessoa é comparada com o rosto que a criou (o melhor), fixo.
             G[alvo]["m"].append(i); G[alvo]["pids"].add(pid)
-            soma[alvo] = soma[alvo] + M[i]
-            Cn[alvo] = soma[alvo] / max(float(np.linalg.norm(soma[alvo])), 1e-9)
         na_foto.setdefault(pid, set()).add(alvo)
         if cd:
             card_g.setdefault(cd, set()).add(alvo)
+            g_cards[alvo].add(cd)
+            if visita_g is not None:
+                visita_g.setdefault(raiz(cd), set()).add(alvo)
     # 3. rostos que não criam pessoa: na mais parecida da mesma sessão, ou de qualquer uma pelo limite da selfie
     sem_id = 0
     if G:
@@ -15935,7 +15986,7 @@ def pessoas_rostos(dia):
         return None
     if not rows:
         return {"ok": True, "dia": dia, "pessoas": []}
-    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia), _pessoas_tempos(rows))
+    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia), _pessoas_tempos(rows), _pessoas_ligas(dia))
     rep = [p["rep"] for p in P]
     cv2 = _cv["cv2"]
     out = []
@@ -15984,7 +16035,7 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
-PESSOAS_V = 8
+PESSOAS_V = 10
 
 
 def _contagens_base():
@@ -16079,7 +16130,8 @@ def pessoas_contar(dia, forcar=False):
     aud["segundos"] = round(time.time() - t0, 1)
     j = _pessoas_disco_grava(dia, res, aud)
     _pessoas_cache[dia] = j
-    print("  pessoas de %s: %s · auditoria %s%s (%.0f s)" % (dia, res.get("pessoas"), aud.get("situacao"),
+    print("  pessoas de %s: %s (rostos %s em %s fotos; maiores clientes %s fotos) · auditoria %s%s (%.0f s)" % (dia, res.get("pessoas"),
+          res.get("rostos"), res.get("fotos_com_rosto"), aud.get("maiores_clientes_fotos"), aud.get("situacao"),
           (": " + "; ".join(aud.get("ressalvas") or [])) if aud.get("ressalvas") else "", aud["segundos"]))
     return j
 
@@ -16202,12 +16254,12 @@ def _pessoas_dia_calc(dia, forcar=False):
     except Exception:
         return None
     sess = _pessoas_sessoes(dia)
-    P, sem_id = _pessoas_agrupa(rows, np, boas, sess, _pessoas_tempos(rows)) if rows else ([], 0)
+    P, sem_id = _pessoas_agrupa(rows, np, boas, sess, _pessoas_tempos(rows), _pessoas_ligas(dia)) if rows else ([], 0)
     aud = _pessoas_auditoria(dia, rows, P, sess)
     cli = [p for p in P if not p["equipe"]]
     # 27/11: "pessoas" = rostos distintos nas fotos do dia, fora a equipe.
     sem_cli = aud["sessoes_sem_cliente"]
-    return {"v": 8, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
+    return {"v": 10, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
             "pessoas_grupos": len(cli),
             "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),

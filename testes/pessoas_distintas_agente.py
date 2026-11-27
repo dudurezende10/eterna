@@ -52,6 +52,15 @@ outro = (0.3 * v + (1 - 0.09) ** 0.5 * u).astype("float32")   # outra pessoa, de
 r2 = [("p1", 150, v.tobytes()), ("p2", 60, perfil.tobytes()), ("p3", 60, outro.tobytes())]
 P2, _ = m._pessoas_agrupa(r2, np, {v.tobytes()}, {"p1": "S1", "p2": "S1", "p3": "S9"}, None)
 ok(len(P2) == 2 and any(p["pids"] == {"p1", "p2"} for p in P2), "perfil na mesma sessão é a mesma pessoa; em outra sessão conta à parte (%d)" % len(P2))
+# a mesma pessoa com a Marinara (sessão S1, rosto bom) e com o Yago (sessão S2, só de perfil, ~0,35): a venda liga as sessões
+r3 = [("m1", 150, v.tobytes()), ("y1", 60, (0.35 * v + (1 - 0.35 ** 2) ** 0.5 * w).astype("float32").tobytes())]
+s3 = {"m1": "S1", "y1": "S2"}
+ok(len(m._pessoas_agrupa(r3, np, {v.tobytes()}, s3, None, [["S1", "S2"]])[0]) == 1, "mesma pessoa em duas sessões da mesma venda conta 1")
+ok(len(m._pessoas_agrupa(r3, np, {v.tobytes()}, s3, None, [])[0]) == 2, "sem nada ligando as sessões, perfil fraco conta à parte")
+# ligadas pelo rosto bom de outra pessoa da família nas duas sessões
+irmao = rng.normal(size=128).astype("float32"); irmao /= np.linalg.norm(irmao)
+r4 = r3 + [("m1", 140, irmao.tobytes()), ("y1", 140, irmao.tobytes())]
+ok(len(m._pessoas_agrupa(r4, np, {v.tobytes(), irmao.tobytes()}, s3, None, [])[0]) == 2, "o irmão reconhecido nas duas sessões liga a visita: 2 pessoas, não 3")
 # selfies: a do grupo conta cada rosto
 t = time.time()
 m.selfie_registra("checkout", {"rosto": True, "pessoas": 3, "fotos": [{"id": "x"}]}, t)
