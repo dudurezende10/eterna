@@ -16527,10 +16527,10 @@ def auditoria_dia(dia=None):
             n_, a_ = int(x.get("selfies", 0)), int(x.get("achou", 0))
             L("Selfies %s" % o, "%d, acharam %d (%.0f%%)" % (n_, a_, 100.0 * a_ / n_ if n_ else 0))
             L("Pessoas nas selfies %s (cada rosto, grupo ou sozinho)" % o, "%d, acharam %d" % (int(x.get("pessoas", 0)), int(x.get("pessoas_achou", 0))))
-            tp += int(x.get("pessoas", 0))
+            tp += int(x.get("pessoas_achou", 0))   # selfie repetida de quem não achou não é pessoa nova
         pf = ((jp or {}).get("resultado") or {}).get("pessoas")
         if se and pf:
-            L("Pessoas nas selfies ÷ pessoas fotografadas", ("%.1f%%" % (100.0 * tp / pf)).replace(".", ","))
+            L("Pessoas que acharam as fotos na selfie ÷ pessoas fotografadas", ("%.1f%%" % (100.0 * tp / pf)).replace(".", ","))
 
     _auditoria_parte("Selfies", desv, _p_selfies)
     j = {"v": AUDITORIA_V, "dia": dia, "feita_em": _iso(), "situacao": "sem desvios" if not desv else "%d desvios" % len(desv),
