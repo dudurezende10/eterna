@@ -17,6 +17,17 @@ A nuvem não alcança o estádio; o agente puxa. Por isso o pedido é assíncron
 5. Achou: monta uma galeria `sessao` com origem `selfie` (como a das fotos do Tour pela foto da venda), preços e catálogo da galeria de venda mais recente. A foto já comprada ou dada de cortesia numa venda (manifesto de outra galeria) entra liberada; as outras à venda. Publica na nuvem na hora e responde `POST /ponto/selfies` com o token. A nuvem cria o acesso de 1 h à galeria inteira.
 6. O celular recebe `achou` com token e acesso e entra em `#g/<token>` pelo mesmo caminho do atalho do vídeo (acesso guardado na sessão do navegador): galeria normal, comprar online, baixar as compradas. Acesso vencido: a selfie da própria galeria, como em qualquer galeria.
 
+## Busca em 2 passos (v99.108.1)
+
+Ronaldo (27/11): "tem que encontrar TODAS as fotos do cliente, independente da sessão, com fidedignidade pra não dar problema de LGPD".
+
+1. Passo 1: a selfie no dia escolhido; entra a foto com semelhança >= LIMITE (0,45) e o cliente como rosto principal.
+2. Passo 2: o rosto do cliente nas melhores fotos do passo 1 vira referência: até 6, só das fotos com semelhança >= 0,55 com a selfie, primeiro uma por fotógrafo, depois uma por sessão. Cada referência é procurada de novo no dia. A foto nova entra só se o rosto que bateu com a referência tem >= LIMITE, é o principal e também bate com a própria selfie com >= 0,38 (LIMITE_TALVEZ).
+3. Sem teto de 60: até 400 fotos (a nuvem lê os rostos de até 600 por galeria).
+4. Log por pedido só com números: passo 1, passo 2 e sessões distintas.
+
+Cortes: 0,55 para a referência deixa só fotos em que o cliente é reconhecido com folga (bem acima de 0,45), para a referência não ser ela mesma uma foto duvidosa. 0,38 na trava é o "talvez" já calibrado nas fotos do Tour: abaixo disso nem o Checkout oferece a foto. O perfil e a outra luz costumam cair entre 0,38 e 0,45 com a selfie de frente, e um parente parecido com a referência fica abaixo, porque não se parece com a selfie.
+
 ## Estados do pedido (nuvem, `SFP#<pedido>`)
 
 esperando → buscando → achou | nao | varias | sem_rosto | erro. Sem resposta do estádio em 10 min: indisponivel. O registro some em 1 h (TTL).
@@ -30,7 +41,7 @@ esperando → buscando → achou | nao | varias | sem_rosto | erro. Sem resposta
 
 ## Limites
 
-6 pedidos por IP por hora, 3 mil por dia no total, 40 consultas por minuto por IP, selfie até 350 mil caracteres (o celular reduz para 640 px), 60 fotos por galeria.
+6 pedidos por IP por hora, 3 mil por dia no total, 40 consultas por minuto por IP, selfie até 350 mil caracteres (o celular reduz para 640 px), 400 fotos por galeria.
 
 ## Dependência
 

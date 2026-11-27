@@ -1616,13 +1616,14 @@ def busca_janela_efetiva(janela=None):
 _viz_tl = threading.local()   # 25/11 (fotos vizinhas): os vetores da selfie desta busca, só nesta thread e só até a resposta sair
 
 
-def buscar_vetor(me, dias=1, janela=None, agora=None, piso=None, dia=None):
+def buscar_vetor(me, dias=1, janela=None, agora=None, piso=None, dia=None, vetores=False):
     """Fotos com o rosto do vetor me (128, normalizado), nos dias da busca. Separada de _buscar para medir (v91 parte B:
     selfie até a primeira foto ampliada em menos de 2 s; testes/selfie_rapidez.py). Cada foto vem com principal: o rosto que
     bateu tem largura >= ROSTO_PRINCIPAL x a do maior rosto daquela foto (B5: quem só aparece no fundo não abre a sessão
     inteira no Checkout). Com janela (minutos) > 0, só as fotos de sessões com a última foto dentro da janela.
     piso (26/11): só a busca do vendedor passa; sem ele vale LIMITE_TALVEZ, como sempre. Nunca abaixo de BUSCA_VEND_PISO_MIN.
-    dia (v99.108, selfie sem código): só aquele dia (AAAA-MM-DD), o dia todo, sem a janela; dias, janela e agora não valem."""
+    dia (v99.108, selfie sem código): só aquele dia (AAAA-MM-DD), o dia todo, sem a janela; dias, janela e agora não valem.
+    vetores (v99.108.1): cada foto vem também com "vet", o vetor do rosto que bateu (só em memória, para a busca em 2 passos)."""
     np = _cv["np"]
     corte = LIMITE_TALVEZ if piso is None else max(BUSCA_VEND_PISO_MIN, min(float(piso), LIMITE_TALVEZ))
     vets = getattr(_viz_tl, "vets", None)
@@ -1647,9 +1648,9 @@ def buscar_vetor(me, dias=1, janela=None, agora=None, piso=None, dia=None):
         for i in np.nonzero(sims >= corte)[0]:
             pid = ps[i]; s_ = float(sims[i])
             if s_ > melhor.get(pid, (0, 0))[0]:
-                melhor[pid] = (s_, float(L[i]))
-    fotos = sorted(({"id": k, "sim": round(v[0], 3), "principal": bool(v[1] >= ROSTO_PRINCIPAL * (mx.get(k) or 0))}
-                    for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
+                melhor[pid] = (s_, float(L[i]), i)
+    fotos = sorted(({"id": k, "sim": round(v[0], 3), "principal": bool(v[1] >= ROSTO_PRINCIPAL * (mx.get(k) or 0)),
+                     **({"vet": M[v[2]]} if vetores else {})} for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
     # 18/11: fila = fotos ainda esperando a leitura de rostos (recém-chegadas); o Checkout espera e tenta de novo em vez de dizer "não achamos"
     return {"rosto": True, "fotos": fotos, "limite": LIMITE, "janela_min": jan, "fila": fila_rostos.qsize()}
 
@@ -11865,7 +11866,16 @@ def ativ_tour_passa():
 # e sessão de menor. Achou: galeria de venda própria (origem "selfie"), como a das fotos do Tour pela foto da venda; a foto já
 # comprada ou dada de cortesia numa venda entra liberada. A selfie fica só em memória durante a busca e nada dela é gravado.
 # Thread própria com o próprio leitor de rostos: não espera nem segura nada da venda; erro aqui vira "erro" para o cliente.
-SELFIE_DIA_MAX = 60
+SELFIE_DIA_MAX = 400            # v99.108.1: todas as fotos do cliente no dia; a nuvem lê os rostos de até 600 por galeria (LIMITE_FOTOS_GALERIA)
+# v99.108.1 (Ronaldo: "tem que encontrar TODAS as fotos do cliente, independente da sessão, com fidedignidade"): busca em 2 passos.
+# Passo 1: a selfie no dia. Passo 2: o rosto do cliente nas melhores fotos do passo 1 (até SELFIE_REF_MAX referências, de sessões e
+# fotógrafos diferentes, cada uma com semelhança >= SELFIE_REF_CORTE com a selfie) é procurado de novo no dia: acha o perfil, a
+# outra luz e o outro fotógrafo que a selfie de frente sozinha não alcança. Trava contra escorregar para um parente parecido: a
+# foto nova só entra se o rosto que bateu com a referência (>= LIMITE, principal) também bater com a própria selfie
+# (>= SELFIE_PASSO2_PISO, o "talvez" calibrado do Checkout); semelhança com quem só se parece com a referência não basta.
+SELFIE_REF_MAX = 6
+SELFIE_REF_CORTE = 0.55
+SELFIE_PASSO2_PISO = LIMITE_TALVEZ
 SELFIE_DIA_INTERVALO = 10
 selfie_dia = {"ligada": False, "ultima": None, "pedidos": 0, "achou": 0, "nao": 0, "erro": None}
 _selfie_leitor = {"m": None}
@@ -11893,7 +11903,7 @@ def selfie_dia_vetor(b64):
 
 
 def selfie_dia_sessoes(dia):
-    """({pid: card}, pids que nunca entram) das sessões do dia: em memória (hoje e ontem) ou do arquivo do dia."""
+    """({pid: card}, pids que nunca entram, {card: fotógrafo}) das sessões do dia: em memória (hoje e ontem) ou do arquivo do dia."""
     with sess_lock:
         ss = [_sess_publico(x) for x in sess.values() if x.get("dia") == dia]
     if not ss:
@@ -11902,8 +11912,9 @@ def selfie_dia_sessoes(dia):
                 ss = [x for x in json.load(fh).get("sessoes") or [] if isinstance(x, dict)]
         except (OSError, ValueError):
             ss = []
-    dono, fora = {}, set()
+    dono, fora, quem = {}, set(), {}
     for x in ss:
+        quem[str(x.get("card") or "")] = str(x.get("fotografo") or "")
         pids = [p for p in (x.get("fotos") or []) + (x.get("pend") or []) if isinstance(p, str)]
         if x.get("removida"):
             fora.update(pids)
@@ -11911,16 +11922,55 @@ def selfie_dia_sessoes(dia):
         fora.update(p for p in (x.get("ia") or []) if isinstance(p, str))     # base de IA nunca é vendida como foto
         for p in pids:
             dono.setdefault(p, str(x.get("card") or ""))
-    return dono, fora
+    return dono, fora, quem
+
+
+def selfie_dia_referencias(fotos, dono, quem):
+    """Até SELFIE_REF_MAX fotos do passo 1 para servir de referência: as mais parecidas com a selfie (>= SELFIE_REF_CORTE),
+    primeiro uma por fotógrafo, depois uma por sessão, depois as que faltarem."""
+    cands = sorted((f for f in fotos if f["sim"] >= SELFIE_REF_CORTE), key=lambda f: -f["sim"])
+    refs, sess_, fot_ = [], set(), set()
+    for passo in (0, 1, 2):
+        for f in cands:
+            if len(refs) >= SELFIE_REF_MAX:
+                return refs
+            if any(f is r for r in refs):
+                continue
+            card = dono.get(f["id"], "")
+            ft = quem.get(card, "") if card else ""
+            if passo == 0 and ((ft or card or f["id"]) in fot_ or card in sess_ and card):
+                continue
+            if passo == 1 and card and card in sess_:
+                continue
+            refs.append(f)
+            sess_.add(card)
+            fot_.add(ft or card or f["id"])
+    return refs
 
 
 def selfie_dia_fotos(me, dia):
-    """[(id do manifesto, sessão)] das fotos do dia em que o rosto da selfie é o principal."""
-    r = buscar_vetor(me, dia=dia)
-    dono, fora = selfie_dia_sessoes(dia)
-    out = [("ag_" + f["id"], dono.get(f["id"], "")) for f in r.get("fotos") or []
-           if f["sim"] >= LIMITE and f.get("principal") and f["id"] not in fora]
-    return out[:SELFIE_DIA_MAX]
+    """[(id do manifesto, sessão)] das fotos do dia em que o cliente é o rosto principal: passo 1 (a selfie) e passo 2 (as
+    referências do passo 1, com a trava na selfie). Registra no log só os números."""
+    np = _cv["np"]
+    dono, fora, quem = selfie_dia_sessoes(dia)
+    ok = lambda f: f.get("principal") and f["id"] not in fora
+    p1 = [f for f in buscar_vetor(me, dia=dia, vetores=True).get("fotos") or [] if f["sim"] >= LIMITE and ok(f)]
+    achou = {f["id"]: f["sim"] for f in p1}
+    n2 = 0
+    for ref in selfie_dia_referencias(p1, dono, quem):
+        v = np.asarray(ref["vet"], dtype="float32")
+        v = v / (np.linalg.norm(v) or 1)
+        for f in buscar_vetor(v, dia=dia, vetores=True).get("fotos") or []:
+            if f["id"] in achou or f["sim"] < LIMITE or not ok(f):
+                continue
+            if float(np.dot(f["vet"], me)) < SELFIE_PASSO2_PISO:      # bate com a referência mas não com a selfie: não entra
+                continue
+            achou[f["id"]] = float(np.dot(f["vet"], me))
+            n2 += 1
+    ids = sorted(achou, key=lambda k: -achou[k])[:SELFIE_DIA_MAX]
+    out = [("ag_" + k, dono.get(k, "")) for k in ids]
+    print("  selfie sem código: passo 1 %d, passo 2 %d, %d sessões" % (len(p1), n2, len({c for _, c in out if c})))
+    return out
 
 
 def selfie_dia_direitos():

@@ -61,6 +61,51 @@ try:
        "rosto principal, fora base de IA e sessão removida: %s" % fotos)
     ok(dict(fotos).get("ag_" + P["frente"]) == "LPAAAAAAA" and dict(fotos).get("ag_" + P["semsessao"]) == "", "sessão de cada foto: %s" % fotos)
 
+    # v99.108.1: busca em 2 passos. Outro dia, três fotógrafos: de frente (passo 1), de perfil (só o passo 2 acha) e um parente
+    # parecido com a foto de referência, mas não com a selfie (não entra)
+    DIA2 = time.strftime("%Y-%m-%d", time.localtime(time.time() - 12 * 86400))
+    nv = lambda a, b: ((e0 * a + e1 * b) / np.linalg.norm(e0 * a + e1 * b)).astype("float32")
+    Q = {k: "d4e5f6%02d" % i for i, k in enumerate(["frenteA", "frenteB", "perfilC", "parenteC", "perfilFundo", "outroD"])}
+    db = m.rostos_db()
+    db.executemany("insert into rosto (pid, dia, larg, emb) values (?,?,?,?)", [(p, DIA2, l, v.tobytes()) for p, l, v in [
+        (Q["frenteA"], 200, nv(0.8, 0.6)),          # 0,80 com a selfie: passo 1 e referência
+        (Q["frenteB"], 200, nv(1.0, 0.0)),          # 1,00: passo 1 e referência
+        (Q["perfilC"], 200, nv(0.42, 0.9075)),      # 0,42 com a selfie (abaixo de LIMITE), 0,88 com a referência A: passo 2
+        (Q["parenteC"], 200, nv(0.2, 0.98)),        # 0,75 com a referência A, 0,20 com a selfie: parente, fica fora
+        (Q["perfilFundo"], 60, nv(0.42, 0.9075)), (Q["perfilFundo"], 220, nv(0.0, 1.0)),   # o cliente ao fundo: não é principal
+        (Q["outroD"], 200, nv(0.0, 1.0))]])
+    db.commit()
+    db.close()
+    with open(os.path.join(m.SESS_DIR, DIA2 + ".json"), "w", encoding="utf8") as f:
+        json.dump({"dia": DIA2, "num": 3, "sessoes": [
+            {"card": "LPA222222", "dia": DIA2, "num": 1, "fotografo": "ana", "fotos": [Q["frenteA"]], "pend": [], "ia": []},
+            {"card": "LPB222222", "dia": DIA2, "num": 2, "fotografo": "bia", "fotos": [Q["frenteB"]], "pend": [], "ia": []},
+            {"card": "LPC222222", "dia": DIA2, "num": 3, "fotografo": "caio", "fotos": [Q["perfilC"], Q["parenteC"], Q["perfilFundo"], Q["outroD"]], "pend": [], "ia": []}]}, f)
+    so1 = {f["id"] for f in m.buscar_vetor(e0, dia=DIA2)["fotos"] if f["sim"] >= m.LIMITE and f["principal"]}
+    ok(so1 == {Q["frenteA"], Q["frenteB"]}, "pré: a selfie sozinha acha só as de frente: %s" % sorted(so1))
+    ok(all("vet" not in f for f in m.buscar_vetor(e0, dia=DIA2)["fotos"]), "sem vetores=True a busca de sempre não traz vetor")
+    buf = io.StringIO()
+    so, sys.stdout = sys.stdout, buf
+    try:
+        f2 = m.selfie_dia_fotos(e0, DIA2)
+    finally:
+        sys.stdout = so
+    ids2 = {i for i, _ in f2}
+    ok(ids2 == {"ag_" + Q[k] for k in ("frenteA", "frenteB", "perfilC")}, "2 passos: de frente e de perfil, de três fotógrafos; parente e fundo fora: %s" % sorted(ids2))
+    ok({c for _, c in f2} == {"LPA222222", "LPB222222", "LPC222222"}, "sessões de fotógrafos diferentes no mesmo dia: %s" % f2)
+    log2 = buf.getvalue()
+    ok("passo 1 2, passo 2 1, 3 sessões" in log2 and "[" not in log2 and "d4e5f6" not in log2, "log só com números: %r" % log2)
+    dono2, _f2, quem2 = m.selfie_dia_sessoes(DIA2)
+    p1 = [f for f in m.buscar_vetor(e0, dia=DIA2, vetores=True)["fotos"] if f["sim"] >= m.LIMITE and f["principal"]]
+    refs = m.selfie_dia_referencias(p1 + p1, dono2, quem2)
+    ok(len(refs) == 2 and {dono2[r["id"]] for r in refs} == {"LPA222222", "LPB222222"}, "referências: uma por fotógrafo, sem repetir: %s" % [r["id"] for r in refs])
+    # o piso da trava: se o perfil não chegasse ao "talvez" com a selfie, ficaria fora
+    piso0 = m.SELFIE_PASSO2_PISO
+    m.SELFIE_PASSO2_PISO = 0.5
+    ok("ag_" + Q["perfilC"] not in {i for i, _ in m.selfie_dia_fotos(e0, DIA2)}, "a trava na selfie vale para o passo 2")
+    m.SELFIE_PASSO2_PISO = piso0
+    ok(m.SELFIE_DIA_MAX >= 400, "sem o teto antigo de 60 fotos")
+
     # galeria da selfie
     pubs, fila = [], []
     m.nuvem_publica_manifesto = lambda seg, man: pubs.append(json.loads(json.dumps(man)))
@@ -128,4 +173,4 @@ except Exception as ex:
 if falhas:
     print("FALHA selfie_dia_agente:\n- " + "\n- ".join(falhas))
     sys.exit(1)
-print("OK selfie_dia_agente: busca no dia escolhido, galeria da selfie com as compradas liberadas e a passada da fila")
+print("OK selfie_dia_agente: busca no dia escolhido em 2 passos (perfil sim, parente não), galeria da selfie com as compradas liberadas e a passada da fila")
