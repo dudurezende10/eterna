@@ -1366,6 +1366,10 @@ def _buscar_grupo(imagens, dias, det, rec, janela=None):
 def _buscar(imagens, dias, det, rec, janela=None):
     np = _cv["np"]; cv2 = _cv["cv2"]
     vs = []
+    # 27/11 (Ronaldo: selfie não achou a sessão 164 no tablet nem a 152 no Checkout): diagnóstico sem imagem e sem dado
+    # pessoal: tamanho do quadro, largura dos rostos lidos (e quantos o detector achou menores que 60 px), a maior
+    # semelhança e a sessão dela. Só quando o quadro tem rosto; o movimento sem ninguém de frente não escreve nada.
+    diag = {"q": "", "l": []}
     for b in imagens[:5]:
         raw = base64.b64decode(b.split(",", 1)[-1])
         if not img_aceita(raw):
@@ -1376,16 +1380,32 @@ def _buscar(imagens, dias, det, rec, janela=None):
             img = None
         if img is None:
             continue
-        fs = ler_rostos(img, det, rec, minimo=60)
+        sh = getattr(img, "shape", None)
+        diag["q"] = "%dx%d" % (sh[1], sh[0]) if sh is not None else "?"
+        br = []
+        fs = ler_rostos(img, det, rec, minimo=60, brutos=br)
+        menores = (br[0] if br else 0) - len(fs)
+        diag["l"].append((",".join("%d" % x[0] for x in fs[:3]) + (" +%d menores" % menores if menores > 0 else "")).strip() or "-")
         if varias_pessoas(fs):
             return {"rosto": True, "varias": True, "fotos": []}
         if fs:
             vs.append(fs[0][1])
     del imagens
+    tem = any(x != "-" for x in diag["l"])
     if not vs:
+        if tem:
+            print("  busca selfie: quadro %s rostos %s -> nenhum com 60 px" % (diag["q"], " | ".join(diag["l"])))
         return {"rosto": False, "fotos": []}
     me = np.mean(vs, axis=0); me /= np.linalg.norm(me) or 1
-    return buscar_vetor(me, dias, janela)
+    r = buscar_vetor(me, dias, janela)
+    try:
+        fts = sorted(r.get("fotos") or [], key=lambda f: -f.get("sim", 0))
+        top = ", ".join("%s %.2f" % (sess_pid.get(f["id"], "?"), f.get("sim", 0)) for f in fts[:3])
+        print("  busca selfie: quadro %s rostos %s -> %d fotos, %d acima de %.2f; melhores: %s"
+              % (diag["q"], " | ".join(diag["l"]), len(fts), sum(1 for f in fts if f.get("sim", 0) >= LIMITE), LIMITE, top or "-"))
+    except Exception:
+        pass
+    return r
 
 
 def buscar_vend(imagens):
