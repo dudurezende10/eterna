@@ -1264,7 +1264,14 @@ def buscar(imagens, dias=1, janela=None, grupo=False):
             _busca["m"] = leitor()
         if grupo:
             return _buscar_grupo(imagens, dias, *_busca["m"], janela=janela)
-        return _buscar(imagens, dias, *_busca["m"], janela=janela)
+        r = _buscar(imagens, dias, *_busca["m"], janela=janela)
+        # 27/11 (Ronaldo, casal da sessão 123): no Checkout a selfie com o casal ou a família voltava "várias pessoas" e nada
+        # abria; a mesma foto como foto do grupo trouxe 37 fotos da sessão. No Checkout (janela != 0, atendimento assistido)
+        # mais de um rosto vira a busca do grupo. A galeria por QR (janela 0, o cliente sozinho) segue com uma pessoa por vez.
+        if r.get("varias") and janela != 0:
+            r = _buscar_grupo(imagens, dias, *_busca["m"], janela=janela)
+            r["grupo"] = r["auto_grupo"] = True
+        return r
 
 
 # Foto do grupo (Ronaldo, 15/11): família ou amigos juntos na câmera do Checkout. Vale o quadro com mais rostos; entram os

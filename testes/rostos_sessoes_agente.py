@@ -291,7 +291,11 @@ ok(P_TACA[0] not in idsb and all(x["sim"] >= m.LIMITE_TALVEZ for x in rb["fotos"
    "24: /rostos/buscar não devolve a foto de nota 0,33 nem nada abaixo de 0,38: %r" % (sorted(x["sim"] for x in rb["fotos"])[:3],))
 ok({P_CERTA[0], P_CERTA[1], P_CERTA[3], P_ABERTA[0], P_DUVIDA[0], P_FUNDO[0]} <= idsb, "/rostos/buscar segue devolvendo por foto, como antes (inclui a base de IA): %d fotos" % len(idsb))
 st, rb = pede("POST", "/rostos/buscar", {"imagens": img(b"a-e-b")}, cookie=vend)
-ok(st == 200 and rb == {"rosto": True, "varias": True, "fotos": []}, "/rostos/buscar segue recusando duas pessoas: %r" % (rb,))
+idsg = {x["id"] for x in rb.get("fotos") or []}
+ok(st == 200 and rb.get("rosto") is True and not rb.get("varias") and rb.get("grupo") is True and rb.get("auto_grupo") is True and P_CERTA[0] in idsg,
+   "27/11: no Checkout duas pessoas na selfie viram a busca do grupo: %r" % ({k: rb.get(k) for k in rb if k not in ("fotos", "vizinhas")},))
+rb = m.buscar(img(b"a-e-b"), 1, 0)             # janela 0 = a galeria por QR (todo:true), chamada direta para não contar selfie
+ok(rb == {"rosto": True, "varias": True, "fotos": []}, "galeria por QR (todo) segue recusando duas pessoas: %r" % (rb,))
 st, rb = pede("POST", "/rostos/buscar", {"imagens": img(b"sem-rosto")}, cookie=vend)
 ok(st == 200 and rb == {"rosto": False, "fotos": []}, "/rostos/buscar sem rosto: %r" % (rb,))
 rv = m.buscar_vetor(np.asarray(A, "float32"), 1, 0)
