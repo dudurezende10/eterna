@@ -1921,7 +1921,7 @@ const BF_SEL_MAX=8,BF_ABRIR_VALE=4000,BF_PED=new Map(),BF_MOTIVOS=['ocupado','ca
 // as sessões de hoje em que o rosto apareceu ("Certeza" já marcadas, "Pode ser" desmarcadas) e o vendedor confere antes de iniciar a venda.
 // O resultado mora só em state.procurar.selfie (memória desta janela). A chave nasce DESLIGADA: com PROCURAR_SELFIE_ON=false a tela é a da
 // fase 1, sem o botão. Ligada, o botão ainda depende de o servidor do ponto estar com a busca ligada (/status, rostos.busca_vend).
-const PROCURAR_SELFIE_ON=false;const BF_SF_MS=9000,BF_SF_CAM_MS=60000,BF_SF_MINIS=8; // espera da busca; a câmera do modal se solta sozinha depois de 1 min
+const PROCURAR_SELFIE_ON=true;const BF_SF_MS=9000,BF_SF_CAM_MS=60000,BF_SF_MINIS=8; // espera da busca; a câmera do modal se solta sozinha depois de 1 min
 // 25/11: Procurar fotos (tela parada; funções junto das Sessões de hoje, antes do upSessBloco). Declarado aqui para o render e o srvPull acharem desde a carga.
 const BF_PASSO=24,BF_JANS=[30,60,180],BF_REM={};let BF_HTML=null,BF_ENV=['',''],BF_REM_N=0; // BF_REM: sessão removida pela LGPD depois do retrato sai da lista na hora
 const bfZero=()=>({key:'todos',hora:null,q:'',ord:'desc',n:BF_PASSO,snap:null,aberta:null,rol:0,user:null,sel:[],pedido:null,inv:{},selfie:null,selfieVer:false}); // sel e pedido (26/11): sessões marcadas para vender; só na memória desta janela
