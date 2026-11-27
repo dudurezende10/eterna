@@ -3011,8 +3011,9 @@ function lojaAbrirMsg(q){if(!PROCURAR_VENDER_ON||!ECO_CH||!state.lojaRota||!q||t
   let motivo='invalido';try{motivo=lojaAbrirPedido({cards:cs.slice(),origem:q.origem});}catch(e){console.error(e);}resp(motivo);}
 // devolve null quando abriu; senão o motivo (ocupado, protegida, paga, pedido, carregando, invalido) e o Checkout fica como estava
 function lojaAbrirPedido(q){const k=state.kiosk;if(!PROCURAR_VENDER_ON||!state.lojaRota)return 'invalido';if(k.code||k.step!=='code'||k.mais||k.camOn)return 'ocupado';simFresh(); // camOn: cliente no meio da selfie
-  const minhas={};for(const c of q.cards){if(lojaSesProtegida(c))return 'protegida';const e=psEstado(c);if(e==='paga'||e==='pedido'||e==='carregando')return e;const ids=lojaTodas(c);if(!ids.length)return 'carregando';minhas[c]=ids;}
-  const nf=c=>sessionObj(c).photos.length;const anc=q.cards.slice().sort((a,b)=>nf(b)-nf(a))[0];
+  const minhas={},pagas=[];for(const c of q.cards){if(lojaSesProtegida(c))return 'protegida';const e=psEstado(c);if(e==='pedido'||e==='carregando')return e;const ids=lojaTodas(c);if(!ids.length)return 'carregando';if(e==='paga')pagas.push(c);else minhas[c]=ids;}
+  for(const c of pagas){const b=sessionObj(c);const ids=b?b.photos.map(x=>x.id).filter(id=>!(SIM.discarded||{})[id]):[];if(!ids.length)return 'carregando';const f=lojaFilha(c,ids);if(!f)return 'invalido';minhas[f]=ids.slice();}
+  const nf=c=>sessionObj(c).photos.length;const anc=Object.keys(minhas).sort((a,b)=>nf(b)-nf(a))[0];
   // sem base: a visita não é consultada (so.visita=false), então sessão ligada por visita e não marcada não entra; fix guarda sessão -> fotos
   lojaCliente();lojaAbrirSo(minhas,anc,{fix:JSON.parse(JSON.stringify(minhas))});
   if(!['gallery','review'].includes(k.step)||!k.so||k.code!==anc)return 'invalido';k.so.origem=q.origem;return null;} // a escolha abre na foto ampliada (o desenho passa de gallery a review)
@@ -3568,11 +3569,13 @@ function ljTempo(card,nome){const s=simOf(card);s.tempos=s.tempos||{};if(!s.temp
 function lojaMaisIds(){const k=state.kiosk;if(!k||!k.code)return [];const base=(SIM.sessions[k.code]||{}).pai||k.code;const b=sessionObj(base);const so=k.so&&k.so.card===k.code?k.so.ids:null;
   return (so||(b?b.photos.map(p=>p.id):[])).filter(id=>hasImg(id)&&!(SIM.discarded||{})[id]);} // 25/11 (Ronaldo): venda nova do zero, compradas ou não
 // venda complementar em sessão-filha (opção B do plano de 29/10): venda, impressão e QR próprios, sem mexer na venda já paga
-function lojaMais(){const k=state.kiosk;const ids=lojaMaisIds();if(!ids.length){toast(T('ljMaisNada'));render();return;}
-  const base=(SIM.sessions[k.code]||{}).pai||k.code;const o=SIM.sessions[base]||{};const filhas=Object.keys(SIM.sessions).filter(c=>SIM.sessions[c].pai===base);
+// 27/11 (Ronaldo: "nenhuma sessão fica presa, vende quantas vezes quiser"): cada venda nova de sessão já paga é uma filha (M2, M3...)
+function lojaFilha(base0,ids){const base=(SIM.sessions[base0]||{}).pai||base0;const o=SIM.sessions[base]||{};const filhas=Object.keys(SIM.sessions).filter(c=>SIM.sessions[c].pai===base);
   const card=filhas.find(c=>SIM.sessions[c].status==='fechada')||`${base}M${filhas.length+2}`;
   SIM.sessions[card]={key:o.key,pdv:o.pdv,point:o.point,time:o.time,date:o.date,srv:o.srv,menor:o.menor,openedAt:o.openedAt,closedAt:o.closedAt,status:'fechada',selected:[],bg:null,cart:[],photos:ids.map(id=>({id,sold:0})),pai:base};
-  if(!saveSim()){delete SIM.sessions[card];toast(T('ljSaveFail'));render();return;}
+  if(!saveSim()){delete SIM.sessions[card];return null;}return card;}
+function lojaMais(){const k=state.kiosk;const ids=lojaMaisIds();if(!ids.length){toast(T('ljMaisNada'));render();return;}
+  const card=lojaFilha(k.code,ids);if(!card){toast(T('ljSaveFail'));render();return;}
   lojaTimerOff();Object.assign(k,{code:card,so:{card,cards:[card],ids},tv:null,galTok:null,paid:null,doneAt:null,step:'gallery',i:0,ver:0,pkg:null,pay:null,list:false});
   ljTempo(card,'inicio');render();lojaPreload(card);}
 // a galeria da compra já paga (para mostrar o QR de novo)
@@ -6463,7 +6466,8 @@ function bfVendasPull(ja){if(bfPodeVender()&&(ja||Date.now()-MVS.t>MVS_MS))mvPul
 function bfEstado(x){const c=x.card;const v=SRV.sess[c]||x;if(v.removida||BF_REM[c])return 'removida';if(v.status!=='fechada')return 'aberta';if(lojaSesProtegida(c))return 'protegida';
   const e=psComCache(()=>psEstado(c));if(e==='paga'||e==='pedido')return e;if(bfVendidaFora(c))return 'paga';return e==='carregando'?'carregando':'livre';}
 // o que desliga a caixa na tela (a tela é parada: 'carregando' passa sozinho, então só é conferido no toque)
-const bfTrava=e=>e==='livre'||e==='carregando'?'':e;
+const bfTrava=e=>e==='livre'||e==='carregando'||e==='paga'?'':e;
+const bfVendivel=e=>e==='livre'||e==='paga'; // 27/11 (Ronaldo): já vendida vende de novo, quantas vezes quiser (no Checkout vira uma venda nova)
 function bfTravaDe(x){const s=state.procurar.snap;if(!s)return bfTrava(bfEstado(x));s.est=s.est||{};if(!(x.card in s.est))s.est[x.card]=bfTrava(bfEstado(x));return s.est[x.card];}
 function bfEstTxt(e){return e==='aberta'?TE('bf_aberta_espera'):e==='paga'?TE('ps_vendida'):e==='pedido'?TE('ps_pedido'):e==='protegida'?TE('bf_protegida'):'';}
 function bfRecTxt(m,card){const k={paga:'bf_rec_paga',pedido:'bf_rec_pedido',carregando:'bf_rec_carregando',aberta:'bf_rec_aberta',protegida:'bf_rec_protegida',ocupado:'bf_ck_ocupado',sem_resposta:'bf_ck_sem_resposta',expirado:'bf_ck_sem_resposta'}[m]||'bf_rec_invalido';return TE(k,card||'');}
@@ -6478,7 +6482,7 @@ function bfBarra(){if(!bfPodeVender())return '';const p=state.procurar,n=p.sel.l
   const minis=p.sel.map(c=>{const x=SRV.sess[c];const f=x?bfFotos(x):[];const inv=!!p.inv[c];const t=esc(TE(inv?'bf_inv':'bf_desmarcar',sessRot(c)));return `<button class="bf-bmini${inv?' inv':''}" data-act="bf-marca" data-card="${esc(c)}" title="${t}" aria-label="${t}">${f.length?`<img loading="lazy" decoding="async" alt="" src="${esc(u+'/thumb/'+encodeURIComponent(f[0]))}">`:''}<span class="bf-bcod">${esc(sessRot(c))}</span><span aria-hidden="true">×</span></button>`;}).join('');
   return `<div class="bf-barra" id="bf-barra"><b id="bf-barra-n" role="status">${TE('bf_n_marcadas',n)}</b><div class="bf-bminis">${minis}</div><span class="note bf-inteiras">${TE('bf_inteiras')}</span><div class="bf-bacoes"><button class="btn ghost" data-act="bf-limpa">${TE('bf_limpar')}</button><button class="btn primary" data-act="bf-vender"${p.pedido?' disabled':''}>${TE('bf_vender_n',n)}</button></div></div>`;}
 const bfHtmlFixa=()=>{if(state.view==='procurar'&&state.user&&document.getElementById('bf'))BF_HTML=BF_ENV[0]+vProcurar()+BF_ENV[1];}; // o próximo render() dá este mesmo HTML e não troca o DOM
-function bfInvUpd(){const p=state.procurar;const inv={};psComCache(()=>p.sel.forEach(c=>{const x=SRV.sess[c];if((x?bfEstado(x):'removida')!=='livre')inv[c]=1;}));const mudou=Object.keys(inv).sort().join()!==Object.keys(p.inv).sort().join();p.inv=inv;return mudou;}
+function bfInvUpd(){const p=state.procurar;const inv={};psComCache(()=>p.sel.forEach(c=>{const x=SRV.sess[c];if(!bfVendivel(x?bfEstado(x):'removida'))inv[c]=1;}));const mudou=Object.keys(inv).sort().join()!==Object.keys(p.inv).sort().join();p.inv=inv;return mudou;}
 function bfBarraUpd(){bfInvUpd();const el=document.getElementById('bf-barra');if(el)el.outerHTML=bfBarra();const v=document.querySelector('#bf [data-act="bf-vender-uma"]');if(v)v.disabled=!!(state.procurar.pedido||v.closest('[data-est]').dataset.est);bfHtmlFixa();bfVendasPull();}
 function bfMarcaDom(card){const on=state.procurar.sel.includes(card);document.querySelectorAll('#bf .bf-marca').forEach(b=>{if(b.dataset.card!==card)return;const m=b.closest('[data-est]');
   b.setAttribute('aria-pressed',String(on));b.textContent=TE(on?'bf_marcada':'bf_marcar');b.disabled=!on&&!!(m&&m.dataset.est);});}
@@ -6486,7 +6490,7 @@ function bfMarcaDom(card){const on=state.procurar.sel.includes(card);document.qu
 function bfMarca(card){const p=state.procurar;if(!bfPodeVender()||!BF_CARD.test(card))return;const i=p.sel.indexOf(card);
   if(i>=0)p.sel.splice(i,1);
   else{const x=SRV.sess[card];const vista=p.aberta?p.aberta.card===card:!!(p.snap&&p.snap.cards.has(card))||bfSelfieTem(card); // só sessão que está no retrato desta pessoa (ou que a selfie dela achou)
-    if(!x||!vista)return;const e=bfEstado(x);if(e!=='livre'){toast(bfRecTxt(e,sessRot(card)));return;}if(p.sel.length>=BF_SEL_MAX){toast(TE('bf_max',BF_SEL_MAX));return;}p.sel.push(card);}
+    if(!x||!vista)return;const e=bfEstado(x);if(!bfVendivel(e)){toast(bfRecTxt(e,sessRot(card)));return;}if(p.sel.length>=BF_SEL_MAX){toast(TE('bf_max',BF_SEL_MAX));return;}p.sel.push(card);}
   bfMarcaDom(card);bfBarraUpd();}
 function bfLimpa(){const p=state.procurar;const era=p.sel.slice();p.sel=[];era.forEach(bfMarcaDom);bfBarraUpd();}
 // A situação de uma sessão à vista mudou (fechou, foi vendida, ganhou pedido): troca só o cartão dela (selo e caixa), sem redesenhar a
@@ -6495,8 +6499,8 @@ function bfEstUpd(){const p=state.procurar,s=p.snap;if(state.view!=='procurar'||
   if(p.selfie&&p.selfieVer&&!p.aberta){const el=document.querySelector('#bf.bf-sf');if(el&&el.dataset.ass!==bfSelfieAss()){bfInvUpd();BF_HTML=null;render();return;}} // lista da selfie: sessão vendida em outro posto, com pedido ou que fechou
   if(p.sel.length&&bfInvUpd()){const el=document.getElementById('bf-barra');if(el){el.outerHTML=bfBarra();mudou=true;}}
   if(!p.aberta&&s&&s.est)psComCache(()=>{let pos=null;
-    document.querySelectorAll('#bf-lista .bf-mk').forEach(el=>{const c=el.dataset.card;if(!(c in s.est))return;if(!pos){pos=new Map();s.itens.forEach((y,i)=>pos.set(y.card,i));}const i=pos.get(c);if(i==null)return;let x=s.itens[i];const e=bfTrava(bfEstado(x));if(e===s.est[c])return;
-      s.est[c]=e;const v=SRV.sess[c];if(v&&v.status!==x.status){x=Object.assign({},x,{status:v.status});s.itens[i]=x;}if(e==='paga')s.pagas[c]=1; // o selo do cartão acompanha: fechou, ou foi vendida em outro posto
+    document.querySelectorAll('#bf-lista .bf-mk').forEach(el=>{const c=el.dataset.card;if(!(c in s.est))return;if(!pos){pos=new Map();s.itens.forEach((y,i)=>pos.set(y.card,i));}const i=pos.get(c);if(i==null)return;let x=s.itens[i];const e0=bfEstado(x),e=bfTrava(e0);if(e===s.est[c]&&!(e0==='paga'&&!s.pagas[c]))return;
+      s.est[c]=e;const v=SRV.sess[c];if(v&&v.status!==x.status){x=Object.assign({},x,{status:v.status});s.itens[i]=x;}if(e0==='paga')s.pagas[c]=1; // o selo do cartão acompanha: fechou, ou foi vendida em outro posto
       const k=el.closest('.bf-card');if(k)k.outerHTML=bfCartao(x,s);else el.outerHTML=bfMk(x,s);mudou=true;});});
   if(mudou)bfHtmlFixa();}
 // Auditoria em duas linhas ligadas pelo mesmo "pedido": a do envio (antes de falar com o Checkout, para o registro existir mesmo que esta
@@ -6510,12 +6514,12 @@ function bfVender(cards,origem,esperou){const p=state.procurar;if(!bfPodeVender(
   cards=[...new Set((Array.isArray(cards)?cards:[]).map(String))];if(!cards.length)return Promise.resolve(false);
   if(cards.length>BF_SEL_MAX){toast(TE('bf_max',BF_SEL_MAX));return Promise.resolve(false);}
   origem=origem==='procurar_selfie'?'procurar_selfie':'procurar';
-  {const rec=psComCache(()=>{for(const c of cards){const x=BF_CARD.test(c)?SRV.sess[c]:null;const e=x?bfEstado(x):'removida';if(e!=='livre')return [e,c];}return null;});if(rec){toast(bfRecTxt(rec[0],sessRot(rec[1])));bfBarraUpd();return Promise.resolve(false);}}
+  {const rec=psComCache(()=>{for(const c of cards){const x=BF_CARD.test(c)?SRV.sess[c]:null;const e=x?bfEstado(x):'removida';if(!bfVendivel(e))return [e,c];}return null;});if(rec){toast(bfRecTxt(rec[0],sessRot(rec[1])));bfBarraUpd();return Promise.resolve(false);}}
   // janela do vendedor recém-aberta ou recarregada: o Checkout se anuncia a cada 5 s; espera o primeiro anúncio antes de decidir que ele não está aberto
   if(state.eco===null&&!esperou&&performance.now()<BF_ECO_MS){const esp={espera:true};p.pedido=esp;bfBarraUpd();
     return new Promise(res=>{const iv=setInterval(()=>{if(p.pedido!==esp){clearInterval(iv);res(false);return;}if(state.eco===null&&performance.now()<BF_ECO_MS)return;clearInterval(iv);p.pedido=null;bfBarraUpd();bfVender(cards,origem,true).then(res);},150);});}
   const nf=c=>bfFotos(SRV.sess[c]).length;cards.sort((a,b)=>nf(b)-nf(a)); // a primeira é a de mais fotos (a âncora da venda)
-  if(ecoOff()){if(cards.length>1||!canView('checkout')||!can('venda','u')){toast(TE('bf_abra_ck'));return Promise.resolve(false);}
+  if(ecoOff()){if(cards.length>1||!canView('checkout')||!can('venda','u')||psComCache(()=>bfEstado(SRV.sess[cards[0]]))==='paga'){toast(TE('bf_abra_ck'));return Promise.resolve(false);}
     bfAudita(cards,origem,'venda_manual');bfSelfieMarcar(cards,p.selfie);p.sel=[];state.posto.cortesia=false;go('checkout');checkoutPick(cards[0]);return Promise.resolve(true);} // cortesia=false, como o "Procurar sessão" do Posto: a venda nunca abre como Cortesia que ficou ligada
   const m=state.eco.m;if(m.step!=='code'){toast(TE('bf_ck_ocupado'));return Promise.resolve(false);}
   if(!ECO_CH||!m.tab){toast(TE('bf_ck_sem_resposta'));return Promise.resolve(false);}

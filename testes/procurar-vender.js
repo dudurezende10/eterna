@@ -100,8 +100,7 @@ try{
     ok(await V.evaluate(()=>document.querySelector('#bf-lista').dataset.marca==='s'),'revisão 8: a lista não foi redesenhada');
     await marca(V,C.D);await V.evaluate(c=>{ETERNA.simOf(c).status='paga';ETERNA.saveSim();ETERNA.bfEstUpd();},C.D);
     {const r=await V.evaluate(c=>{const m=document.querySelector('#bf-barra .bf-bmini[data-card="'+c+'"]');const k=document.querySelector('#bf-lista .bf-card[data-card="'+c+'"]');return {inv:m.classList.contains('inv'),rot:m.getAttribute('aria-label'),selo:/Já vendida/.test(k.textContent),lista:document.querySelector('#bf-lista').dataset.marca};},C.D);
-      ok(r.inv&&/não pode mais entrar/.test(r.rot)&&r.selo&&r.lista==='s','revisão 8: a marcada que foi vendida fica riscada na barra e o cartão ganha "Já vendida": '+J(r));}
-    await toque(V,'#bf-barra [data-act="bf-vender"]');await V.waitForTimeout(300);ok(/Sessão 202 já foi vendida/.test(await aviso(V)),'revisão 9: o aviso diz "Sessão 202": '+await aviso(V));
+      ok(!r.inv&&r.selo&&r.lista==='s','27/11: a marcada que foi vendida segue marcada (vende de novo) e o cartão ganha "Já vendida": '+J(r));}
     await V.evaluate(()=>ETERNA.render());await V.waitForTimeout(150);ok(await V.evaluate(()=>document.querySelector('#bf-lista').dataset.marca==='s'),'depois de tudo, um redesenho geral ainda não troca a lista');
     await x.ctx.close();}
   // ---------- vendedor e Checkout no mesmo computador ----------
@@ -111,11 +110,11 @@ try{
   ok(await espera(L,C=>ETERNA.visitaDe(C.A).join()===[C.A,C.B].join(),8000,C),'6: no Checkout a visita liga A e B (o código do recibo abriria as duas)');
   ok(await procurar(V),'a lista do vendedor tem as 9 sessões');
   // ---------- 4: estados que desligam a caixa, em palavras ----------
-  ok(await espera(V,c=>{const m=document.querySelector('#bf-lista .bf-mk[data-card="'+c+'"]');return m&&m.dataset.est==='paga';},10000,C.FORA),'4: a venda de outro posto chega pelo servidor e desliga a caixa sem redesenhar');
+  ok(await espera(V,c=>{const m=document.querySelector('#bf-lista .bf-mk[data-card="'+c+'"]');const k=m&&m.closest('.bf-card');return k&&/Já vendida/.test(k.textContent)&&m.dataset.est==='';},10000,C.FORA),'27/11: a venda de outro posto chega pelo servidor, o cartão ganha "Já vendida" e a caixa segue ligada');
   {const r=await V.evaluate(C=>{const de=c=>{const k=document.querySelector('#bf-lista .bf-card[data-card="'+c+'"]');const b=k.querySelector('.bf-marca');return {dis:b.disabled,est:k.querySelector('.bf-mk').dataset.est,txt:k.textContent.replace(/\s+/g,' ')};};
       return {ab:de(C.ABERTA),pg:de(C.PAGA),pe:de(C.PEDIDO),fo:de(C.FORA),me:de(C.MENOR),a:de(C.A)};},C);
     ok(r.ab.dis&&r.ab.est==='aberta'&&/entra quando fechar \(até 1 min\)/.test(r.ab.txt),'4: aberta: caixa desligada e o prazo vem da pausa do servidor: '+J(r.ab));
-    ok(r.pg.dis&&/Já vendida/.test(r.pg.txt)&&(r.pg.txt.match(/Já vendida/g)||[]).length===1,'4: paga: '+J(r.pg));
+    ok(!r.pg.dis&&r.pg.est===''&&(r.pg.txt.match(/Já vendida/g)||[]).length===1,'27/11: paga: "Já vendida" uma vez e Marcar ligado (vende de novo): '+J(r.pg));
     ok(r.pe.dis&&/Pedido em aberto/.test(r.pe.txt),'4: com pedido: '+J(r.pe));
     ok(r.fo.dis&&/Já vendida/.test(r.fo.txt),'4: vendida em outro posto: '+J(r.fo));
     ok(r.me.dis&&/Sessão protegida/.test(r.me.txt),'4: menor: '+J(r.me));
@@ -168,14 +167,14 @@ try{
     R.semId=await manda(Object.assign(base(1),{id:'curto',semResposta:1}));R.nove=await manda(Object.assign(base(2),{cards:['LPX00001','LPX00002','LPX00003','LPX00004','LPX00005','LPX00006','LPX00007','LPX00008','LPX00009']}));
     R.velha=await manda(Object.assign(base(3),{em:Date.now()-4500}));/* entre a validade (4 s) e a espera do vendedor (6 s): não abre */R.outra=await manda(Object.assign(base(4),{para:'zzzzzzzz',semResposta:1}));R.menor=await manda(Object.assign(base(5),{cards:[C.A,C.MENOR]}));
     R.minusc=await manda(Object.assign(base(6),{cards:['lppva0001']}));R.origem=await manda(Object.assign(base(7),{origem:'outra'}));R.repete=await manda(Object.assign(base(8),{cards:[C.A,C.A]}));R.vazia=await manda(Object.assign(base(9),{cards:[]}));
-    R.paga=await manda(Object.assign(base(10),{cards:[C.A,C.PAGA]}));R.pedido=await manda(Object.assign(base(11),{cards:[C.PEDIDO]}));R.semSessao=await manda(Object.assign(base(12),{cards:['LPNAOEXISTE']}));R.texto=await manda(Object.assign(base(13),{cards:'LPPVA0001'}));
+    R.pedido=await manda(Object.assign(base(11),{cards:[C.PEDIDO]}));R.semSessao=await manda(Object.assign(base(12),{cards:['LPNAOEXISTE']}));R.texto=await manda(Object.assign(base(13),{cards:'LPPVA0001'}));
     await L.evaluate(()=>{ETERNA.state.kiosk.camOn=true;});R.camera=await manda(base(14));await L.evaluate(()=>{ETERNA.state.kiosk.camOn=false;});
     ok(R.camera.resp&&R.camera.resp.ok===false&&R.camera.resp.motivo==='ocupado','9: com a câmera ligada (cliente no meio da selfie) o Checkout responde ocupado: '+J(R.camera.resp));
     ok(Object.values(R).every(r=>r.parado),'9: nenhuma mensagem recusada muda o Checkout: '+J(R));
     ok(R.semId.resp===null&&R.outra.resp===null,'9: sem id válido ou para outra janela, o Checkout nem responde');
     ok(['nove','minusc','origem','repete','vazia','texto'].every(k=>R[k].resp&&R[k].resp.ok===false&&R[k].resp.motivo==='invalido'),'9: 9 sessões e formato errado: invalido: '+J(R));
     ok(R.velha.resp&&R.velha.resp.ok===false&&R.velha.resp.motivo==='expirado','9: mensagem com mais de 4 s (a validade): recusada como expirada: '+J(R.velha.resp));
-    ok(R.menor.resp&&R.menor.resp.motivo==='protegida'&&R.paga.resp.motivo==='paga'&&R.pedido.resp.motivo==='pedido'&&R.semSessao.resp.motivo==='carregando','9: menor, paga, com pedido e desconhecida: tudo ou nada, com o motivo: '+J([R.menor.resp,R.paga.resp,R.pedido.resp,R.semSessao.resp]));
+    ok(R.menor.resp&&R.menor.resp.motivo==='protegida'&&R.pedido.resp.motivo==='pedido'&&R.semSessao.resp.motivo==='carregando','9: menor, com pedido e desconhecida (a paga abre como venda nova, 27/11): tudo ou nada, com o motivo: '+J([R.menor.resp,R.paga.resp,R.pedido.resp,R.semSessao.resp]));
     ok(Object.values(R).every(r=>!r.resp||J(Object.keys(r.resp).sort())===J(['id','motivo','ok','tipo'])),'9: a resposta leva só tipo, id, ok e motivo');}
   // ---------- 5 e 6: Iniciar abre só as marcadas, unidas e inteiras ----------
   await toque(V,'#bf-barra [data-act="bf-vender"]');
