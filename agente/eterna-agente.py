@@ -15748,7 +15748,8 @@ def _pessoas_hoje_refazer(hoje):
     a = j.get("auditoria") or {}
     if time.time() - _epoch(j.get("calc_em") or "") < PESSOAS_REFAZ_SEG:
         return False
-    return bool(a.get("fotos_sem_leitura") or a.get("fila_leitura")) or _pessoas_fotos_do_dia(hoje) != a.get("fotos_do_dia")
+    # 26/11 (23h): 1 foto sem leitura fazia recontar o dia inteiro (25 min) a cada 10 min. Só a fila de leitura ou foto nova refaz.
+    return bool(a.get("fila_leitura")) or _pessoas_fotos_do_dia(hoje) != a.get("fotos_do_dia")
 
 
 def pessoas_loop():
@@ -15925,6 +15926,25 @@ def _auditoria_pedidos_abertos():
     return out
 
 
+def _hhmm_local(iso):
+    try:
+        return time.strftime("%H:%M", time.localtime(_epoch(iso or "")))
+    except Exception:
+        return "?"
+
+
+def _auditoria_parte(nome, desv, f):
+    """Cada parte da auditoria roda sozinha: erro numa parte vira desvio "não conferido" com a linha do erro, e o resto segue."""
+    try:
+        f()
+    except Exception as ex:
+        import traceback
+        tb = traceback.extract_tb(ex.__traceback__)
+        onde = ("linha %d" % tb[-1].lineno) if tb else ""
+        desv.append("%s não conferido (erro %s: %s)" % (nome, onde, str(ex)[:80]))
+        print("  auditoria: %s falhou em %s: %s" % (nome, onde, ex))
+
+
 def auditoria_dia(dia=None):
     """Roda a auditoria de hoje. Devolve o registro gravado no HD."""
     dia = dia or _ff_hoje()
@@ -15935,8 +15955,12 @@ def auditoria_dia(dia=None):
     # 1. o que se refaz sozinho: contagem de pessoas e métricas do dia
     with _pessoas_lock:
         try:
-            jp = pessoas_contar(dia, forcar=True)
-            corr.append("Contagem de pessoas refeita: %s" % ((jp or {}).get("resultado") or {}).get("pessoas"))
+            jp = _pessoas_cache.get(dia) or pessoas_disco_ler(dia)
+            if not jp or _pessoas_hoje_refazer(dia):
+                jp = pessoas_contar(dia, forcar=True)
+                corr.append("Contagem de pessoas refeita: %s" % ((jp or {}).get("resultado") or {}).get("pessoas"))
+            else:
+                corr.append("Contagem de pessoas das %s conferida: nenhuma foto nova depois dela" % _hhmm_local(jp.get("calc_em")))
         except Exception as ex:
             jp = None
             desv.append("Contagem de pessoas falhou (%s)" % str(ex)[:80])
@@ -15963,126 +15987,142 @@ def auditoria_dia(dia=None):
             return L(rot, fmt(nosso), "desvio: Estatísticas dizem %s" % fmt(deles))
         L(rot, fmt(nosso))
 
-    vs = vendas_do_dia()
-    vivas = [v for v in vs if not v.get("cancelada")]
-    pagas = [v for v in vivas if v.get("meio") != "cortesia" and float(v.get("total") or 0) > 0]
-    cort = [v for v in vivas if v.get("meio") == "cortesia" or not float(v.get("total") or 0)]
-    canc = [v for v in vs if v.get("cancelada")]
-    tot = sum(float(v.get("total") or 0) for v in pagas)
-    nf = lambda v: len(v.get("selected") or [])
+    def _p_vendas():
+        vs = vendas_do_dia()
+        vivas = [v for v in vs if not v.get("cancelada")]
+        pagas = [v for v in vivas if v.get("meio") != "cortesia" and float(v.get("total") or 0) > 0]
+        cort = [v for v in vivas if v.get("meio") == "cortesia" or not float(v.get("total") or 0)]
+        canc = [v for v in vs if v.get("cancelada")]
+        tot = sum(float(v.get("total") or 0) for v in pagas)
+        nf = lambda v: len(v.get("selected") or [])
 
-    def soma(campo):
-        out = {}
+        def soma(campo):
+            out = {}
+            for v in pagas:
+                k = v.get(campo) or "sem %s" % campo
+                o = out.setdefault(k, [0, 0.0, 0])
+                o[0] += 1
+                o[1] += float(v.get("total") or 0)
+                o[2] += nf(v)
+            return out
+
+        G("Vendas")
+        C("Vendas pagas", len(pagas), sum(int((x or {}).get("vendas") or 0) for k, x in (M.get("por_meio") or {}).items() if k != "cortesia")
+          if M.get("por_meio") else None)
+        C("Valor", tot, M.get("faturamento") if M else None, br)
+        tm = tot / len(pagas) if pagas else 0
+        C("Valor médio por venda paga", tm, M.get("ticket_medio") if M else None, br, tol=0.5)
+        C("Fotos vendidas (pagas)", sum(nf(v) for v in pagas), None if not M.get("por_meio") else
+          sum(int((x or {}).get("fotos_vendidas") or 0) for k, x in M["por_meio"].items() if k != "cortesia"))
+        L("Cortesias", "%d (%d fotos)" % (len(cort), sum(nf(v) for v in cort)))
+        C("Canceladas", len(canc), M.get("canceladas") if M else None)
+        if M.get("fotos_ia_vendidas") is not None:
+            L("Fotos com fundo de IA vendidas", M["fotos_ia_vendidas"], "das Estatísticas")
+        G("Por meio de pagamento")
+        sm = soma("meio")
+        for k in sorted(set(sm) | {k for k in (M.get("por_meio") or {}) if k != "cortesia"}):
+            x = sm.get(k, [0, 0.0, 0])
+            C("%s: %d vendas" % (k, x[0]), x[1], ((M.get("por_meio") or {}).get(k) or {}).get("faturamento") if M.get("por_meio") else None, br)
+        G("Por posto")
+        sp = soma("posto")
+        for k in sorted(set(sp) | set(M.get("por_posto") or {})):
+            x = sp.get(k, [0, 0.0, 0])
+            C("%s: %d vendas, %d fotos" % (k, x[0], x[2]), x[1], ((M.get("por_posto") or {}).get(k) or {}).get("faturamento") if M.get("por_posto") else None, br)
+        G("Por vendedor")
+        sv = {}
         for v in pagas:
-            k = v.get(campo) or "sem %s" % campo
-            o = out.setdefault(k, [0, 0.0, 0])
+            k = v.get("vendedor") or v.get("por") or "sem vendedor"
+            k = k.get("nome") if isinstance(k, dict) else str(k)
+            o = sv.setdefault(k, [0, 0.0])
             o[0] += 1
             o[1] += float(v.get("total") or 0)
-            o[2] += nf(v)
-        return out
+        for k in sorted(sv, key=lambda k: -sv[k][1]):
+            C("%s: %d vendas" % (k, sv[k][0]), sv[k][1], ((M.get("por_vendedor") or {}).get(k) or {}).get("faturamento") if M.get("por_vendedor") else None, br)
+        if M.get("por_canal"):
+            G("Por canal")
+            for k, x in sorted(M["por_canal"].items()):
+                L("%s: %s vendas" % (k, (x or {}).get("vendas")), br((x or {}).get("faturamento")), "das Estatísticas")
+            sc = sum(float((x or {}).get("faturamento") or 0) for x in M["por_canal"].values())
+            if abs(sc - tot) > 0.01:
+                desv.append("Canais somam %s e as vendas pagas %s" % (br(sc), br(tot)))
+                num[-1][2] = "desvio: canais somam %s" % br(sc)
+        if M.get("online"):
+            L("Vendas online", "%s (%s)" % (M["online"].get("vendas") or 0, br(M["online"].get("faturamento"))), "das Estatísticas")
+        for v in vs:
+            n = v.get("saleNo") or v.get("venda")
+            if v.get("cancelada"):
+                continue
+            if v.get("meio") not in AUDITORIA_MEIOS:
+                desv.append("%s: meio de pagamento \"%s\"" % (n, v.get("meio")))
+            if v in pagas and not (v.get("vendedor") or v.get("por")):
+                desv.append("%s: venda paga sem vendedor" % n)
+            if (v.get("selected") or v.get("aiSel")) and not v.get("galeria"):
+                desv.append("%s: venda com fotos sem galeria online" % n)
+            if v in cort and v.get("meio") != "cortesia":
+                desv.append("%s: R$ 0 com meio \"%s\" (as Estatísticas contam como venda paga): virar cortesia ou cobrar" % (n, v.get("meio")))
+            if v in cort:
+                desv.append("%s: cortesia (%s, %d fotos): confirmar autorização" % (n, v.get("posto"), nf(v)))
+        ab = _auditoria_pedidos_abertos()
+        for x in ab:
+            desv.append("Pedido aberto %s (%s, %s, %s): cobrar ou cancelar" % (x["saleNo"], x["posto"], x["criada"], br(x["total"])))
+        L("Pedidos em aberto", len(ab), "conferido" if not ab else "desvio: cobrar ou cancelar")
 
-    G("Vendas")
-    C("Vendas pagas", len(pagas), sum(int((x or {}).get("vendas") or 0) for k, x in (M.get("por_meio") or {}).items() if k != "cortesia")
-      if M.get("por_meio") else None)
-    C("Valor", tot, M.get("faturamento") if M else None, br)
-    tm = tot / len(pagas) if pagas else 0
-    C("Valor médio por venda paga", tm, M.get("ticket_medio") if M else None, br, tol=0.5)
-    C("Fotos vendidas (pagas)", sum(nf(v) for v in pagas), None if not M.get("por_meio") else
-      sum(int((x or {}).get("fotos_vendidas") or 0) for k, x in M["por_meio"].items() if k != "cortesia"))
-    L("Cortesias", "%d (%d fotos)" % (len(cort), sum(nf(v) for v in cort)))
-    C("Canceladas", len(canc), M.get("canceladas") if M else None)
-    if M.get("fotos_ia_vendidas") is not None:
-        L("Fotos com fundo de IA vendidas", M["fotos_ia_vendidas"], "das Estatísticas")
-    G("Por meio de pagamento")
-    sm = soma("meio")
-    for k in sorted(set(sm) | {k for k in (M.get("por_meio") or {}) if k != "cortesia"}):
-        x = sm.get(k, [0, 0.0, 0])
-        C("%s: %d vendas" % (k, x[0]), x[1], ((M.get("por_meio") or {}).get(k) or {}).get("faturamento") if M.get("por_meio") else None, br)
-    G("Por posto")
-    sp = soma("posto")
-    for k in sorted(set(sp) | set(M.get("por_posto") or {})):
-        x = sp.get(k, [0, 0.0, 0])
-        C("%s: %d vendas, %d fotos" % (k, x[0], x[2]), x[1], ((M.get("por_posto") or {}).get(k) or {}).get("faturamento") if M.get("por_posto") else None, br)
-    G("Por vendedor")
-    sv = {}
-    for v in pagas:
-        k = v.get("vendedor") or v.get("por") or "sem vendedor"
-        k = k.get("nome") if isinstance(k, dict) else str(k)
-        o = sv.setdefault(k, [0, 0.0])
-        o[0] += 1
-        o[1] += float(v.get("total") or 0)
-    for k in sorted(sv, key=lambda k: -sv[k][1]):
-        C("%s: %d vendas" % (k, sv[k][0]), sv[k][1], ((M.get("por_vendedor") or {}).get(k) or {}).get("faturamento") if M.get("por_vendedor") else None, br)
-    if M.get("por_canal"):
-        G("Por canal")
-        for k, x in sorted(M["por_canal"].items()):
-            L("%s: %s vendas" % (k, (x or {}).get("vendas")), br((x or {}).get("faturamento")), "das Estatísticas")
-        sc = sum(float((x or {}).get("faturamento") or 0) for x in M["por_canal"].values())
-        if abs(sc - tot) > 0.01:
-            desv.append("Canais somam %s e as vendas pagas %s" % (br(sc), br(tot)))
-            num[-1][2] = "desvio: canais somam %s" % br(sc)
-    if M.get("online"):
-        L("Vendas online", "%s (%s)" % (M["online"].get("vendas") or 0, br(M["online"].get("faturamento"))), "das Estatísticas")
-    for v in vs:
-        n = v.get("saleNo") or v.get("venda")
-        if v.get("cancelada"):
-            continue
-        if v.get("meio") not in AUDITORIA_MEIOS:
-            desv.append("%s: meio de pagamento \"%s\"" % (n, v.get("meio")))
-        if v in pagas and not (v.get("vendedor") or v.get("por")):
-            desv.append("%s: venda paga sem vendedor" % n)
-        if (v.get("selected") or v.get("aiSel")) and not v.get("galeria"):
-            desv.append("%s: venda com fotos sem galeria online" % n)
-        if v in cort and v.get("meio") != "cortesia":
-            desv.append("%s: R$ 0 com meio \"%s\" (as Estatísticas contam como venda paga): virar cortesia ou cobrar" % (n, v.get("meio")))
-        if v in cort:
-            desv.append("%s: cortesia (%s, %d fotos): confirmar autorização" % (n, v.get("posto"), nf(v)))
-    ab = _auditoria_pedidos_abertos()
-    for x in ab:
-        desv.append("Pedido aberto %s (%s, %s, %s): cobrar ou cancelar" % (x["saleNo"], x["posto"], x["criada"], br(x["total"])))
-    L("Pedidos em aberto", len(ab), "conferido" if not ab else "desvio: cobrar ou cancelar")
-    # 3. fotos, sessões, impressão
-    pa = (jp or {}).get("auditoria") or {}
-    G("Fotos e sessões")
-    if M.get("fotos") is not None:
-        fd = pa.get("fotos_do_dia")
-        L("Fotos do dia", M["fotos"], "conferido" if fd in (None, M["fotos"]) else "contagem de pessoas leu %s" % fd)
-        sl = int(M["fotos"]) - int(M.get("fotos_indexadas") or 0)
-        L("Fotos sem leitura de rostos", max(0, sl), "conferido" if sl <= 0 else "desvio: leitura não terminou")
-        if sl > 0:
-            desv.append("%d fotos do dia sem leitura de rostos" % sl)
-    if M.get("sessoes") is not None:
-        L("Sessões", M["sessoes"])
-        L("Sessões com venda", "%s (%.1f%%)" % (M.get("sessoes_com_venda"), 100.0 * float(M.get("conversao_sessoes") or 0)), "das Estatísticas")
-    if M.get("impressoes") is not None:
-        fi = int(M.get("impressoes_falhas") or 0)
-        L("Impressões", "%s (%d falhas)" % (M["impressoes"], fi), "conferido" if not fi else "%d falhas de impressão" % fi)
-    # 4. pessoas, visitantes, selfies
-    G("Pessoas e visitantes")
-    rp = (jp or {}).get("resultado") or {}
-    L("Pessoas fotografadas", rp.get("pessoas", "—"), "conferido" if not pa.get("ressalvas") else "com ressalvas (abaixo)")
-    L("Sessões com rosto / com cliente contado", "%s / %s" % (pa.get("sessoes_com_rosto", "—"), pa.get("sessoes_com_cliente", "—")))
-    if rp.get("equipe") is not None:
-        L("Tratadas como equipe", rp["equipe"])
-    for r_ in pa.get("ressalvas") or []:
-        desv.append("Pessoas: " + r_)
-    vi = visitantes(dia, dia) or {}
-    if vi.get("ok"):
-        L("Visitantes do Tour", vi.get("total"), "conferido" if not vi.get("guardado") else "número guardado de %s" % str(vi.get("lido_em") or "")[11:16])
-        if vi.get("guardado"):
-            desv.append("Visitantes: Maraca Acessos fora; número guardado de %s" % str(vi.get("lido_em") or "")[11:16])
-        pes = rp.get("pessoas")
-        if pes and vi.get("total"):
-            L("Abordagem (pessoas ÷ visitantes)", "%.1f%%" % (100.0 * pes / vi["total"]))
-    else:
-        L("Visitantes do Tour", "—", "desvio: indisponível")
-        desv.append("Visitantes do Tour indisponíveis (%s)" % str(vi.get("erro") or "sem resposta")[:60])
-    se = (selfies_dia(dia) or {}).get("por_origem") or {}
-    if se:
-        G("Selfies")
-    for o, x in sorted(se.items()):
-        n_, a_ = int(x.get("selfies", 0)), int(x.get("achou", 0))
-        L("Selfies %s" % o, "%d, acharam %d (%.0f%%)" % (n_, a_, 100.0 * a_ / n_ if n_ else 0))
+    _auditoria_parte("Vendas", desv, _p_vendas)
+
+    def _p_fotos():
+        pa = (jp or {}).get("auditoria") or {}
+        # 3. fotos, sessões, impressão
+        G("Fotos e sessões")
+        if M.get("fotos") is not None:
+            fd = pa.get("fotos_do_dia")
+            L("Fotos do dia", M["fotos"], "conferido" if fd in (None, M["fotos"]) else "contagem de pessoas leu %s" % fd)
+            sl = int(M["fotos"]) - int(M.get("fotos_indexadas") or 0)
+            L("Fotos sem leitura de rostos", max(0, sl), "conferido" if sl <= 0 else "desvio: leitura não terminou")
+            if sl > 0:
+                desv.append("%d fotos do dia sem leitura de rostos" % sl)
+        if M.get("sessoes") is not None:
+            L("Sessões", M["sessoes"])
+            L("Sessões com venda", "%s (%.1f%%)" % (M.get("sessoes_com_venda"), 100.0 * float(M.get("conversao_sessoes") or 0)), "das Estatísticas")
+        if M.get("impressoes") is not None:
+            fi = int(M.get("impressoes_falhas") or 0)
+            L("Impressões", "%s (%d falhas)" % (M["impressoes"], fi), "conferido" if not fi else "%d falhas de impressão" % fi)
+
+    _auditoria_parte("Fotos e sessões", desv, _p_fotos)
+
+    def _p_pessoas():
+        pa = (jp or {}).get("auditoria") or {}
+        # 4. pessoas, visitantes, selfies
+        G("Pessoas e visitantes")
+        rp = (jp or {}).get("resultado") or {}
+        L("Pessoas fotografadas", rp.get("pessoas", "—"), "conferido" if not pa.get("ressalvas") else "com ressalvas (abaixo)")
+        L("Sessões com rosto / com cliente contado", "%s / %s" % (pa.get("sessoes_com_rosto", "—"), pa.get("sessoes_com_cliente", "—")))
+        if rp.get("equipe") is not None:
+            L("Tratadas como equipe", rp["equipe"])
+        for r_ in pa.get("ressalvas") or []:
+            desv.append("Pessoas: " + r_)
+        vi = visitantes(dia, dia) or {}
+        if vi.get("ok"):
+            L("Visitantes do Tour", vi.get("total"), "conferido" if not vi.get("guardado") else "número guardado de %s" % str(vi.get("lido_em") or "")[11:16])
+            if vi.get("guardado"):
+                desv.append("Visitantes: Maraca Acessos fora; número guardado de %s" % str(vi.get("lido_em") or "")[11:16])
+            pes = rp.get("pessoas")
+            if pes and vi.get("total"):
+                L("Abordagem (pessoas ÷ visitantes)", "%.1f%%" % (100.0 * pes / vi["total"]))
+        else:
+            L("Visitantes do Tour", "—", "desvio: indisponível")
+            desv.append("Visitantes do Tour indisponíveis (%s)" % str(vi.get("erro") or "sem resposta")[:60])
+
+    _auditoria_parte("Pessoas e visitantes", desv, _p_pessoas)
+
+    def _p_selfies():
+        se = (selfies_dia(dia) or {}).get("por_origem") or {}
+        if se:
+            G("Selfies")
+        for o, x in sorted(se.items()):
+            n_, a_ = int(x.get("selfies", 0)), int(x.get("achou", 0))
+            L("Selfies %s" % o, "%d, acharam %d (%.0f%%)" % (n_, a_, 100.0 * a_ / n_ if n_ else 0))
+
+    _auditoria_parte("Selfies", desv, _p_selfies)
     j = {"v": 2, "dia": dia, "feita_em": _iso(), "situacao": "sem desvios" if not desv else "%d desvios" % len(desv),
          "correcoes": corr, "desvios": desv[:200], "numeros": num, "email": None}
     _auditoria_grava(j)
