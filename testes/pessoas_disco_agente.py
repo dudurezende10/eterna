@@ -83,5 +83,23 @@ os.makedirs(m.MET_DIR, exist_ok=True)
 json.dump({"v": 2, "dia": ontem, "t3": m.T3_VER, "pessoas": {"v": 2, "pessoas": 166}}, open(os.path.join(m.MET_DIR, ontem + ".json"), "w", encoding="utf8"))
 m._pessoas_cache[ontem] = {"v": m.PESSOAS_V, "resultado": {"v": 4, "pessoas": 77}}
 ok(m.metricas_periodo(ontem, ontem)[0]["pessoas"]["pessoas"] == 77, "Estatísticas de dia passado com a contagem do HD")
+# 8. HD sem permissão de escrita (estádio, 26/11): cai em ~/Eterna/contagens; quando o HD aceita, o que ficou lá é copiado
+pd = os.environ.pop("ETERNA_PESSOAS_DIR")
+hd = os.path.join(os.path.dirname(os.path.realpath(m.INBOX)), "contagens")
+mk = m.os.makedirs
+def mk_falso(d, *a, **k):
+    if os.path.realpath(d).startswith(os.path.realpath(hd)):
+        raise PermissionError(13, "Permission denied")
+    return mk(d, *a, **k)
+m.os.makedirs = mk_falso
+with contextlib.redirect_stdout(io.StringIO()):
+    b = m._contagens_base()
+m.os.makedirs = mk
+ok(b == os.path.join(m.HOME, "contagens"), "HD sem escrita: contagens em ~/Eterna/contagens")
+os.makedirs(os.path.join(b, "pessoas"), exist_ok=True)
+json.dump({"v": m.PESSOAS_V}, open(os.path.join(b, "pessoas", "2026-11-25.json"), "w"))
+b2 = m._contagens_base()
+ok(b2 == hd and os.path.exists(os.path.join(hd, "pessoas", "2026-11-25.json")), "HD liberado: a contagem da reserva vai para o HD")
+os.environ["ETERNA_PESSOAS_DIR"] = pd
 print("\n" + ("tudo certo" if not falhas else "%d falha(s)" % len(falhas)))
 sys.exit(1 if falhas else 0)

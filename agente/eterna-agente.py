@@ -15624,7 +15624,40 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
 PESSOAS_V = 4
-PESSOAS_DIR = os.environ.get("ETERNA_PESSOAS_DIR") or os.path.join(os.path.dirname(os.path.realpath(INBOX)), "contagens", "pessoas")
+
+
+def _contagens_base():
+    """26/11 (no estádio, 22h19): a raiz do HD (/srv/eterna-midia) é do root e o agente não criava contagens/ (Permission denied),
+    então a recontagem não gravava. Usa o HD quando dá para escrever; senão ~/Eterna/contagens, avisando no registro. Quando o HD
+    passa a aceitar (sudo install -d -o eterna -g eterna /srv/eterna-midia/contagens), o que ficou em ~/Eterna/contagens é copiado."""
+    reserva = os.path.join(HOME, "contagens")
+    if os.environ.get("ETERNA_PESSOAS_DIR"):
+        return os.path.dirname(os.environ["ETERNA_PESSOAS_DIR"])
+    hd = os.path.join(os.path.dirname(os.path.realpath(INBOX)), "contagens")
+    try:
+        os.makedirs(hd, exist_ok=True)
+        t = os.path.join(hd, ".escrita")
+        open(t, "w").close()
+        os.remove(t)
+    except OSError as ex:
+        print("  contagens: HD sem escrita em %s (%s); usando %s" % (hd, ex.strerror or ex, reserva))
+        return reserva
+    if os.path.realpath(reserva) != os.path.realpath(hd) and os.path.isdir(reserva):
+        for raiz, _, arqs in os.walk(reserva):
+            for n in arqs:
+                o = os.path.join(raiz, n)
+                d = os.path.join(hd, os.path.relpath(o, reserva))
+                if not os.path.exists(d):
+                    try:
+                        os.makedirs(os.path.dirname(d), exist_ok=True)
+                        shutil.copy2(o, d)
+                    except OSError:
+                        pass
+    return hd
+
+
+CONTAGENS_DIR = _contagens_base()
+PESSOAS_DIR = os.environ.get("ETERNA_PESSOAS_DIR") or os.path.join(CONTAGENS_DIR, "pessoas")
 PESSOAS_REFAZ_SEG = 600          # hoje: refaz se chegaram fotos depois da conta ou se a leitura de rostos não tinha terminado
 _pessoas_cache = {}
 _pessoas_lock = threading.Lock()
@@ -15830,7 +15863,7 @@ def _pessoas_dia_calc(dia, forcar=False):
 # (contagens/auditoria/<dia>.json) e a nuvem manda o e-mail (POST /ponto/auditoria, destino fixo na nuvem). Só hoje: o passado
 # nunca é alterado. A conferência com a Imply continua fora daqui (precisa da sessão do Ronaldo na Imply).
 AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "21"))
-AUDITORIA_DIR = os.path.join(os.path.dirname(PESSOAS_DIR), "auditoria")
+AUDITORIA_DIR = os.path.join(CONTAGENS_DIR, "auditoria")
 AUDITORIA_MEIOS = ("pix", "cartao", "dinheiro", "cortesia")
 
 
