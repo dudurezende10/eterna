@@ -3332,7 +3332,16 @@ def rover_sync_day(cfg, day):
     return agg
 
 
+# 26/11 (Ronaldo): "não tem que sincronizar mais Roverpix, ele não existe desde 25/11". A busca para de vez; o que já foi
+# baixado (roverpix/raw e agg) fica como histórico. ETERNA_ROVERPIX=1 religa.
+ROVER_DESLIGADO = os.environ.get("ETERNA_ROVERPIX", "0") != "1"
+
+
 def rover_loop():
+    if ROVER_DESLIGADO:
+        rover["status"] = "desligado"
+        print("roverpix: desligado (Roverpix encerrado em 25/11)")
+        return
     while True:
         cfg = rover_cfg()
         if not cfg:
