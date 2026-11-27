@@ -386,6 +386,8 @@ Passo a passo:
 
 Para vender uma sessão só, abra a sessão (**Ver sessão**) e toque em **Vender esta sessão**.
 
+**Uma janela de Checkout por computador.** Com duas janelas do Checkout abertas no mesmo computador, você não sabe em qual delas as fotos abriram. Deixe só uma aberta, no monitor do cliente.
+
 O que pode aparecer:
 
 | Aviso ou situação | O que fazer |

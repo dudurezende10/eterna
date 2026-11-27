@@ -35,6 +35,49 @@ try{
     const tab=await L.evaluate(()=>ETERNA.ecoTab());await pg.evaluate(([tab,c])=>window.__ch.postMessage({tipo:'abrir',id:'abcdefabcdef',para:tab,cards:[c],origem:'procurar',em:Date.now()}),[tab,C.A]);await L.waitForTimeout(500);
     ok((await quiosque(L)).step==='code','12: com a chave desligada o Checkout ignora o pedido');
     await x.ctx.close();}
+  // ---------- revisão: resposta atrasada, sair da tela com pedido pendente, vendedor recém-recarregado, selo e miniatura riscada ----------
+  {const x=await dupla(b);errs.push(x.errs);const {V,L,FEED}=x;const audit=()=>V.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender'));
+    const abriu=(c,ms)=>espera(L,c=>['gallery','review'].includes(ETERNA.state.kiosk.step)&&!!ETERNA.state.kiosk.so&&ETERNA.state.kiosk.so.cards.join()===c,ms||9000,c);
+    const zera=async()=>{await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});await espera(V,()=>{const e=ETERNA.state.eco;return e&&e.m&&e.m.step==='code'&&Date.now()-e.at<3000;},9000);};
+    {const t=await V.evaluate(()=>ETERNA.bfTempos());ok(t.vale<t.espera&&t.vale>=2000,'revisão 1: a mensagem vale menos do que o vendedor espera: '+J(t));}
+    // 7: janela do vendedor recém-recarregada, antes do primeiro anúncio do Checkout
+    ok(await procurar(V),'lista depois de recarregar');
+    // (o prazo de 5,5 s desde a carga é esticado e o anúncio já ouvido é apagado, para o caso não depender do relógio do teste)
+    await V.evaluate(c=>{ETERNA.bfEcoMs(600000);ETERNA.state.eco=null;ETERNA.bfMarca(c);document.querySelector('#bf-barra [data-act="bf-vender"]').click();},C.B);
+    ok(await V.evaluate(()=>document.querySelector('#bf-barra [data-act="bf-vender"]').disabled&&ETERNA.state.view==='procurar'),'revisão 7: sem ter ouvido o Checkout ainda, o vendedor espera (botão em espera, sem cair na Venda manual)');
+    ok(await abriu(C.B),'revisão 7: quando o Checkout se anuncia, a venda abre nele');ok(await V.evaluate(()=>ETERNA.state.view==='procurar'&&ETERNA.state.procurar.sel.length===0),'revisão 7: o vendedor continua no Procurar fotos, com a seleção limpa');
+    await V.evaluate(()=>ETERNA.bfEcoMs(5500));await V.waitForTimeout(300);await zera();
+    const n0=(await audit()).length;
+    // 1: o vendedor desiste de esperar e o Checkout abre mesmo assim: a resposta atrasada audita e limpa a seleção
+    await V.evaluate(()=>{window.__avisos=[];new MutationObserver(()=>{const t=document.querySelector('#toast').textContent;if(t&&window.__avisos[window.__avisos.length-1]!==t)window.__avisos.push(t);}).observe(document.querySelector('#toast'),{childList:true,characterData:true,subtree:true});ETERNA.bfAbrirMs(0);});
+    await marca(V,C.A);await toque(V,'#bf-barra [data-act="bf-vender"]');ok(await abriu(C.A),'revisão 1: o Checkout abriu depois do prazo do vendedor');
+    ok(await espera(V,()=>ETERNA.state.procurar.sel.length===0&&document.querySelector('#bf-barra').hidden,5000),'revisão 1: a resposta atrasada limpa a seleção');
+    {const a=await audit();const av=await V.evaluate(()=>window.__avisos.slice());ok(a.length===n0+1&&a[0].por===CAIXA&&a[0].alvo==='sessoes/'+C.A,'revisão 1: a venda aberta com resposta atrasada vai para a auditoria: '+J(a.map(e=>e.alvo)));
+      ok(av.some(t=>/não respondeu/.test(t))&&/Aberto no Checkout/.test(av[av.length-1]||''),'revisão 1: o aviso final é "Aberto no Checkout" (antes: não respondeu): '+J(av));}
+    await V.evaluate(()=>ETERNA.bfAbrirMs(6000));await zera();
+    // resposta "abriu ok" que não é de um pedido desta janela: nada acontece
+    {const nAv=await V.evaluate(()=>window.__avisos.filter(t=>/Aberto no Checkout/.test(t)).length);
+      await marca(V,C.C);await L.evaluate(()=>{window.__ch.postMessage({tipo:'abriu',id:'naoeumpedido',ok:true,motivo:null});window.__ch.postMessage({tipo:'abriu',id:'abcdefabcdef',ok:true,motivo:null});});await V.waitForTimeout(500);
+      const r=await V.evaluate(()=>({sel:ETERNA.state.procurar.sel.slice(),av:window.__avisos.filter(t=>/Aberto no Checkout/.test(t)).length}));
+      ok((await audit()).length===n0+1&&r.sel.join()===C.C&&r.av===nAv,'resposta de um pedido que esta janela não fez não audita, não limpa a seleção e não avisa: '+J(r));}
+    await marca(V,C.C); // desmarca, para o caso seguinte marcar de novo
+    // 2: o vendedor sai da tela com o pedido ainda no ar
+    await marca(V,C.C);await V.evaluate(()=>{document.querySelector('#bf-barra [data-act="bf-vender"]').click();ETERNA.go('posto');});ok(await abriu(C.C),'revisão 2: o Checkout abriu com o vendedor já em outra tela');
+    ok(await espera(V,n=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender').length===n,5000,n0+2),'revisão 2: sair da tela com o pedido pendente não perde a auditoria: '+J((await audit()).map(e=>e.alvo)));
+    {const a=await audit();ok(a[0]&&a[0].por===CAIXA&&a[0].alvo==='sessoes/'+C.C&&a[0].via==='checkout','revisão 2: com quem pediu e a sessão: '+J(a[0]));}
+    await zera();
+    // 8: a sessão aberta fecha: o selo e a caixa do cartão mudam sem redesenhar a lista; marcada que foi vendida fica riscada na barra
+    await V.evaluate(()=>ETERNA.go('procurar'));await V.waitForTimeout(400);await V.evaluate(()=>{document.querySelector('#bf-lista').dataset.marca='s';});
+    ok(await V.evaluate(c=>{const k=document.querySelector('#bf-lista .bf-card[data-card="'+c+'"]');return /aberta · recebendo/.test(k.textContent)&&k.querySelector('.bf-marca').disabled;},C.ABERTA),'antes: a sessão aberta tem o selo e a caixa desligada');
+    {const s=FEED.sessoes.find(y=>y.card===C.ABERTA);s.status='fechada';s.fechada_em=Date.now()/1000;s.fechada_por='pausa';s.rev=++FEED.rev;}
+    ok(await espera(V,c=>{const k=document.querySelector('#bf-lista .bf-card[data-card="'+c+'"]');return k&&!/aberta · recebendo|entra quando fechar/.test(k.textContent)&&!k.querySelector('.bf-marca').disabled;},15000,C.ABERTA),'revisão 8: quando a sessão fecha, o selo some e a caixa acende sozinha');
+    ok(await V.evaluate(()=>document.querySelector('#bf-lista').dataset.marca==='s'),'revisão 8: a lista não foi redesenhada');
+    await marca(V,C.D);await V.evaluate(c=>{ETERNA.simOf(c).status='paga';ETERNA.saveSim();ETERNA.bfEstUpd();},C.D);
+    {const r=await V.evaluate(c=>{const m=document.querySelector('#bf-barra .bf-bmini[data-card="'+c+'"]');const k=document.querySelector('#bf-lista .bf-card[data-card="'+c+'"]');return {inv:m.classList.contains('inv'),rot:m.getAttribute('aria-label'),selo:/Já vendida/.test(k.textContent),lista:document.querySelector('#bf-lista').dataset.marca};},C.D);
+      ok(r.inv&&/não pode mais entrar/.test(r.rot)&&r.selo&&r.lista==='s','revisão 8: a marcada que foi vendida fica riscada na barra e o cartão ganha "Já vendida": '+J(r));}
+    await toque(V,'#bf-barra [data-act="bf-vender"]');await V.waitForTimeout(300);ok(/Sessão 202 já foi vendida/.test(await aviso(V)),'revisão 9: o aviso diz "Sessão 202": '+await aviso(V));
+    await V.evaluate(()=>ETERNA.render());await V.waitForTimeout(150);ok(await V.evaluate(()=>document.querySelector('#bf-lista').dataset.marca==='s'),'depois de tudo, um redesenho geral ainda não troca a lista');
+    await x.ctx.close();}
   // ---------- vendedor e Checkout no mesmo computador ----------
   const x=await dupla(b);errs.push(x.errs);const {V,L,EVENTOS}=x;
   // 6 (preparo): uma visita liga a sessão A (que será marcada) à B (que não será)
@@ -64,8 +107,19 @@ try{
     ok(r.m1==='1'&&r.m2==='1'&&r.y===y0&&y0>0,'2: marcar não redesenha a lista (mesmos nós, mesma rolagem): '+J({m1:r.m1,m2:r.m2,y:r.y,y0}));
     ok(r.bt==='Iniciar venda com 2 sessões'&&r.n==='2 sessões marcadas'&&r.pa==='true'&&r.ta==='Marcada'&&igual(r.sel,[C.A,C.C])&&igual(r.minis,[C.A,C.C])&&/abrem inteiras/.test(r.inteiras),'2: a barra mostra "Iniciar venda com 2 sessões" e as marcadas: '+J(r));
     ok(r.vis,'2: a barra fica à vista no pé da tela');}
-  {const r=await V.evaluate(C=>{const m=c=>document.querySelector('#bf-barra .bf-bmini[data-card="'+c+'"]');return {num:(m(C.A).querySelector('.ss-num')||{}).textContent,lp:(m(C.A).querySelector('.ss-lp')||{}).textContent,rot:m(C.A).getAttribute('aria-label')};},C);
-    ok(r.num==='147'&&r.lp===C.A&&r.rot==='Desmarcar 147','a barra mostra o número da sessão (147) com o LP ao lado: '+J(r));}
+  {const r=await V.evaluate(C=>{const m=c=>document.querySelector('#bf-barra .bf-bmini[data-card="'+c+'"]');return {txt:m(C.A).querySelector('.bf-bcod').textContent,img:!!m(C.A).querySelector('img'),rot:m(C.A).getAttribute('aria-label'),
+      h:Math.min(...[...document.querySelectorAll('#bf-lista .bf-marca')].map(b=>Math.round(b.getBoundingClientRect().height)))};},C);
+    ok(r.txt==='147'&&r.img&&r.rot==='Desmarcar sessão 147','a barra mostra a miniatura e o número da sessão (147): '+J(r));
+    ok(r.h>=44,'revisão 4: a caixa Marcar tem 44 px ou mais de altura: '+r.h);}
+  // revisão 5: em 390 px a barra não cresce com o número de marcadas (uma linha de miniaturas com rolagem lateral)
+  {await V.setViewportSize({width:390,height:800});await V.waitForTimeout(250);
+    const mede=()=>V.evaluate(()=>{const b=document.querySelector('#bf-barra'),m=b.querySelector('.bf-bminis');return {h:Math.round(b.getBoundingClientRect().height),rola:m.scrollWidth>m.clientWidth+2,ox:getComputedStyle(m).overflowX,wrap:getComputedStyle(m).flexWrap,sw:document.documentElement.scrollWidth<=innerWidth+1,
+      toque:Math.min(...[...b.querySelectorAll('button')].map(x=>Math.round(x.getBoundingClientRect().height)))};});
+    const m2=await mede();
+    const m8=await (async()=>{await V.evaluate(()=>{const p=ETERNA.state.procurar;window.__era=p.sel.slice();p.sel=p.sel.concat(['LPX00001','LPX00002','LPX00003','LPX00004','LPX00005','LPX00006']);ETERNA.render();});await V.waitForTimeout(200);const r=await mede();
+      await V.evaluate(()=>{ETERNA.state.procurar.sel=window.__era;ETERNA.state.procurar.inv={};ETERNA.render();});await V.waitForTimeout(200);return r;})();
+    ok(m2.h<=200&&m8.h===m2.h&&m8.rola&&m8.ox==='auto'&&m8.wrap==='nowrap'&&m2.sw&&m8.sw&&m2.toque>=44&&m8.toque>=44,'revisão 5: em 390 px a barra tem a mesma altura com 2 e com 8 marcadas, com rolagem lateral: '+J([m2,m8]));
+    await V.setViewportSize({width:1366,height:420});await V.waitForTimeout(200);await V.evaluate(()=>{document.querySelector('#bf-lista').dataset.marca='1';document.querySelector('#bf-lista .bf-card').dataset.marca='1';});} // (a medida com 8 redesenhou a lista de propósito)
   await V.evaluate(()=>ETERNA.render());await V.waitForTimeout(200);
   ok(await V.evaluate(()=>document.querySelector('#bf-lista').dataset.marca==='1'&&document.querySelector('#bf-lista .bf-card').dataset.marca==='1'&&document.querySelectorAll('.bf-marca[aria-pressed="true"]').length===2),'2: um redesenho geral depois de marcar não troca a lista');
   await V.setViewportSize({width:1366,height:820});await V.evaluate(()=>window.scrollTo(0,0));
@@ -81,18 +135,19 @@ try{
   ok(await V.evaluate(C=>document.querySelector('#bf-lista .bf-mk[data-card="'+C.A+'"] .bf-marca').getAttribute('aria-pressed')==='true',C),'3: de volta a Todos, a A continua marcada');
   // ---------- 9: mensagens que o Checkout recusa sem mudar nada ----------
   const tab=await L.evaluate(()=>ETERNA.ecoTab());const id12=n=>('recusa'+String(n).padStart(6,'0'));
-  const manda=async(m)=>{const n0=await V.evaluate(()=>window.__msgs.length);await V.evaluate(m=>window.__ch.postMessage(m),m);await V.waitForTimeout(350);
+  const manda=async(m)=>{const n0=await V.evaluate(()=>window.__msgs.length);await V.evaluate(m=>window.__ch.postMessage(m),m);
+    if(!await espera(L,id=>window.__msgs.some(s=>{try{const q=JSON.parse(s);return q.tipo==='abriu'&&q.id===id;}catch(e){return false;}}),m.semResposta?700:4000,m.id))await V.waitForTimeout(50); // sem resposta esperada: só o prazo curto
     const resp=(await L.evaluate(()=>window.__msgs.slice())).map(s=>JSON.parse(s)).filter(q=>q.tipo==='abriu'&&q.id===m.id);const k=await quiosque(L);return {resp:resp[resp.length-1]||null,parado:k.step==='code'&&!k.cards&&!k.code};};
   {const base=n=>({tipo:'abrir',id:id12(n),para:tab,cards:[C.A,C.C],origem:'procurar',em:Date.now()});const R={};
-    R.semId=await manda(Object.assign(base(1),{id:'curto'}));R.nove=await manda(Object.assign(base(2),{cards:['LPX00001','LPX00002','LPX00003','LPX00004','LPX00005','LPX00006','LPX00007','LPX00008','LPX00009']}));
-    R.velha=await manda(Object.assign(base(3),{em:Date.now()-11000}));R.outra=await manda(Object.assign(base(4),{para:'zzzzzzzz'}));R.menor=await manda(Object.assign(base(5),{cards:[C.A,C.MENOR]}));
+    R.semId=await manda(Object.assign(base(1),{id:'curto',semResposta:1}));R.nove=await manda(Object.assign(base(2),{cards:['LPX00001','LPX00002','LPX00003','LPX00004','LPX00005','LPX00006','LPX00007','LPX00008','LPX00009']}));
+    R.velha=await manda(Object.assign(base(3),{em:Date.now()-4500}));/* entre a validade (4 s) e a espera do vendedor (6 s): não abre */R.outra=await manda(Object.assign(base(4),{para:'zzzzzzzz',semResposta:1}));R.menor=await manda(Object.assign(base(5),{cards:[C.A,C.MENOR]}));
     R.minusc=await manda(Object.assign(base(6),{cards:['lppva0001']}));R.origem=await manda(Object.assign(base(7),{origem:'outra'}));R.repete=await manda(Object.assign(base(8),{cards:[C.A,C.A]}));R.vazia=await manda(Object.assign(base(9),{cards:[]}));
     R.paga=await manda(Object.assign(base(10),{cards:[C.A,C.PAGA]}));R.pedido=await manda(Object.assign(base(11),{cards:[C.PEDIDO]}));R.semSessao=await manda(Object.assign(base(12),{cards:['LPNAOEXISTE']}));R.texto=await manda(Object.assign(base(13),{cards:'LPPVA0001'}));
     await L.evaluate(()=>{ETERNA.state.kiosk.camOn=true;});R.camera=await manda(base(14));await L.evaluate(()=>{ETERNA.state.kiosk.camOn=false;});
     ok(R.camera.resp&&R.camera.resp.ok===false&&R.camera.resp.motivo==='ocupado','9: com a câmera ligada (cliente no meio da selfie) o Checkout responde ocupado: '+J(R.camera.resp));
     ok(Object.values(R).every(r=>r.parado),'9: nenhuma mensagem recusada muda o Checkout: '+J(R));
     ok(R.semId.resp===null&&R.outra.resp===null,'9: sem id válido ou para outra janela, o Checkout nem responde');
-    ok(['nove','velha','minusc','origem','repete','vazia','texto'].every(k=>R[k].resp&&R[k].resp.ok===false&&R[k].resp.motivo==='invalido'),'9: 9 sessões, mais de 10 s, formato errado: invalido: '+J(R));
+    ok(['nove','velha','minusc','origem','repete','vazia','texto'].every(k=>R[k].resp&&R[k].resp.ok===false&&R[k].resp.motivo==='invalido'),'9: 9 sessões, mais de 4 s (a validade), formato errado: invalido: '+J(R));
     ok(R.menor.resp&&R.menor.resp.motivo==='protegida'&&R.paga.resp.motivo==='paga'&&R.pedido.resp.motivo==='pedido'&&R.semSessao.resp.motivo==='carregando','9: menor, paga, com pedido e desconhecida: tudo ou nada, com o motivo: '+J([R.menor.resp,R.paga.resp,R.pedido.resp,R.semSessao.resp]));
     ok(Object.values(R).every(r=>!r.resp||J(Object.keys(r.resp).sort())===J(['id','motivo','ok','tipo'])),'9: a resposta leva só tipo, id, ok e motivo');}
   // ---------- 5 e 6: Iniciar abre só as marcadas, unidas e inteiras ----------
@@ -144,13 +199,15 @@ try{
   await L.close();ok(await espera(V,()=>{const e=ETERNA.state.eco;return !e||e.fim||!e.m;},8000),'8: o vendedor percebe que o Checkout fechou');
   await marca(V,C.B);await marca(V,C.D);await toque(V,'#bf-barra [data-act="bf-vender"]');await V.waitForTimeout(300);
   ok(/Abra o Checkout/.test(await aviso(V))&&await V.evaluate(()=>ETERNA.state.view==='procurar'&&ETERNA.state.procurar.sel.length===2),'8: sem Checkout e com 2 sessões, o aviso pede para abrir o Checkout: '+await aviso(V));
+  await V.evaluate(()=>{ETERNA.state.posto.cortesia=true;}); // revisão 3: a Cortesia tinha ficado ligada no Posto
   await toque(V,'#bf-barra .bf-bmini[data-card="'+C.B+'"]');await toque(V,'#bf-barra [data-act="bf-vender"]');await V.waitForTimeout(500);
-  {const r=await V.evaluate(()=>({view:ETERNA.state.view,ses:ETERNA.state.checkout.session,step:ETERNA.state.checkout.step,manual:!!ETERNA.state.posto.manual,sel:ETERNA.state.procurar.sel.length}));
-    ok(r.view==='posto'&&r.ses===C.D&&r.step===2&&r.manual&&r.sel===0,'8: sem Checkout e com 1 sessão, abre a Venda manual nela: '+J(r));}
+  {const r=await V.evaluate(c=>({view:ETERNA.state.view,ses:ETERNA.state.checkout.session,step:ETERNA.state.checkout.step,manual:!!ETERNA.state.posto.manual,sel:ETERNA.state.procurar.sel.length,cort:!!ETERNA.state.posto.cortesia,cart:(ETERNA.simOf(c).cart||[]).map(x=>x.id)}),C.D);
+    ok(r.view==='posto'&&r.ses===C.D&&r.step===2&&r.manual&&r.sel===0,'8: sem Checkout e com 1 sessão, abre a Venda manual nela: '+J(r));
+    ok(r.cort===false&&!r.cart.includes('cort_sac'),'revisão 3: a venda aberta pelo Procurar fotos nunca nasce como Cortesia: '+J(r));}
   // ---------- textos nas 5 línguas ----------
-  {const fs=require('fs');const dic=fs.readFileSync(require('path').join(__dirname,'..','index.html'),'utf8').split('\n').filter(l=>/^  bf_(marcar|marcada|desmarcar|n_marcadas|vender_n|vender_uma|limpar|inteiras|abra_ck|ck_ocupado|ck_abriu|ck_sem_resposta|aberta_espera|max|protegida|rec_[a-z]+):\[/.test(l));
+  {const fs=require('fs');const dic=fs.readFileSync(require('path').join(__dirname,'..','index.html'),'utf8').split('\n').filter(l=>/^  bf_(marcar|marcada|desmarcar|n_marcadas|vender_n|vender_uma|limpar|inteiras|abra_ck|ck_ocupado|ck_abriu|ck_sem_resposta|aberta_espera|max|protegida|inv|rec_[a-z]+):\[/.test(l));
     const sessPausaTxt=()=>'3 min';const val=dic.map(l=>{const m=/^  (bf_[a-z_]+):(\[.*\]),\s*$/.exec(l);return m&&[m[1],new Function('sessPausaTxt','return '+m[2])(sessPausaTxt).map(t=>typeof t==='function'?t(2):t)];});
-    ok(val.length===21&&val.every(d=>d&&d[1].length===5&&d[1].every(t=>typeof t==='string'&&t.trim()&&!/—|–|undefined/.test(t))),'21 textos novos nas 5 línguas, sem travessão: '+val.length);}
+    ok(val.length===22&&val.every(d=>d&&d[1].length===5&&d[1].every(t=>typeof t==='string'&&t.trim()&&!/—|–|undefined/.test(t))),'22 textos novos nas 5 línguas, sem travessão: '+val.length);}
   ok(!errs.flat().length,'erros de página: '+errs.flat().join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}

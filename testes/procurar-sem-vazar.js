@@ -87,6 +87,32 @@ try{
   {const y=await contexto(b);errs.push(y.errs);const pg=await y.pagina('perfil-checkout');await entrar(pg,QUIOSQUE);await pg.waitForTimeout(600);await chegou(pg);
     const r=await pg.evaluate(c=>{ETERNA.go('procurar');ETERNA.bfMarca(c);return {bf:!!document.querySelector('#bf,#bf-barra,.bf-card,.bf-marca'),pode:ETERNA.bfPodeVender(),view:ETERNA.state.view,sel:ETERNA.state.procurar.sel.length,g:ETERNA.state.user?ETERNA.guardAct('bf-vender'):false};},C.A);
     ok(!r.bf&&r.pode===false&&r.view!=='procurar'&&r.sel===0&&r.g===false,'19: no perfil Checkout, a tela não desenha e bfPodeVender() é falso: '+J(r));await y.ctx.close();}
+  // ---------- depois de aberto: mensagens de outra aba, visita juntada e "Adicionar outra pessoa" ----------
+  {const y=await dupla(b);errs.push(y.errs);const V=y.V,L=y.L;ok(await procurar(V),'lista do vendedor (segunda parte)');
+    const audit=()=>V.evaluate(()=>ETERNA.auditRead().filter(e=>e.acao==='procurar_vender').length);const a0=await audit();
+    await V.evaluate(()=>{window.__avisos=[];new MutationObserver(()=>{window.__avisos.push(document.querySelector('#toast').textContent);}).observe(document.querySelector('#toast'),{childList:true,characterData:true,subtree:true});});
+    await marca(V,C.D);const tab=await L.evaluate(()=>ETERNA.ecoTab());
+    // "abriu ok" que não responde a pedido desta janela (vindo de uma aba sem pessoa conectada)
+    await L.evaluate(()=>{window.__ch.postMessage({tipo:'abriu',id:'zzzzzzzzzzzz',ok:true,motivo:null});window.__ch.postMessage({tipo:'abriu',ok:true});});await V.waitForTimeout(500);
+    ok(await audit()===a0&&await V.evaluate(c=>ETERNA.state.procurar.sel.join()===c,C.D)&&!(await V.evaluate(()=>window.__avisos)).some(t=>/Aberto no Checkout/.test(t)),'resposta que não é de um pedido do vendedor: sem auditoria, sem aviso, seleção intacta');
+    // "abrir" vindo de uma aba sem pessoa conectada: o Checkout só usa os códigos (campos a mais são ignorados) e segue as mesmas recusas; no vendedor nada é registrado
+    const forja=async m=>{await L.evaluate(m=>window.__ch.postMessage(m),m);await L.waitForTimeout(400);return quiosque(L);};
+    {const k=await forja({tipo:'abrir',id:'forjado00001',para:tab,cards:[C.B,C.MENOR],origem:'procurar',em:Date.now()});ok(k.step==='code'&&!k.cards,'pedido de outra aba com sessão de menor: recusado');}
+    {const k=await forja({tipo:'abrir',id:'forjado00002',para:tab,cards:[C.B],origem:'procurar',em:Date.now(),nivel:'pode_ser',sim:.31,busca:'b123',outras:[C.A,C.C],lista:[C.A,C.C,C.D]});const kt=await kioskTxt(L);const r=await limpo(L);
+      ok(k.cards&&k.cards.join()===C.B&&k.fotos.length===F.B.length&&![C.A,C.C,C.D].some(c=>kt.includes(c)||r.html.includes(c))&&!/pode_ser|"nivel"|b123/.test(kt+r.html),'pedido de outra aba com campos a mais: o Checkout usa só os códigos da lista "cards": '+J(k.cards));
+      ok(await audit()===a0&&!(await V.evaluate(()=>window.__avisos)).some(t=>/Aberto no Checkout/.test(t)),'e o vendedor não ganha auditoria nem aviso por um pedido que não fez');}
+    await L.evaluate(()=>{ETERNA.lojaReset();ETERNA.render();});ok(await espera(V,()=>{const e=ETERNA.state.eco;return e&&e.m&&e.m.step==='code'&&Date.now()-e.at<3000;},9000),'Checkout de volta ao início');
+    // venda de verdade com a D; depois uma visita junta a D à B (não marcada)
+    await toque(V,'#bf-barra [data-act="bf-vender"]');ok(await espera(L,c=>['gallery','review'].includes(ETERNA.state.kiosk.step)&&!!ETERNA.state.kiosk.so&&ETERNA.state.kiosk.so.cards.join()===c,8000,C.D),'o Checkout abre a D');
+    await V.evaluate(C=>{ETERNA.simFresh();ETERNA.SIM.visitas={rev:2,levas:{[C.D]:[C.D,C.B],[C.B]:[C.D,C.B]}};ETERNA.saveSim();},C);
+    ok(await espera(L,C=>ETERNA.visitaDe(C.D).join()===[C.D,C.B].join(),8000,C),'a visita que junta D e B chegou ao Checkout');await L.waitForTimeout(5600);
+    {const k=await quiosque(L);const r=await limpo(L);ok(k.cards.join()===C.D&&k.fotos.every(f=>F.D.includes(f.slice(3)))&&!r.html.includes(C.B)&&!F.B.some(f=>r.html.includes(f)),'visita juntada depois de aberto não puxa a sessão não marcada: '+J(k.cards));}
+    // "Adicionar outra pessoa": a selfie dela acha 2 fotos da B; entram só essas 2 (regra de hoje), nunca a sessão inteira
+    {const k=await L.evaluate(([C,ids])=>{const k=ETERNA.state.kiosk;k.mais={so:k.so,i:k.i||0,ver:k.ver||0};ETERNA.lojaJuntar([{card:C.B,fotos:ids,sc:.8,pri:2}],[],{});return {cards:k.so.cards.slice().sort(),origem:k.so.origem||null,fotos:ETERNA.lojaItems(k.code).filter(x=>x.t==='ph').map(x=>x.id),tv:!!k.tv,step:k.step};},[C,F.B.slice(0,2).map(f=>'ag_'+f)]);
+      const daB=k.fotos.filter(f=>F.B.includes(f.slice(3)));
+      ok(k.cards.join()===[C.B,C.D].sort().join()&&daB.length===2&&k.fotos.length===F.D.length+2&&k.origem==='procurar'&&!k.tv,'Adicionar outra pessoa: da sessão não marcada entram só as 2 fotos da selfie; a origem da venda fica: '+J({c:k.cards,b:daB.length,n:k.fotos.length,o:k.origem}));
+      const r=await limpo(L);const kt=await kioskTxt(L);ok(!F.B.slice(2).some(f=>r.html.includes(f)||kt.includes(f)),'as outras fotos da sessão não marcada não aparecem no Checkout');}
+    ok((await L.evaluate(()=>window.__bf))===0,'14: nesta parte também, nada do Procurar fotos no DOM do cliente');await y.ctx.close();}
   ok(!errs.flat().length,'erros de página: '+errs.flat().join(' | '));
 }catch(e){fails.push('exceção: '+(e.stack||e));}
 finally{await b.close();}

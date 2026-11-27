@@ -2928,7 +2928,7 @@ Regra do produto (Eduardo, 26/11): a seleção de sessões é só do vendedor. O
 | `bfSessaoVenda(x)` | "Vender esta sessão" e Marcar na sessão aberta |
 | `bfMarca(card)` | marca ou desmarca sem `render()`; só aceita sessão do retrato da pessoa e em `livre`; teto `BF_SEL_MAX` (8) |
 | `bfBarra()`, `bfBarraUpd()` | barra `#bf-barra` (contador, miniaturas que desmarcam, aviso de sessões inteiras, Limpar, Iniciar venda) |
-| `bfEstUpd()` | a cada ciclo do servidor e a cada redesenho, troca só a caixa da sessão à vista cuja situação mudou |
+| `bfEstUpd()` | a cada ciclo do servidor e a cada redesenho, troca só o cartão (selo e caixa) da sessão à vista cuja situação mudou e atualiza a barra; roda dentro de `psComCache`, como o desenho da lista |
 | `bfVender(cards,origem)` | revalida, decide o caminho e devolve uma promessa com `true` ou `false` |
 
 A tela continua parada: o estado de cada caixa fica no retrato (`snap.est`), e tanto `bfMarca` quanto `bfEstUpd` refazem `BF_HTML` depois de mexer no DOM, para o próximo `render()` não trocar a lista. `carregando` não desliga a caixa (passa sozinho); é conferido no toque.
@@ -2938,14 +2938,15 @@ A seleção (`state.procurar.sel`) e o pedido em espera (`state.procurar.pedido`
 ### Caminho da venda
 
 1. `bfVender` revalida cada sessão com `bfEstado`. Uma fora de `livre` cancela tudo, com o motivo e o código no aviso.
-2. Sem Checkout aberto (`ecoOff()`): com uma sessão, `go('checkout')` e `checkoutPick`; com mais de uma, aviso `bf_abra_ck`.
+2. Sem Checkout aberto (`ecoOff()`): com uma sessão, `state.posto.cortesia=false`, `go('checkout')` e `checkoutPick`; com mais de uma, aviso `bf_abra_ck`.
 3. Checkout fora da tela inicial (`state.eco.m.step!=='code'`): aviso `bf_ck_ocupado`.
-4. Senão, mensagem `abrir` pelo `BroadcastChannel` `eterna-loja`, endereçada à janela do Checkout que o Posto está ouvindo (`state.eco.m.tab`). Sem resposta em 6 s (`BF_ABRIR_MS`), aviso `bf_ck_sem_resposta`.
+4. Senão, mensagem `abrir` pelo `BroadcastChannel` `eterna-loja`, endereçada à janela do Checkout que o Posto está ouvindo (`state.eco.m.tab`). Sem resposta em 6 s (`BF_ABRIR_MS`), aviso `bf_ck_sem_resposta`. O pedido fica guardado por 1 min em `BF_PED` (por `id`): se o `abriu` com `ok` chegar depois do prazo, ou com o vendedor já em outra tela, a auditoria é gravada do mesmo jeito (uma vez, com quem pediu), a seleção é limpa e o aviso vira `bf_ck_abriu`.
+   Janela do vendedor recém-aberta, que ainda não ouviu o Checkout: `bfVender` espera o primeiro anúncio por até 5,5 s desde a carga (`BF_ECO_MS`) antes de decidir que não há Checkout.
 5. Com `ok`, `auditLog('procurar_vender', ...)`, as sessões vendidas saem da seleção e o aviso é `bf_ck_abriu`.
 
 ### Janela do Checkout
 
-`ECO_CH.onmessage` trata `abrir` só com `state.lojaRota` e `abriu` só fora dela, antes do `ecoNorm`. `lojaAbrirMsg(q)` ignora mensagem para outra janela (`q.para!==ECO_TAB`) ou sem `id` válido, e responde `invalido` para lista fora de 1 a 8 códigos `^[A-Z0-9]{4,20}$`, código repetido, origem fora de `BF_ORIGENS` ou mensagem com mais de 10 s (`BF_ABRIR_VALE`). `lojaAbrirPedido(q)`:
+`ECO_CH.onmessage` trata `abrir` só com `state.lojaRota` e `abriu` só fora dela, antes do `ecoNorm`. `lojaAbrirMsg(q)` ignora mensagem para outra janela (`q.para!==ECO_TAB`) ou sem `id` válido, e responde `invalido` para lista fora de 1 a 8 códigos `^[A-Z0-9]{4,20}$`, código repetido, origem fora de `BF_ORIGENS` ou mensagem com mais de 4 s (`BF_ABRIR_VALE`, menor que a espera do vendedor). `lojaAbrirPedido(q)`:
 
 - `ocupado` se `k.code`, `k.step!=='code'`, `k.mais` ou `k.camOn` (cliente no meio da selfie);
 - `simFresh()` e, por sessão, `protegida` (`lojaSesProtegida`), `paga`, `pedido` ou `carregando` (`psEstado`);
@@ -2956,7 +2957,7 @@ A resposta `abriu` leva só `id`, `ok` e `motivo`. O Checkout abre na foto ampli
 
 ### Número da sessão
 
-Para a equipe, a barra das marcadas mostra o número da sessão com `sessCodHtml(card)`, e os avisos usam `sessRot(card)`. A auditoria grava `sessId(card)` com o LP entre parênteses (só o LP quando a sessão não tem número). A mensagem do canal, o pedido e o evento seguem levando só o `card`.
+Para a equipe, a barra das marcadas mostra a miniatura e `sessRot(card)` (em tela estreita, uma linha com rolagem lateral), e os avisos dizem "Sessão 147" (`sessRot`). A marcada que deixou de poder entrar (vendida, com pedido) fica riscada na barra (`p.inv`, `bfInvUpd`). A auditoria grava `sessId(card)` com o LP entre parênteses (só o LP quando a sessão não tem número). A mensagem do canal, o pedido e o evento seguem levando só o `card`.
 
 ### Dado da venda
 

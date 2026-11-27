@@ -26,7 +26,7 @@ Fora do escopo: mudar a selfie do cliente, mudar os limites do Checkout, fechar 
 - Sessão de menor ou de escola nunca entra por aqui. Ela continua na lista do vendedor, com a caixa desligada.
 - Checkout com a câmera ligada (cliente no meio da selfie) conta como ocupado.
 - A sessão que não é a âncora de uma venda unida aparece como vendida quando o servidor devolve as vendas do dia.
-- Na tela do vendedor, as sessões marcadas aparecem com o número da sessão (`sessCodHtml`, `sessRot`); o canal e o evento levam só o código LP.
+- Na tela do vendedor, as sessões marcadas aparecem com o número da sessão (`sessRot`); o canal e o evento levam só o código LP.
 
 ## Onde cada passo acontece
 
@@ -58,7 +58,7 @@ O que mantém a seleção só com o vendedor:
 - `bfMarca(card)` não chama `render()`: troca só o botão e a barra, e a lista fica como estava. `bfEstUpd` troca só a caixa de uma sessão à vista quando a situação dela muda (fechou, foi vendida).
 - A seleção sobrevive a filtro e a Atualizar; zera ao sair da tela, ao sair da conta e ao trocar de pessoa.
 - `bfVender(cards, origem)`: revalida cada sessão; sem Checkout aberto, uma sessão segue pela Venda manual do Posto e mais de uma pede para abrir o Checkout; com cliente no Checkout, avisa; senão manda o pedido pelo canal e espera a resposta por 6 s.
-- `lojaAbrirMsg` e `lojaAbrirPedido` (janela do Checkout): conferem formato, destinatário, idade da mensagem (10 s) e cada sessão; abrem com `lojaAbrirSo` sem `base`; gravam só `so.origem`.
+- `lojaAbrirMsg` e `lojaAbrirPedido` (janela do Checkout): conferem formato, destinatário, idade da mensagem (4 s, menor que a espera de 6 s do vendedor) e cada sessão; abrem com `lojaAbrirSo` sem `base`; gravam só `so.origem`.
 - `lojaPedido` grava `origem` no pedido e `pvDados` repassa ao evento `criar`.
 - `bf-vender` e `bf-vender-uma` em `WRITE_OPS` (Criar) e `ACT_MOD` (Posto de venda).
 - Textos `bf_*` no `EQ`, nas 5 línguas. Nenhum texto novo para o cliente.
@@ -90,6 +90,16 @@ Auditoria: `auditLog('procurar_vender','sessoes/<âncora>',[{campo:'sessoes',de:
 - `testes/procurar-sem-vazar.js`: vendedor e Checkout em duas páginas do mesmo navegador; confere o DOM e o estado do Checkout, o canal, o `localStorage` e o `sessionStorage` do início ao fim.
 - `testes/procurar_origem_agente.py`: lista de origens, `por_origem` e `vendas_do_dia`.
 - Apoio: `testes/_procurar_vender.js` (agente falso, sessões e cadastros de teste).
+
+## Ajustes da revisão de código (26/11)
+
+- A mensagem ao Checkout vale 4 s e o vendedor espera 6 s. Resposta que chega depois do prazo, ou com o vendedor já em outra tela, ainda grava a auditoria e limpa a seleção.
+- Sem Checkout aberto, a venda de uma sessão nunca nasce como Cortesia.
+- Caixa Marcar com 44 px. Barra das marcadas só com miniatura e número; em tela estreita, uma linha com rolagem lateral.
+- Vendedor recém-recarregado espera o Checkout se anunciar (até 5,5 s) antes de cair na Venda manual.
+- O selo do cartão acompanha a sessão que fecha ou é vendida; a marcada que não pode mais entrar fica riscada na barra.
+- Avisos com "Sessão 147".
+- Agente: `_ev_origem(d)` no lugar da expressão repetida.
 
 ## O que ficou para depois
 

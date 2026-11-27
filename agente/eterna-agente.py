@@ -9653,7 +9653,7 @@ def vendas_do_dia(posto=None, agora=None):
                      cart=[{"id": x.get("id")} for x in (d.get("cart") or []) if isinstance(x, dict)][:40],
                      selected=[str(p)[:60] for p in (d.get("selected") or [])][:200], aiSel=[str(p)[:80] for p in (d.get("aiSel") or [])][:40],
                      sessoes=[str(c)[:20] for c in (d.get("sessoes") or [])][:20],
-                     origem=d.get("origem") if isinstance(d.get("origem"), str) and d.get("origem") in EV_ORIGENS else None,
+                     origem=_ev_origem(d),
                      galeria=({"token": str(g.get("token") or "")[:40], "codigo": str(g.get("codigo") or "")[:20]}
                               if isinstance(g, dict) and g.get("token") else
                               ({"token": str(d["token"])[:40], "codigo": str(d.get("codigo") or "")[:20]} if d.get("token") else None)))
@@ -13315,6 +13315,14 @@ EV_LANGS = ("pt", "en", "es", "fr", "de", "it", "zh")   # 24/11: italiano e chin
 EV_CANAIS = ("checkout", "balcao")
 # 26/11: de onde a venda partiu quando o vendedor achou as sessões no Procurar fotos (plano docs/planos/2026-11-26-procurar-vender.md)
 EV_ORIGENS = ("procurar", "procurar_selfie")
+
+
+def _ev_origem(d):
+    """Origem da VENDA (dados do evento "criar"): só valor de EV_ORIGENS, senão None. Não confundir com o por_origem das
+    selfies (selfies_dia), que conta buscas por rosto por onde foram feitas; este é de onde a venda partiu."""
+    o = d.get("origem") if isinstance(d, dict) else None
+    return o if isinstance(o, str) and o in EV_ORIGENS else None
+
 EV_CART_MAX = 30
 _re_cart_id = re.compile(r"^[a-z0-9_-]{1,20}$")
 
@@ -13394,7 +13402,7 @@ def _ev_limpo(e):
     em = txt(e.get("em"), 30) or _iso()
     dd.update(cart=_ev_cart(d.get("cart")), lang=d.get("lang") if d.get("lang") in EV_LANGS else None,
               canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em),
-              origem=d.get("origem") if isinstance(d.get("origem"), str) and d.get("origem") in EV_ORIGENS else None)
+              origem=_ev_origem(d))
     if dd.get("vendedor") in CHAVES_PROIBIDAS:
         dd["vendedor"] = None
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
@@ -15189,7 +15197,7 @@ def met_v2(dia, ss, evs):
         g = out["por_canal"].setdefault(canal, {"vendas": 0, "faturamento": 0.0})
         g["vendas"] += 1
         g["faturamento"] = round(g["faturamento"] + tot, 2)
-        origem = c.get("origem") if isinstance(c.get("origem"), str) and c.get("origem") in EV_ORIGENS else "sem_origem"
+        origem = _ev_origem(c) or "sem_origem"
         g = out["por_origem"].setdefault(origem, {"vendas": 0, "faturamento": 0.0})   # 26/11: venda aberta pelo Procurar fotos
         g["vendas"] += 1
         g["faturamento"] = round(g["faturamento"] + tot, 2)

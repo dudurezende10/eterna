@@ -7,7 +7,10 @@ const JPG=fs.readFileSync(path.join(__dirname,'..','img','ativ-snap.jpg'));
 const dia=t=>{const d=new Date(t*1000);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
 const AGORA=Date.now()/1000;const hoje=dia(AGORA);
 const fotos=(p,n)=>Array.from({length:n},(_,i)=>p+String(i+1).padStart(8,'0'));
-function sessao(o){const t=AGORA-(o.min||5)*60;return Object.assign({card:o.card,dia:hoje,fotografo:'samuel',fonte:'ftp',ponto:null,trilha:'vivo',atrasada:false,status:'fechada',motivo:'pausa',
+// As sessões são sempre de hoje: perto da meia-noite os minutos encolhem para caber no dia (nenhuma hora cai em ontem).
+const MEIA=new Date(new Date(AGORA*1000).setHours(0,0,0,0)).getTime()/1000;const VAO=Math.max(1,Math.min(20*60,AGORA-MEIA-120));const naoOntem=v=>typeof v==='number'?Math.max(v,MEIA+1):v;
+function sessao(o){const t=AGORA-((o.min||5)/20)*VAO;const r=sessao0(o,t);['aberta_em','cap0','cap1','ultima_chegada'].forEach(k=>{r[k]=naoOntem(r[k]);});return r;}
+function sessao0(o,t){return Object.assign({card:o.card,dia:hoje,fotografo:'samuel',fonte:'ftp',ponto:null,trilha:'vivo',atrasada:false,status:'fechada',motivo:'pausa',
   aberta_em:t-50,ultima_chegada:t,cap0:t-45,cap1:t-2,fonte_t:'cap',fechada_em:t+60,fechada_por:'pausa',fotos:[],pend:[],dec:{},ia:[],sim_abertura:null,fundida_em:null,removida:false,rev:1},o);}
 // A, B, C e D livres; as outras, cada uma num estado que desliga a caixa
 const C={A:'LPPVA0001',B:'LPPVB0002',C:'LPPVC0003',D:'LPPVD0004',ABERTA:'LPPVABERT',PAGA:'LPPVPAGA1',PEDIDO:'LPPVPEDI1',FORA:'LPPVFORA1',MENOR:'LPPVMENOR'};
