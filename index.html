@@ -14769,6 +14769,10 @@ const REL={bandeiras:relBandeiras,painel:relPainel,estatisticas:relEstatisticas,
 const escalaOn=()=>ESCALA_ON; // para os testes saberem com que chave a página veio
 
 const VIEWFN={'ia-auto':vIaAuto,minhasenha:vMinhaSenha,estatisticas:()=>esDicas(vEstatisticas()),calendario:vCalendario,perfis:vPerfis,entrar:vEntrar,semacesso:vSemAcesso,usuarios:vUsuarios,permissoes:vPermissoes,identidade:vIdentidade,ajustes:vAjustes,diario:vDiario,checkout:()=>vPosto({filtro:'todos'}),'vendas-lista':vVendasLista,'ativ-resumo':vAtivResumo,'ativ-venda':vAtivVenda,'ativ-entrega':vAtivEntrega,importar:vImportar,repo:vRepo,fila:()=>vPosto({filtro:'todos'}),caixa:()=>vPosto({filtro:'dinheiro'}),posto:()=>vPosto({filtro:'todos'}),quiosque:vQuiosque,galerias:vGalerias,revisao:vRevisao,painel:vPainel,fotografos:vFotografos,vendas:vVendas,chroma:vChroma,vestiario:vVestiario,'chute-a-gol':vChuteAGol,'fundos-teste':vFundosTeste,escala:vEscala,catalogo:vCatalogo,estoque:vEstoque,impfila:vImpFila,fotofila:vFotoFila,bandeiras:vBandeiras,treino:vTreino,alertas:vAlertas};
+const LJ_ROL=['.lj-grid','.lj-strip','.lj-heroin'],ljRol={k:''};
+function ljRolGuarda(){const m=$('#main');if(!m)return null;return LJ_ROL.map(q=>[...m.querySelectorAll(q)].map(e=>[e.scrollTop,e.scrollLeft]));}
+function ljRolVolta(r){const m=$('#main');if(!m||!r)return;LJ_ROL.forEach((q,i)=>[...m.querySelectorAll(q)].forEach((e,j)=>{const v=r[i][j];if(!v||(!v[0]&&!v[1]))return;
+  e.style.scrollBehavior='auto';e.scrollTop=v[0];e.scrollLeft=v[1];e.style.scrollBehavior='';}));}
 function render(){
   if(state.lojaRota)ljMemVolta();
   document.documentElement.lang=localeTela();
@@ -14784,6 +14788,9 @@ function render(){
     {const k=state.kiosk;if(k.step==='code'){if(!k.codeDesde)k.codeDesde=Date.now();}else k.codeDesde=0;} // v96: desde quando a tela inicial está parada (valLivre)
     const askAnt=document.activeElement&&document.activeElement.closest&&document.activeElement.closest('.lj-ask')?document.activeElement.dataset.act:null;
     // 17/11: a barra das escolhidas do mesmo atendimento (mesmo código e mesmo t0) atravessa o redesenho: mesmos nós, sem piscar, com a rolagem e o foco
+    // 27/11 (Ronaldo: "ao marcar uma foto o scroll volta lá pra cima"): a grade (.lj-grid), a faixa (.lj-strip) e o miolo (.lj-heroin) rolam
+    // por dentro e o redesenho trocava os nós com a rolagem em zero. Na mesma etapa e no mesmo atendimento, a rolagem volta onde estava.
+    const rolK=state.kiosk.step+'|'+(state.kiosk.code||'')+'|'+(state.kiosk.t0||''),rolAnt=ljRolGuarda();
     const escAnt=document.getElementById('lj-esc');const escL=escAnt&&escAnt.querySelector('.lj-esc-l');const escRol=escL?[escL.scrollTop,escL.scrollLeft]:null;const escFoco=escAnt&&escAnt.contains(document.activeElement)?document.activeElement:null;
     try{DS_CACHE.on=true;try{$('#main').innerHTML=vQuiosque()+lojaEquipe();legLegenda($('#main'));}finally{DS_CACHE.on=false;DS_CACHE.v=DS_CACHE.m=DS_CACHE.vend=DS_CACHE.ia=null;}}catch(err){console.error(err);$('#main').innerHTML=`<div class="panel"><h2>Algo falhou nesta tela</h2><div class="note">${esc(err.message)}</div></div>`;}
     if(location.hash!=='#loja')history.replaceState(null,'','#loja');
@@ -14791,6 +14798,7 @@ function render(){
     {const nv=document.getElementById('lj-esc');if(nv&&escAnt&&nv!==escAnt&&escAnt.dataset.card===nv.dataset.card&&escAnt.dataset.t0===nv.dataset.t0){nv.replaceWith(escAnt);
       if(escL){escL.style.scrollBehavior='auto';escL.scrollTop=escRol[0];escL.scrollLeft=escRol[1];escL.style.scrollBehavior='';}if(escFoco&&escFoco.isConnected)escFoco.focus({preventScroll:true});}
       ljEscUpd();} // reconcilia sempre com as escolhidas de agora (outro cliente nunca vê a barra do anterior)
+    if(ljRol.k===rolK)ljRolVolta(rolAnt);ljRol.k=rolK;
     camMount();if(state.guest.selfie)selfieStop();compHydrate();lojaEco();lojaAskFoco(askAnt);return;}
   document.body.removeAttribute('data-loja');lojaTimerOff();
   if(!VENDA_VIEWS.includes(state.view))document.body.classList.remove('pr-on'); // v83: impressão 10×15 só vale na tela de venda
