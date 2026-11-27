@@ -15884,7 +15884,7 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
         cs = {sess.get(rows[k][0]) for k in g["m"]} - {None}
         ts = [t for t in ((tempos or {}).get(p) for p in g["pids"]) if t]
         longe = (max(ts) - min(ts) >= PESSOA_EQUIPE_HORAS * 3600) if ts else tempos is None
-        out.append({"pids": g["pids"], "cards": cs, "maior": max(larg[k] for k in g["m"]), "rep": (rows[r0][0], M[r0]),
+        out.append({"pids": g["pids"], "m": list(g["m"]), "cards": cs, "maior": max(larg[k] for k in g["m"]), "rep": (rows[r0][0], M[r0]),
                     "equipe": len(cs) >= PESSOA_EQUIPE and longe})
     out.sort(key=lambda p: -p["maior"])
     return out, sem_id
@@ -15959,7 +15959,7 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
-PESSOAS_V = 4
+PESSOAS_V = 5
 
 
 def _contagens_base():
@@ -16077,10 +16077,8 @@ def pessoas_loop():
     faltava foto); ontem uma vez, se o HD ainda não tem a conta v3 (26/11: "reconta o de ontem")."""
     while True:
         time.sleep(60)
-        hoje, ontem = _ff_hoje(), _ff_hoje(time.time() - 86400)
-        fazer = []
-        if not pessoas_disco_ler(ontem):
-            fazer.append((ontem, False))
+        hoje = _ff_hoje()
+        fazer = [(d, False) for d in (_ff_hoje(time.time() - 86400), _ff_hoje(time.time() - 2 * 86400)) if not pessoas_disco_ler(d)]
         if time.localtime().tm_hour >= PESSOAS_HORA and _pessoas_hoje_refazer(hoje):
             fazer.append((hoje, True))
         if not fazer or not _pessoas_lock.acquire(blocking=False):
@@ -16167,6 +16165,75 @@ def _pessoas_auditoria(dia, rows, P, sess):
             "maiores_clientes_fotos": maiores, "equipe": eq}
 
 
+# 27/11 (Ronaldo: "de 1.200 visitantes só fotografamos 396 pessoas em 5 mil fotos?"): em 26/11 foram 413 sessões e 396 pessoas.
+# Só rosto frontal e nítido cria pessoa, então na foto da família de 4 em que só um rosto passava no filtro contava 1. Agora a conta
+# é por visita: sessões ligadas pelo mesmo cliente reconhecido ou pela mesma venda são uma visita (a família fotografada em vários
+# pontos do tour). Cada visita tem pelo menos tantas pessoas quanto o maior número de rostos juntos numa foto dela (rosto com
+# PESSOA_JUNTO_RAZAO da largura do maior da foto e PESSOA_JUNTO_MIN px; quem está ao fundo, na fila, não conta; rosto da equipe
+# não conta) e pelo menos 1 (sessão só de costas). O que passa dos clientes reconhecidos na visita soma na conta.
+PESSOA_JUNTO_RAZAO = 0.4
+PESSOA_JUNTO_MIN = 24
+
+
+def _pessoas_visitas(dia, rows, P, sess):
+    """-> (pessoas a somar além dos clientes reconhecidos, visitas, sessões)."""
+    cards = set(sess.values())
+    pai = {c: c for c in cards}
+
+    def raiz(c):
+        while pai[c] != c:
+            pai[c] = pai[pai[c]]
+            c = pai[c]
+        return c
+
+    def junta(cs):
+        cs = [c for c in cs if c in pai]
+        for c in cs[1:]:
+            a, b = raiz(cs[0]), raiz(c)
+            if a != b:
+                pai[b] = a
+    cli = [p for p in P if not p["equipe"]]
+    for p in cli:
+        junta(sorted(p["cards"]))
+    V = {}
+    try:
+        for e in _ev_ler(dia):
+            if e["tipo"] == "criar":
+                d = e["dados"] or {}
+                V.setdefault(e["venda"], set()).update(x for x in [d.get("card")] + list(d.get("sessoes") or []) if isinstance(x, str) and x)
+    except Exception:
+        pass
+    for cs in V.values():
+        junta(sorted(cs))
+    eq = set()
+    for p in P:
+        if p["equipe"]:
+            eq.update(p["m"])
+    por_foto = {}
+    for i, r in enumerate(rows):
+        if i not in eq:
+            por_foto.setdefault(r[0], []).append(float(r[1] or 0))
+    n_card = {c: 1 for c in cards}
+    for pid, ls in por_foto.items():
+        c = sess.get(pid)
+        if c is None:
+            continue
+        mx = max(ls)
+        n = sum(1 for x in ls if x >= PESSOA_JUNTO_MIN and x >= PESSOA_JUNTO_RAZAO * mx)
+        n_card[c] = max(n_card[c], n)
+    vis_n, vis_cli = {}, {}
+    for c in cards:
+        r = raiz(c)
+        vis_n[r] = max(vis_n.get(r, 0), n_card[c])
+    for p in cli:
+        cs = [c for c in p["cards"] if c in pai]
+        if cs:
+            r = raiz(cs[0])
+            vis_cli[r] = vis_cli.get(r, 0) + 1
+    extra = sum(max(0, n - vis_cli.get(r, 0)) for r, n in vis_n.items())
+    return extra, len(vis_n), len(cards)
+
+
 def _pessoas_dia_calc(dia, forcar=False):
     """16/11 (Ronaldo: quantas pessoas abordamos?): quantas pessoas diferentes aparecem nas fotos do dia, agrupando os rostos
     lidos com o mesmo critério da busca por selfie (LIMITE). Só contagens: nenhuma imagem, rosto ou identificação sai daqui.
@@ -16182,12 +16249,13 @@ def _pessoas_dia_calc(dia, forcar=False):
     P, sem_id = _pessoas_agrupa(rows, np, boas, sess, _pessoas_tempos(rows)) if rows else ([], 0)
     aud = _pessoas_auditoria(dia, rows, P, sess)
     cli = [p for p in P if not p["equipe"]]
-    # 26/11 (Ronaldo: 166 pessoas para 524 sessões não fecha): só rosto frontal e nítido cria pessoa, então a sessão em que
-    # ninguém passou nesse filtro não contava ninguém. Cada sessão com rosto e sem cliente contado soma 1 pessoa (havia
-    # alguém ali). "pessoas_grupos" é a conta só pelos rostos, como antes.
+    # "pessoas_grupos" é a conta só pelos rostos reconhecidos; "pessoas" soma o que cada visita mostra a mais (_pessoas_visitas).
     sem_cli = aud["sessoes_sem_cliente"]
-    return {"v": 4, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli) + sem_cli,
-            "pessoas_grupos": len(cli), "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
+    extra, visitas, n_sess = _pessoas_visitas(dia, rows, P, sess)
+    aud.update(visitas=visitas, sessoes=n_sess, pessoas_nas_fotos=extra)
+    return {"v": 5, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli) + extra,
+            "pessoas_grupos": len(cli), "pessoas_nas_fotos": extra, "visitas": visitas, "sessoes": n_sess,
+            "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
             "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2),
             "auditoria": {k: aud[k] for k in ("situacao", "ressalvas", "fotos_do_dia", "fotos_sem_leitura", "sessoes_com_rosto",
@@ -16415,6 +16483,9 @@ def auditoria_dia(dia=None):
         G("Pessoas e visitantes")
         rp = (jp or {}).get("resultado") or {}
         L("Pessoas fotografadas", rp.get("pessoas", "—"), "conferido" if not pa.get("ressalvas") else "com ressalvas (abaixo)")
+        if rp.get("visitas") is not None:
+            L("Visitas fotografadas (sessões da mesma família juntas)", "%s, em %s sessões" % (rp["visitas"], rp.get("sessoes", "—")))
+            L("Reconhecidas pelo rosto / contadas pelos rostos juntos na foto", "%s / %s" % (rp.get("pessoas_grupos", "—"), rp.get("pessoas_nas_fotos", "—")))
         L("Sessões com rosto / com cliente contado", "%s / %s" % (pa.get("sessoes_com_rosto", "—"), pa.get("sessoes_com_cliente", "—")))
         if rp.get("equipe") is not None:
             L("Tratadas como equipe", rp["equipe"])
