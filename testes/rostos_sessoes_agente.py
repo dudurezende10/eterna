@@ -319,10 +319,10 @@ ok(selfies_bi() == [("checkout", 3)], "a contagem das selfies dos clientes (Esta
 m._janelas.clear()
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"a-e-b")}, cookie=vend)
 cs = {o["card"] for o in r.get("sessoes") or []}
-ok(st == 200 and r.get("varias") is True and r.get("rosto") is True and S_CERTA in cs and S_B not in cs, "vários rostos: busca com o maior (A) e varias:true: %r %r" % (r.get("varias"), sorted(cs)))
+ok(st == 200 and r.get("varias") is True and r.get("rosto") is True and S_CERTA in cs and S_B in cs, "27/11: vários rostos: cada pessoa é buscada (A e B) e varias:true: %r %r" % (r.get("varias"), sorted(cs)))
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"a-e-b", b"b-na-frente", b"so-a")}, cookie=vend)
 cs = {o["card"] for o in r.get("sessoes") or []}
-ok(st == 200 and r.get("varias") is True and S_CERTA in cs and S_B not in cs, "o maior troca entre os quadros: fica quem é o maior em mais quadros, sem misturar as duas pessoas: %r" % (sorted(cs),))
+ok(st == 200 and r.get("varias") is True and S_CERTA in cs and S_B in cs, "27/11: o maior troca entre os quadros: as duas pessoas entram, cada uma pela sua busca: %r" % (sorted(cs),))
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"so-b")}, cookie=vend)
 ok(st == 200 and r.get("varias") is False and [o["card"] for o in r["sessoes"]] == [S_B], "um rosto só: varias false: %r" % (r,))
 st, r = pede("POST", "/rostos/sessoes", {"imagens": img(b"sem-rosto")}, cookie=vend)

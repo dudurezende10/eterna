@@ -1414,7 +1414,7 @@ def img_dims_estrito(raw):
 def _buscar_maior(imagens, det, rec):
     np = _cv["np"]; cv2 = _cv["cv2"]
     achados, varias = [], False          # (largura do maior rosto do quadro, vetor)
-    brutos = []
+    brutos, grp = [], []                 # grp: os rostos do quadro com mais rostos (27/11, busca do grupo)
     for b in imagens[:BUSCA_VEND_IMGS]:
         try:
             raw = base64.b64decode(b.split(",", 1)[-1])
@@ -1437,9 +1437,18 @@ def _buscar_maior(imagens, det, rec):
         if fs:
             varias = varias or varias_pessoas(fs)
             achados.append((fs[0][0], fs[0][1]))
+            g = grupo_rostos(fs)
+            if len(g) > len(grp):
+                grp = g
     del imagens, brutos
     if not achados:
         return {"rosto": False, "varias": False, "fotos": []}
+    # 27/11 (Ronaldo, casal da sessão 123): com o casal na selfie, o rosto "maior" não era nenhum dos dois e a sessão deles
+    # não saiu. Havendo mais de uma pessoa, cada rosto é buscado e as fotos se somam, como na foto do grupo do Checkout
+    # (a tela não marca sozinha quando varias=true: o vendedor escolhe).
+    if varias and len(grp) > 1:
+        rs = [buscar_vetor(v, 1, 0, piso=BUSCA_VEND_PISO) for _l, v in grp]
+        return {"rosto": True, "fotos": grupo_juntar(rs), "varias": True, "pessoas": len(grp), "fila": rs[0].get("fila") if rs else 0}
     return dict(buscar_vetor(busca_vend_vetor(achados), 1, 0, piso=BUSCA_VEND_PISO), varias=bool(varias))
 
 
