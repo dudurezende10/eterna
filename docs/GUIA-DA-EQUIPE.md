@@ -37,10 +37,10 @@ O menu fica do lado esquerdo e é dividido em grupos:
 
 | Grupo | O que tem |
 | --- | --- |
-| Venda | Posto de venda. Para quem atende e vende, também Procurar fotos |
+| Venda | Posto de venda e Procurar fotos (para todo mundo que vende, inclusive Admin e Supervisora) |
 | Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
 | Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA, Montagens de IA |
-| Fotógrafo | Diário do set, Minhas fotos, Procurar fotos, Fila do fotógrafo |
+| Fotógrafo | Diário do set, Minhas fotos, Fila do fotógrafo. Procurar fotos aparece aqui só para quem não vende |
 | Configurações | Preços e Checkout, Ajuste automático, IA automática |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
@@ -353,7 +353,7 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 
 ### Procurar fotos (25/11)
 
-**Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**, no menu **Fotógrafo**, logo abaixo de Minhas fotos.
+**Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**. Para quem vende (caixa, vendedores, Supervisora e Admin) ela fica no menu **Venda**, logo depois do Posto; para o fotógrafo, no menu **Fotógrafo**.
 
 - **Quem vê:** quem já vê Minhas fotos e, desde 26/11, quem atende e vende (quem tem o Posto de venda). A supervisora, o Admin e quem atende e vende procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. A tela do cliente (Checkout) nunca mostra essa tela.
 - **Para quem atende e vende (26/11):** a tela fica no menu logo depois de **Posto de venda**. No computador do Posto, abra o menu e toque em **Procurar fotos** para achar a foto que o cliente não encontrou e, desde 26/11, vender por ali mesmo (veja **Vender pelo Procurar fotos**, logo abaixo). O atendente não ganha Minhas fotos, não envia cartão e não muda nada nas fotos. Quem já estava cadastrado ganhou a tela sozinho, sem recadastro.

@@ -1,4 +1,4 @@
-// 25/11: tela Procurar fotos (menu Fotógrafo, #procurar) e Minhas fotos sem o seletor Fotógrafo.
+// 25/11: tela Procurar fotos (menu Venda para quem vende, Fotógrafo para quem só fotografa; #procurar) e Minhas fotos sem o seletor Fotógrafo.
 // 26/11: a tela também para o atendimento e venda (quem tem o Posto), com todos os fotógrafos e só para olhar.
 // O agente é falso (page.route na própria origem: /status, /sessoes, /thumb/, /file/ e o resto com resposta neutra). Dados e miniaturas
 // simulados (uma imagem do repositório), nunca foto de convidado. Os cadastros são de teste.
@@ -74,7 +74,7 @@ try{
   ok(await espera(pg,n=>Object.keys(ETERNA.SRV.sess).length>=n,20000,S.length),'feed do agente falso chegou');
   await pg.evaluate(()=>{ETERNA.simOf('LPBF00002').status='paga';ETERNA.saveSim();});
   // menu: Procurar fotos logo abaixo de Minhas fotos
-  const nav=await pg.$$eval('#nav button[data-v]',e=>e.map(x=>x.dataset.v));ok(nav.indexOf('procurar')===nav.indexOf('importar')+1&&nav.includes('importar'),'menu: procurar logo depois de importar: '+nav.join());
+  const nav=await pg.$$eval('#nav button[data-v]',e=>e.map(x=>x.dataset.v));ok(nav.indexOf('procurar')===nav.indexOf('posto')+1&&nav.includes('posto'),'menu: procurar logo depois do Posto (27/11: grupo Venda): '+nav.join());
   await clica(pg,'#nav button[data-v="procurar"]');await pg.waitForTimeout(300);
   ok(await pg.evaluate(()=>location.hash==='#procurar'&&document.querySelector('#main h1').textContent==='Procurar fotos'),'abre em #procurar com o título');
   // padrão com Todos: última 1 hora; sem botão de página
