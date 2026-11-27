@@ -34,14 +34,21 @@ for f in range(100):
         pid = "f%d_%d" % (f, foto)
         for j in range(4):
             rows.append((pid, 120 - 10 * j, rosto(4 * f + j)))
-        rows.append((pid, 20, rosto(999)))            # alguém bem ao fundo, na fila: não conta
+        rows.append((pid, 20, rosto(999)))            # a mesma pessoa bem ao fundo em todas: conta uma vez
 sess = {"f%d_%d" % (f, k): "S%d" % f for f in range(100) for k in range(3)}
 t0 = time.time()
 P, sem = m._pessoas_agrupa(rows, np, set(), sess, None)
 seg = time.time() - t0
-ok(len(P) == 400, "400 rostos distintos em 300 fotos (100 famílias de 4), sem exigir rosto bom (%d)" % len(P))
-ok(all(len(p["pids"]) == 3 for p in P), "cada pessoa reaparece nas 3 fotos dela, sem duplicar")
+ok(len(P) == 401, "401 rostos distintos em 300 fotos (100 famílias de 4 e a mesma pessoa ao fundo em todas), sem exigir rosto bom nem tamanho (%d)" % len(P))
+ok(sorted(len(p["pids"]) for p in P) == [3] * 400 + [300], "cada pessoa reaparece nas 3 fotos dela, sem duplicar")
 ok(all(len({rows[k][0] for k in p["m"]}) == len(p["m"]) for p in P), "dois rostos da mesma foto nunca viram a mesma pessoa")
 ok(seg < 20, "rápido (%.1f s para %d rostos)" % (seg, len(rows)))
+# selfies: a do grupo conta cada rosto
+t = time.time()
+m.selfie_registra("checkout", {"rosto": True, "pessoas": 3, "fotos": [{"id": "x"}]}, t)
+m.selfie_registra("checkout", {"rosto": True, "fotos": []}, t)
+m.selfie_registra("checkout", {"rosto": False, "fotos": []}, t)
+x = m.selfies_dia(m._ff_hoje())["por_origem"]["checkout"]
+ok(x["selfies"] == 3 and x["pessoas"] == 4 and x["pessoas_achou"] == 3, "selfie do grupo de 3 + uma sozinha = 4 pessoas, 3 acharam (%s)" % x)
 print("\n" + ("tudo certo" if not falhas else "%d falhas" % falhas))
 sys.exit(1 if falhas else 0)

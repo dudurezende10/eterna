@@ -13381,6 +13381,9 @@ def vendas_db():
     # BI: cada selfie do Checkout. Só contagem e horário: nunca imagem, vetor do rosto, sessão ou venda (não identifica ninguém)
     c.execute("create table if not exists selfie (em text, dia text, hora int, origem text, resultado text, fotos int, ms int)")
     c.execute("create index if not exists selfie_dia_i on selfie(dia)")
+    # 27/11 (Ronaldo: "as selfies são as pessoas que vieram das abordadas, seja grupo ou individual; cada rosto é uma pessoa")
+    if "pessoas" not in [r[1] for r in c.execute("pragma table_info(selfie)")]:
+        c.execute("alter table selfie add column pessoas int")
     c.execute("create view if not exists selfie_dia as select dia, origem, count(*) as selfies, sum(resultado = 'achou') as achou,"
               " sum(resultado = 'nao_achou') as nao_achou, sum(resultado = 'sem_rosto') as sem_rosto, sum(resultado = 'varias_pessoas') as varias_pessoas,"
               " sum(resultado = 'erro') as erro, avg(ms) as ms_medio from selfie group by dia, origem")
@@ -13441,8 +13444,10 @@ def selfie_registra(origem, r, t0, posto=None, vendedor=None):
         with ev_lock:
             db = vendas_db()
             try:
-                db.execute("insert into selfie values (?, ?, ?, ?, ?, ?, ?)", (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), _ff_hoje(agora),
-                           time.localtime(agora).tm_hour, origem, res, len(r.get("fotos") or []), int((agora - t0) * 1000)))
+                pes = int(r.get("pessoas") or 0) or (1 if r.get("rosto") else 0)
+                db.execute("insert into selfie (em, dia, hora, origem, resultado, fotos, ms, pessoas) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                           (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), _ff_hoje(agora),
+                            time.localtime(agora).tm_hour, origem, res, len(r.get("fotos") or []), int((agora - t0) * 1000), pes))
                 db.commit()
             finally:
                 db.close()
@@ -15836,13 +15841,10 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None):
     M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128).copy()
     M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
     larg = [float(r[1] or 0) for r in rows]
-    # 27/11 (Ronaldo: "a quantidade de rostos distintos nas fotos, simples assim"): todo rosto visível cria pessoa, frontal ou
-    # não. Só fica de fora quem está ao fundo (menor que PESSOA_CONTA_MIN px ou que PESSOA_JUNTO_RAZAO do maior rosto da foto).
-    maior_foto = {}
-    for i in range(len(rows)):
-        maior_foto[rows[i][0]] = max(maior_foto.get(rows[i][0], 0.0), larg[i])
-    sem = [i for i in range(len(rows)) if larg[i] >= PESSOA_CONTA_MIN and larg[i] >= PESSOA_JUNTO_RAZAO * maior_foto[rows[i][0]]]
-    resto = [i for i in range(len(rows)) if i not in set(sem)]
+    # 27/11 (Ronaldo: "a quantidade de rostos distintos nas fotos, simples assim"; "mesmo não sendo nítido, cada rosto é uma
+    # pessoa"): todo rosto lido cria pessoa, frontal ou não, nítido ou não, de qualquer tamanho.
+    sem = list(range(len(rows)))
+    resto = []
     # 2. guloso, do maior rosto para o menor: entra na pessoa de centro mais parecido (PESSOA_JUNTA), nunca em quem já está na foto
     G, soma, na_foto = [], [], {}
     Cn = np.zeros((len(sem), M.shape[1]), dtype="float32")
@@ -15971,7 +15973,7 @@ PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronal
 # 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
 # 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
 # no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
-PESSOAS_V = 6
+PESSOAS_V = 7
 
 
 def _contagens_base():
@@ -16177,11 +16179,6 @@ def _pessoas_auditoria(dia, rows, P, sess):
             "maiores_clientes_fotos": maiores, "equipe": eq}
 
 
-# Quem está ao fundo (a fila) não conta: rosto menor que PESSOA_CONTA_MIN px ou que PESSOA_JUNTO_RAZAO do maior rosto da foto.
-PESSOA_JUNTO_RAZAO = 0.4
-PESSOA_CONTA_MIN = 40
-
-
 def _pessoas_dia_calc(dia, forcar=False):
     """16/11 (Ronaldo: quantas pessoas abordamos?): quantas pessoas diferentes aparecem nas fotos do dia, agrupando os rostos
     lidos com o mesmo critério da busca por selfie (LIMITE). Só contagens: nenhuma imagem, rosto ou identificação sai daqui.
@@ -16199,7 +16196,7 @@ def _pessoas_dia_calc(dia, forcar=False):
     cli = [p for p in P if not p["equipe"]]
     # 27/11: "pessoas" = rostos distintos nas fotos do dia, fora a equipe.
     sem_cli = aud["sessoes_sem_cliente"]
-    return {"v": 6, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
+    return {"v": 7, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
             "pessoas_grupos": len(cli),
             "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
@@ -16452,9 +16449,15 @@ def auditoria_dia(dia=None):
         se = (selfies_dia(dia) or {}).get("por_origem") or {}
         if se:
             G("Selfies")
+        tp = 0
         for o, x in sorted(se.items()):
             n_, a_ = int(x.get("selfies", 0)), int(x.get("achou", 0))
             L("Selfies %s" % o, "%d, acharam %d (%.0f%%)" % (n_, a_, 100.0 * a_ / n_ if n_ else 0))
+            L("Pessoas nas selfies %s (cada rosto, grupo ou sozinho)" % o, "%d, acharam %d" % (int(x.get("pessoas", 0)), int(x.get("pessoas_achou", 0))))
+            tp += int(x.get("pessoas", 0))
+        pf = ((jp or {}).get("resultado") or {}).get("pessoas")
+        if se and pf:
+            L("Pessoas nas selfies ÷ pessoas fotografadas", ("%.1f%%" % (100.0 * tp / pf)).replace(".", ","))
 
     _auditoria_parte("Selfies", desv, _p_selfies)
     j = {"v": AUDITORIA_V, "dia": dia, "feita_em": _iso(), "situacao": "sem desvios" if not desv else "%d desvios" % len(desv),
@@ -16508,21 +16511,25 @@ def selfies_dia(dia):
         with ev_lock:
             db = vendas_db()
             try:
-                rows = db.execute("select em, origem, resultado, fotos, ms from selfie where dia = ? order by em", (dia,)).fetchall()
+                rows = db.execute("select em, origem, resultado, fotos, ms, pessoas from selfie where dia = ? order by em", (dia,)).fetchall()
             finally:
                 db.close()
     except Exception:
         return None
     por = {}
-    for em, origem, res, n, ms in rows:
+    for em, origem, res, n, ms, pes in rows:
         o = por.setdefault(origem or "?", {"selfies": 0, "achou": 0, "nao_achou": 0, "sem_rosto": 0, "varias_pessoas": 0, "erro": 0,
-                                            "fotos": 0, "ms_soma": 0})
+                                            "fotos": 0, "ms_soma": 0, "pessoas": 0, "pessoas_achou": 0})
+        pes = int(pes) if pes is not None else (0 if res in ("sem_rosto", "erro") else 1)
+        o["pessoas"] += pes
+        if res == "achou":
+            o["pessoas_achou"] += pes
         o["selfies"] += 1
         o[res if res in o else "erro"] += 1
         o["fotos"] += int(n or 0)
         o["ms_soma"] += int(ms or 0)
     return {"por_origem": por, "lista": [{"em": str(em)[11:19], "origem": o, "resultado": r, "fotos": int(n or 0), "ms": int(ms or 0)}
-                                         for em, o, r, n, ms in rows][:2000]}
+                                         for em, o, r, n, ms, _p in rows][:2000]}
 
 
 def montagens_dia(dia):
