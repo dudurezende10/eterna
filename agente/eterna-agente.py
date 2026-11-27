@@ -16462,8 +16462,25 @@ def _pessoas_dia_calc(dia, forcar=False):
 # do dia e contagem de pessoas), confere tudo e lista o que precisa de gente para corrigir. Grava no HD
 # (contagens/auditoria/<dia>.json) e a nuvem manda o e-mail (POST /ponto/auditoria, destino fixo na nuvem). Só hoje: o passado
 # nunca é alterado. A conferência com a Imply continua fora daqui (precisa da sessão do Ronaldo na Imply).
-# 27/11 (Ronaldo: "o tour fecha às 16h", rodar a auditoria e resolver tudo): passa de 21h para 17h, uma hora depois do fechamento
-AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "17"))
+AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "21"))
+# 27/11 (Ronaldo): em dia de jogo no Maracanã o tour fecha 6 h antes do jogo; a auditoria roda 1 h depois desse fechamento
+# (jogo às 22h: tour fecha 16h, auditoria 17h). O jogo vem do Calendário do Eterna (agenda, tipo "jogo", com hora).
+AUDITORIA_JOGO_FECHA_H = 6
+AUDITORIA_DEPOIS_H = 1
+
+
+def auditoria_hora_hoje(dia=None):
+    """Minuto do dia (0 a 1439) a partir do qual a auditoria de hoje roda: AUDITORIA_HORA, ou mais cedo em dia de jogo."""
+    dia = dia or _ff_hoje()
+    m = AUDITORIA_HORA * 60
+    try:
+        for v in _agenda_todos().values():
+            if v and v.get("tipo") == "jogo" and v.get("data") == dia and re.match(r"^\d{1,2}:\d{2}$", str(v.get("hora") or "")):
+                h, mi = (int(x) for x in v["hora"].split(":"))
+                m = min(m, max(0, (h - AUDITORIA_JOGO_FECHA_H + AUDITORIA_DEPOIS_H) * 60 + mi))
+    except Exception:
+        pass
+    return m
 AUDITORIA_DIR = os.path.join(CONTAGENS_DIR, "auditoria")
 AUDITORIA_MEIOS = ("pix", "cartao", "dinheiro", "cortesia")
 AUDITORIA_V = 4      # versão das conferências: auditoria de hoje feita por versão anterior é refeita (e o e-mail sai de novo)
@@ -16742,7 +16759,8 @@ def auditoria_loop():
     while True:
         time.sleep(60)
         hoje = _ff_hoje()
-        if time.localtime().tm_hour < AUDITORIA_HORA:
+        lt = time.localtime()
+        if lt.tm_hour * 60 + lt.tm_min < auditoria_hora_hoje(hoje):
             continue
         j = auditoria_ler(hoje)
         try:
