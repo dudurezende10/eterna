@@ -16459,7 +16459,8 @@ def _pessoas_dia_calc(dia, forcar=False):
 # do dia e contagem de pessoas), confere tudo e lista o que precisa de gente para corrigir. Grava no HD
 # (contagens/auditoria/<dia>.json) e a nuvem manda o e-mail (POST /ponto/auditoria, destino fixo na nuvem). Só hoje: o passado
 # nunca é alterado. A conferência com a Imply continua fora daqui (precisa da sessão do Ronaldo na Imply).
-AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "21"))
+# 27/11 (Ronaldo: "o tour fecha às 16h", rodar a auditoria e resolver tudo): passa de 21h para 17h, uma hora depois do fechamento
+AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "17"))
 AUDITORIA_DIR = os.path.join(CONTAGENS_DIR, "auditoria")
 AUDITORIA_MEIOS = ("pix", "cartao", "dinheiro", "cortesia")
 AUDITORIA_V = 4      # versão das conferências: auditoria de hoje feita por versão anterior é refeita (e o e-mail sai de novo)
