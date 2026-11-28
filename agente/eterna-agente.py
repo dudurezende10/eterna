@@ -1344,7 +1344,7 @@ def grupo_juntar(resultados):
 
 def _buscar_grupo(imagens, dias, det, rec, janela=None):
     np = _cv["np"]; cv2 = _cv["cv2"]
-    melhor = []
+    melhor, quadro = [], None
     for b in imagens[:5]:
         raw = base64.b64decode(b.split(",", 1)[-1])
         if not img_aceita(raw):
@@ -1357,11 +1357,19 @@ def _buscar_grupo(imagens, dias, det, rec, janela=None):
             continue
         fs = grupo_rostos(ler_rostos(img, det, rec))
         if len(fs) > len(melhor):
-            melhor = fs
+            melhor, quadro = fs, img
     del imagens
     if not melhor:
         return {"rosto": False, "fotos": [], "pessoas": 0}
     rs = [buscar_vetor(v, dias, janela) for _l, v in melhor]
+    try:                                 # v99.110: cada pessoa do grupo conferida também pelo 2º verificador; só soma fotos
+        if r2_busca_ligada():
+            pares = [(s_, a_) for _l2, s_, a_ in r2_vetores(quadro, det, rec)]
+            if pares:
+                rs = [r2_reforco(r, v, pares, r.get("janela_min"), mesmo=0.9) for r, (_l, v) in zip(rs, melhor)]
+    except Exception as ex:
+        print("  foto do grupo: 2º verificador falhou (%s); segue só com o primeiro" % type(ex).__name__)
+    quadro = None
     return {"rosto": True, "fotos": grupo_juntar(rs), "pessoas": len(melhor), "limite": LIMITE,
             "janela_min": rs[0].get("janela_min") if rs else None}
 
@@ -1373,6 +1381,11 @@ def _buscar(imagens, dias, det, rec, janela=None):
     # pessoal: tamanho do quadro, largura dos rostos lidos (e quantos o detector achou menores que 60 px), a maior
     # semelhança e a sessão dela. Só quando o quadro tem rosto; o movimento sem ninguém de frente não escreve nada.
     diag = {"q": "", "l": []}
+    pares = []                           # v99.110: (vetor SFace, vetor AuraFace) do maior rosto de cada quadro
+    try:
+        dois = r2_busca_ligada()
+    except Exception:
+        dois = False
     for b in imagens[:5]:
         raw = base64.b64decode(b.split(",", 1)[-1])
         if not img_aceita(raw):
@@ -1393,6 +1406,13 @@ def _buscar(imagens, dias, det, rec, janela=None):
             return {"rosto": True, "varias": True, "fotos": []}
         if fs:
             vs.append(fs[0][1])
+            if dois:                     # v99.110: o mesmo quadro lido também pelo 2º verificador; falha não muda a busca
+                try:
+                    f2 = r2_vetores(img, det, rec, minimo=60)
+                    if f2:
+                        pares.append((f2[0][1], f2[0][2]))
+                except Exception:
+                    dois = False
     del imagens
     tem = any(x != "-" for x in diag["l"])
     if not vs:
@@ -1401,6 +1421,8 @@ def _buscar(imagens, dias, det, rec, janela=None):
         return {"rosto": False, "fotos": []}
     me = np.mean(vs, axis=0); me /= np.linalg.norm(me) or 1
     r = buscar_vetor(me, dias, janela)
+    if dois and pares:
+        r = r2_reforco(r, me, pares, r.get("janela_min"))
     try:
         fts = sorted(r.get("fotos") or [], key=lambda f: -f.get("sim", 0))
         top = ", ".join("%s %.2f" % (sess_pid.get(f["id"], "?"), f.get("sim", 0)) for f in fts[:3])
@@ -1469,6 +1491,11 @@ def img_dims_estrito(raw):
 def _buscar_maior(imagens, det, rec):
     np = _cv["np"]; cv2 = _cv["cv2"]
     achados, varias = [], False          # (largura do maior rosto do quadro, vetor)
+    pares = []                           # v99.110: (vetor SFace, vetor AuraFace) do maior rosto de cada quadro
+    try:
+        dois = r2_busca_ligada()
+    except Exception:
+        dois = False
     brutos, grp = [], []                 # grp: os rostos do quadro com mais rostos (27/11, busca do grupo)
     for b in imagens[:BUSCA_VEND_IMGS]:
         try:
@@ -1492,6 +1519,13 @@ def _buscar_maior(imagens, det, rec):
         if fs:
             varias = varias or varias_pessoas(fs)
             achados.append((fs[0][0], fs[0][1]))
+            if dois:                     # v99.110: o mesmo quadro lido também pelo 2º verificador; falha não muda a busca
+                try:
+                    f2 = r2_vetores(img, det, rec, minimo=60)
+                    if f2:
+                        pares.append((f2[0][1], f2[0][2]))
+                except Exception:
+                    dois = False
             g = grupo_rostos(fs)
             if len(g) > len(grp):
                 grp = g
@@ -1504,7 +1538,11 @@ def _buscar_maior(imagens, det, rec):
     if varias and len(grp) > 1:
         rs = [buscar_vetor(v, BUSCA_VEND_DIAS_MAT, 0, piso=BUSCA_VEND_PISO) for _l, v in grp]
         return {"rosto": True, "fotos": grupo_juntar(rs), "varias": True, "pessoas": len(grp), "fila": rs[0].get("fila") if rs else 0}
-    return dict(buscar_vetor(busca_vend_vetor(achados), BUSCA_VEND_DIAS_MAT, 0, piso=BUSCA_VEND_PISO), varias=bool(varias))
+    me = busca_vend_vetor(achados)
+    r = dict(buscar_vetor(me, BUSCA_VEND_DIAS_MAT, 0, piso=BUSCA_VEND_PISO), varias=bool(varias))
+    if dois and pares:
+        r = r2_reforco(r, me, pares)
+    return r
 
 
 def busca_vend_vetor(achados):
@@ -12044,7 +12082,7 @@ _r2_cfg_lock = threading.Lock()
 
 
 def r2_cfg():
-    """{"ligado", "corte", "por", "em"} da chave (arquivo pequeno, relido só quando muda)."""
+    """{"ligado", "corte", "por", "em", "busca"} da chave (arquivo pequeno, relido só quando muda)."""
     try:
         mt = os.path.getmtime(R2_CFG)
     except OSError:
@@ -12063,13 +12101,16 @@ def r2_cfg():
                 corte = max(R2_CORTE_MIN, min(float(c.get("corte") or R2_CORTE), R2_CORTE_MAX))
             except (TypeError, ValueError):
                 corte = R2_CORTE
-            _r2["cfg"] = {"ligado": c.get("ligado") is not False, "corte": corte, "por": c.get("por"), "em": c.get("em")}
+            _r2["cfg"] = {"ligado": c.get("ligado") is not False, "corte": corte, "por": c.get("por"), "em": c.get("em"),
+                          "busca": c.get("busca") is True}      # v99.110: Procurar fotos do Posto; desligada até alguém ligar
             _r2["cfg_m"] = mt
         return dict(_r2["cfg"])
 
 
-def r2_cfg_grava(ligado=None, corte=None, por=""):
+def r2_cfg_grava(ligado=None, corte=None, por="", busca=None):
     c = r2_cfg()
+    if busca is not None:
+        c["busca"] = bool(busca)
     if ligado is not None:
         c["ligado"] = bool(ligado)
     if corte is not None:
@@ -12081,7 +12122,7 @@ def r2_cfg_grava(ligado=None, corte=None, por=""):
     os.replace(R2_CFG + ".tmp", R2_CFG)
     with _r2_cfg_lock:
         _r2["cfg"] = None
-    print("  2º verificador de rostos: %s (corte %.2f) por %s" % ("ligado" if c["ligado"] else "DESLIGADO", c["corte"], c["por"] or "?"))
+    print("  2º verificador de rostos: %s (corte %.2f), Procurar fotos %s, por %s" % ("ligado" if c["ligado"] else "DESLIGADO", c["corte"], "ligado" if c["busca"] else "desligado", c["por"] or "?"))
     return r2_cfg()
 
 
@@ -12282,6 +12323,59 @@ def r2_dia_fotos(vs, va, dia):
     return out
 
 
+def r2_busca_ligada():
+    """v99.110: o Procurar fotos do Posto e a selfie do Checkout usam também o 2º verificador? Chave própria ("busca"), só com a principal ligada,
+    o modelo pronto e as fotos de hoje lidas."""
+    c = r2_cfg()
+    return bool(R2_ENV and c["ligado"] and c.get("busca") and r2["pronto"] and r2_cobre(time.strftime("%Y-%m-%d")))
+
+
+def r2_reforco(r, me, pares, janela_min=None, mesmo=None):
+    """v99.110 (Ronaldo, 28/11): reforço do Procurar fotos do Posto, da selfie e da foto do grupo do Checkout. janela_min: a
+    janela da busca (só fotos de sessões dentro dela, como no primeiro); mesmo: semelhança mínima para o par ser do rosto
+    buscado (padrão LIMITE; na foto do grupo 0,9, para não trocar uma pessoa pela outra). SÓ SOMA: a foto de hoje em que a soma dos dois verificadores
+    passa do corte entra como certa (sim = LIMITE) se o primeiro não tinha trazido, ou sobe para certa se estava abaixo.
+    Nada do que o primeiro verificador trouxe sai nem desce. Qualquer falha devolve r como chegou."""
+    try:
+        np = _cv["np"]
+        vas = [a for s_, a in pares if float(np.dot(s_, me)) >= (LIMITE if mesmo is None else mesmo)]      # só os quadros da pessoa buscada
+        if not vas:
+            return r
+        ma = np.mean(vas, axis=0); ma = ma / (np.linalg.norm(ma) or 1)
+        S, A, ps, L, mx = r2_matriz(time.strftime("%Y-%m-%d"))
+        if not len(ps):
+            return r
+        corte = r2_cfg()["corte"]
+        soma = S @ me + A @ ma
+        melhor = {}
+        dentro = sess_pids_janela(time.time() - janela_min * 60) if janela_min else None
+        for i in np.nonzero(soma >= corte)[0]:
+            pid = ps[i]
+            if dentro is not None and pid not in dentro:
+                continue
+            if float(soma[i]) > melhor.get(pid, (0, 0))[0]:
+                melhor[pid] = (float(soma[i]), float(L[i]))
+        if not melhor:
+            return r
+        fotos = [dict(f) for f in r.get("fotos") or []]
+        tem = {f["id"]: f for f in fotos}
+        novas = subiu = 0
+        for pid, (_s, larg) in melhor.items():
+            f = tem.get(pid)
+            if f is None:
+                fotos.append({"id": pid, "sim": LIMITE, "principal": bool(larg >= ROSTO_PRINCIPAL * (mx.get(pid) or 0))}); novas += 1
+            elif f.get("sim", 0) < LIMITE:
+                f["sim"] = LIMITE; subiu += 1
+        if not novas and not subiu:
+            return r
+        fotos.sort(key=lambda f: -f.get("sim", 0))
+        print("  busca por selfie (2 verificadores, corte %.2f): %d fotos novas, %d subiram para certa" % (corte, novas, subiu))
+        return dict(r, fotos=fotos[:500])
+    except Exception as ex:
+        print("  busca por selfie: 2º verificador falhou (%s); segue só com o primeiro" % type(ex).__name__)
+        return r
+
+
 def r2_selfie(b64):
     """-> ("ok", vetor SFace, vetor AuraFace) | ("varias" | "sem_rosto", None, None). Mesmas regras da selfie_dia_vetor."""
     np = _cv["np"]; cv2 = _cv["cv2"]
@@ -12305,7 +12399,7 @@ def r2_selfie(b64):
 
 def r2_status():
     c = r2_cfg()
-    return {"ligado": bool(R2_ENV and c["ligado"]), "chave": c["ligado"], "corte": c["corte"], "por": c.get("por"), "em": c.get("em"),
+    return {"ligado": bool(R2_ENV and c["ligado"]), "chave": c["ligado"], "busca": bool(c.get("busca")), "corte": c["corte"], "por": c.get("por"), "em": c.get("em"),
             "pronto": r2["pronto"], "motivo": r2["motivo"], "lidas": r2["lidas"], "falta_hoje": r2["falta_hoje"],
             "ultima": r2["ultima"], "ms": r2["ms"], "hoje_coberto": r2_cobre(time.strftime("%Y-%m-%d")) if r2["pronto"] else False}
 
@@ -26627,10 +26721,10 @@ class H(BaseHTTPRequestHandler):
             body, err = self.corpo(1024)
             if err or not isinstance(body, dict):
                 return self.js({"error": "corpo inválido"}, err or 400)
-            lig, corte = body.get("ligado"), body.get("corte")
-            if (lig is not None and not isinstance(lig, bool)) or (corte is not None and (isinstance(corte, bool) or not isinstance(corte, (int, float)))):
+            lig, corte, bus = body.get("ligado"), body.get("corte"), body.get("busca")
+            if (lig is not None and not isinstance(lig, bool)) or (bus is not None and not isinstance(bus, bool)) or (corte is not None and (isinstance(corte, bool) or not isinstance(corte, (int, float)))):
                 return self.js({"error": "valor inválido"}, 400)
-            r2_cfg_grava(lig, corte, (eu or {}).get("usuario") or "")
+            r2_cfg_grava(lig, corte, (eu or {}).get("usuario") or "", busca=bus)
             return self.js(dict({"ok": True}, **r2_status()))
         if u.path == "/ponto/descancelar":
             if not self.origem_local():
