@@ -1504,6 +1504,7 @@ def cortesia(token, m, corpo, ip, pids):
 # A selfie fica só no item da fila (SFQ), nunca no Rekognition nem no S3. O agente do estádio leva a fila de 10 em 10 s e, ao levar,
 # a selfie sai daqui. Sem busca em 10 min, a selfie é apagada e o pedido fica "indisponivel". SFP#<pedido> guarda só o estado (1 h).
 SELFIE_DIAS = 30                 # o servidor do estádio guarda 30 dias de fotos
+SELFIE_INICIO = "2026-11-25"     # 28/11 (Ronaldo): primeiro dia de operação; antes dele não há foto para procurar
 SELFIE_ESPERA = 600              # s sem resposta do estádio: indisponível (e a selfie é apagada)
 SELFIE_TTL = 3600                # o estado do pedido some em 1 h
 SELFIE_MAX = 350_000             # caracteres da selfie em base64 (o celular manda 640 px); cabe num item do DynamoDB
@@ -1517,7 +1518,7 @@ _re_pedido = re.compile(r"^[A-Za-z0-9_-]{24}$")
 def selfie_dias(t=None):
     """Os dias que o cliente pode escolher (venue): hoje e os 29 anteriores, do mais novo para o mais velho."""
     t = time.time() if t is None else t
-    return [_dia_venue(t - i * 86400) for i in range(SELFIE_DIAS)]
+    return [d for d in (_dia_venue(t - i * 86400) for i in range(SELFIE_DIAS)) if d >= SELFIE_INICIO]
 
 
 def selfie_estadio_ligado():

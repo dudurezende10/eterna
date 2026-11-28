@@ -4212,8 +4212,9 @@ const gqAjuda=()=>`<p class="gq-help">${T('gq_help')} <a href="mailto:${GQ_SUPOR
 // ou estádio fora do ar, nada aparece. Não achou: só informa, com o e-mail de ajuda. Plano docs/planos/2026-11-27-selfie-na-galeria.md
 const SF_LADO=640,SF_POLL_MS=3000,SF_POLL_MAX=210,GQ_SF_VERSAO='2026-11-27-sf1';let SF_DIAS=null;
 async function pubSfDias(p){if(SF_DIAS&&Date.now()-SF_DIAS.em<60000){p.sf=SF_DIAS.j;return;}
+  const SF_INICIO='2026-11-25'; // 28/11 (Ronaldo): primeiro dia de operação; antes dele não há foto para procurar
   let j=null;try{const r=await fetch(galApi()+'/g/selfie/dias',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',cache:'no-store'});if(r.ok)j=await r.json();}catch(e){}
-  SF_DIAS={em:Date.now(),j:j&&j.ok&&j.ligada&&Array.isArray(j.dias)&&j.dias.length?{dias:j.dias.filter(d=>/^\d{4}-\d\d-\d\d$/.test(d)).slice(0,30)}:null};
+  SF_DIAS={em:Date.now(),j:j&&j.ok&&j.ligada&&Array.isArray(j.dias)&&j.dias.length?{dias:j.dias.filter(d=>/^\d{4}-\d\d-\d\d$/.test(d)&&d>=SF_INICIO).slice(0,30)}:null};
   if(state.pub!==p||p.token)return;p.sf=SF_DIAS.j;if(p.sf&&p.step==='codigo'){const el=$('#gq-code');if(el)p.pre=el.value;render();}}
 function sfDiaRot(d,i){if(i===0)return T('gq_sfHoje');if(i===1)return T('gq_sfOntem');
   try{return new Date(d+'T12:00:00').toLocaleDateString(lang()==='zh'?'zh-CN':lang(),{weekday:'long',day:'numeric',month:'long'});}catch(e){return d;}}
