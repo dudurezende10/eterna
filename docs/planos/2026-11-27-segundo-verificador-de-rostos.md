@@ -1,6 +1,10 @@
 # Segundo verificador de rostos (AuraFace ao lado do SFace)
 
-Situação em 27/11/2026: **medido e decidido, ainda não implementado.** Nada mudou no reconhecimento em produção.
+Situação em 27/11/2026: **no agente desde a v99.109.0** (itens 1, 2, 3 e 5 de "Como implementar"). Faltam o item 4 (5 quadros na tela da selfie e o aviso dos óculos) e a confirmação da fal.
+
+## Chave de desligar
+
+No painel logado com permissão de configuração: `POST /rostos2` com `{"ligado": false}` desliga na hora; `{"ligado": true}` religa; `{"corte": 0.92}` troca o corte (0,80 a 1,20). `GET /rostos2` mostra ligado, pronto, motivo, fotos lidas, o que falta de hoje e se hoje está coberto. Fica em `~/Eterna/ponto/rostos2.json`. Sem tocar em nada, `ETERNA_ROSTO2=0` no serviço desliga de vez.
 
 ## Por quê
 
