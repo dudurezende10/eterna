@@ -754,7 +754,7 @@ try:
                 if cai_j[0]:
                     raise RuntimeError("sem rede")
     orig_s3, orig_arq = m._s3_cliente, m.backup_arquivos
-    m._s3_cliente, m.backup_arquivos = (lambda: S3Json()), (lambda pc: 0)
+    m._s3_cliente, m.backup_arquivos = (lambda: S3Json()), (lambda pc, prazo_s=None: (0, 0))
     try:
         ult_j, est_j = {}, {"ok_em": None, "json_pend": False}
         m.backup_rodada("pc", ult_j, est_j)
@@ -777,6 +777,53 @@ try:
         m._s3_cliente, m.backup_arquivos = orig_s3, orig_arq
         if criou_j:
             os.remove(met_j)
+    # 27/11: o que já subiu fica no disco (religamento não recomeça tudo), prazo por rodada e cópia local dos bancos
+    sub_a = []
+
+    class S3Arq:
+        def put_object(self, **k):
+            sub_a.append(k["Key"])
+    orig_s3 = m._s3_cliente
+    m._s3_cliente = lambda: S3Arq()
+    try:
+        m._backup_vistos.clear(); m._backup_vistos_lido[0] = True
+        e1, p1 = m.backup_arquivos("pc")
+        ok(e1 > 0 and p1 == 0 and os.path.exists(m.BACKUP_VISTOS_ARQ), "B1: arquivos sobem e a lista do que subiu vai para o disco: %r" % e1)
+        m._backup_vistos.clear(); m._backup_vistos_lido[0] = False      # como um religamento do agente
+        del sub_a[:]
+        ok(m.backup_arquivos("pc") == (0, 0) and not sub_a, "B1: depois de religar, nada que já subiu sobe de novo: %r" % sub_a[:3])
+        m._backup_vistos.clear(); m._backup_vistos_lido[0] = True
+        del sub_a[:]
+        orig_put = S3Arq.put_object
+
+        def lento(self, **k):
+            time.sleep(0.05); sub_a.append(k["Key"])
+        S3Arq.put_object = lento
+        e2, p2 = m.backup_arquivos("pc", 0.01)
+        ok(e2 >= 1 and p2 > 0, "B2: passou do prazo, o resto fica para a próxima rodada: %r %r" % (e2, p2))
+        S3Arq.put_object = orig_put
+        e3, p3 = m.backup_arquivos("pc", 999)
+        ok(e3 == p2 and p3 == 0, "B2: a rodada seguinte manda só o que faltou: %r %r" % (e3, p3))
+        ult_b = {}
+        m.backup_bancos(S3Arq(), "pc", ult_b, "2026-11-27")
+        ok(os.path.exists(os.path.join(m.BACKUP_LOCAL, "vendas.db")) and os.path.exists(os.path.join(m.BACKUP_LOCAL, "dia", "2026-11-27", "vendas.db")),
+           "B3: cópia local dos bancos no HD (a mais nova e a do dia)")
+        os.makedirs(os.path.join(m.BACKUP_LOCAL, "dia", "2000-01-01"), exist_ok=True)
+        ult_b.clear()
+        m.backup_bancos(S3Arq(), "pc", ult_b, "2026-11-28")
+        ok(not os.path.exists(os.path.join(m.BACKUP_LOCAL, "dia", "2000-01-01")), "B3: cópia local do dia com mais de 30 dias sai")
+
+        class S3Cai:
+            def put_object(self, **k):
+                raise RuntimeError("sem rede")
+        m._s3_cliente = lambda: S3Cai()
+        os.remove(os.path.join(m.BACKUP_LOCAL, "vendas.db"))
+        ult_c, est_c = {}, {"ok_em": None, "json_pend": False}
+        m.backup_rodada("pc", ult_c, est_c)
+        ok(os.path.exists(os.path.join(m.BACKUP_LOCAL, "vendas.db")) and est_c["ok_em"] is None and m.backup.get("ok") is False,
+           "B3: sem internet a cópia local fica e o backup na nuvem conta como falha")
+    finally:
+        m._s3_cliente = orig_s3
     # luz: vence com o prazo da biblioteca; ficam a das fotos marcadas no Treino e a das últimas 24 h
     velho = m._ff_hoje(time.time() - (m.LUZ_RET_DIAS + 3) * 86400)
     ps_v = leva(velho, "antigo", 4)

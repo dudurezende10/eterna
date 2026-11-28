@@ -96,6 +96,19 @@ st, j = grava(fot, "camDia|carlos", {"cam": "A", "dia": "2026-11-24"})
 ok(j.get("recusados") == 0 and "camDia|carlos" in sim(), "4: Fotógrafo com set.u ainda grava camDia|: %s" % j)
 st, j = grava(sup, "edits|ag_abc123", {"exp": 0.2})
 ok(j.get("recusados") == 0 and "edits|ag_abc123" in sim(), "4: Supervisora ainda grava edits|: %s" % j)
+
+# 4b. Realces (26/11): o campo r do ajuste é gravado e lido de volta; fora de 0 a 100 em passos de 10 é recusado e o que estava fica
+AJ = {"b": 100, "h": 20, "c": 100, "s": 100, "t": 0, "z": 100, "x": 0, "y": 0, "auto": False}
+for r in (0, 10, 60, 100):
+    st, j = grava(sup, "edits|ag_realce", dict(AJ, r=r))
+    ok(j.get("recusados") == 0 and (sim().get("edits|ag_realce") or {}).get("r") == r, "4b: grava e lê r=%s: %s %s" % (r, j, sim().get("edits|ag_realce")))
+for r in (-10, 110, 55, 20.5, "50", None, True, [50]):
+    st, j = grava(sup, "edits|ag_realce", dict(AJ, r=r))
+    ok(j.get("recusados") == 1 and (sim().get("edits|ag_realce") or {}).get("r") == 100, "4b: r=%r deveria ser recusado: %s %s" % (r, j, sim().get("edits|ag_realce")))
+st, j = grava(sup, "edits|ag_antigo", AJ)
+ok(j.get("recusados") == 0 and "r" not in (sim().get("edits|ag_antigo") or {"r": 1}), "4b: ajuste sem r (antigo) segue gravando igual: %s" % j)
+st, j = grava(sup, "edits|ag_realce", None)
+ok(j.get("recusados") == 0 and "edits|ag_realce" not in sim(), "4b: Restaurar original (apagar) segue valendo: %s" % j)
 st, j = grava(sup, "flagList", ["a"])
 ok(j.get("recusados") == 0 and sim().get("flagList") == ["a"], "4: Supervisora com estoque ainda grava flagList: %s" % j)
 st, j = grava(fot, "flagList", ["b"])

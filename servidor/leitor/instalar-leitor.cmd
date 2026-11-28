@@ -28,36 +28,97 @@ if (-not $Usuario) { Write-Host "Ninguem conectado na tela. Rode de novo com: in
 if ($Usuario -notlike "*\*") { $Usuario = "$env:COMPUTERNAME\$Usuario" }
 Write-Host "O leitor vai rodar com o usuario $Usuario."
 
-# 2. Python 3.10 ou mais novo, instalado para todos (em Arquivos de Programas)
-function Acha-Python {
-    foreach ($v in @("314", "313", "312", "311", "310")) {
-        $c = "$env:ProgramFiles\Python$v\python.exe"
-        if (Test-Path $c) { return $c }
-    }
-    return $null
-}
-$py = Acha-Python
-if (-not $py) {
-    Write-Host "Instalando o Python 3.12 (python.org) para todos os usuarios..."
-    try { winget install -e --id Python.Python.3.12 --scope machine --silent --accept-package-agreements --accept-source-agreements | Out-Host } catch { }
-    $py = Acha-Python
-}
-if (-not $py) {
-    Write-Host "Nao consegui instalar o Python. Sem internet: baixe o instalador do Python 3.12 (64 bits) em python.org em outro computador,"
-    Write-Host "traga num pendrive, rode como administrador marcando 'Install for all users' e 'tcl/tk', e rode este instalador de novo."
-    return }
-$pyw = Join-Path (Split-Path $py) "pythonw.exe"
-& $py -I -c "import tkinter" 2>$null
-if ($LASTEXITCODE -ne 0) { Write-Host "ATENCAO: este Python nao tem a janela (tcl/tk). O leitor funciona, mas sem a janela de aviso." }
+# 2. checklist antes de instalar: confere tudo o que o instalador usa e para no primeiro problema, com o motivo em palavras
+#    (27/11, Eduardo: "o sistema tem que rodar um checklist com fallback"; nada de descobrir a falha no meio da instalacao)
+function Ok($t)    { Write-Host ("  [OK]    " + $t) -ForegroundColor Green }
+function Aviso($t) { Write-Host ("  [AVISO] " + $t) -ForegroundColor Yellow }
+function Falha($t) { Write-Host ("  [FALHA] " + $t) -ForegroundColor Red }
+Write-Host ""
+Write-Host "Conferindo o computador antes de instalar:"
+if (-not [Environment]::Is64BitOperatingSystem) { Falha "Windows de 32 bits: o leitor precisa de Windows 64 bits."; return }
+Ok "Windows 64 bits"
+foreach ($c in @("Register-ScheduledTask", "New-ScheduledTaskAction", "Get-CimInstance", "Get-AuthenticodeSignature")) {
+    if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Falha "Este Windows nao tem o comando $c (PowerShell incompleto). Chame o TI."; return } }
+if (-not (Get-Command icacls.exe -ErrorAction SilentlyContinue)) { Falha "Este Windows nao tem o icacls. Chame o TI."; return }
+Ok "Ferramentas do Windows (tarefa agendada, permissoes, assinatura digital)"
+function Porta-Abre($h, $p, $ms) {
+    $t = New-Object Net.Sockets.TcpClient
+    try { $r = $t.BeginConnect($h, $p, $null, $null); if (-not $r.AsyncWaitHandle.WaitOne($ms)) { return $false }
+          $t.EndConnect($r); return $t.Connected } catch { return $false } finally { $t.Close() } }
+if (-not (Porta-Abre $Ip 443 5000)) {
+    Falha "Nao alcancei o servidor do Eterna ($Ip). Este computador precisa estar na rede do ponto (cabo ou Wi-Fi do estadio)."; return }
+Ok "Rede do ponto: servidor do Eterna respondendo"
 
-# 3. o programa (copia embutida no fim deste arquivo)
+# 3. Python 3.10 ou mais novo, instalado para todos. Ordem: o que ja existe; instalador ao lado deste arquivo (pendrive);
+#    site oficial python.org (3.12.10, depois 3.13.17), com a assinatura digital da Python Software Foundation conferida;
+#    por ultimo o winget so com a fonte "winget" (nunca a loja msstore, que falha em computador sem a loja configurada)
+function Py-Bom($c) {
+    if (-not $c -or -not (Test-Path $c) -or $c -like "*\WindowsApps\*") { return $false }
+    $v = & $c -I -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $v) { return $false }
+    $p = "$v".Trim().Split('.'); return ([int]$p[0] -eq 3 -and [int]$p[1] -ge 10) }
+function Acha-Python {
+    $cand = @()
+    foreach ($v in @("314", "313", "312", "311", "310")) { $cand += "$env:ProgramFiles\Python$v\python.exe" }
+    foreach ($v in @("3.14", "3.13", "3.12", "3.11", "3.10")) {
+        $ip = (Get-ItemProperty "HKLM:\SOFTWARE\Python\PythonCore\$v\InstallPath" -ErrorAction SilentlyContinue).'(default)'
+        if ($ip) { $cand += (Join-Path $ip "python.exe") } }
+    foreach ($c in $cand) { if ($c -notlike "$env:ProgramFiles*") { continue }; if (Py-Bom $c) { return $c } }   # so instalacao para todos
+    return $null }
+function Assinado-PSF($arq) {
+    $s = Get-AuthenticodeSignature $arq
+    return ($s.Status -eq 'Valid' -and $s.SignerCertificate -and $s.SignerCertificate.Subject -like "*Python Software Foundation*") }
+function Instala-Exe($arq, $origem) {
+    if (-not (Assinado-PSF $arq)) { Aviso "O instalador de $origem nao tem a assinatura da Python Software Foundation. Ignorado."; return $false }
+    Write-Host "  Instalando o Python ($origem). Leva alguns minutos..."
+    $pr = Start-Process -FilePath $arq -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1 Include_tcltk=1 Include_launcher=1 Include_test=0 Shortcuts=0" -Wait -PassThru
+    if ($pr.ExitCode -ne 0 -and $pr.ExitCode -ne 3010) { Aviso "O instalador de $origem terminou com erro $($pr.ExitCode)."; return $false }
+    return $true }
+$py = Acha-Python
+$jaTinha = [bool]$py
+if ($py) { Ok "Python ja instalado: $py" }
+if (-not $py) {    # a) instalador do Python ao lado deste arquivo (sem internet: traga num pendrive)
+    $aqui = Split-Path $env:ETERNA_CMD
+    foreach ($a in (Get-ChildItem $aqui -Filter "python-3.1*-amd64.exe" -ErrorAction SilentlyContinue | Sort-Object Name -Descending)) {
+        if (Instala-Exe $a.FullName "arquivo $($a.Name)") { $py = Acha-Python; if ($py) { break } } } }
+if (-not $py) {    # b) site oficial python.org
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $tmp = Join-Path $env:TEMP "eterna-python"; New-Item -ItemType Directory -Force $tmp | Out-Null
+    foreach ($ver in @("3.12.10", "3.13.17")) {
+        $url = "https://www.python.org/ftp/python/$ver/python-$ver-amd64.exe"; $arq = Join-Path $tmp "python-$ver-amd64.exe"
+        Write-Host "  Baixando o Python $ver do site oficial (python.org)..."
+        try { $ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri $url -OutFile $arq -UseBasicParsing -TimeoutSec 600 }
+        catch { Aviso "Nao consegui baixar o Python $ver de python.org: $($_.Exception.Message)"; continue }
+        if ((Get-Item $arq).Length -lt 20MB) { Aviso "O arquivo do Python $ver veio incompleto."; Remove-Item $arq -Force -ErrorAction SilentlyContinue; continue }
+        $okx = Instala-Exe $arq "python.org $ver"; Remove-Item $arq -Force -ErrorAction SilentlyContinue
+        if ($okx) { $py = Acha-Python; if ($py) { break } } } }
+if (-not $py -and (Get-Command winget -ErrorAction SilentlyContinue)) {   # c) winget, so a fonte oficial "winget"
+    Write-Host "  Tentando o winget (fonte winget)..."
+    try { winget install -e --id Python.Python.3.12 --source winget --scope machine --silent --accept-package-agreements --accept-source-agreements | Out-Host } catch { }
+    $py = Acha-Python }
+if (-not $py) {
+    Falha "Nao consegui instalar o Python por nenhum caminho (pendrive, python.org, winget)."
+    Write-Host "  Em outro computador, baixe https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe, copie para a mesma"
+    Write-Host "  pasta deste instalador (pendrive ou Downloads) e rode este instalador de novo: ele instala sozinho a partir do arquivo."
+    return }
+if (-not $jaTinha) { Ok "Python instalado: $py" }
+$pyw = Join-Path (Split-Path $py) "pythonw.exe"
+if (-not (Test-Path $pyw)) { Falha "Falta o pythonw.exe ao lado de $py. Reinstale o Python para todos os usuarios."; return }
+& $py -I -c "import argparse,hashlib,http.client,ipaddress,json,locale,logging.handlers,os,random,re,shutil,socket,sqlite3,ssl,threading,time,urllib.parse,ctypes" 2>$null
+if ($LASTEXITCODE -ne 0) { Falha "O Python instalado esta incompleto (faltam bibliotecas padrao). Reinstale o Python."; return }
+Ok "Bibliotecas do leitor presentes"
+& $py -I -c "import tkinter" 2>$null
+if ($LASTEXITCODE -ne 0) { Aviso "Este Python nao tem a janela (tcl/tk). O leitor funciona, mas sem a janela de aviso." } else { Ok "Janela de aviso (tcl/tk)" }
+Write-Host ""
+
+# 4. o programa (copia embutida no fim deste arquivo)
 New-Item -ItemType Directory -Force $Destino | Out-Null
 $partes = (Get-Content -Raw -Encoding UTF8 $env:ETERNA_CMD) -split ('#'+'ETERNA'+'#')
 $codigo_py = $partes[2] -replace "^\r?\n", ""
 [IO.File]::WriteAllText("$Destino\eterna-leitor.py", $codigo_py, (New-Object Text.UTF8Encoding($false)))
 Write-Host "Programa copiado para $Destino"
 
-# 4. pasta de dados so do usuario do leitor, Administradores e SYSTEM
+# 5. pasta de dados so do usuario do leitor, Administradores e SYSTEM
 New-Item -ItemType Directory -Force $Dados | Out-Null
 icacls $Dados /reset /T | Out-Null                          # pasta que ja existia: volta ao padrao antes de ajustar
 if ($LASTEXITCODE -ne 0) { Write-Host "Nao consegui reiniciar a permissao de $Dados. Apague a pasta e rode de novo."; return }
@@ -68,14 +129,14 @@ if ($LASTEXITCODE -ne 0) { Write-Host "Nao consegui ajustar a permissao de $Dado
 $dono = (Get-Acl $Dados).GetOwner([Security.Principal.SecurityIdentifier]).Value
 if ($dono -ne "S-1-5-32-544" -and $dono -ne "S-1-5-18") { Write-Host "A pasta $Dados nao ficou com os Administradores. Apague a pasta e rode de novo."; return }
 
-# 5. ativacao: o codigo vale 10 minutos e uma vez so; o token fica so em $Dados\leitor.json
+# 6. ativacao: o codigo vale 10 minutos e uma vez so; o token fica so em $Dados\leitor.json
 Get-ScheduledTask -TaskName 'Eterna leitor' -ErrorAction SilentlyContinue | Stop-ScheduledTask -ErrorAction SilentlyContinue
 $codigo = Read-Host "Codigo de ativacao do Eterna (Painel de controle > Avancado > Leitores de cartao)"
 & $py -I "$Destino\eterna-leitor.py" --ativar $codigo --servidor $Servidor --ip $Ip
 if ($LASTEXITCODE -ne 0) { Write-Host "A ativacao nao deu certo. Gere um Novo codigo no Eterna e rode de novo."; return }
 & $py -I "$Destino\eterna-leitor.py" --testar
 
-# 6. tarefa agendada: liga quando o usuario entra no Windows (logon automatico), sem administrador; religa em 1 minuto se cair
+# 7. tarefa agendada: liga quando o usuario entra no Windows (logon automatico), sem administrador; religa em 1 minuto se cair
 $acao = New-ScheduledTaskAction -Execute $pyw -Argument "-I `"$Destino\eterna-leitor.py`"" -WorkingDirectory $Destino
 $gatilho = New-ScheduledTaskTrigger -AtLogOn -User $Usuario
 $conf = New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
@@ -83,13 +144,13 @@ $quem = New-ScheduledTaskPrincipal -UserId $Usuario -LogonType Interactive -RunL
 Register-ScheduledTask -TaskName 'Eterna leitor' -Action $acao -Trigger $gatilho -Settings $conf -Principal $quem -Force | Out-Null
 Write-Host "Tarefa 'Eterna leitor' criada: liga quando $Usuario entra no Windows."
 
-# 7. Reproducao Automatica desligada (o Windows nao oferece importar e apagar as fotos do cartao)
+# 8. Reproducao Automatica desligada (o Windows nao oferece importar e apagar as fotos do cartao)
 $pol = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer"
 New-Item -Path $pol -Force | Out-Null
 Set-ItemProperty -Path $pol -Name NoDriveTypeAutoRun -Value 255 -Type DWord
 Set-ItemProperty -Path $pol -Name NoAutorun -Value 1 -Type DWord
 Write-Host "Reproducao Automatica desligada para todas as unidades."
-# 8. indexacao do Windows fora das unidades removiveis (o cartao nao entra no indice de pesquisa)
+# 9. indexacao do Windows fora das unidades removiveis (o cartao nao entra no indice de pesquisa)
 $busca = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search"
 New-Item -Path $busca -Force | Out-Null
 Set-ItemProperty -Path $busca -Name DisableRemovableDriveIndexing -Value 1 -Type DWord

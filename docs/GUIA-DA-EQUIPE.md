@@ -37,10 +37,10 @@ O menu fica do lado esquerdo e é dividido em grupos:
 
 | Grupo | O que tem |
 | --- | --- |
-| Venda | Posto de venda |
+| Venda | Posto de venda e Procurar fotos (para todo mundo que vende, inclusive Admin e Supervisora) |
 | Dashboard | Painel, Estatísticas, Bandeiras, Estoque, Fila de impressão, Vendedores, Lista de vendas, Galerias online, Calendário de eventos |
 | Curadoria | Qualidade, Treino da IA, Fotógrafos, Alertas, Lixeira da IA, Montagens de IA |
-| Fotógrafo | Diário do set, Minhas fotos, Procurar fotos, Fila do fotógrafo |
+| Fotógrafo | Diário do set, Minhas fotos, Fila do fotógrafo. Procurar fotos aparece aqui só para quem não vende |
 | Configurações | Preços e Checkout, Ajuste automático, IA automática |
 | Sistema | Repositório, Identidade, Fundos de IA (técnico), Usuários, Permissões e a pasta Laboratório (Vestiário, Chute a gol, Fundos em teste) |
 
@@ -236,6 +236,13 @@ Logo abaixo do título, uma faixa diz como estão as suas fotos:
 
 O ajuste automático da IA clareia a foto escura e segura a estourada em toda foto que chega. Desde 24/11 ele só mexe na exposição, e só quando a foto está claramente escura ou clara demais. A maioria das fotos fica como saiu da câmera. Na exposição: contraste e temperatura ficam como saíram da câmera, e quem quiser muda à mão em Configurações › Ajuste automático.
 
+**Ajuste à mão, foto por foto.** Em Configurações › Ajuste automático, abra a sessão e toque na foto. Os controles, na ordem da tela: Exposição, Sombras, Realces, Contraste, Saturação, Temperatura e Corte. Cada um tem os botões de menos e de mais e uma barra.
+
+- **Sombras** (24/11): clareia só as partes escuras da foto. De 0 a 100; em 0 não faz nada.
+- **Altas luzes** (26/11): escurece só as partes claras, para recuperar céu, camisa branca e pele com flash. De 0 a 100; em 0 não faz nada. As partes médias e escuras não mudam. O que estourou em branco puro continua branco: o controle não traz de volta detalhe que a câmera não gravou.
+- **Restaurar original** zera tudo. O ajuste automático não usa Sombras nem Altas luzes.
+- O ajuste vale nas telas da equipe, no Checkout e na impressão pelo Chrome. O arquivo enviado ao programa de impressão do posto, a galeria online e as fotos com fundo de IA saem sem os ajustes (exposição, sombras, realces e os demais).
+
 As fotos do **chute a gol** não recebem ajuste automático (24/11): ficam como saíram da câmera. O servidor reconhece o chute a gol sozinho, pelas marcações do Treino da IA. Por isso a foto nova pode levar até um minuto e meio para ser ajustada, enquanto o servidor confere de onde ela é. Quem quiser ainda pode ajustar uma foto do chute à mão.
 
 Desde 24/11 essa chave não fica mais em Minhas fotos. Só o Admin liga e desliga, em **Configurações › IA automática**, linha **Ajuste automático das fotos**.
@@ -344,11 +351,24 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 - **Desativar**: o leitor para de enviar na hora. As fotos que estavam na fila dele ficam naquele computador até a TI apagar; depois de 7 dias desativado, o próprio leitor apaga a fila. A tabela continua mostrando o tamanho da fila do leitor desativado.
 - A tabela mostra se cada leitor está **Ligado**, **Desligado desde…**, **Aguardando instalação** ou **Desativado**, o último cartão (lendo, pronto, quantas já estavam no servidor, quantas ficaram sem fotógrafo), a fila e o aviso, se houver.
 
+### Clarear para imprimir (27/11)
+
+A impressão sai um pouco mais escura que a tela. Quando uma foto escura (fim de tarde, gramado na sombra) vai para o papel, o vendedor pode clarear antes:
+
+1. No Posto, na lista de impressão da venda (ou em Reimprimir), toque no ☀ da foto.
+2. Use **Exposição** para clarear tudo, **Sombras** para abrir as partes escuras (gramado, roupa escura) e **Altas luzes** para segurar o que estourou (céu, camisa branca).
+3. Segure **Segure para ver o original** para comparar. **Voltar ao original** desfaz só esses três.
+4. Toque em **Pronto** e imprima ou reimprima. A foto sai com o ajuste, e as próximas impressões dela também.
+
+O cliente não vê essa janela. Fica registrado quem ajustou.
+
 ### Procurar fotos (25/11)
 
-**Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**, no menu **Fotógrafo**, logo abaixo de Minhas fotos.
+**Minhas fotos** é a tela ao vivo: as fotos entram sem parar. Para achar uma sessão ou uma foto com calma, use **Procurar fotos**. Para quem vende (caixa, vendedores, Supervisora e Admin) ela fica no menu **Venda**, logo depois do Posto; para o fotógrafo, no menu **Fotógrafo**.
 
-- **Quem vê:** quem já vê Minhas fotos. A supervisora e o Admin procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. Quem só vende e a tela do cliente não têm essa tela.
+- **Quem vê:** quem já vê Minhas fotos e, desde 26/11, quem atende e vende (quem tem o Posto de venda). A supervisora, o Admin e quem atende e vende procuram nas sessões de todos os fotógrafos. O fotógrafo procura só nas próprias sessões, sem seletor. A tela do cliente (Checkout) nunca mostra essa tela.
+- **Para quem atende e vende (26/11):** a tela fica no menu logo depois de **Posto de venda**. No computador do Posto, abra o menu e toque em **Procurar fotos** para achar a foto que o cliente não encontrou e, desde 26/11, vender por ali mesmo (veja **Vender pelo Procurar fotos**, logo abaixo). O atendente não ganha Minhas fotos, não envia cartão e não muda nada nas fotos. Quem já estava cadastrado ganhou a tela sozinho, sem recadastro.
+- **Tirar a tela de alguém:** em **Sistema › Permissões**, na linha **Posto de venda**, desmarque **Procurar fotos** em **Aparece no menu** e salve. Quem tem Minhas fotos continua vendo a tela por ela.
 - **Fotógrafo:** escolha **Todos** ou um nome. Só aparece quem tem sessão hoje, com o número de sessões ao lado.
 - **Tempo:** **Últimos 30 min**, **Última 1 hora**, **Últimas 3 horas** ou **Dia todo**. Com Todos, a tela abre na última 1 hora. Com um fotógrafo escolhido, abre no dia todo. Em **Hora** dá para escolher uma hora cheia (09h, 10h).
 - **Código da sessão:** digite o código inteiro ou um pedaço. Com código digitado, o tempo não filtra.
@@ -357,32 +377,111 @@ Em **Minhas fotos** aparece uma linha por leitor, por exemplo "Leitor Gramado 1:
 - **Ver a sessão inteira:** toque no alto do cartão (**Ver sessão**). **Voltar** devolve à lista no mesmo lugar, com os mesmos filtros.
 - **A tela não se mexe sozinha.** Quando chegam sessões novas, aparece no alto o aviso **N sessões novas** com o botão **Atualizar**. A lista só muda quando você toca em Atualizar ou troca um filtro.
 
-A tela mostra só as sessões de hoje e precisa do computador do ponto ligado. Nada se vende por ela.
+A tela mostra só as sessões de hoje e precisa do computador do ponto ligado.
+
+### Vender pelo Procurar fotos (26/11)
+
+Para quando a selfie do cliente não trouxe todas as fotos dele (a foto com a taça, de lado, de boné) ou quando a família fez fotos em mais de um ponto. Quem atende e vende acha as sessões do cliente, marca e abre o Checkout só com elas, já juntas.
+
+**Atenção: a tela Procurar fotos é só do vendedor.** Ela mostra as fotos de todos os visitantes do dia. O monitor do vendedor nunca fica espelhado no monitor do cliente nem virado para ele. No Windows, a tela fica em **Estender**, nunca em **Duplicar**. O cliente só vê o monitor do Checkout.
+
+Passo a passo:
+
+1. Abra o menu e toque em **Procurar fotos**.
+2. Ache as sessões do cliente: escolha o fotógrafo e o horário, ou digite o código. Toque numa miniatura para ver a foto grande e ter certeza de que é ele.
+3. Em cada sessão do cliente, toque em **Marcar**. O botão vira **Marcada** e aparece uma barra no pé da tela com as sessões marcadas. Pode trocar o filtro à vontade: as marcadas ficam.
+4. Marcou errado? Toque de novo em **Marcada**, ou na miniatura da sessão na barra. **Limpar** desmarca todas.
+5. Confira as fotos das sessões marcadas. Elas abrem inteiras no Checkout: se outra família aparece na mesma sessão, o cliente vai ver.
+6. Toque em **Iniciar venda com N sessões**. O monitor do Checkout abre nas fotos dessas sessões e a sua tela avisa **Aberto no Checkout**.
+7. O cliente escolhe as fotos no Checkout, como sempre. O pedido chega ao **Posto de venda**, onde você escolhe o pacote e recebe.
+
+Para vender uma sessão só, abra a sessão (**Ver sessão**) e toque em **Vender esta sessão**.
+
+**Uma janela de Checkout por computador.** Com duas janelas do Checkout abertas no mesmo computador, você não sabe em qual delas as fotos abriram. Deixe só uma aberta, no monitor do cliente.
+
+O que pode aparecer:
+
+| Aviso ou situação | O que fazer |
+|---|---|
+| A caixa **Marcar** está apagada, com **entra quando fechar** | A sessão ainda está recebendo fotos. Espere o tempo indicado; a caixa acende sozinha. |
+| **Já vendida** ou **Pedido em aberto** | A sessão já foi vendida ou já tem pedido no Posto. Resolva pelo Posto de venda. |
+| **Sessão protegida (menor ou escola)** | Não abre por aqui. |
+| **O Checkout está com cliente** | Espere o cliente da vez terminar e toque em Iniciar de novo. As marcadas ficam. |
+| **Abra o Checkout para vender mais de uma sessão** | A janela do Checkout está fechada. Abra o Checkout e tente de novo. Com uma sessão só, a venda segue pela Venda manual do Posto. |
+| **O Checkout não respondeu** | Feche e abra a janela do Checkout e tente de novo. |
+| **No máximo 8 sessões por venda** | Desmarque alguma. |
+
+Se uma das sessões marcadas não puder entrar, nenhuma abre e a tela diz qual foi e por quê. As marcadas somem quando você sai da tela ou sai da conta. Cada venda iniciada por aqui fica no histórico com quem iniciou, o posto e as sessões.
+
+### Procurar por selfie, na tela do vendedor (26/11)
+
+**Esta função está pronta, mas desligada.** O botão só aparece depois que a supervisão avisar que foi ligada.
+
+Na tela **Procurar fotos**, ao lado dos filtros, existe o botão **Procurar por selfie**. Serve para achar de uma vez as sessões de um cliente, inclusive aquelas em que ele aparece de lado, de boné ou com a taça. Os filtros continuam valendo: a selfie é um jeito a mais.
+
+**Quem escolhe as sessões é você, não o cliente.** A lista aparece só na sua tela. O cliente só vê, no monitor do Checkout, as sessões que você marcou. Por isso o seu monitor nunca fica virado para o cliente nem espelhado no dele.
+
+Passo a passo:
+
+1. **Peça ao cliente antes de apontar a câmera.** Explique que é para achar as fotos dele e que a imagem não é guardada. Se ele não quiser, procure pelos filtros. **Não aponte a câmera para criança sem o responsável ao lado e de acordo.**
+2. Toque em **Procurar por selfie**. Abre uma janela com a câmera. A imagem aparece como a câmera vê, sem espelho.
+3. Aponte a câmera para o cliente. **De preferência, uma pessoa por vez.** Toque em **Procurar**. A imagem não é guardada.
+4. A lista vem em dois blocos:
+   - **Certeza**: sessões em que o sistema reconheceu o cliente. Já vêm **marcadas**.
+   - **Pode ser**: sessões em que talvez seja ele. Vêm **desmarcadas**.
+   As fotos com contorno são as em que o rosto apareceu. Ao lado ficam as outras fotos da sessão.
+5. Confira cada sessão. Toque na miniatura para ver a foto grande, ou em **Ver sessão** para ver todas.
+6. **Tire a família vizinha:** se uma sessão de Certeza for de outra família (o cliente só passou ao fundo), toque em **Marcada** para desmarcar.
+7. **Marque a taça:** se uma sessão de Pode ser for mesmo do cliente, toque em **Marcar**.
+8. Faltou alguma sessão? Toque em **Adicionar pelos filtros**. Você volta aos filtros com as marcadas guardadas e a barra no pé da tela. Marque a que faltava. Para rever a lista da selfie, toque em **Voltar às sessões da selfie**.
+9. Toque em **Iniciar venda com N sessões**. O Checkout abre com essas sessões e a sua tela avisa **Aberto no Checkout**.
+
+O que pode aparecer:
+
+| Aviso | O que fazer |
+|---|---|
+| **Usei o rosto maior. Se não for o cliente, enquadre só ele.** | Havia mais de uma pessoa na câmera. Nesse caso **nada vem marcado**, nem as de Certeza: confira e marque você mesmo as do cliente. Se as sessões não forem dele, toque em **Nova selfie** com só ele no quadro. |
+| **Não achei um rosto** | Aproxime o cliente da câmera, de frente, e tente de novo. |
+| **Nenhuma sessão de hoje com esse rosto** | Tente de novo ou procure pelos filtros. A busca só olha as fotos de hoje. |
+| **A câmera está em uso** | O Checkout está usando a câmera (um cliente fazendo a selfie dele). Espere terminar e toque em **Tentar a câmera de novo**. |
+| **Muitas buscas em pouco tempo** | Espere um minuto. |
+| **Limite de buscas por selfie de hoje atingido** | Procure pelos filtros e avise a supervisão. |
+| **Você não tem permissão para a busca por selfie** | Procure pelos filtros e avise a supervisão. |
+| **No máximo 8 sessões por venda** logo depois da busca | Havia mais sessões de Certeza do que cabem numa venda. As que ficaram de fora estão na lista, desmarcadas. |
+| **A busca por selfie está desligada no servidor do ponto** | Procure pelos filtros e avise a supervisão. |
+| Uma sessão com a caixa apagada | Vale o mesmo da tabela acima: ainda aberta, já vendida, com pedido em aberto ou protegida. |
+
+Para saber:
+
+- Sessão de menor ou de escola não aparece nessa busca.
+- Cada busca fica registrada no servidor por 30 dias, com o seu nome, o posto e a hora, e o Admin vê quantas cada pessoa fez e quantas terminaram sem venda. Use só para atender o cliente que está na sua frente.
+- A câmera da janela se fecha sozinha depois de 1 minuto parada.
+- **Descartar resultado** apaga a lista e tira da barra as sessões que vieram da selfie. Sair da tela também apaga.
 
 ### Sessões de hoje (v91)
 
 Com o computador do ponto ligado, **Minhas fotos** mostra o painel **Sessões de hoje**: as fotos agrupadas por sessão, a mais nova em cima. O fotógrafo vê as sessões dele. A supervisora e o Admin veem as sessões de todos os fotógrafos (o seletor Fotógrafo saiu em 24/11 e o filtro por ponto em 18/11; sessão sem ponto aparece).
 
-Cada sessão tem uma linha com: o código (LP...), o fotógrafo, o ponto, a hora do primeiro e do último clique, o número de fotos e o motivo de ter começado. Quando aparece "chegada" depois da hora, a câmera não mandou a hora do clique e vale a hora em que a foto chegou.
+Cada sessão tem uma linha com: o número do dia (com a data e o código LP pequenos ao lado), o fotógrafo, o ponto, a hora do primeiro e do último clique, o número de fotos e o motivo de ter começado. Quando aparece "chegada" depois da hora, a câmera não mandou a hora do clique e vale a hora em que a foto chegou.
 
 | Como aparece | Quer dizer |
 | --- | --- |
 | Borda amarela e **aberta · recebendo** | o fotógrafo ainda está nessa sessão; as fotos novas entram nela |
-| **fechando** | o servidor viu rostos novos e abriu outra sessão; por 1 minuto esta ainda pode se juntar à nova (por exemplo, as fotos individuais do pai e da mãe antes da foto do grupo) |
+| **fechando** | o servidor viu rostos novos e abriu outra sessão; por 3 minutos esta ainda pode se juntar à nova (por exemplo, as fotos individuais do pai e da mãe antes da foto do grupo) |
 | Sem destaque, com **Abrir sessão** | fechada: já está no Checkout e não muda mais |
 | Foto apagada com **lendo rostos** | a foto chegou e o servidor ainda está lendo os rostos para decidir a sessão |
 
 Motivo de a sessão ter começado:
 
 - **primeira do dia**: primeira sessão do fotógrafo hoje.
-- **pausa de 1 min**: o fotógrafo ficou 1 minuto sem clicar.
+- **pausa de 3 min**: o fotógrafo ficou 3 minutos sem clicar (era 1 minuto até 26/11).
 - **rostos novos**: sem pausa, mas a foto trouxe só rostos que não estavam na sessão anterior (outra família).
 - **agente reiniciado** ou **reagrupada**: o computador do ponto foi reiniciado; as fotos foram agrupadas de novo.
 - **atrasada**: fotos do cartão (ou que chegaram mais de 10 minutos depois do clique). Ficam em sessões só delas, separadas das fotos ao vivo do mesmo fotógrafo.
 
 Na dúvida, o servidor deixa a foto na sessão em que está: foto sem rosto, de perfil, de criança pequena ou de alguém ao fundo não abre sessão nova. Se a mesma família foi fotografada por dois fotógrafos, ficam duas sessões; no Checkout a selfie acha as duas.
 
-Se aparecer o aviso **Rostos desligados neste computador**, o servidor está separando as sessões só pela pausa de 1 minuto. Avise a TI.
+Se aparecer o aviso **Rostos desligados neste computador**, o servidor está separando as sessões só pela pausa de 3 minutos: clientes fotografados um logo depois do outro caem na mesma sessão. Avise a TI.
 
 Clique numa foto para ampliar. Abrindo por aqui, as setas passam só pelas fotos daquela sessão (veja **Ver a foto inteira e ampliar**).
 
@@ -593,6 +692,17 @@ No Posto de venda, ao escolher o pacote (as contas são as mesmas de antes):
 
 Se a administração tinha mudado à mão o preço do Maracanã, da Zona Mista, da Arquibancada ou da Foto adicional, esse preço voltou para o novo do catálogo. Confira em **Configurações › Preços e Checkout**.
 
+### Número da sessão (26/11)
+
+Cada sessão tem um **número do dia**: a primeira do dia é a 1, a seguinte é a 2, e assim por diante. O nome completo da sessão é a data e o número, por exemplo **2026-11-26-147**. No dia, basta **falar e digitar 147**.
+
+- Na tela o número aparece grande, com a data pequena antes e o código LP pequeno depois.
+- Para achar uma sessão em **Procurar sessão** ou em **Procurar fotos**, digite o número. Digitando 14 aparecem a 14 e as de 140 a 149. Também vale colar o nome completo (2026-11-26-147).
+- O código LP continua valendo na busca, como antes.
+- O número não muda e não se repete no dia. Se uma sessão for apagada ou juntada a outra, o número dela não volta: pode faltar um número na sequência.
+- No dia seguinte a contagem recomeça do 1. Sessão de outro dia aparece sempre com a data na frente.
+- **O cliente não usa esse número.** No Checkout e na galeria ele entra com o código que está no recibo dele.
+
 ### Procurar sessão no Posto de venda (25/11)
 
 Para quando o cliente chega ao caixa sem o código e a selfie do Checkout não achou as fotos.
@@ -609,7 +719,7 @@ O que os avisos do cartão querem dizer:
 - **Já vendida**: essa sessão já foi paga. Para ver o recibo ou imprimir de novo, use o botão **Recibo** em Minhas vendas.
 - **Pedido em aberto**: o cliente já fez o pedido no Checkout. Atenda pela lista **Aguardando pagamento**.
 
-Se souber parte do código (LP...), digite no campo: a busca passa a valer para o dia todo. A lista mostra só as sessões de hoje.
+Se souber o número da sessão (por exemplo 147) ou parte do código (LP...), digite no campo: a busca passa a valer para o dia todo. A lista mostra só as sessões de hoje.
 
 Depois da atualização, feche e abra de novo o Posto de venda em todos os caixas.
 
@@ -1034,7 +1144,7 @@ Fica em **Fotógrafo › Fila do fotógrafo**, logo abaixo de Minhas fotos. É u
 | **Chegando** | ele parou de clicar e as fotos ainda estão subindo para o servidor (fila do Wi-Fi ou leitura de cartão) |
 | **Já no Checkout** | as fotos estão no servidor e os rostos já foram lidos: a selfie do Checkout já acha o cliente |
 
-Um grupo vai para **Já no Checkout** 1 minuto depois da última foto e depois da leitura dos rostos (v91: cada grupo da Fila é uma sessão). Sai da tela 15 minutos depois.
+Um grupo vai para **Já no Checkout** 3 minutos depois da última foto e depois da leitura dos rostos (v91: cada grupo da Fila é uma sessão). Sai da tela 15 minutos depois.
 
 Com a câmera mandando direto pelo FTP, **Chegando** pode durar só alguns segundos. É normal.
 

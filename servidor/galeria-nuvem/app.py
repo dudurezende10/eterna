@@ -18,6 +18,14 @@ API que atende o celular do cliente fora do estádio, com o mesmo contrato das r
   POST /g/<token>/evento          o cliente deu play (registro com data e hora)
   GET  /g/<token>/baixar?v=&a=    registra o download e manda para o link assinado do arquivo (attachment)
   GET  /ponto/eventos?tokens=     o agente busca quando o cliente abriu, deu play e baixou (segredo do ponto)
+  GET  /ponto/leads?de=&ate=      leads por dia para o painel de gestão: só números, nenhum e-mail (segredo do ponto) (26/11)
+  GET  /rd/callback?code=&state=  volta da autorização do aplicativo Eterna no RD Station (OAuth, 26/11)
+  Selfie sem código (v99.108, plano docs/planos/2026-11-27-selfie-na-galeria.md): o servidor do estádio procura, a nuvem só guarda o pedido
+  POST /g/selfie/dias             os dias que podem ser escolhidos e se o estádio está buscando pedidos (sem isso a tela não oferece)
+  POST /g/selfie/pedido           {consentimento, dia, imagem, email, marketing}: guarda o pedido na fila -> {pedido}
+  POST /g/selfie/estado           {pedido}: esperando, buscando, achou (token e acesso da galeria), nao, varias, sem_rosto, erro, indisponivel
+  GET  /ponto/selfies             o agente leva os pedidos da fila; a selfie sai da nuvem nesse momento (segredo do estádio)
+  POST /ponto/selfies             o agente devolve o resultado {pedido, estado, token} (segredo do estádio)
   Escola pelo voucher (17/11, plano docs/planos/2026-11-17-escola-pelo-voucher.md):
   GET  /g/codigo/<localizador>    o localizador do voucher de escola abre a galeria da visita (mesma rota do código)
   POST /g/<token>/cortesia        {acesso, foto, email}: a foto grátis da criança (uma por criança, até as pessoas do voucher)
@@ -580,6 +588,65 @@ def senha_email(ev, corpo):
     return resp({"ok": True}, 202)
 
 
+# 26/11 (Ronaldo): a auditoria diária do agente (21h) chega por e-mail. Destino fixo aqui (AUDITORIA_PARA), nunca do corpo.
+AUDITORIA_PARA = os.environ.get("AUDITORIA_PARA", "ronaldo.santos@maracatour.com.br")
+
+
+def _esc(x):
+    return str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def auditoria_email_ponto(ev, corpo):
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"erro": "nao_autorizado"}, 401)
+    dia = str(corpo.get("dia") or "")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", dia):
+        return resp({"erro": "pedido"}, 400)
+    if not contar("AUDMAIL#" + dia, 86400, 6):
+        return resp({"erro": "aguarde"}, 429)
+    if not (MAIL_FROM and AUDITORIA_PARA):
+        return resp({"erro": "envio desligado"}, 502)
+    lista = lambda k, n: [str(x)[:300] for x in (corpo.get(k) or [])[:n] if x is not None]
+    corr, desv = lista("correcoes", 50), lista("desvios", 200)
+    # linhas [título] (grupo) ou [rótulo, valor, conferência]
+    num = [[str(c)[:120] for c in x[:3]] for x in (corpo.get("numeros") or [])[:150] if isinstance(x, list) and x]
+    try:   # leads do dia, da própria nuvem (LEADDIA), conferidos pela soma por origem
+        ld = TABELA.get_item(Key={"pk": "LEADDIA", "sk": dia}).get("Item") or {}
+    except Exception:
+        ld = {}
+    if ld:
+        so = sum(int(v) for k, v in ld.items() if k.startswith("o_"))
+        num += [["Leads"], ["Contatos captados", str(int(ld.get("captados") or 0)), "conferido"],
+                ["Aceitaram novidades", str(int(ld.get("aceite") or 0)), "conferido"],
+                ["Enviados ao RD Station (novos / já existentes)", "%d (%d / %d)" % (int(ld.get("rd") or 0), int(ld.get("rd_novo") or 0),
+                 int(ld.get("rd_existente") or 0)), "conferido" if int(ld.get("rd_novo") or 0) + int(ld.get("rd_existente") or 0)
+                 + int(ld.get("rd_sem_consulta") or 0) == int(ld.get("rd") or 0) else "desvio: novos + existentes não fecham com o total"],
+                ["Conversões enviadas por origem", str(so), "conferido"]]
+    sit = str(corpo.get("situacao") or "")[:60]
+    d = "%s/%s/%s" % (dia[8:], dia[5:7], dia[:4])
+    assunto = "Auditoria Eterna %s: %s" % (d, sit)
+    texto = "%s\n\nNúmeros\n%s\n\nDesvios\n%s\n\nCorrigido sozinho\n%s" % (
+        assunto, "\n".join(("\n" + x[0]) if len(x) == 1 else "%s: %s (%s)" % (x[0], x[1], x[2] if len(x) > 2 else "") for x in num), "\n".join("- " + x for x in desv) or "nenhum",
+        "\n".join("- " + x for x in corr) or "nada")
+    td = "style='padding:4px 10px;border-bottom:1px solid #eee'"
+    html = ("<div style='font-family:Arial,sans-serif;color:#0C2340;max-width:640px'><h2 style='margin:0 0 12px'>%s</h2>"
+            "<h3>Números</h3><table style='border-collapse:collapse'>%s</table><h3>Desvios</h3>%s<h3>Corrigido sozinho</h3>%s</div>") % (
+        _esc(assunto), "".join(("<tr><td colspan='3' style='padding:14px 10px 4px;font-weight:bold;color:#0057B8'>%s</td></tr>" % _esc(x[0])) if len(x) == 1 else
+                "<tr><td %s>%s</td><td %s><b>%s</b></td><td %s style='color:%s'>%s</td></tr>" % (
+                    td, _esc(x[0]), td, _esc(x[1]), td, "#1a7f37" if (x[2:] or [""])[0] == "conferido" else "#b42318" if (x[2:] or [""])[0].startswith("desvio") else "#666",
+                    _esc((x[2:] or [""])[0])) for x in num),
+        ("<ul>%s</ul>" % "".join("<li>%s</li>" % _esc(x) for x in desv)) if desv else "<p>Nenhum.</p>",
+        ("<ul>%s</ul>" % "".join("<li>%s</li>" % _esc(x) for x in corr)) if corr else "<p>Nada.</p>")
+    try:
+        _ses.send_email(FromEmailAddress="%s <%s>" % (MAIL_NOME, MAIL_FROM), Destination={"ToAddresses": [AUDITORIA_PARA]},
+                        Content={"Simple": {"Subject": {"Data": assunto, "Charset": "UTF-8"},
+                                            "Body": {"Text": {"Data": texto, "Charset": "UTF-8"}, "Html": {"Data": html, "Charset": "UTF-8"}}}})
+    except Exception as ex:
+        print("auditoria: envio falhou:", str(ex)[:200])
+        return resp({"erro": "envio"}, 502)
+    return resp({"ok": True}, 202)
+
+
 # ---------- compra online pela Imply (v99, plano docs/planos/2026-11-11-compra-online-pela-imply.md) ----------
 # A galeria monta o carrinho com os produtos do catálogo online (mesmos SKU e preço da Imply, publicados pelo ponto no
 # manifesto); a Nuvem confere, cria o pedido (PED#<ON-...>), cadastra a pessoa na Imply (setPessoa) e devolve o endereço do
@@ -730,7 +797,7 @@ def lead(email, idioma, token, marketing, versao, ref=None, origem="compra"):
     só quem marcou vai para o RD Station (25/11: fila RDPEND, rd_fila; uma vez por origem)."""
     k = {"pk": "LEAD#" + hashlib.sha256(email.encode()).hexdigest()[:32], "sk": "M"}
     velho = item(k["pk"]) or {}
-    gs = set(json.loads(velho.get("galerias") or "[]")) | {token}
+    gs = set(json.loads(velho.get("galerias") or "[]")) | ({token} if token else set())   # 27/11: selfie sem código chega sem galeria
     peds = (json.loads(velho.get("pedidos") or "[]") + ([ref] if ref else []))[-50:]
     novo = {**k, "email": email, "idioma": idioma, "galerias": json.dumps(sorted(gs)[-50:]), "pedidos": json.dumps(peds),
             "primeiro": velho.get("primeiro") or iso(), "ultimo": iso(), "ttl": int(time.time() + PED_DIAS * 86400)}
@@ -741,7 +808,13 @@ def lead(email, idioma, token, marketing, versao, ref=None, origem="compra"):
     for k2 in ("rd_em", "rd_origens"):
         if k2 in velho:
             novo[k2] = velho[k2]
+    for k2 in ("rd_primeiro", "rd_novo"):
+        if k2 in velho:
+            novo[k2] = velho[k2]
     TABELA.put_item(Item=novo)
+    conta_leads(["captados"] if not velho else [], "cap")
+    if marketing and not velho.get("marketing"):
+        conta_leads(["aceite"])
     if novo.get("marketing") and origem not in json.loads(novo.get("rd_origens") or "[]"):
         rd_enfileira(k["pk"], email, idioma, origem)
 
@@ -755,6 +828,95 @@ def rd_enfileira(lead_pk, email, idioma, origem):
 
 
 RD_LOTE = 40
+LEADDIA_DIAS = 800
+
+
+def dia_hora(t=None):
+    """Dia (AAAA-MM-DD) e hora (0-23) do venue."""
+    x = datetime.fromtimestamp((t if t is not None else time.time()) + FUSO_H * 3600, timezone.utc)
+    return x.strftime("%Y-%m-%d"), x.hour
+
+
+def conta_leads(campos, hora_de=None, t=None):
+    """26/11 (Ronaldo): contagem de leads por dia para o painel de gestão e o BI (LEADDIA/<dia>). Só números, nenhum e-mail.
+    hora_de: soma também a hora (h_cap_HH ou h_rd_HH). Falha aqui nunca derruba o lead nem o envio."""
+    if not campos:
+        return
+    dia, h = dia_hora(t)
+    cs = list(campos) + (["h_%s_%02d" % (hora_de, h)] if hora_de else [])
+    try:
+        TABELA.update_item(Key={"pk": "LEADDIA", "sk": dia},
+                           UpdateExpression="ADD " + ", ".join("#c%d :um" % i for i in range(len(cs))) + " SET #ttl = :ttl",
+                           ExpressionAttributeNames={**{"#c%d" % i: c for i, c in enumerate(cs)}, "#ttl": "ttl"},
+                           ExpressionAttributeValues={":um": 1, ":ttl": int(time.time() + LEADDIA_DIAS * 86400)})
+    except Exception as ex:
+        print("leads do dia: %s" % type(ex).__name__)
+
+
+def leads_ponto(ev):
+    """O agente leva ao painel de gestão os leads por dia (de/ate, até 62 dias). Campos de cada dia:
+    captados (e-mail novo no Eterna), aceite (marcou novidades), rd (primeiro envio do lead ao RD), rd_novo / rd_existente
+    (o contato não existia / já existia no RD; com OAuth), rd_sem_consulta (sem OAuth ou consulta falhou), o_<origem>
+    (conversões enviadas por origem), h_cap_HH e h_rd_HH (por hora)."""
+    if not ponto_ok((ev.get("headers") or {}).get("x-eterna-ponto", "")):
+        return resp({"error": "não autorizado"}, 401)
+    q = ev.get("queryStringParameters") or {}
+    hoje = dia_hora()[0]
+    de, ate = str(q.get("de") or hoje), str(q.get("ate") or q.get("de") or hoje)
+    if not (_re_dia.match(de) and _re_dia.match(ate)) or de > ate or epoch(ate + "T00:00:00") - epoch(de + "T00:00:00") > 62 * 86400:
+        return resp({"error": "período inválido"}, 400)
+    its = TABELA.query(KeyConditionExpression=Key("pk").eq("LEADDIA") & Key("sk").between(de, ate)).get("Items", [])
+    dias = {x["sk"]: {k: int(v) for k, v in x.items() if k not in ("pk", "sk", "ttl")} for x in its}
+    return resp({"de": de, "ate": ate, "oauth": rdstation.oauth_ligado(), "dias": dias})
+
+
+def leads_recalcular():
+    """Uma vez, no deploy de 26/11: monta LEADDIA dos dias passados a partir dos leads (primeiro, marketing_em, rd_em).
+    Antes da consulta ao RD não se sabe novo/existente: esses dias ficam com rd_sem_consulta."""
+    por, ini = {}, None
+    while True:
+        r = TABELA.scan(FilterExpression=Attr("pk").begins_with("LEAD#"), **({"ExclusiveStartKey": ini} if ini else {}))
+        for it in r.get("Items", []):
+            for campo, quando, h in (("captados", it.get("primeiro"), "cap"),
+                                     ("aceite", it.get("marketing_em") if it.get("marketing") else None, None),
+                                     ("rd", it.get("rd_primeiro") or it.get("rd_em"), "rd")):
+                t = epoch(quando) if quando else 0
+                if not t:
+                    continue
+                dia, hh = dia_hora(t)
+                d = por.setdefault(dia, {})
+                d[campo] = d.get(campo, 0) + 1
+                if h:
+                    d["h_%s_%02d" % (h, hh)] = d.get("h_%s_%02d" % (h, hh), 0) + 1
+                if campo == "rd":
+                    m = {True: "rd_novo", False: "rd_existente"}.get(it.get("rd_novo"), "rd_sem_consulta")
+                    d[m] = d.get(m, 0) + 1
+                    for o in json.loads(it.get("rd_origens") or "[]"):
+                        d["o_" + o] = d.get("o_" + o, 0) + 1
+        ini = r.get("LastEvaluatedKey")
+        if not ini:
+            break
+    for dia, d in por.items():
+        TABELA.put_item(Item={"pk": "LEADDIA", "sk": dia, "ttl": int(time.time() + LEADDIA_DIAS * 86400), **d})
+    return {"dias": len(por), "leads": sum(d.get("captados", 0) for d in por.values())}
+
+
+def rd_callback(ev):
+    """Volta da autorização do aplicativo Eterna no RD. Página simples, sem token nenhum."""
+    q = ev.get("queryStringParameters") or {}
+    try:
+        motivo = rdstation.conectar(q.get("code"), q.get("state"))
+    except Exception as ex:
+        motivo = type(ex).__name__
+    ok_ = not motivo
+    print("rd: autorização %s" % ("ok" if ok_ else "recusada (%s)" % motivo))
+    txt = ("RD Station conectado ao Eterna. Pode fechar esta página." if ok_ else
+           "Não foi possível conectar o RD Station (%s). Gere um link novo de autorização." % motivo)
+    html = ('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>Eterna · RD Station</title><body style="font:18px system-ui;margin:40px auto;max-width:560px;padding:0 16px">'
+            '<h1 style="font-size:22px">%s</h1><p>%s</p></body>' % ("Pronto" if ok_ else "Não conectou", txt))
+    return {"statusCode": 200 if ok_ else 400, "headers": {"Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer"}, "body": html}
 
 
 def rd_fila():
@@ -764,6 +926,13 @@ def rd_fila():
         return {"rd": "desligado"}
     ok_, erro = 0, 0
     for p in TABELA.query(KeyConditionExpression=Key("pk").eq("RDPEND"), Limit=RD_LOTE).get("Items", []):
+        it = item(p["lead"]) or {}
+        existia = None
+        if rdstation.oauth_ligado() and not it.get("rd_primeiro") and not it.get("rd_em") and "rd_novo" not in it:
+            try:
+                existia = rdstation.contato_existe(p["email"])       # antes do envio: depois dele o contato sempre existe
+            except Exception as ex:
+                print("rd: consulta do contato falhou (%s)" % str(ex)[:40])
         try:
             rdstation.enviar(p["email"], p.get("idioma"), p.get("origem") or "galeria")
         except rdstation.RdErro as ex:
@@ -781,11 +950,18 @@ def rd_fila():
             break
         ok_ += 1
         TABELA.delete_item(Key={"pk": "RDPEND", "sk": p["sk"]})
-        it = item(p["lead"]) or {}
+        it = item(p["lead"]) or it
         orig = sorted(set(json.loads(it.get("rd_origens") or "[]")) | {p.get("origem") or "galeria"})
+        primeiro = not it.get("rd_primeiro") and not it.get("rd_em")
         if it:
-            TABELA.update_item(Key={"pk": p["lead"], "sk": "M"}, UpdateExpression="SET rd_em = :t, rd_origens = :o",
-                               ExpressionAttributeValues={":t": iso(), ":o": json.dumps(orig)})
+            sets, vals = "SET rd_em = :t, rd_origens = :o", {":t": iso(), ":o": json.dumps(orig)}
+            if primeiro:
+                sets, vals[":p"] = sets + ", rd_primeiro = :p", iso()
+                if existia is not None:
+                    sets, vals[":n"] = sets + ", rd_novo = :n", not existia
+            TABELA.update_item(Key={"pk": p["lead"], "sk": "M"}, UpdateExpression=sets, ExpressionAttributeValues=vals)
+        marca = {True: "rd_existente", False: "rd_novo", None: "rd_sem_consulta"}[existia]
+        conta_leads(["o_" + (p.get("origem") or "galeria")] + (["rd", marca] if primeiro else []), "rd" if primeiro else None)
     if ok_ or erro:
         print("rd: %d enviados, %d com erro" % (ok_, erro))
     return {"rd": ok_, "rd_erro": erro}
@@ -1167,8 +1343,8 @@ def publicar(ev, corpo):
             "menor": bool(m.get("menor")), "criada": str(m.get("criada") or iso())[:40], "expira": str(m.get("expira") or "")[:40],
             "precos": {"dig": max(0.0, float(pr.get("dig") or 0)), "todas": max(0.0, float(pr.get("todas") or 0))},
             "catalogo": catalogo_ok(m.get("catalogo")), "fotos": fotos}
-    if m.get("origem") == "ativ":                         # v99.23: galeria do Tour montada pela foto da venda de uma ativação
-        novo["origem"] = "ativ"
+    if m.get("origem") in ("ativ", "selfie"):             # v99.23: fotos do Tour pela foto da venda; v99.108: pela selfie sem código
+        novo["origem"] = m["origem"]
     if vo:
         novo["voucher"] = vo
     velho = manifesto(m["token"])
@@ -1324,6 +1500,155 @@ def cortesia(token, m, corpo, ip, pids):
     return resp({"ok": True, "foto": foto, "galeria": galeria_obj(token, m, pids, foto)})
 
 
+# ---------- v99.108: selfie sem código (plano docs/planos/2026-11-27-selfie-na-galeria.md) ----------
+# A selfie fica só no item da fila (SFQ), nunca no Rekognition nem no S3. O agente do estádio leva a fila de 10 em 10 s e, ao levar,
+# a selfie sai daqui. Sem busca em 10 min, a selfie é apagada e o pedido fica "indisponivel". SFP#<pedido> guarda só o estado (1 h).
+SELFIE_DIAS = 30                 # o servidor do estádio guarda 30 dias de fotos
+SELFIE_ESPERA = 600              # s sem resposta do estádio: indisponível (e a selfie é apagada)
+SELFIE_TTL = 3600                # o estado do pedido some em 1 h
+SELFIE_MAX = 350_000             # caracteres da selfie em base64 (o celular manda 640 px); cabe num item do DynamoDB
+SELFIE_VIVO = 120                # o estádio conta como ligado se levou a fila nos últimos 2 min
+SELFIE_LOTE = 5
+LIMITE_SELFIE_DIA = int(os.environ.get("LIMITE_SELFIE_DIA", "3000"))
+SELFIE_FIM = ("achou", "nao", "varias", "sem_rosto", "erro")
+_re_pedido = re.compile(r"^[A-Za-z0-9_-]{24}$")
+
+
+def selfie_dias(t=None):
+    """Os dias que o cliente pode escolher (venue): hoje e os 29 anteriores, do mais novo para o mais velho."""
+    t = time.time() if t is None else t
+    return [_dia_venue(t - i * 86400) for i in range(SELFIE_DIAS)]
+
+
+def selfie_estadio_ligado():
+    it = item("SFAG") or {}
+    return time.time() - float(it.get("em") or 0) <= SELFIE_VIVO
+
+
+def ponto_estadio(ev):
+    """Só o segredo do estádio: o servidor de teste não leva a selfie de um cliente de verdade."""
+    seg = (ev.get("headers") or {}).get("x-eterna-ponto", "")
+    h = hashlib.sha256(seg.encode()).hexdigest() if seg else ""
+    return bool(h) and hmac.compare_digest(h, SEGREDO_PONTO_SHA256)
+
+
+def selfie_estado(corpo):
+    pid = str(corpo.get("pedido") or "")
+    it = item("SFP#" + pid) if _re_pedido.match(pid) else None
+    if not it or int(it.get("ttl") or 0) < time.time():
+        return resp({"estado": "vencido"}, 404)
+    est = it.get("estado")
+    if est in ("esperando", "buscando") and time.time() - float(it.get("criado") or 0) > SELFIE_ESPERA:
+        if it.get("fq"):
+            TABELA.delete_item(Key={"pk": "SFQ", "sk": it["fq"]})          # a selfie que ninguém levou sai agora
+        TABELA.update_item(Key={"pk": "SFP#" + pid, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": "indisponivel"})
+        est = "indisponivel"
+    out = {"estado": est, "dia": it.get("dia")}
+    if est == "achou":
+        out.update({"token": it["token"], "acesso": it["acesso"], "exp": iso(int(it["exp"])), "n": int(it.get("n") or 0)})
+    return resp(out)
+
+
+def selfie_pedido(corpo, ip):
+    if corpo.get("consentimento") is not True:
+        return resp({"error": "consentimento obrigatório"}, 400)
+    dia = str(corpo.get("dia") or "")
+    if dia not in selfie_dias():
+        return resp({"error": "dia inválido", "campo": "dia"}, 400)
+    img = corpo.get("imagem")
+    if not isinstance(img, str) or not img:
+        return resp({"error": "sem imagem"}, 400)
+    img = img.split(",", 1)[-1]
+    if len(img) > SELFIE_MAX:
+        return resp({"error": "imagem grande demais"}, 413)
+    try:
+        jpeg = base64.b64decode(img[:16])[:2] == b"\xff\xd8"
+    except Exception:
+        jpeg = False
+    if not jpeg:
+        return resp({"error": "imagem inválida"}, 400)
+    if not contar("SFI#" + ip_hash(ip), 3600, 6):
+        return resp({"motivo": "bloqueado", "ate": iso(time.time() // 3600 * 3600 + 3600)}, 429)
+    if not selfie_estadio_ligado():
+        return resp({"ok": False, "motivo": "indisponivel"}, 503)
+    if not contar("SFD", 86400, LIMITE_SELFIE_DIA):
+        evento("selfie-dia", "selfie_dia_teto", ip)
+        return resp({"ok": False, "motivo": "indisponivel"}, 503)
+    agora = time.time()
+    pid = secrets.token_urlsafe(18)
+    fq = "%s#%s" % (iso(agora), pid)
+    idioma, versao = str(corpo.get("idioma") or "pt")[:2], str(corpo.get("versao") or "")[:20]
+    con = {"pk": "CON#SFDIA", "sk": "%s#%s" % (iso(agora), secrets.token_hex(3)), "tipo": "titular", "versao": versao, "idioma": idioma,
+           "dia": dia, "ttl": int(agora + 400 * 86400)}
+    em = str(corpo.get("email") or "").strip().lower()[:190]
+    if EMAIL_RE.match(em):                               # como no aceite da galeria (24/11): o e-mail junto do consentimento
+        con["email"] = em
+    TABELA.put_item(Item=con)
+    if EMAIL_RE.match(em):
+        lead(em, idioma, None, corpo.get("marketing") is True, versao, origem="selfie")
+    TABELA.put_item(Item={"pk": "SFQ", "sk": fq, "pedido": pid, "dia": dia, "imagem": img, "ttl": int(agora + SELFIE_ESPERA + 300)})
+    TABELA.put_item(Item={"pk": "SFP#" + pid, "sk": "M", "estado": "esperando", "dia": dia, "criado": int(agora), "fq": fq,
+                          "ttl": int(agora + SELFIE_TTL)})
+    img = None
+    corpo.pop("imagem", None)
+    evento("selfie-dia", "selfie_dia_pedido", ip, dia=dia)
+    return resp({"ok": True, "pedido": pid, "estado": "esperando"})
+
+
+def selfie_cliente(acao, corpo, ip):
+    if acao == "dias":
+        if not contar("SFX#" + ip_hash(ip), 60, 30):
+            return resp({"motivo": "bloqueado"}, 429)
+        return resp({"ok": True, "dias": selfie_dias(), "ligada": selfie_estadio_ligado()})
+    if acao == "estado":
+        if not contar("SFE#" + ip_hash(ip), 60, 40):
+            return resp({"motivo": "bloqueado"}, 429)
+        return selfie_estado(corpo)
+    if acao == "pedido":
+        return selfie_pedido(corpo, ip)
+    return resp({"error": "not found"}, 404)
+
+
+def selfie_ponto(ev, corpo, metodo):
+    if not ponto_estadio(ev):
+        return resp({"error": "não autorizado"}, 401)
+    agora = time.time()
+    if metodo == "GET":
+        TABELA.put_item(Item={"pk": "SFAG", "sk": "M", "em": int(agora), "ttl": int(agora + 86400)})
+        out = []
+        for x in TABELA.query(KeyConditionExpression=Key("pk").eq("SFQ"), Limit=SELFIE_LOTE).get("Items", []):
+            TABELA.delete_item(Key={"pk": "SFQ", "sk": x["sk"]})               # a selfie sai da nuvem aqui
+            p = item("SFP#" + x["pedido"])
+            if agora - epoch(x["sk"].split("#")[0]) > SELFIE_ESPERA or not p or p.get("estado") != "esperando":
+                continue
+            TABELA.update_item(Key={"pk": "SFP#" + x["pedido"], "sk": "M"}, UpdateExpression="SET estado = :e, fq = :f",
+                               ExpressionAttributeValues={":e": "buscando", ":f": ""})
+            out.append({"pedido": x["pedido"], "dia": x["dia"], "imagem": x["imagem"]})
+        return resp({"pedidos": out})
+    pid, est = str(corpo.get("pedido") or ""), str(corpo.get("estado") or "")
+    p = item("SFP#" + pid) if _re_pedido.match(pid) else None
+    if not p or est not in SELFIE_FIM:
+        return resp({"error": "pedido inválido"}, 400)
+    if p.get("estado") != "buscando":
+        return resp({"ok": True, "estado": p.get("estado")})
+    if est == "achou":
+        tok = str(corpo.get("token") or "")
+        m = manifesto(tok) if _re_token.match(tok) else None
+        if not m or m.get("origem") != "selfie" or expirou(m) or not m["fotos"]:
+            return resp({"error": "galeria inválida"}, 400)
+        acesso = secrets.token_urlsafe(24)
+        exp = int(min(agora + ACESSO_TTL, epoch(m["expira"]) or agora + ACESSO_TTL))
+        TABELA.put_item(Item={"pk": "ACE#" + acesso, "sk": "M", "token": tok, "pids": json.dumps(sorted(f["id"] for f in m["fotos"])),
+                              "exp": exp, "ttl": exp})
+        TABELA.update_item(Key={"pk": "SFP#" + pid, "sk": "M"}, UpdateExpression="SET estado = :e, #tk = :t, acesso = :a, #ex = :x, #n = :n",
+                           ExpressionAttributeNames={"#tk": "token", "#ex": "exp", "#n": "n"}, ExpressionAttributeValues={":e": est, ":t": tok, ":a": acesso, ":x": exp, ":n": len(m["fotos"])})
+        evento(tok, "selfie_dia_achou", "", fotos=len(m["fotos"]))
+    else:
+        TABELA.update_item(Key={"pk": "SFP#" + pid, "sk": "M"}, UpdateExpression="SET estado = :e", ExpressionAttributeValues={":e": est})
+        evento("selfie-dia", "selfie_dia_" + est, "", dia=p.get("dia"))
+    return resp({"ok": True, "estado": est})
+
+
 def handler(ev, ctx):
     if ev.get("limpeza"):                                 # agendada, uma vez por dia
         try:
@@ -1338,6 +1663,8 @@ def handler(ev, ctx):
         except Exception as ex:
             print("rd: fila falhou (%s)" % type(ex).__name__)
         return r
+    if ev.get("leads_recalcular"):                        # uma vez, à mão (aws lambda invoke), no deploy de 26/11
+        return leads_recalcular()
     if ev.get("indexar"):                                 # chamada interna em segundo plano
         t = ev["indexar"]
         m = manifesto(t)
@@ -1368,6 +1695,8 @@ def handler(ev, ctx):
         return publicar(ev, corpo)
     if caminho == "/auth/senha-email" and metodo == "POST":
         return senha_email(ev, corpo)
+    if caminho == "/ponto/auditoria" and metodo == "POST":
+        return auditoria_email_ponto(ev, corpo)
     if caminho == "/ponto/vendas-online" and metodo == "GET":
         return vendas_online(ev)
     if caminho == "/ponto/compra" and metodo in ("GET", "POST"):
@@ -1376,7 +1705,15 @@ def handler(ev, ctx):
         return eventos_ponto(ev)
     if caminho == "/ponto/escolas" and metodo == "GET":
         return escolas_ponto(ev)
+    if caminho == "/ponto/leads" and metodo == "GET":
+        return leads_ponto(ev)
+    if caminho == "/rd/callback" and metodo == "GET":
+        return rd_callback(ev)
+    if caminho == "/ponto/selfies" and metodo in ("GET", "POST"):
+        return selfie_ponto(ev, corpo, metodo)
     partes = caminho.split("/")                           # ['', 'g', token, ação]
+    if len(partes) == 4 and partes[1] == "g" and partes[2] == "selfie" and metodo == "POST":   # v99.108: selfie sem código
+        return selfie_cliente(partes[3], corpo, ip)
     if len(partes) == 4 and partes[1] == "g" and partes[2] == "codigo" and metodo == "GET":
         if not contar("COD#" + ip_hash(ip), 60, 30):
             return resp({"motivo": "bloqueado"}, 429)

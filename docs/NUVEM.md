@@ -340,3 +340,44 @@ Quem deixa o e-mail na galeria online (selfie, compra, vídeo da ativação, cor
 ```bash
 read -s -p "Chave do RD: " RD && aws ssm put-parameter --region us-east-2 --name /eterna/rdstation-chave --type SecureString --overwrite --value "$RD"; unset RD
 ```
+
+### Lead novo ou já existente no RD e contagem por dia (26/11)
+
+A conversão do RD responde só o `event_uuid`: não diz se o contato foi criado ou se já existia. Para o painel não dar
+número errado, antes do **primeiro** envio de cada lead a nuvem consulta o contato pelo e-mail
+(`GET https://api.rd.services/platform/contacts/email:<e-mail>`): 200 = já existia, 404 = novo. O lead guarda
+`rd_primeiro` (quando foi ao RD pela primeira vez) e `rd_novo` (true/false). Envio de outra origem do mesmo lead não consulta
+de novo. Se a consulta falhar ou o OAuth estiver desligado, o envio segue igual e o lead conta como `rd_sem_consulta`.
+
+- **OAuth:** a consulta de contato não aceita a chave das conversões. Aplicativo privado **Eterna** no App Publisher do RD
+  (https://appstore.rdstation.com/pt-BR/publisher), URL de callback `https://dxsulr2e9z91t.cloudfront.net/rd/callback`.
+  Parâmetros SecureString: `/eterna/rd-app` (JSON `{"client_id","client_secret"}`, `RdAppParametro`),
+  `/eterna/rd-oauth-refresh` (o refresh_token, que não vence; gravado pela nuvem, `RdRefreshParametro`) e
+  `/eterna/rd-oauth-estado` (o `state` do link, `RdEstadoParametro`). O access_token (24 h) fica só em memória e é renovado
+  pelo refresh_token. Só a Lambda grava os dois últimos (`ssm:PutParameter` só neles).
+- **Autorizar (uma vez; de novo só se o RD revogar):** no CloudShell, gravar o aplicativo e um `state` novo, e abrir o link:
+
+```bash
+read -s -p "client_id: " CI && read -s -p " client_secret: " CS && echo && \
+aws ssm put-parameter --region us-east-2 --name /eterna/rd-app --type SecureString --overwrite \
+  --value "$(printf '{"client_id":"%s","client_secret":"%s"}' "$CI" "$CS")" >/dev/null && \
+ST=$(openssl rand -hex 16) && aws ssm put-parameter --region us-east-2 --name /eterna/rd-oauth-estado --type SecureString --overwrite --value "$ST" >/dev/null && \
+echo "https://api.rd.services/auth/dialog?client_id=$CI&redirect_uri=https%3A%2F%2Fdxsulr2e9z91t.cloudfront.net%2Frd%2Fcallback&state=$ST"; unset CI CS ST
+```
+
+  Abrir o link logado no RD da Maracatour e autorizar. A página da volta diz **Pronto** (ou o motivo). O `state` vale uma vez:
+  para autorizar de novo, gravar outro. O `code` do RD vence em 60 min.
+- **Contagem por dia:** registro `LEADDIA/<dia>` (dia de Brasília), só números: `captados` (e-mail novo no Eterna),
+  `aceite` (marcou novidades), `rd` (primeiro envio do lead), `rd_novo`, `rd_existente`, `rd_sem_consulta`, `o_<origem>`
+  (conversões enviadas por origem: selfie, compra, video, cortesia, galeria) e `h_cap_HH` / `h_rd_HH` (por hora).
+  Leitura: `GET /ponto/leads?de=AAAA-MM-DD&ate=AAAA-MM-DD` com o segredo do ponto (até 62 dias).
+- **Dias de antes (uma vez, no deploy):** `aws lambda invoke --region us-east-2 --function-name eterna-galeria --cli-binary-format raw-in-base64-out --payload '{"leads_recalcular": true}' /dev/stdout`
+  refaz `LEADDIA` a partir dos leads. Até 26/11 não havia consulta: esses dias saem com `rd_sem_consulta` e o `rd` conta pelo
+  último envio (`rd_em`), não pelo primeiro.
+
+## Auditoria diária por e-mail (v99.102.0)
+
+- `POST /ponto/auditoria` com o segredo do ponto (`x-eterna-ponto`). Corpo `{dia, situacao, correcoes[], desvios[], numeros[[título] | [rótulo, valor, conferência]], feita_em}`.
+- Manda pelo SES para `AUDITORIA_PARA` (fixo no template, `ronaldo.santos@maracatour.com.br`); o destino nunca vem do corpo.
+  Conteúdo escapado no HTML. Até 6 envios por dia (`AUDMAIL#<dia>`). A nuvem acrescenta o grupo Leads do dia (`LEADDIA/<dia>`).
+- Quem chama é o agente do estádio depois da auditoria das 21h (`ETERNA_AUDITORIA_HORA`), que tenta de novo a cada 10 min até a nuvem aceitar.

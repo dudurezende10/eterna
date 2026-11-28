@@ -138,7 +138,7 @@ try{
   await clica(pg,'[data-act="ps-jan"][data-j="90"]');await pg.waitForTimeout(200);
   await pg.fill('#ck-code','velha');await pg.waitForTimeout(350);cs=await cartoes(pg);
   ok(cs.length===1&&cs[0].card==='LPPSVELHA','11: parte do código acha a sessão fora do horário: '+cs.map(c=>c.card).join());
-  await pg.fill('#ck-code','ZZZZ');await pg.waitForTimeout(300);ok(await pg.evaluate(()=>!document.querySelector('#ps-lista .ps-card')&&/Nenhuma sessão com esse código/.test(document.querySelector('#ps-lista').textContent)),'11: código sem sessão avisa');
+  await pg.fill('#ck-code','ZZZZ');await pg.waitForTimeout(300);ok(await pg.evaluate(()=>!document.querySelector('#ps-lista .ps-card')&&/Nenhuma sessão com esse número ou código/.test(document.querySelector('#ps-lista').textContent)),'11: código sem sessão avisa');
   // 12: /sessoes novo com a tela aberta não apaga o texto do código nem volta a contagem para 24
   await pg.fill('#ck-code','');await pg.waitForTimeout(250);await clica(pg,'[data-act="ps-mais"]');await pg.waitForTimeout(250);
   await pg.focus('#ck-code');await pg.keyboard.type('LPPS0');await pg.waitForTimeout(350);

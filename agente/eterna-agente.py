@@ -348,6 +348,36 @@ def imp_destinos(j):
 ORIGENS_REDE = {x.strip().rstrip("/").lower() for x in os.environ.get("ETERNA_ORIGENS", "").split(",") if x.strip()}
 ORIGENS_REDE_HOSTS = {urlparse(x).netloc for x in ORIGENS_REDE} - {""}   # v87 (segurança I1): entrada sem esquema não vira Host vazio
 ORIGENS_SEM_ESQUEMA = sorted(x for x in ORIGENS_REDE if not urlparse(x).netloc)
+
+
+def _meus_ips_rede():
+    """27/11 (tablet na rede do ponto, sem internet e sem DNS): os IPv4 privados desta máquina. Abrir o Eterna por
+    https://<IP do servidor> (o nginx na 443) vale como ETERNA_ORIGENS. Não abre brecha de DNS rebinding: um nome de fora
+    que aponte para cá chega com o Host do nome, nunca com o IP."""
+    ips = set()
+    try:
+        ips |= set(subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout.split())
+    except Exception:
+        pass
+    try:
+        ips |= {i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
+    except Exception:
+        pass
+    out = set()
+    for ip in ips:
+        try:
+            a = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if a.version == 4 and a.is_private and not a.is_loopback and not a.is_link_local:
+            out.add(ip)
+    return out
+
+
+if sys.platform.startswith("linux") and os.environ.get("ETERNA_ORIGENS_IP", "1") != "0":
+    _ips_eu = _meus_ips_rede()
+    ORIGENS_REDE |= {"https://" + ip for ip in _ips_eu}
+    ORIGENS_REDE_HOSTS |= _ips_eu
 INBOX = os.path.join(HOME, "inbox")
 THUMBS = os.path.join(HOME, "thumbs")
 INDEX = os.path.join(HOME, "index.json")
@@ -849,6 +879,48 @@ BUSCA_DIAS_EXPLICITA = bool((os.environ.get("ETERNA_BUSCA_DIAS") or "").strip())
 
 
 BUSCA_JANELA_PADRAO, BUSCA_JANELA_MIN_OK, BUSCA_JANELA_MAX_OK = 90, 15, 480
+# 26/11 (fase 2 do plano docs/planos/2026-11-26-procurar-vender.md): busca por selfie do VENDEDOR, na tela Procurar fotos.
+# Devolve SESSÕES de hoje para o vendedor conferir: "certeza" (nota a partir de LIMITE, a faixa que o Checkout já aceita) e
+# "pode_ser" (entre o piso abaixo e LIMITE). O piso só vale nesta busca: a selfie do cliente (POST /rostos/buscar) segue com
+# LIMITE_TALVEZ. ETERNA_BUSCA_VEND_PISO ajusta sem publicar (reiniciar o agente), sempre dentro da faixa travada aqui.
+# A rota nasce DESLIGADA (404): só existe com ETERNA_BUSCA_VEND=1 no servidor. O /status diz à tela se está ligada.
+BUSCA_VEND_PISO_MIN, BUSCA_VEND_PISO_PADRAO = 0.25, 0.30
+
+
+def _busca_vend_piso(v=None):
+    """O piso do "pode ser": de BUSCA_VEND_PISO_MIN a LIMITE_TALVEZ (fora disso, o mais perto); inválido = o padrão."""
+    if v is None:
+        v = os.environ.get("ETERNA_BUSCA_VEND_PISO")
+    try:
+        v = float(str(v).strip().replace(",", ".")) if v is not None and str(v).strip() else BUSCA_VEND_PISO_PADRAO
+    except (TypeError, ValueError):
+        v = BUSCA_VEND_PISO_PADRAO
+    if v != v:
+        v = BUSCA_VEND_PISO_PADRAO
+    return max(BUSCA_VEND_PISO_MIN, min(v, LIMITE_TALVEZ))
+
+
+BUSCA_VEND_PISO = _busca_vend_piso()
+
+
+def busca_vend_env():
+    """Ligada só com ETERNA_BUSCA_VEND=1 (qualquer outro valor, ou sem a variável, é desligada)."""
+    return (os.environ.get("ETERNA_BUSCA_VEND") or "").strip() == "1"
+
+
+BUSCA_VEND_ON = busca_vend_env()
+BUSCA_VEND_PIXELS = 4 * 1000 * 1000   # quadro da câmera acima disso é recusado antes de decodificar (a tela manda até 960 px de largura)
+BUSCA_VEND_RETENCAO = 30         # dias que a tabela busca_vend guarda
+BUSCA_VEND_RECUSAS_DIA = 40      # recusas por limite registradas por pessoa e por dia (acima disso só responde 429)
+BUSCA_VEND_CERTEZA_MAX = 20      # sessões "certeza" por busca (a venda leva até 8)
+BUSCA_VEND_MAX = 12              # sessões "pode ser" por busca (as de maior nota)
+BUSCA_VEND_BATEU = 12            # fotos em que o rosto bateu, por sessão
+BUSCA_VEND_IMGS = 3              # quadros da câmera por busca
+BUSCA_VEND_DIAS_MAT = 2          # 27/11: leituras de rosto de hoje e de ontem (foto do cartão com o dia do relógio da câmera);
+                                 # as sessões continuam só as de hoje (busca_vend_sessoes)
+BUSCA_VEND_CORPO = 6 * 1024 * 1024
+BUSCA_VEND_POR_MIN, BUSCA_VEND_POR_DIA = 6, 150   # por pessoa conectada
+BUSCA_VEND_MARCAR_MAX = 20       # sessões no /rostos/sessoes/marcar (o mesmo teto do evento da venda)
 
 
 def _busca_janela(v=None, padrao=BUSCA_JANELA_PADRAO):
@@ -1184,15 +1256,18 @@ def _mat_le(db, d):
     return (M, [r[0] for r in rows], L, mx)
 
 
-def matriz(dias):
+def matriz(dias, guardar=True):
     """(M, pids, larguras, {pid: maior largura}) dos dias. A releitura de um dia só fica em memória se nenhuma leitura nova
-    foi gravada no meio (versão do dia igual); senão tenta de novo (até 3 vezes) e, na última, usa sem guardar."""
+    foi gravada no meio (versão do dia igual); senão tenta de novo (até 3 vezes) e, na última, usa sem guardar.
+    guardar=False (v99.108, selfie sem código num dia antigo): o dia que não está em memória é lido e não fica."""
     np = _cv["np"]
     vs, ps, ls, mx = [], [], [], {}
     db = rostos_db()
     for d in dias:
         with _mat_lock:
             m = _mat.get(d)
+        if m is None and not guardar:
+            m = _mat_le(db, d)
         tent = 0
         while m is None:
             with _mat_lock:
@@ -1224,7 +1299,14 @@ def buscar(imagens, dias=1, janela=None, grupo=False):
             _busca["m"] = leitor()
         if grupo:
             return _buscar_grupo(imagens, dias, *_busca["m"], janela=janela)
-        return _buscar(imagens, dias, *_busca["m"], janela=janela)
+        r = _buscar(imagens, dias, *_busca["m"], janela=janela)
+        # 27/11 (Ronaldo, casal da sessão 123): no Checkout a selfie com o casal ou a família voltava "várias pessoas" e nada
+        # abria; a mesma foto como foto do grupo trouxe 37 fotos da sessão. No Checkout (janela != 0, atendimento assistido)
+        # mais de um rosto vira a busca do grupo. A galeria por QR (janela 0, o cliente sozinho) segue com uma pessoa por vez.
+        if r.get("varias") and janela != 0:
+            r = _buscar_grupo(imagens, dias, *_busca["m"], janela=janela)
+            r["grupo"] = r["auto_grupo"] = True
+        return r
 
 
 # Foto do grupo (Ronaldo, 15/11): família ou amigos juntos na câmera do Checkout. Vale o quadro com mais rostos; entram os
@@ -1287,6 +1369,10 @@ def _buscar_grupo(imagens, dias, det, rec, janela=None):
 def _buscar(imagens, dias, det, rec, janela=None):
     np = _cv["np"]; cv2 = _cv["cv2"]
     vs = []
+    # 27/11 (Ronaldo: selfie não achou a sessão 164 no tablet nem a 152 no Checkout): diagnóstico sem imagem e sem dado
+    # pessoal: tamanho do quadro, largura dos rostos lidos (e quantos o detector achou menores que 60 px), a maior
+    # semelhança e a sessão dela. Só quando o quadro tem rosto; o movimento sem ninguém de frente não escreve nada.
+    diag = {"q": "", "l": []}
     for b in imagens[:5]:
         raw = base64.b64decode(b.split(",", 1)[-1])
         if not img_aceita(raw):
@@ -1297,16 +1383,139 @@ def _buscar(imagens, dias, det, rec, janela=None):
             img = None
         if img is None:
             continue
-        fs = ler_rostos(img, det, rec, minimo=60)
+        sh = getattr(img, "shape", None)
+        diag["q"] = "%dx%d" % (sh[1], sh[0]) if sh is not None else "?"
+        br = []
+        fs = ler_rostos(img, det, rec, minimo=60, brutos=br)
+        menores = (br[0] if br else 0) - len(fs)
+        diag["l"].append((",".join("%d" % x[0] for x in fs[:3]) + (" +%d menores" % menores if menores > 0 else "")).strip() or "-")
         if varias_pessoas(fs):
             return {"rosto": True, "varias": True, "fotos": []}
         if fs:
             vs.append(fs[0][1])
     del imagens
+    tem = any(x != "-" for x in diag["l"])
     if not vs:
+        if tem:
+            print("  busca selfie: quadro %s rostos %s -> nenhum com 60 px" % (diag["q"], " | ".join(diag["l"])))
         return {"rosto": False, "fotos": []}
     me = np.mean(vs, axis=0); me /= np.linalg.norm(me) or 1
-    return buscar_vetor(me, dias, janela)
+    r = buscar_vetor(me, dias, janela)
+    try:
+        fts = sorted(r.get("fotos") or [], key=lambda f: -f.get("sim", 0))
+        top = ", ".join("%s %.2f" % (sess_pid.get(f["id"], "?"), f.get("sim", 0)) for f in fts[:3])
+        print("  busca selfie: quadro %s rostos %s -> %d fotos, %d acima de %.2f; melhores: %s"
+              % (diag["q"], " | ".join(diag["l"]), len(fts), sum(1 for f in fts if f.get("sim", 0) >= LIMITE), LIMITE, top or "-"))
+    except Exception:
+        pass
+    return r
+
+
+def buscar_vend(imagens):
+    """26/11: a busca do VENDEDOR (POST /rostos/sessoes). Só hoje (nunca ETERNA_BUSCA_DIAS), o dia todo (sem a janela do
+    Checkout), com o piso BUSCA_VEND_PISO. Havendo mais de um rosto no quadro, NÃO recusa: usa o maior e avisa em "varias"
+    (a tela diz ao vendedor para enquadrar só o cliente). A selfie do cliente não passa por aqui e não muda."""
+    with _busca_lock:
+        if not _busca["m"]:
+            _busca["m"] = leitor()
+        return _buscar_maior(imagens, *_busca["m"])
+
+
+class BuscaVendGrande(Exception):
+    """Quadro acima de BUSCA_VEND_PIXELS: a rota responde 413 sem decodificar nada."""
+
+
+class BuscaVendInvalida(Exception):
+    """Quadro que não é um JPEG ou PNG bem formado: a rota responde 400 sem decodificar nada."""
+
+
+_SOF_JPEG = (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF)
+
+
+def img_dims_estrito(raw):
+    """(largura, altura) lendo só o cabeçalho, ou None. Leitura ESTRITA, só da busca do vendedor (o img_dims das outras
+    rotas não muda): no JPEG anda de segmento em segmento pelo tamanho declarado, exige FF onde começa cada marcador,
+    recusa os marcadores 00 e FF e um segundo início de imagem, e vale o primeiro quadro (SOF) de verdade, antes dos
+    dados da imagem. Um SOF escrito dentro de um comentário ou de outro segmento não é lido. No PNG exige o bloco IHDR."""
+    try:
+        if raw[:8] == b"\x89PNG\r\n\x1a\n":
+            if len(raw) < 24 or raw[12:16] != b"IHDR":
+                return None
+            w, h = int.from_bytes(raw[16:20], "big"), int.from_bytes(raw[20:24], "big")
+            return (w, h) if w > 0 and h > 0 else None
+        if raw[:2] != b"\xff\xd8":
+            return None
+        i, n = 2, len(raw)
+        while i + 4 <= n:
+            if raw[i] != 0xFF:
+                return None
+            mk = raw[i + 1]
+            if mk in (0x00, 0xFF, 0xD8, 0xD9, 0xDA) or mk == 0x01 or 0xD0 <= mk <= 0xD7:
+                return None              # enchimento, marcador sem tamanho, outro início, fim ou dados antes do quadro
+            ln = int.from_bytes(raw[i + 2:i + 4], "big")
+            if ln < 2:
+                return None
+            if mk in _SOF_JPEG:
+                if ln < 7 or i + 9 > n:
+                    return None
+                h, w = int.from_bytes(raw[i + 5:i + 7], "big"), int.from_bytes(raw[i + 7:i + 9], "big")
+                return (w, h) if w > 0 and h > 0 else None
+            i += 2 + ln
+    except Exception:
+        pass
+    return None
+
+
+def _buscar_maior(imagens, det, rec):
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    achados, varias = [], False          # (largura do maior rosto do quadro, vetor)
+    brutos, grp = [], []                 # grp: os rostos do quadro com mais rostos (27/11, busca do grupo)
+    for b in imagens[:BUSCA_VEND_IMGS]:
+        try:
+            raw = base64.b64decode(b.split(",", 1)[-1])
+        except Exception:
+            raise BuscaVendInvalida()
+        d = img_dims_estrito(raw)        # só o cabeçalho: nada é decodificado antes de conferir o tamanho
+        if d is None:                    # não é um JPEG ou PNG bem formado: a busca é recusada
+            raise BuscaVendInvalida()
+        if d[0] * d[1] > BUSCA_VEND_PIXELS:
+            raise BuscaVendGrande()
+        brutos.append(raw)
+    for raw in brutos:
+        try:
+            img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+        except Exception:
+            img = None
+        if img is None:
+            continue
+        fs = ler_rostos(img, det, rec, minimo=60)
+        if fs:
+            varias = varias or varias_pessoas(fs)
+            achados.append((fs[0][0], fs[0][1]))
+            g = grupo_rostos(fs)
+            if len(g) > len(grp):
+                grp = g
+    del imagens, brutos
+    if not achados:
+        return {"rosto": False, "varias": False, "fotos": []}
+    # 27/11 (Ronaldo, casal da sessão 123): com o casal na selfie, o rosto "maior" não era nenhum dos dois e a sessão deles
+    # não saiu. Havendo mais de uma pessoa, cada rosto é buscado e as fotos se somam, como na foto do grupo do Checkout
+    # (a tela não marca sozinha quando varias=true: o vendedor escolhe).
+    if varias and len(grp) > 1:
+        rs = [buscar_vetor(v, BUSCA_VEND_DIAS_MAT, 0, piso=BUSCA_VEND_PISO) for _l, v in grp]
+        return {"rosto": True, "fotos": grupo_juntar(rs), "varias": True, "pessoas": len(grp), "fila": rs[0].get("fila") if rs else 0}
+    return dict(buscar_vetor(busca_vend_vetor(achados), BUSCA_VEND_DIAS_MAT, 0, piso=BUSCA_VEND_PISO), varias=bool(varias))
+
+
+def busca_vend_vetor(achados):
+    """achados = [(largura, vetor)] (o maior rosto de cada quadro) -> o vetor da busca. Com duas pessoas de tamanho
+    parecido, o "maior" pode trocar de um quadro para o outro, e a média das duas não seria ninguém: vale a pessoa que é a
+    maior em mais quadros (empate: a do rosto mais largo) e só os quadros dela (semelhança >= LIMITE) entram na média."""
+    np = _cv["np"]
+    grupos = [[v for _l, v in achados if v is ref or float(np.dot(v, ref)) >= LIMITE] for _lr, ref in achados]
+    i = max(range(len(achados)), key=lambda j: (len(grupos[j]), achados[j][0]))
+    me = np.mean(grupos[i], axis=0)
+    return me / (np.linalg.norm(me) or 1)
 
 
 _busca_cfg = {"t": 0.0, "v": None}
@@ -1407,18 +1616,27 @@ def busca_janela_efetiva(janela=None):
 _viz_tl = threading.local()   # 25/11 (fotos vizinhas): os vetores da selfie desta busca, só nesta thread e só até a resposta sair
 
 
-def buscar_vetor(me, dias=1, janela=None, agora=None):
+def buscar_vetor(me, dias=1, janela=None, agora=None, piso=None, dia=None, vetores=False):
     """Fotos com o rosto do vetor me (128, normalizado), nos dias da busca. Separada de _buscar para medir (v91 parte B:
     selfie até a primeira foto ampliada em menos de 2 s; testes/selfie_rapidez.py). Cada foto vem com principal: o rosto que
     bateu tem largura >= ROSTO_PRINCIPAL x a do maior rosto daquela foto (B5: quem só aparece no fundo não abre a sessão
-    inteira no Checkout). Com janela (minutos) > 0, só as fotos de sessões com a última foto dentro da janela."""
+    inteira no Checkout). Com janela (minutos) > 0, só as fotos de sessões com a última foto dentro da janela.
+    piso (26/11): só a busca do vendedor passa; sem ele vale LIMITE_TALVEZ, como sempre. Nunca abaixo de BUSCA_VEND_PISO_MIN.
+    dia (v99.108, selfie sem código): só aquele dia (AAAA-MM-DD), o dia todo, sem a janela; dias, janela e agora não valem.
+    vetores (v99.108.1): cada foto vem também com "vet", o vetor do rosto que bateu (só em memória, para a busca em 2 passos)."""
     np = _cv["np"]
+    corte = LIMITE_TALVEZ if piso is None else max(BUSCA_VEND_PISO_MIN, min(float(piso), LIMITE_TALVEZ))
     vets = getattr(_viz_tl, "vets", None)
     if vets is not None:
         vets.append(me)
     hoje = time.time() if agora is None else agora
-    M, ps, L, mx = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
-    jan = busca_janela_efetiva(janela)
+    if dia:
+        recentes = {time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400)) for i in (0, 1)}
+        M, ps, L, mx = matriz([dia], guardar=dia in recentes)
+        jan = 0
+    else:
+        M, ps, L, mx = matriz([time.strftime("%Y-%m-%d", time.localtime(hoje - i * 86400)) for i in range(max(1, min(int(dias), RETENCAO_DIAS)))])
+        jan = busca_janela_efetiva(janela)
     if jan and len(ps):
         ok = sess_pids_janela(hoje - jan * 60)
         if ok is not None:                   # None = nenhuma sessão em memória (agente sem sessões): sem filtro
@@ -1427,12 +1645,12 @@ def buscar_vetor(me, dias=1, janela=None, agora=None):
     melhor = {}
     if len(ps):
         sims = M @ me
-        for i in np.nonzero(sims >= LIMITE_TALVEZ)[0]:
+        for i in np.nonzero(sims >= corte)[0]:
             pid = ps[i]; s_ = float(sims[i])
             if s_ > melhor.get(pid, (0, 0))[0]:
-                melhor[pid] = (s_, float(L[i]))
-    fotos = sorted(({"id": k, "sim": round(v[0], 3), "principal": bool(v[1] >= ROSTO_PRINCIPAL * (mx.get(k) or 0))}
-                    for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
+                melhor[pid] = (s_, float(L[i]), i)
+    fotos = sorted(({"id": k, "sim": round(v[0], 3), "principal": bool(v[1] >= ROSTO_PRINCIPAL * (mx.get(k) or 0)),
+                     **({"vet": M[v[2]]} if vetores else {})} for k, v in melhor.items()), key=lambda x: -x["sim"])[:500]
     # 18/11: fila = fotos ainda esperando a leitura de rostos (recém-chegadas); o Checkout espera e tenta de novo em vez de dizer "não achamos"
     return {"rosto": True, "fotos": fotos, "limite": LIMITE, "janela_min": jan, "fila": fila_rostos.qsize()}
 
@@ -1944,6 +2162,14 @@ def nuvem_galeria_enfileira(token):
 nuvem_gal_acorda = threading.Event()
 
 
+def nuvem_publica_manifesto(seg, m):
+    """POST /ponto/galerias. Erro de rede ou recusa da nuvem sobe como exceção."""
+    rq = urllib.request.Request(NUVEM_API + "/ponto/galerias", data=json.dumps({"manifesto": m}).encode(), method="POST",
+                                headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=20) as r:
+        r.read()
+
+
 def nuvem_galerias_loop():
     """Publica na API da nuvem as galerias da fila; sem internet, tenta de novo com espera crescente."""
     if not NUVEM_API:
@@ -1981,10 +2207,7 @@ def nuvem_galerias_loop():
                 erro = None
                 if m:
                     try:
-                        rq = urllib.request.Request(NUVEM_API + "/ponto/galerias", data=json.dumps({"manifesto": m}).encode(), method="POST",
-                                                    headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
-                        with urllib.request.urlopen(rq, timeout=20) as r:
-                            r.read()
+                        nuvem_publica_manifesto(seg, m)
                     except Exception as ex:
                         erro = str(ex)[:200]
                 with nuvem_lock:
@@ -3332,7 +3555,16 @@ def rover_sync_day(cfg, day):
     return agg
 
 
+# 26/11 (Ronaldo): "não tem que sincronizar mais Roverpix, ele não existe desde 25/11". A busca para de vez; o que já foi
+# baixado (roverpix/raw e agg) fica como histórico. ETERNA_ROVERPIX=1 religa.
+ROVER_DESLIGADO = os.environ.get("ETERNA_ROVERPIX", "0") != "1"
+
+
 def rover_loop():
+    if ROVER_DESLIGADO:
+        rover["status"] = "desligado"
+        print("roverpix: desligado (Roverpix encerrado em 25/11)")
+        return
     while True:
         cfg = rover_cfg()
         if not cfg:
@@ -5482,7 +5714,7 @@ def mtg_passada(refazer=False):
                     with lock:
                         u = _num((meta.get(pid) or {}).get("u")) if isinstance(meta.get(pid), dict) else 0.0
                     # o atraso conta de quando a base passou a existir: chegada da foto ou fechamento da leva (regra 19: as
-                    # bases saem no fechamento, 60 s sem clique, ou depois, quando o reconhecimento do gramado termina)
+                    # bases saem no fechamento, SESS_PAUSA sem chegada, ou depois, quando o reconhecimento do gramado termina)
                     u = max(u, x.get("fechada_em") or 0.0)
                     job, _ = mtg_enfileirar(pid, fundo, ("p",), MTG_P_REFAZER if velha else MTG_P_VIVO if e_pref else MTG_P_RESERVA,
                                             u=None if velha else u or None, pref=e_pref,
@@ -6520,7 +6752,7 @@ def _sess_pausa():
         v = int(os.environ.get("ETERNA_SESSAO_PAUSA") or 0)
     except ValueError:
         v = 0
-    return v if 2 <= v <= 600 else 60
+    return v if 2 <= v <= 600 else 180
 
 
 def _sess_limites():
@@ -6534,7 +6766,10 @@ def _sess_limites():
     return (LIMITE_TALVEZ, 0.25, LIMITE)
 
 
-SESS_PAUSA = _sess_pausa()      # S1: 60 s sem clique fecha a sessão; igual ao SESSAO_PAUSA_S do app. ETERNA_SESSAO_PAUSA (2 a 600) só nos testes
+# S1: 180 s (3 min) sem clique fecham a sessão; igual ao SESSAO_PAUSA_S do app. Era 60 s até 26/11 (Eduardo: 3 minutos, a
+# regra combinada com os fotógrafos e a mesma das fotos vizinhas do Checkout, VIZ_GAP; com 60 s o cliente que andava do
+# gramado ao troféu em 69 s virava duas sessões e a segunda ficava sem fundo de IA). ETERNA_SESSAO_PAUSA (2 a 600) só nos testes
+SESS_PAUSA = _sess_pausa()
 FF_PAUSA = SESS_PAUSA           # apelido (v87)
 SESS_ATRASO = 600               # S3: foto com chegada − clique acima disto vai para a trilha atrasada (cartão)
 SESS_ROSTO_ESPERA = 20          # S6: prazo para a leitura do rosto, desde a chegada; depois vale só o tempo
@@ -6716,7 +6951,7 @@ def ff_json(agora=None):
             else:
                 ian, iam = _sess_ia_regra(x)
                 iab = sorted(todos, key=lambda p: (ts.get(p) or (0, 0)))[:ian] if ian else []
-            out.append({"id": x["card"], "estado": e, "fotografo": x.get("fotografo"), "fonte": x.get("fonte"),
+            out.append({"id": x["card"], "num": x.get("num"), "estado": e, "fotografo": x.get("fotografo"), "fonte": x.get("fonte"),
                         "funcao": dict(x["funcao"]) if isinstance(x.get("funcao"), dict) else None,
                         "inicio": x.get("aberta_em"), "ultima_chegada": x.get("ultima_chegada"),
                         "ultimo_clique": x.get("cap1") or x.get("ultima_chegada"), "pronta_em": pe, "n": len(todos),
@@ -6749,9 +6984,9 @@ def ff_carregar():
 
 # ---------- Sessões montadas no agente (v85 parte A do Ronaldo, regra nova da v90) ----------
 # A sessão nasce aqui, igual em todos os navegadores. Regra (plano v91, S1 a S14): por fotógrafo e trilha (ao vivo ou
-# atrasada), 60 s sem clique (hora do clique corrigida) abrem sessão nova; sem pausa, a foto espera a leitura do rosto
+# atrasada), SESS_PAUSA (3 min) sem clique (hora do clique corrigida) abrem sessão nova; sem pausa, a foto espera a leitura do rosto
 # (até 20 s) e abre sessão nova só quando todos os rostos principais são novos (sim < 0,25, rosto de qualidade). Sessão
-# separada fica "fechando" até 60 s sem chegada e ainda pode se fundir (individuais antes do grupo). Só sessão
+# separada fica "fechando" até SESS_PAUSA sem chegada e ainda pode se fundir (individuais antes do grupo). Só sessão
 # "fechada" vai para o SIM e nunca muda (exceto LGPD). Vetores de rosto só em memória, só das sessões não fechadas.
 # Gravadas em ~/Eterna/ponto/sessoes/AAAA-MM-DD.json (60 dias); em memória ficam hoje e ontem.
 SESS_DIR = os.path.join(HOME, "ponto", "sessoes")
@@ -6768,10 +7003,13 @@ sess_faces_pid = {}              # pid pendente -> rostos lidos (só memória)
 sess_rostos_mem = {}             # card não fechada -> [(pid, vetor)] (S9, só memória)
 sess_rev = [0]
 sess_seq = [0]
+sess_num = {}                    # 26/11: dia -> último número curto dado (1, 2, 3...); só com o sess_lock
 sess_sujo = set()                # dias com mudança ainda não gravada
 sess_limpo = [""]                # dia da última limpeza de arquivos (S14)
 sess_ia_novos = collections.deque(maxlen=IA_NOVOS_MAX)   # v93: (pid, prioridade) das bases de IA novas, para o rec_ia_loop
 _SESS_DIA = re.compile(r"^(\d{4}-\d\d-\d\d)\.json$")
+_SESS_RESTO = re.compile(r"^(\d{4}-\d\d-\d\d)\.json\.(?:tmp|ilegivel-\d+)$")
+_SESS_NUM_TOPO = re.compile(r'^\s*\{\s*"dia"\s*:\s*"[^"]*"\s*,\s*"num"\s*:\s*(\d{1,9})\s*,')
 
 
 def _sess_codigo():
@@ -6779,6 +7017,46 @@ def _sess_codigo():
         c = "LP" + "".join(secrets.choice(SESS_ALFA) for _ in range(7))
         if c not in sess:
             return c
+
+
+# 26/11 (Eduardo): número curto da sessão. O código LP + 7 caracteres é grande demais para falar e digitar com pressa:
+# cada sessão ganha "num", o número do dia (1, 2, 3...), dado aqui e guardado no arquivo do dia, estável para sempre.
+# O nome completo de exibição é dia + num ("2026-11-26-147"), montado por quem mostra; nada além do num é gravado.
+# O card LP não muda (segue chave interna e código do cliente). Número de sessão fundida ou removida nunca volta a ser
+# dado (buraco na sequência é aceito): o último número do dia vai no topo do arquivo ("num").
+SESS_NUM_MARCA = ".num-migrado"   # marca na pasta das sessões: os arquivos dos dias anteriores já têm número
+
+
+def _sess_num_ok(v):
+    """O número da sessão lido de arquivo: inteiro de 1 em diante (bool não vale), ou None. Sem teto aqui: um teto faria
+    a sessão acima dele ser renumerada na partida seguinte. O limite de dígitos é só da busca da tela."""
+    return v if isinstance(v, int) and not isinstance(v, bool) and v >= 1 else None
+
+
+def _sess_num_prox(dia):
+    """O próximo número do dia. Só memória (nada de disco ou banco aqui). Com o sess_lock."""
+    n = sess_num.get(dia, 0) + 1
+    sess_num[dia] = n
+    return n
+
+
+def _sess_num_arruma(topo, lista):
+    """Regra única da numeração de um dia lido de arquivo (boot e migração): parte do maior entre o "num" do topo e o maior
+    "num" válido; a sessão sem número ou com número repetido (a segunda na ordem do arquivo) recebe o próximo, na ordem
+    do arquivo. Removidas também recebem. Devolve (último número, [sessões que mudaram])."""
+    ult = _sess_num_ok(topo) or 0
+    vistos, falta = set(), []
+    for x in lista:
+        n = _sess_num_ok(x.get("num"))
+        if n is None or n in vistos:
+            falta.append(x)
+        else:
+            vistos.add(n)
+            ult = max(ult, n)
+    for x in falta:
+        ult += 1
+        x["num"] = ult
+    return ult, falta
 
 
 def _sess_toca(x):
@@ -6875,7 +7153,8 @@ def _sess_nova(trilha, t, u, motivo, m, chave, fonte, fonte_t, atrasada):
     card = _sess_codigo()
     f = _ff_func_snapshot(chave)
     sess_seq[0] += 1
-    x = {"card": card, "dia": trilha.split("|", 1)[0], "k": trilha, "fotografo": chave, "fonte": fonte,
+    dia = trilha.split("|", 1)[0]
+    x = {"card": card, "num": _sess_num_prox(dia), "dia": dia, "k": trilha, "fotografo": chave, "fonte": fonte,
          "ponto": f.get("point") if f and f.get("tipo") == "campo" else None, "funcao": f,
          "trilha": "atrasada" if atrasada else "vivo", "atrasada": bool(atrasada), "status": "aberta", "motivo": motivo,
          "origem": "agente", "aberta_em": u, "ultima_chegada": u, "cap0": t, "cap1": t, "fonte_t": fonte_t,
@@ -7222,7 +7501,8 @@ def _sess_fecha_uma(x, agora, por):
 
 
 def _sess_fundir(dest, orig, agora):
-    """S7: as fotos, as pendentes e os rostos da origem vão para o destino (a mais antiga); a origem vira removida."""
+    """S7: as fotos, as pendentes e os rostos da origem vão para o destino (a mais antiga); a origem vira removida.
+    26/11: o destino mantém o número curto; o da origem fica com ela (aposentado, nunca é dado de novo)."""
     for pid in orig["fotos"]:
         t, u = orig["_t"].get(pid, (agora, agora))
         _sess_entra(dest, pid, t, u, orig["dec"].get(pid, "t"))
@@ -7618,7 +7898,7 @@ def sess_limpar(agora=None):
         except OSError:
             continue
         for nome in nomes:
-            mm = _SESS_DIA.match(nome)
+            mm = _SESS_DIA.match(nome) or _SESS_RESTO.match(nome)   # 26/11: e o .tmp que sobrou e o arquivo ilegível guardado
             if mm and mm.group(1) < lim:
                 try:
                     os.remove(os.path.join(pasta, nome))
@@ -7626,6 +7906,10 @@ def sess_limpar(agora=None):
                 except OSError:
                     pass
     vis_logs_poda(agora)
+    try:
+        busca_vend_limpar(agora)         # 27/11: as buscas por selfie do vendedor também saem aqui, mesmo sem busca nova
+    except Exception:
+        pass
     return n
 
 
@@ -7654,21 +7938,31 @@ def sess_tick(agora=None):
         _sess_tick(time.time() if agora is None else agora)
 
 
+def _sess_tmp_apaga(tmp):
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+
+
 def sess_gravar():
     vis_gravar()                                     # v97: as arestas das visitas junto das sessões
     with sess_lock:
         dias = list(sess_sujo)
         sess_sujo.clear()
         lotes = {d: [_sess_publico(x, disco=True) for x in sess.values() if x["dia"] == d] for d in dias}
+        # 26/11: o último número dado no dia vai no topo do arquivo (número de sessão que saiu nunca é reusado)
+        nums = {d: max([sess_num.get(d, 0)] + [_sess_num_ok(x.get("num")) or 0 for x in lotes[d]]) for d in dias}
     for d, lista in lotes.items():
         try:
             os.makedirs(SESS_DIR, exist_ok=True)
             f = os.path.join(SESS_DIR, d + ".json")
             tmp = f + ".tmp"
             with open(tmp, "w", encoding="utf8") as fh:
-                json.dump({"dia": d, "sessoes": lista}, fh)
+                json.dump({"dia": d, "num": nums[d], "sessoes": lista}, fh)
             os.replace(tmp, f)
         except Exception as ex:
+            _sess_tmp_apaga(os.path.join(SESS_DIR, d + ".json.tmp"))   # disco cheio: o .tmp pela metade não fica
             with sess_lock:
                 sess_sujo.add(d)
             print("  sessões: não gravei %s (%s)" % (d, str(ex)[:80]))
@@ -7693,6 +7987,9 @@ def sess_loop():
                         sess_ultima.pop(x["k"], None)
                     vis_rostos.pop(card, None)
                     vis_de.pop(card, None)
+                na_mem = {x["dia"] for x in sess.values()}
+                for d in [d for d in sess_num if d < ontem and d not in na_mem]:   # 26/11: o número do dia sai junto
+                    sess_num.pop(d, None)
                 for d in [d for d in vis_arestas if d < ontem]:   # v97: visitas também só de hoje e ontem na memória
                     vis_arestas.pop(d, None)
                 for vid in [k for k, v in vis_info.items() if v["dia"] < ontem]:
@@ -7718,6 +8015,7 @@ def _sess_normaliza(x):
     x["ia"] = [p for p in (x.get("ia") or []) if isinstance(p, str)] if isinstance(x.get("ia"), list) else []   # v93: nada retroativo
     x["aberta_em"] = _num(x.get("aberta_em"))
     x["ultima_chegada"] = _num(x.get("ultima_chegada")) or x["aberta_em"]
+    x["num"] = _sess_num_ok(x.get("num"))            # 26/11: número curto do dia; sem ele o sess_carregar dá o próximo
     sess_seq[0] += 1
     x.update(_t={}, _guardar=set(), _rfim=0.0, _n=sess_seq[0], _fonte={}, _ia_vistos=set())
     return x
@@ -7887,14 +8185,25 @@ def sess_carregar(agora=None):
     vis_cfg()                                        # B1: as visitas do boot já respeitam o interruptor
     with sess_lock:
         for d in dias:
+            arq_d = os.path.join(SESS_DIR, d + ".json")
             try:
-                j = json.load(open(os.path.join(SESS_DIR, d + ".json"), encoding="utf8"))
-            except Exception:
+                with open(arq_d, encoding="utf8") as fh:
+                    j = json.load(fh)
+                if not isinstance(j, dict):
+                    raise ValueError("não é um objeto")
+            except FileNotFoundError:
                 continue
+            except Exception as ex:
+                # 26/11: arquivo do dia ilegível. Fica guardado à parte (o sess_gravar não o sobrescreve) e o número do
+                # topo é aproveitado quando dá para ler, para a numeração do dia não recomeçar do 1
+                sess_num[d] = max(sess_num.get(d, 0), _sess_ilegivel(arq_d, d, ex))
+                continue
+            do_dia = []
             for x in j.get("sessoes") or []:
                 if not isinstance(x, dict) or not x.get("card") or not x.get("k") or not x.get("dia"):
                     continue
                 x = _sess_normaliza(x)
+                do_dia.append(x)
                 sess[x["card"]] = x
                 for p in x["fotos"] + x["pend"]:
                     sess_pid[p] = x["card"]
@@ -7910,6 +8219,11 @@ def sess_carregar(agora=None):
                 if not x.get("removida"):
                     sess_ultima[x["k"]] = x["card"]
                 n_lidas += 1
+            # 26/11: número curto. Antes do reagrupamento das fotos sem sessão (as criadas lá recebem os seguintes)
+            ult, sem_num = _sess_num_arruma(j.get("num"), do_dia)
+            sess_num[d] = max(sess_num.get(d, 0), ult)
+            for x in sem_num:
+                _sess_toca(x)
     ini = time.mktime(time.strptime(dias[0], "%Y-%m-%d"))
     itens = []
     with lock:
@@ -7959,6 +8273,78 @@ def sess_carregar(agora=None):
     return n_lidas, novas, hoje
 
 
+def _sess_ilegivel(arq, d, ex):
+    """Arquivo de sessões do dia que não pôde ser lido na partida: é renomeado para <dia>.json.ilegivel-<hora> (nada é
+    apagado) e devolve o último número do dia quando o começo do arquivo ainda mostra o "num" do topo; senão 0."""
+    ult = 0
+    try:
+        with open(arq, "rb") as fh:
+            mm = _SESS_NUM_TOPO.match(fh.read(200).decode("utf8", "replace"))
+        ult = int(mm.group(1)) if mm else 0
+    except Exception:
+        ult = 0
+    novo = "%s.ilegivel-%s" % (arq, time.strftime("%H%M%S"))
+    try:
+        os.replace(arq, novo)
+        guardado = os.path.basename(novo)
+    except OSError:
+        guardado = None
+    print("  SESSÕES: ATENÇÃO, o arquivo de %s não pôde ser lido (%s). %s. %s" % (
+        d, type(ex).__name__,
+        ("Guardado como %s" % guardado) if guardado else "Não consegui guardar uma cópia",
+        ("A numeração do dia continua do %d" % (ult + 1)) if ult else "A numeração do dia recomeça do 1: confira os números já falados hoje"))
+    return ult
+
+
+def sess_num_migrar():
+    """26/11: uma vez no boot, depois do sess_carregar e fora do sess_lock. Os arquivos de sessão dos dias fora da memória
+    (antes de ontem para trás) ganham o número curto pela mesma regra do boot (_sess_num_arruma), gravados com .tmp +
+    os.replace. Arquivo já numerado não é tocado; erro num arquivo só imprime e segue. Devolve quantos arquivos mudaram.
+    Uma passada sem erro deixa a marca SESS_NUM_MARCA na pasta, e as partidas seguintes não releem nada (arquivo novo já
+    nasce numerado pelo sess_gravar). Roda na partida antes das threads de rede: o sess_esquecer_disco usa o mesmo .tmp."""
+    marca = os.path.join(SESS_DIR, SESS_NUM_MARCA)
+    if os.path.exists(marca):
+        return 0
+    with sess_lock:
+        em_mem = {x["dia"] for x in sess.values()} | set(sess_num)
+    em_mem |= {_ff_hoje(), _ff_hoje(time.time() - 86400)}     # hoje e ontem são sempre do sess_carregar
+    try:
+        nomes = sorted(os.listdir(SESS_DIR))
+    except OSError:
+        return 0
+    n, erros = 0, 0
+    for nome in nomes:
+        mm = _SESS_DIA.match(nome)
+        if not mm or mm.group(1) in em_mem:
+            continue
+        f = os.path.join(SESS_DIR, nome)
+        try:
+            with open(f, encoding="utf8") as fh:
+                j = json.load(fh)
+            if not isinstance(j, dict):
+                continue
+            ult, mudou = _sess_num_arruma(j.get("num"), [x for x in (j.get("sessoes") or []) if isinstance(x, dict)])
+            if not mudou:
+                continue
+            j["num"] = ult
+            tmp = f + ".tmp"
+            with open(tmp, "w", encoding="utf8") as fh:
+                json.dump(j, fh)
+            os.replace(tmp, f)
+            n += 1
+        except Exception as ex:
+            erros += 1
+            _sess_tmp_apaga(f + ".tmp")
+            print("  sessões (número): não numerei %s (%s)" % (nome, str(ex)[:80]))
+    if not erros:
+        try:
+            with open(marca, "w", encoding="utf8") as fh:
+                fh.write(_iso(time.time()))
+        except Exception as ex:
+            print("  sessões (número): marca não gravada (%s)" % type(ex).__name__)
+    return n
+
+
 def sess_feed(desde=0, ontem=False):
     """GET /sessoes?desde=<rev>: só as de hoje (revisão 9); ontem só com ?ontem=1 ou com ETERNA_BUSCA_DIAS >= 2 (v90: a
     selfie procura nos dias anteriores e o Checkout precisa dessas sessões). Nada de rosto."""
@@ -7986,7 +8372,7 @@ def sess_status():
 
 
 # ---------- v97: visitas (as levas da mesma família, ligadas por rosto) ----------
-# Leva = a sessão de hoje (por fotógrafo ou câmera, 60 s sem disparo fecham, rostos novos separam; código LP). Visita = as
+# Leva = a sessão de hoje (por fotógrafo ou câmera, SESS_PAUSA (3 min) sem disparo fecham, rostos novos separam; código LP). Visita = as
 # levas da mesma família no dia: duas levas ligam quando um rosto de qualidade (principal, >= 60 px, frontal, score >= 0,80)
 # de uma bate (sim >= VIS_LIM) com um rosto de qualidade da outra, em corrente (união), com o 1º e o último clique da visita
 # a até 50 min. Teto: 12 levas ou 15 rostos diferentes (acima disso a ligação automática para e a visita fica "grande":
@@ -9503,6 +9889,7 @@ def vendas_do_dia(posto=None, agora=None):
                      cart=[{"id": x.get("id")} for x in (d.get("cart") or []) if isinstance(x, dict)][:40],
                      selected=[str(p)[:60] for p in (d.get("selected") or [])][:200], aiSel=[str(p)[:80] for p in (d.get("aiSel") or [])][:40],
                      sessoes=[str(c)[:20] for c in (d.get("sessoes") or [])][:20],
+                     origem=_ev_origem(d),
                      galeria=({"token": str(g.get("token") or "")[:40], "codigo": str(g.get("codigo") or "")[:20]}
                               if isinstance(g, dict) and g.get("token") else
                               ({"token": str(d["token"])[:40], "codigo": str(d.get("codigo") or "")[:20]} if d.get("token") else None)))
@@ -10190,7 +10577,8 @@ DOC_SIM = (("prices|", ("catalogo",)), ("catalogoV", ("catalogo",)),
            ("flags|", ("estoque",)), ("flagList", ("estoque",)),
            # gravados ao montar as sessões e no Upload (fotógrafo), no caixa e na Curadoria
            ("flagUse|", ("set", "estoque", "venda")), ("invalid|", ("set", "qualidade", "venda", "estoque")),
-           ("edits|", ("set", "qualidade")), ("discarded|", ("set", "qualidade")), ("ai|", ("venda", "qualidade")),
+           ("edits|", ("set", "qualidade", "venda")),   # 27/11 (Eduardo): o vendedor clareia a foto para imprimir (Posto)
+           ("discarded|", ("set", "qualidade")), ("ai|", ("venda", "qualidade")),
            ("autoAj", ("set",)), ("autoAjPor", ("set",)), ("camDia|", ("set",)),
            ("bgAtivo|", ("configuracao",)), ("bgOn", ("configuracao",)), ("bgOn2", ("configuracao",)), ("fundosModo", ("configuracao",)),
            ("fundosModoPor", ("configuracao",)), ("lojaFimSeg", ("catalogo",)), ("repo", ("configuracao",)),
@@ -11220,7 +11608,7 @@ def ativ_tour_base():
             m = REPO.ler_manifesto(t)
         except Exception:
             m = None
-        if not m or m.get("tipo") != "sessao" or m.get("origem") == "ativ" or not m.get("precos"):
+        if not m or m.get("tipo") != "sessao" or m.get("origem") in ("ativ", "selfie") or not m.get("precos"):
             continue
         if not melhor or str(m.get("criada") or "") > str(melhor.get("criada") or ""):
             melhor = m
@@ -11469,6 +11857,235 @@ def ativ_tour_passa():
             except Exception as ex:
                 print("  tour: erro na busca (%s)" % str(ex)[:120])
     return n
+
+
+# ---------- v99.108: selfie sem código na galeria pública (plano docs/planos/2026-11-27-selfie-na-galeria.md) ----------
+# O cliente escolhe o dia da visita (últimos 30 dias), dá o aceite e tira a selfie em eterna.photo/#g; a nuvem guarda o pedido
+# e este servidor leva a fila de 10 em 10 s (GET /ponto/selfies). A busca é daqui, com o reconhecimento daqui: só as fotos do
+# dia escolhido, rosto principal e semelhança de "mesma pessoa" (LIMITE), fora bases de IA, sessões removidas, grupo de escola
+# e sessão de menor. Achou: galeria de venda própria (origem "selfie"), como a das fotos do Tour pela foto da venda; a foto já
+# comprada ou dada de cortesia numa venda entra liberada. A selfie fica só em memória durante a busca e nada dela é gravado.
+# Thread própria com o próprio leitor de rostos: não espera nem segura nada da venda; erro aqui vira "erro" para o cliente.
+SELFIE_DIA_MAX = 400            # v99.108.1: todas as fotos do cliente no dia; a nuvem lê os rostos de até 600 por galeria (LIMITE_FOTOS_GALERIA)
+# v99.108.1 (Ronaldo: "tem que encontrar TODAS as fotos do cliente, independente da sessão, com fidedignidade"): busca em 2 passos.
+# Passo 1: a selfie no dia. Passo 2: o rosto do cliente nas melhores fotos do passo 1 (até SELFIE_REF_MAX referências, de sessões e
+# fotógrafos diferentes, cada uma com semelhança >= SELFIE_REF_CORTE com a selfie) é procurado de novo no dia: acha o perfil, a
+# outra luz e o outro fotógrafo que a selfie de frente sozinha não alcança. Trava contra escorregar para um parente parecido: a
+# foto nova só entra se o rosto que bateu com a referência (>= LIMITE, principal) também bater com a própria selfie
+# (>= SELFIE_PASSO2_PISO, o "talvez" calibrado do Checkout); semelhança com quem só se parece com a referência não basta.
+SELFIE_REF_MAX = 6
+SELFIE_REF_CORTE = 0.55
+SELFIE_PASSO2_PISO = LIMITE_TALVEZ
+SELFIE_DIA_INTERVALO = 10
+selfie_dia = {"ligada": False, "ultima": None, "pedidos": 0, "achou": 0, "nao": 0, "erro": None}
+_selfie_leitor = {"m": None}
+
+
+def selfie_dia_vetor(b64):
+    """-> ("ok", vetor) | ("varias", None) | ("sem_rosto", None). Uma pessoa por vez, como a galeria por QR."""
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    raw = base64.b64decode(str(b64 or "").split(",", 1)[-1])
+    if not raw or not img_aceita(raw):
+        return "sem_rosto", None
+    img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+    raw = None
+    if img is None:
+        return "sem_rosto", None
+    if not _selfie_leitor["m"]:
+        _selfie_leitor["m"] = leitor()
+    fs = ler_rostos(img, *_selfie_leitor["m"], minimo=60)
+    img = None
+    if varias_pessoas(fs):
+        return "varias", None
+    if not fs:
+        return "sem_rosto", None
+    return "ok", fs[0][1]
+
+
+def selfie_dia_sessoes(dia):
+    """({pid: card}, pids que nunca entram, {card: fotógrafo}) das sessões do dia: em memória (hoje e ontem) ou do arquivo do dia."""
+    with sess_lock:
+        ss = [_sess_publico(x) for x in sess.values() if x.get("dia") == dia]
+    if not ss:
+        try:
+            with open(os.path.join(SESS_DIR, dia + ".json"), encoding="utf8") as fh:
+                ss = [x for x in json.load(fh).get("sessoes") or [] if isinstance(x, dict)]
+        except (OSError, ValueError):
+            ss = []
+    dono, fora, quem = {}, set(), {}
+    for x in ss:
+        quem[str(x.get("card") or "")] = str(x.get("fotografo") or "")
+        pids = [p for p in (x.get("fotos") or []) + (x.get("pend") or []) if isinstance(p, str)]
+        if x.get("removida"):
+            fora.update(pids)
+            continue
+        fora.update(p for p in (x.get("ia") or []) if isinstance(p, str))     # base de IA nunca é vendida como foto
+        for p in pids:
+            dono.setdefault(p, str(x.get("card") or ""))
+    return dono, fora, quem
+
+
+def selfie_dia_referencias(fotos, dono, quem):
+    """Até SELFIE_REF_MAX fotos do passo 1 para servir de referência: as mais parecidas com a selfie (>= SELFIE_REF_CORTE),
+    primeiro uma por fotógrafo, depois uma por sessão, depois as que faltarem."""
+    cands = sorted((f for f in fotos if f["sim"] >= SELFIE_REF_CORTE), key=lambda f: -f["sim"])
+    refs, sess_, fot_ = [], set(), set()
+    for passo in (0, 1, 2):
+        for f in cands:
+            if len(refs) >= SELFIE_REF_MAX:
+                return refs
+            if any(f is r for r in refs):
+                continue
+            card = dono.get(f["id"], "")
+            ft = quem.get(card, "") if card else ""
+            if passo == 0 and ((ft or card or f["id"]) in fot_ or card in sess_ and card):
+                continue
+            if passo == 1 and card and card in sess_:
+                continue
+            refs.append(f)
+            sess_.add(card)
+            fot_.add(ft or card or f["id"])
+    return refs
+
+
+def selfie_dia_fotos(me, dia):
+    """[(id do manifesto, sessão)] das fotos do dia em que o cliente é o rosto principal: passo 1 (a selfie) e passo 2 (as
+    referências do passo 1, com a trava na selfie). Registra no log só os números."""
+    np = _cv["np"]
+    dono, fora, quem = selfie_dia_sessoes(dia)
+    ok = lambda f: f.get("principal") and f["id"] not in fora
+    p1 = [f for f in buscar_vetor(me, dia=dia, vetores=True).get("fotos") or [] if f["sim"] >= LIMITE and ok(f)]
+    achou = {f["id"]: f["sim"] for f in p1}
+    n2 = 0
+    for ref in selfie_dia_referencias(p1, dono, quem):
+        v = np.asarray(ref["vet"], dtype="float32")
+        v = v / (np.linalg.norm(v) or 1)
+        for f in buscar_vetor(v, dia=dia, vetores=True).get("fotos") or []:
+            if f["id"] in achou or f["sim"] < LIMITE or not ok(f):
+                continue
+            if float(np.dot(f["vet"], me)) < SELFIE_PASSO2_PISO:      # bate com a referência mas não com a selfie: não entra
+                continue
+            achou[f["id"]] = float(np.dot(f["vet"], me))
+            n2 += 1
+    ids = sorted(achou, key=lambda k: -achou[k])[:SELFIE_DIA_MAX]
+    out = [("ag_" + k, dono.get(k, "")) for k in ids]
+    print("  selfie sem código: passo 1 %d, passo 2 %d, %d sessões" % (len(p1), n2, len({c for _, c in out if c})))
+    return out
+
+
+def selfie_dia_direitos():
+    """({id: direito da foto numa venda}, ids que nunca entram). Comprada vence cortesia. 27/11 (Ronaldo): foto é foto, a selfie
+    não separa galeria de escola nem de menor; a escola segue abrindo a dela pelo voucher."""
+    dirs, fora = {}, set()
+    for t in REPO.listar():
+        try:
+            m = REPO.ler_manifesto(t)
+        except Exception:
+            m = None
+        if not m or m.get("origem") == "selfie" or m.get("encerrada"):
+            continue
+        for f in m.get("fotos") or []:
+            if f.get("direito") == "comprada":
+                dirs[f["id"]] = {"direito": "comprada", "canal": f.get("canal") or "loja"}
+            elif f.get("direito") == "cortesia" and dirs.get(f["id"], {}).get("direito") != "comprada":
+                dirs[f["id"]] = {"direito": "cortesia", "canal": None, **({"cortesia": f["cortesia"]} if isinstance(f.get("cortesia"), dict) else {})}
+    return dirs, fora
+
+
+def selfie_dia_galeria(dia, achados):
+    """Monta e grava a galeria da selfie. -> manifesto ou None (nada a mostrar ou sem preços de referência)."""
+    dirs, fora = selfie_dia_direitos()
+    achados = [a for a in achados if a[0] not in fora]
+    if not achados:
+        return None
+    base = ativ_tour_base()
+    if not base:
+        print("  selfie sem código: sem galeria de venda para copiar preços")
+        return None
+    tok = secrets.token_urlsafe(16)
+    fotos = [dict({"id": i, "sessao": s_, "direito": "venda", "canal": None}, **dirs.get(i, {})) for i, s_ in achados]
+    m = gal_validar({"token": tok, "tipo": "sessao", "venue": ATIV_VENUE, "sessoes": sorted({f["sessao"] for f in fotos if f["sessao"]}),
+                     "criada": _iso(), "expira": _iso(_epoch(dia + "T23:59:59") + GAL_DIAS * 86400),
+                     "precos": base["precos"], "catalogo": base["catalogo"], "fotos": fotos})
+    m["origem"] = "selfie"
+    with gal_lock:
+        REPO.salvar_manifesto(tok, m)
+    gal_fila.put(tok)
+    return m
+
+
+def selfie_dia_atende(seg, p):
+    """Um pedido da nuvem -> {"estado", "token"?}. A selfie sai da memória logo depois de lida."""
+    dia = str(p.get("dia") or "")
+    if not _re_dia.match(dia) or not rostos["ligado"]:
+        return {"estado": "erro"}
+    est, me = selfie_dia_vetor(p.pop("imagem", None))
+    if est != "ok":
+        return {"estado": est}
+    m = selfie_dia_galeria(dia, selfie_dia_fotos(me, dia))
+    if not m:
+        return {"estado": "nao"}
+    nuvem_publica_manifesto(seg, m)            # a nuvem precisa da galeria antes de dar o acesso ao cliente
+    nuvem_galeria_enfileira(m["token"])        # e as republicações (venda online) seguem pela fila de sempre
+    return {"estado": "achou", "token": m["token"], "n": len(m["fotos"])}
+
+
+def _selfie_dia_registro(pedido, dia, r):
+    """Só o resumo (sem selfie e sem o número do pedido, que é a chave do cliente): hash, dia, estado e quantas fotos."""
+    with nuvem_lock:
+        db = nuvem_db()
+        db.execute("CREATE TABLE IF NOT EXISTS selfie_dia (id TEXT PRIMARY KEY, dia TEXT, estado TEXT, token TEXT, n INTEGER, em TEXT)")
+        db.execute("INSERT OR REPLACE INTO selfie_dia (id, dia, estado, token, n, em) VALUES (?,?,?,?,?,?)",
+                   (hashlib.sha256(pedido.encode()).hexdigest()[:16], dia, r["estado"], r.get("token"), r.get("n") or 0, _iso()))
+        db.commit(); db.close()
+
+
+def selfie_dia_passa(seg):
+    """Leva os pedidos da nuvem, procura e devolve cada resultado. -> quantos atendeu."""
+    rq = urllib.request.Request(NUVEM_API + "/ponto/selfies", headers={"X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=20) as resp_:
+        ps = json.loads(resp_.read().decode("utf8")).get("pedidos") or []
+    n = 0
+    for p in ps[:10]:
+        pedido, dia = str((p or {}).get("pedido") or ""), str((p or {}).get("dia") or "")[:10]
+        if not re.match(r"^[A-Za-z0-9_-]{24}$", pedido):
+            continue
+        try:
+            r = selfie_dia_atende(seg, p)
+        except Exception as ex:
+            print("  selfie sem código: busca falhou (%s)" % type(ex).__name__)
+            r = {"estado": "erro"}
+        p = None
+        corpo = {"pedido": pedido, "estado": r["estado"], **({"token": r["token"]} if r.get("token") else {})}
+        rq = urllib.request.Request(NUVEM_API + "/ponto/selfies", data=json.dumps(corpo).encode(), method="POST",
+                                    headers={"Content-Type": "application/json", "X-Eterna-Ponto": seg, "User-Agent": "eterna-agente"})
+        with urllib.request.urlopen(rq, timeout=20) as resp_:
+            resp_.read()
+        try:
+            _selfie_dia_registro(pedido, dia, r)
+        except Exception:
+            pass
+        selfie_dia["pedidos"] += 1
+        selfie_dia["achou" if r["estado"] == "achou" else "nao"] += 1
+        n += 1
+    return n
+
+
+def selfie_dia_loop():
+    """Só com a nuvem e a leitura de rostos ligadas: sem isso a nuvem não vê o estádio buscando e a tela não oferece a opção."""
+    if not NUVEM_API:
+        return
+    seg = nuvem_segredo()
+    nuvem["selfie_dia"] = selfie_dia             # na saúde da nuvem: ligada, última busca, contagens e último erro
+    while True:
+        selfie_dia["ligada"] = bool(rostos["ligado"])
+        if rostos["ligado"]:
+            try:
+                selfie_dia_passa(seg)
+                selfie_dia["ultima"] = _iso()
+            except Exception as ex:
+                selfie_dia["erro"] = time.strftime("%H:%M:%S ") + str(ex)[:160]
+        time.sleep(SELFIE_DIA_INTERVALO)
 
 
 def ativ_videos_limpa(agora=None):
@@ -11893,6 +12510,19 @@ def doc_recusa(db, quem, d):
     # O perfil vem do cadastro da sessão, nunca do pedido; o "ver como" também é recusado. O resto da coleção sim segue a tabela DOC_SIM.
     if col == "sim" and id_doc in SIM_SO_ADMIN and ((quem.get("cadastro") or {}).get("preset") != "admin" or quem.get("assumido_por")):
         return "so_admin"
+    # 26/11 (Eduardo): Realces do ajuste à mão (campo r de sim/edits|<foto>): inteiro de 0 a 100 em passos de 10. Ajuste sem o campo
+    # (todos os antigos) segue valendo 0; os outros campos do ajuste seguem como sempre foram gravados.
+    if col == "sim" and id_doc.startswith("edits|") and not apaga and isinstance(d.get("valor"), dict) and "r" in d["valor"]:
+        r = d["valor"]["r"]
+        if type(r) is not int or not 0 <= r <= 100 or r % 10:
+            return "invalido"
+    # 27/11: com o vendedor também gravando o ajuste, os campos numéricos do ajuste têm de ser número (nunca texto)
+    if col == "sim" and id_doc.startswith("edits|") and not apaga and isinstance(d.get("valor"), dict):
+        for k in ("b", "h", "c", "s", "t", "z", "x", "y"):
+            if k in d["valor"]:
+                n = d["valor"][k]
+                if isinstance(n, bool) or not isinstance(n, (int, float)) or n != n or n in (float("inf"), float("-inf")):
+                    return "invalido"
     letras = ("d", "u") if apaga else ("u",) if existe else ("c", "u")
     return None if any(auth_pode(quem["cadastro"], mo, le) for mo in mods for le in letras) else "sem_permissao"
 
@@ -12794,7 +13424,7 @@ def venda_ajustar(body, quem):
     if not _re_pedido.match(venda):
         return {"error": "venda inválida"}, 400
     meio = body.get("meio")
-    if meio not in ("pix", "cartao", "dinheiro"):
+    if meio not in ("pix", "cartao", "dinheiro", "cortesia"):      # 26/11: cortesia (R$ 0) gravada com cartão vira cortesia
         return {"error": "meio inválido"}, 400
     cart = []
     for x in (body.get("cart") if isinstance(body.get("cart"), list) else [])[:50]:
@@ -12813,6 +13443,8 @@ def venda_ajustar(body, quem):
         return {"error": "total inválido"}, 400
     if not cart or abs(sum(x["v"] for x in cart) - total) > 0.009:
         return {"error": "o total tem de ser a soma dos itens"}, 400
+    if (meio == "cortesia") != (total == 0):
+        return {"error": "cortesia é R$ 0, e R$ 0 só como cortesia"}, 400
     ref = str(body.get("ref") or "").strip()[:60] or None
     motivo = str(body.get("motivo") or "").strip()[:200] or None
     with ev_lock:
@@ -13069,10 +13701,18 @@ def vendas_db():
     # BI: cada selfie do Checkout. Só contagem e horário: nunca imagem, vetor do rosto, sessão ou venda (não identifica ninguém)
     c.execute("create table if not exists selfie (em text, dia text, hora int, origem text, resultado text, fotos int, ms int)")
     c.execute("create index if not exists selfie_dia_i on selfie(dia)")
+    # 27/11 (Ronaldo: "as selfies são as pessoas que vieram das abordadas, seja grupo ou individual; cada rosto é uma pessoa")
+    if "pessoas" not in [r[1] for r in c.execute("pragma table_info(selfie)")]:
+        c.execute("alter table selfie add column pessoas int")
     c.execute("create view if not exists selfie_dia as select dia, origem, count(*) as selfies, sum(resultado = 'achou') as achou,"
               " sum(resultado = 'nao_achou') as nao_achou, sum(resultado = 'sem_rosto') as sem_rosto, sum(resultado = 'varias_pessoas') as varias_pessoas,"
               " sum(resultado = 'erro') as erro, avg(ms) as ms_medio from selfie group by dia, origem")
     c.execute("create view if not exists selfie_hora as select dia, hora, count(*) as selfies, sum(resultado = 'achou') as achou from selfie group by dia, hora")
+    # 26/11: cada busca por selfie do VENDEDOR (Procurar fotos): quem, quando, posto, quantas sessões achou e quais marcou.
+    # Nunca imagem nem vetor do rosto. "por" vem da sessão de quem pediu, nunca do corpo do pedido.
+    c.execute("create table if not exists busca_vend (id text primary key, em text, dia text, por text, posto text, resultado text,"
+              " certeza int, talvez int, achadas text, marcadas text, marcada_em text)")
+    c.execute("create index if not exists busca_vend_dia_i on busca_vend(dia, por)")
     return c
 
 
@@ -13124,13 +13764,206 @@ def selfie_registra(origem, r, t0, posto=None, vendedor=None):
         with ev_lock:
             db = vendas_db()
             try:
-                db.execute("insert into selfie values (?, ?, ?, ?, ?, ?, ?)", (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), _ff_hoje(agora),
-                           time.localtime(agora).tm_hour, origem, res, len(r.get("fotos") or []), int((agora - t0) * 1000)))
+                pes = int(r.get("pessoas") or 0) or (1 if r.get("rosto") else 0)
+                db.execute("insert into selfie (em, dia, hora, origem, resultado, fotos, ms, pessoas) values (?, ?, ?, ?, ?, ?, ?, ?)",
+                           (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), _ff_hoje(agora),
+                            time.localtime(agora).tm_hour, origem, res, len(r.get("fotos") or []), int((agora - t0) * 1000), pes))
                 db.commit()
             finally:
                 db.close()
     except Exception as ex:
         print("  selfie: não registrou:", str(ex)[:120])
+
+
+# ---------- 26/11: busca por selfie do vendedor (fase 2 do plano docs/planos/2026-11-26-procurar-vender.md) ----------
+# Quem escolhe as sessões é o vendedor, na tela dele. O servidor devolve as sessões de HOJE em que o rosto apareceu, em dois
+# níveis, e grava cada busca na tabela busca_vend (vendas.db). Regras: só sessão de hoje, nunca removida, de menor ou de
+# escola; nunca foto que é base dos fundos de IA; a imagem da câmera não é gravada em lugar nenhum.
+_re_busca_vend_id = re.compile(r"^[a-f0-9]{16}$")
+_re_busca_vend_card = re.compile(r"^[A-Z0-9]{4,20}$")
+
+
+def busca_vend_sessoes(fotos, agora=None):
+    """fotos = o "fotos" do buscar_vetor ([{id, sim, principal}]) -> as sessões de hoje, "certeza" primeiro.
+    certeza = alguma foto da sessão com nota >= LIMITE em que o rosto é dos principais da foto (quem só aparece ao fundo
+    não deixa a sessão de outra família já marcada); o resto é "pode_ser", até BUSCA_VEND_MAX."""
+    hoje = _ff_hoje(agora)
+    por = {}
+    dono, errados, fora = None, 0, {}
+    with sess_lock:                                  # só copia; nenhuma consulta a banco aqui dentro
+        for f in fotos or []:
+            pid = f.get("id") if isinstance(f, dict) else None
+            x = sess.get(sess_pid.get(pid) or "") if isinstance(pid, str) else None
+            # 27/11 (casal da sessão 123, fotos do cartão): o índice foto -> sessão apontava para outra sessão e a sessão
+            # certa sumia da busca do vendedor (o Checkout, que olha as fotos de cada sessão, achava). Vale a sessão de hoje
+            # que tem a foto.
+            if isinstance(pid, str) and (not x or pid not in x["fotos"] or x.get("dia") != hoje or x.get("removida")):
+                if dono is None:
+                    dono = {}
+                    for y in sess.values():
+                        if y.get("dia") == hoje and not y.get("removida"):
+                            for q in y["fotos"]:
+                                dono[q] = y
+                y = dono.get(pid)
+                if y is not None and y is not x:
+                    x = y; errados += 1
+            # 27/11 (casal da sessão 123): a galeria da escola pega toda sessão que começou no horário do voucher e as levas
+            # viram protegidas; a família que estava no mesmo horário sumia da busca. Aqui (vendedor, atendimento da equipe)
+            # a leva de escola entra, sempre como "pode_ser" (nunca marcada sozinha). A leva com menor marcado segue fora.
+            if not x or x.get("dia") != hoje or x.get("removida") or x.get("menor"):
+                k = "sem_sessao" if not x else "outro_dia" if x.get("dia") != hoje else "removida" if x.get("removida") else "menor"
+                fora.setdefault(k, set()).add(x["card"] if x else "-")
+                continue
+            if pid not in x["fotos"] or pid in (x.get("ia") or ()):      # pendente de leitura ou base de IA: nunca sai
+                fora.setdefault("base_ou_pendente", set()).add(x["card"])
+                continue
+            nota = _num(f.get("sim"))
+            o = por.get(x["card"])
+            if o is None:
+                ia = set(x.get("ia") or ())
+                o = por[x["card"]] = {"card": x["card"], "nivel": "pode_ser", "sim": 0.0, "status": x.get("status"),
+                                      "fotografo": x.get("fotografo"), "ponto": x.get("ponto"), "cap0": _num(x.get("cap0")),
+                                      "cap1": _num(x.get("cap1")), "n": sum(1 for p in x["fotos"] if p not in ia), "bateu": []}
+            o["bateu"].append({"id": pid, "sim": round(nota, 3)})
+            o["sim"] = max(o["sim"], round(nota, 3))
+            if nota >= LIMITE and f.get("principal") is True and not _vis_protegida(x):
+                o["nivel"] = "certeza"
+    if errados:
+        print("  busca do vendedor: %d foto(s) com o índice de sessão desatualizado, achadas pela sessão de hoje" % errados)
+    if fora:      # 27/11: por que uma sessão com o rosto não saiu (só códigos de sessão, nada do cliente)
+        print("  busca do vendedor: fora da lista: %s" % "; ".join("%s=%s" % (k, ",".join(sorted(v))[:200]) for k, v in sorted(fora.items())))
+    for o in por.values():
+        o["bateu"] = sorted(o["bateu"], key=lambda b: -b["sim"])[:BUSCA_VEND_BATEU]
+        if o["status"] not in ("aberta", "separada", "fechada"):
+            o["status"] = "aberta"
+    ordem = sorted(por.values(), key=lambda o: (-o["sim"], o["card"]))
+    return [o for o in ordem if o["nivel"] == "certeza"][:BUSCA_VEND_CERTEZA_MAX] \
+        + [o for o in ordem if o["nivel"] != "certeza"][:BUSCA_VEND_MAX]
+
+
+BUSCA_VEND_FORA = ("limite_min", "limite_dia")     # linhas que registram uma recusa por limite: não contam como busca
+
+
+def busca_vend_reserva(bid, por, posto, minuto_ok=True):
+    """Conta as buscas de hoje desta pessoa e grava a linha desta busca NA MESMA transação (duas buscas ao mesmo tempo não
+    passam juntas do teto do dia). -> None se a busca pode seguir (linha gravada como "iniciada"), ou "limite_min" /
+    "limite_dia". A recusa também fica registrada (até BUSCA_VEND_RECUSAS_DIA por pessoa e por dia). Aproveita para apagar
+    as linhas com mais de BUSCA_VEND_RETENCAO dias. Erro aqui sobe: busca sem registro não roda."""
+    agora = time.time()
+    dia, em = _ff_hoje(agora), time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora))
+    with ev_lock:
+        db = vendas_db()
+        try:
+            db.execute("begin immediate")
+            db.execute("delete from busca_vend where dia < ?", (_ff_hoje(agora - BUSCA_VEND_RETENCAO * 86400),))
+            n, rec = db.execute("select sum(resultado not in ('limite_min', 'limite_dia')), sum(resultado in ('limite_min', 'limite_dia'))"
+                                " from busca_vend where dia = ? and por = ?", (dia, por)).fetchone()
+            motivo = None if minuto_ok and int(n or 0) < BUSCA_VEND_POR_DIA else "limite_dia" if int(n or 0) >= BUSCA_VEND_POR_DIA else "limite_min"
+            if motivo is None or int(rec or 0) < BUSCA_VEND_RECUSAS_DIA:
+                db.execute("insert into busca_vend (id, em, dia, por, posto, resultado, certeza, talvez, achadas) values (?, ?, ?, ?, ?, ?, 0, 0, '[]')",
+                           (bid, em, dia, por, posto, motivo or "iniciada"))
+            db.commit()
+            return motivo
+        finally:
+            db.close()
+
+
+def busca_vend_limpar(agora=None):
+    """Apaga as linhas de busca_vend com mais de BUSCA_VEND_RETENCAO dias. Chamada pela limpeza diária (sess_limpar);
+    a reserva de cada busca faz o mesmo. Sem o banco de vendas, não cria nada. -> linhas apagadas."""
+    if not os.path.exists(VENDAS_DB):
+        return 0
+    agora = time.time() if agora is None else agora
+    with ev_lock:
+        db = vendas_db()
+        try:
+            n = db.execute("delete from busca_vend where dia < ?", (_ff_hoje(agora - BUSCA_VEND_RETENCAO * 86400),)).rowcount
+            db.commit()
+            return n
+        finally:
+            db.close()
+
+
+def busca_vend_grava(bid, resultado, sessoes):
+    """O desfecho da busca na linha que a reserva gravou. Erro aqui sobe: busca sem registro não devolve nada."""
+    with ev_lock:
+        db = vendas_db()
+        try:
+            n = db.execute("update busca_vend set resultado = ?, certeza = ?, talvez = ?, achadas = ? where id = ?",
+                           (resultado, sum(1 for o in sessoes if o["nivel"] == "certeza"), sum(1 for o in sessoes if o["nivel"] != "certeza"),
+                            json.dumps([[o["card"], o["nivel"], o["sim"]] for o in sessoes]), bid)).rowcount
+            db.commit()
+        finally:
+            db.close()
+    if n != 1:
+        raise RuntimeError("busca sem linha")
+
+
+def busca_vend_marcar(bid, por, cards):
+    """O vendedor iniciou a venda: guarda quais das sessões achadas ele marcou. Vale uma vez, só para quem fez a busca, só
+    busca de hoje e só com sessões que estavam nas achadas. -> (resposta, status)."""
+    if not isinstance(bid, str) or not _re_busca_vend_id.match(bid) or not isinstance(cards, list) or len(cards) > BUSCA_VEND_MARCAR_MAX \
+            or not all(isinstance(c, str) and _re_busca_vend_card.match(c) for c in cards) or len(set(cards)) != len(cards):
+        return {"ok": False, "erro": "invalido"}, 400
+    agora = time.time()
+    with ev_lock:
+        db = vendas_db()
+        try:
+            r = db.execute("select por, dia, achadas, marcada_em from busca_vend where id = ?", (bid,)).fetchone()
+            # busca de outra pessoa responde igual a busca que não existe (não confirma o id de ninguém)
+            if not r or r[0] != por or r[1] != _ff_hoje(agora):
+                return {"ok": False, "erro": "busca"}, 404
+            if r[3]:
+                return {"ok": False, "erro": "ja_marcada"}, 409
+            try:
+                achadas = {a[0] for a in json.loads(r[2] or "[]")}
+            except (ValueError, TypeError, IndexError):
+                achadas = set()
+            if not set(cards) <= achadas:
+                return {"ok": False, "erro": "fora"}, 400
+            db.execute("update busca_vend set marcadas = ?, marcada_em = ? where id = ? and marcada_em is null",
+                       (json.dumps(cards), time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(agora)), bid))
+            db.commit()
+        finally:
+            db.close()
+    return {"ok": True}, 200
+
+
+def busca_vend_dia(dia):
+    """As buscas do vendedor no dia, para GET /ponto/selfies (quem confere reclamação e uso)."""
+    try:
+        with ev_lock:
+            db = vendas_db()
+            try:
+                rs = db.execute("select id, em, por, posto, resultado, certeza, talvez, achadas, marcadas, marcada_em from busca_vend"
+                                " where dia = ? order by em", (dia,)).fetchall()
+            finally:
+                db.close()
+    except Exception:
+        return []
+
+    def js(t):
+        try:
+            return json.loads(t) if t else None
+        except ValueError:
+            return None
+    return [{"busca": r[0], "em": r[1], "por": r[2], "posto": r[3], "resultado": r[4], "certeza": r[5], "talvez": r[6],
+             "achadas": js(r[7]) or [], "marcadas": js(r[8]), "marcada_em": r[9]} for r in rs][-3000:]
+
+
+def busca_vend_resumo(linhas):
+    """Por pessoa, no dia: quantas buscas fez, quantas acharam sessão, quantas terminaram sem venda marcada e quantas vezes
+    bateu no limite. linhas = busca_vend_dia(dia). Para o Admin conferir o uso (GET /ponto/selfies)."""
+    por = {}
+    for x in linhas:
+        o = por.setdefault(x.get("por") or "?", {"por": x.get("por") or "?", "buscas": 0, "acharam": 0, "sem_venda": 0, "limite": 0})
+        if x.get("resultado") in BUSCA_VEND_FORA:
+            o["limite"] += 1
+            continue
+        o["buscas"] += 1
+        o["acharam"] += 1 if x.get("resultado") == "achou" else 0
+        o["sem_venda"] += 0 if x.get("marcada_em") else 1
+    return sorted(por.values(), key=lambda o: (-o["buscas"], o["por"]))
 
 
 def _ev_dia(em):
@@ -13156,6 +13989,16 @@ def _ev_ler(dia):
 
 EV_LANGS = ("pt", "en", "es", "fr", "de", "it", "zh")   # 24/11: italiano e chinês do Checkout também contam
 EV_CANAIS = ("checkout", "balcao")
+# 26/11: de onde a venda partiu quando o vendedor achou as sessões no Procurar fotos (plano docs/planos/2026-11-26-procurar-vender.md)
+EV_ORIGENS = ("procurar", "procurar_selfie")
+
+
+def _ev_origem(d):
+    """Origem da VENDA (dados do evento "criar"): só valor de EV_ORIGENS, senão None. Não confundir com o por_origem das
+    selfies (selfies_dia), que conta buscas por rosto por onde foram feitas; este é de onde a venda partiu."""
+    o = d.get("origem") if isinstance(d, dict) else None
+    return o if isinstance(o, str) and o in EV_ORIGENS else None
+
 EV_CART_MAX = 30
 _re_cart_id = re.compile(r"^[a-z0-9_-]{1,20}$")
 
@@ -13234,7 +14077,8 @@ def _ev_limpo(e):
     # v92 (estatísticas): produtos, idioma, canal e a hora em que o cliente começou no Checkout. Campo inválido sai; a venda fica.
     em = txt(e.get("em"), 30) or _iso()
     dd.update(cart=_ev_cart(d.get("cart")), lang=d.get("lang") if d.get("lang") in EV_LANGS else None,
-              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em))
+              canal=d.get("canal") if d.get("canal") in EV_CANAIS else None, t0=_ev_t0(d.get("t0"), em),
+              origem=_ev_origem(d))
     if dd.get("vendedor") in CHAVES_PROIBIDAS:
         dd["vendedor"] = None
     return {"idem": e["idem"], "venda": e["venda"], "seq": int(num(e.get("seq"))), "tipo": e["tipo"], "em": em,
@@ -13492,7 +14336,10 @@ def metricas_dia(dia):
             m["online"]["fotos"] += int(v.get("n") or 0)
     m["conversao_sessoes"] = round(m["sessoes_com_venda"] / m["sessoes"], 4) if m["sessoes"] else None
     m["conversao_fotos"] = round(m["fotos_vendidas"] / m["fotos"], 4) if m["fotos"] else None
-    m["ticket_medio"] = round(m["faturamento"] / m["vendas"], 2) if m["vendas"] else None
+    # 27/11 (auditoria do dia: R$ 179,07 nas vendas x R$ 174,10 nas Estatísticas): o valor médio é por venda PAGA; a cortesia
+    # (valor zero) entrava na divisão e puxava a média para baixo
+    _pagas = m["vendas"] - int(((m.get("por_meio") or {}).get("cortesia") or {}).get("vendas") or 0)
+    m["ticket_medio"] = round(m["faturamento"] / _pagas, 2) if _pagas > 0 else None
     m["cancelamentos"].sort(key=lambda x: str(x.get("em") or ""))
     for pf in m["por_fotografo"].values():
         pf["conversao"] = round(pf["sessoes_com_venda"] / pf["sessoes"], 4) if pf["sessoes"] else None
@@ -13668,34 +14515,85 @@ backup = {"em": None, "ok": None, "erro": None}
 # função do dia, visitas, fila de impressão e agenda. Só o que mudou desde a última rodada; chave backup/<pc>/arquivos/<caminho>.
 # Fica de fora de propósito: rostos (biometria), chaves e segredos, recortes e miniaturas (refeitos a partir do original).
 _backup_vistos = {}
+# 27/11 (Ronaldo: "o backup está falhando toda hora"; AWS: parado de 21:49 a 22:50 de 26/11, com 7 religamentos do agente no
+# meio): o que já subiu ficava só na memória. A cada religamento (publicação, queda de energia) o agente recomeçava a subir todos
+# os arquivos, era cortado antes de terminar e o "último backup bom" não andava. Agora: (1) o que já subiu fica no disco
+# (BACKUP_VISTOS_ARQ) e o religamento só manda o que mudou; (2) os bancos (as vendas) vão primeiro e os arquivos depois, com
+# BACKUP_ARQ_PRAZO_S por rodada: o que não coube fica para a rodada seguinte, sem contar como falha; (3) cópia local de cada banco
+# no HD das fotos (BACKUP_LOCAL) antes da nuvem: sem internet, a cópia do momento fica no servidor.
+BACKUP_VISTOS_ARQ = os.path.join(HOME, "backup-vistos.json")
+BACKUP_ARQ_PRAZO_S = 60
+BACKUP_LOCAL = os.path.join(os.path.realpath(INBOX), ".backup-local")   # o ponto esconde a pasta da inbox e da cópia dos originais
+BACKUP_LOCAL_DIAS = 30
+_backup_vistos_lido = [False]
+
+
+def _backup_vistos_le():
+    if _backup_vistos_lido[0]:
+        return
+    _backup_vistos_lido[0] = True
+    try:
+        with open(BACKUP_VISTOS_ARQ, encoding="utf8") as f:
+            j = json.load(f)
+        for a, v in (j.items() if isinstance(j, dict) else ()):     # caminho completo: a contagem de pessoas fica no HD, fora da pasta Eterna
+            if isinstance(v, list) and len(v) == 2:
+                _backup_vistos[a] = (v[0], v[1])
+    except Exception:
+        pass
+
+
+def _backup_vistos_grava():
+    try:
+        j = {a: list(v) for a, v in _backup_vistos.items()}
+        with open(BACKUP_VISTOS_ARQ + ".tmp", "w", encoding="utf8") as f:
+            json.dump(j, f)
+        os.replace(BACKUP_VISTOS_ARQ + ".tmp", BACKUP_VISTOS_ARQ)
+    except Exception as ex:
+        print("  backup (lista do que já subiu):", str(ex)[:160])
 
 
 def backup_arquivos_lista():
     out = [INDEX, METRICAS_ARQ, LGPD_EXCLUIDAS, LGPD_LOG, FF_FUNCAO, AF_FONTE, VIS_LOG, VIS_CALIB, IMP_FILA, FUNDOS_MODO_CFG]
-    for pasta, so in ((SESS_DIR, None), (MET_DIR, None), (GALERIAS, "sessao.json")):
+    for pasta, so in ((SESS_DIR, None), (MET_DIR, None), (GALERIAS, "sessao.json"), (PESSOAS_DIR, None), (AUDITORIA_DIR, None)):
         for raiz, _dirs, arqs in os.walk(pasta):
-            out += [os.path.join(raiz, a) for a in arqs if (so is None and not a.endswith(".tmp")) or a == so]
+            out += [os.path.join(raiz, a) for a in arqs if (so is None and not a.endswith(".tmp") and a != SESS_NUM_MARCA) or a == so]
     return [a for a in out if os.path.isfile(a)]
 
 
-def backup_arquivos(pc):
+def backup_arquivos(pc, prazo_s=None):
+    """Sobe os arquivos que mudaram desde a última subida. Com prazo_s, para ao passar do prazo (o resto fica para a rodada
+    seguinte). -> (enviados, pendentes)"""
+    _backup_vistos_le()
     novos = []
     for a in backup_arquivos_lista():
-        st = os.stat(a)
+        try:
+            st = os.stat(a)
+        except OSError:
+            continue
         if _backup_vistos.get(a) != (st.st_size, st.st_mtime):
             novos.append((a, (st.st_size, st.st_mtime)))
     if not novos:
-        return 0
+        return 0, 0
     s3 = _s3_cliente()
-    for a, marca in novos:
-        with open(a, "rb") as f:
-            corpo = f.read()
-        rel = os.path.relpath(a, HOME).replace(os.sep, "/")
-        s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/arquivos/%s" % (pc, rel), Body=corpo,
-                      ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
-        _backup_vistos[a] = marca
-    backup.update(em=_iso(), ok=True, erro=None)
-    return len(novos)
+    t0, n = time.time(), 0
+    try:
+        for a, marca in novos:
+            if prazo_s is not None and n and time.time() - t0 > prazo_s:
+                break
+            try:
+                with open(a, "rb") as f:
+                    corpo = f.read()
+            except OSError:
+                continue
+            rel = os.path.relpath(a, HOME).replace(os.sep, "/")
+            s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/arquivos/%s" % (pc, rel), Body=corpo,
+                          ContentMD5=base64.b64encode(hashlib.md5(corpo).digest()).decode())
+            _backup_vistos[a] = marca
+            n += 1
+    finally:
+        if n:
+            _backup_vistos_grava()
+    return n, len(novos) - n
 
 
 # 16/11 (alarme falso das 10:44): a hora do último backup bom ficava só na memória e o pulso sai antes da primeira rodada;
@@ -13756,12 +14654,32 @@ def backup_bancos(s3, pc, ultimo, hoje=None):
             ultimo[banco] = (marca, hoje, md5)
             continue
         nome = os.path.basename(banco)
+        backup_local(nome, corpo, hoje)
         for chave in ("backup/%s/%s" % (pc, nome), "backup/%s/dia/%s/%s" % (pc, hoje, nome)):
             s3.put_object(Bucket=NUVEM_BUCKET, Key=chave, Body=corpo, ContentType="application/x-sqlite3",
                           ContentMD5=base64.b64encode(md5).decode())
         ultimo[banco] = (marca, hoje, md5)
         enviados.append(nome)
     return enviados
+
+
+def backup_local(nome, corpo, hoje):
+    """Cópia do banco no HD das fotos: a mais nova em BACKUP_LOCAL/<banco> e a do dia em BACKUP_LOCAL/dia/<dia>/<banco>
+    (BACKUP_LOCAL_DIAS dias). Falha aqui não impede a nuvem."""
+    try:
+        for pasta in (BACKUP_LOCAL, os.path.join(BACKUP_LOCAL, "dia", hoje)):
+            os.makedirs(pasta, exist_ok=True)
+            a = os.path.join(pasta, nome)
+            with open(a + ".tmp", "wb") as f:
+                f.write(corpo)
+            os.replace(a + ".tmp", a)
+        dd = os.path.join(BACKUP_LOCAL, "dia")
+        limite = _ff_hoje(time.time() - BACKUP_LOCAL_DIAS * 86400)
+        for d in os.listdir(dd):
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", d) and d < limite:
+                shutil.rmtree(os.path.join(dd, d), ignore_errors=True)
+    except Exception as ex:
+        print("  backup local:", str(ex)[:160])
 
 
 def backup_rodada(pc, ultimo, est):
@@ -13771,36 +14689,41 @@ def backup_rodada(pc, ultimo, est):
     envelhece e o alerta da AWS dispara)."""
     falhou = False
     try:
-        backup_arquivos(pc)
+        backup_bancos_json(pc, ultimo, est)
+    except Exception as ex:
+        falhou = True
+        backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
+        print("  backup na nuvem:", str(ex)[:160])
+    try:
+        enviados, pend = backup_arquivos(pc, BACKUP_ARQ_PRAZO_S)
+        if pend:
+            print("  backup na nuvem (arquivos): %d enviados, %d ficam para a próxima rodada" % (enviados, pend))
     except Exception as ex:
         falhou = True
         backup.update(em=_iso(), ok=False, erro=("arquivos: " + str(ex))[:160])
         print("  backup na nuvem (arquivos):", str(ex)[:160])
-    try:
-        s3 = _s3_cliente()
-        hoje = _ff_hoje()
-        # 24/11: só o banco que mudou (cada um com a sua marca), não todos quando um muda
-        if backup_bancos(s3, pc, ultimo, hoje):
-            est["json_pend"] = True
-        if not est.get("json_pend"):
-            if not falhou:
-                est["ok_em"] = time.time()
-                _backup_ok_grava(est["ok_em"])
-            return
-        for d in (_ff_hoje(time.time() - 86400), hoje):
-            for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
-                a = os.path.join(pasta, d + ".json")
-                if os.path.exists(a):
-                    s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
-                                  ContentType="application/json")
-        est["json_pend"] = False
-        if not falhou:
-            est["ok_em"] = time.time()
-            _backup_ok_grava(est["ok_em"])
-            backup.update(em=_iso(), ok=True, erro=None)
-    except Exception as ex:
-        backup.update(em=_iso(), ok=False, erro=str(ex)[:160])
-        print("  backup na nuvem:", str(ex)[:160])
+    if not falhou and not est.get("json_pend"):
+        est["ok_em"] = time.time()
+        _backup_ok_grava(est["ok_em"])
+        backup.update(em=_iso(), ok=True, erro=None)
+
+
+def backup_bancos_json(pc, ultimo, est):
+    """Bancos que mudaram e, junto, os JSON de métricas e sessões de ontem e hoje (repetidos enquanto json_pend)."""
+    s3 = _s3_cliente()
+    hoje = _ff_hoje()
+    # 24/11: só o banco que mudou (cada um com a sua marca), não todos quando um muda
+    if backup_bancos(s3, pc, ultimo, hoje):
+        est["json_pend"] = True
+    if not est.get("json_pend"):
+        return
+    for d in (_ff_hoje(time.time() - 86400), hoje):
+        for pasta, nome in ((MET_DIR, "metricas"), (SESS_DIR, "sessoes")):
+            a = os.path.join(pasta, d + ".json")
+            if os.path.exists(a):
+                s3.put_object(Bucket=NUVEM_BUCKET, Key="backup/%s/%s/%s.json" % (pc, nome, d), Body=open(a, "rb").read(),
+                              ContentType="application/json")
+    est["json_pend"] = False
 
 
 def backup_loop():
@@ -13981,6 +14904,7 @@ def zerar_inventario():
     vai["recortes"] = len(_zerar_ls(RECORTES))
     vai["montagens"] = len(_zerar_ls(MONTAGENS))
     vai["selfies"] = _zerar_n(VENDAS_DB, "select count(*) from selfie")
+    vai["buscas_vendedor"] = _zerar_n(VENDAS_DB, "select count(*) from busca_vend")
     vai["fotografo_dias"] = _zerar_n(OPERACAO_DB, "select count(*) from fotografo_dia")
     vai["fila_nuvem"] = _zerar_n(NUVEM_DB, "select count(*) from fila")
     tablet = _zerar_n(VENDAS_DB, "select count(*) from ativ_venda where origem='eterna'")
@@ -14272,6 +15196,7 @@ def _zp_vendas(ctx):
                     n += c.execute("delete from %s" % t).rowcount
             n += c.execute("delete from evento").rowcount
             n += c.execute("delete from selfie").rowcount
+            n += c.execute("delete from busca_vend").rowcount
         return n
     finally:
         c.close()
@@ -14771,6 +15696,10 @@ def metricas_periodo(de, ate):
             if m is not None:
                 if isinstance(m, dict) and m.get("v") == 2 and (m.get("t3") or 0) < T3_VER:
                     met_t3_agenda(d)                 # os tempos novos entram em segundo plano; a leitura segue rápida (critério 27)
+                # 26/11: a contagem de pessoas do HD (recontada e auditada) vale sobre a do resumo gravado no dia
+                jp = _pessoas_cache.get(d) or pessoas_disco_ler(d)
+                if isinstance(m, dict) and jp and jp.get("resultado"):
+                    m["pessoas"] = jp["resultado"]
                 out.append(m)
         t += 86400
     return out
@@ -14959,7 +15888,7 @@ def met_v2(dia, ss, evs):
     """Campos v2 do resumo do dia. ss = sessões do arquivo do dia (None se o arquivo não existe mais); evs = eventos de
     _ev_ler(dia). As vendas entram pela mesma regra da v1 (paga = tem "pagar"), para as somas baterem."""
     tempos = {k: h_novo() for k in ("cliente_s", "pagamento_s", "clique_checkout_s", "transferencia_s")}
-    out = {"v": 2, "por_hora": {}, "por_produto": {}, "por_canal": {}, "por_idioma": {}, "tempos": tempos,
+    out = {"v": 2, "por_hora": {}, "por_produto": {}, "por_canal": {}, "por_origem": {}, "por_idioma": {}, "tempos": tempos,
            "por_confirmador": {}, "por_fotografo": {}}
     ph = lambda h: out["por_hora"].setdefault(h, {"vendas": 0, "faturamento": 0.0, "sessoes": 0, "fotos": 0})
     for x in ss or []:
@@ -15023,6 +15952,10 @@ def met_v2(dia, ss, evs):
             except (TypeError, ValueError):
                 pass
         g = out["por_canal"].setdefault(canal, {"vendas": 0, "faturamento": 0.0})
+        g["vendas"] += 1
+        g["faturamento"] = round(g["faturamento"] + tot, 2)
+        origem = _ev_origem(c) or "sem_origem"
+        g = out["por_origem"].setdefault(origem, {"vendas": 0, "faturamento": 0.0})   # 26/11: venda aberta pelo Procurar fotos
         g["vendas"] += 1
         g["faturamento"] = round(g["faturamento"] + tot, 2)
         if canal == "checkout" and c.get("lang") in EV_LANGS:   # S3: idioma só do Checkout
@@ -15199,6 +16132,42 @@ def balcao_dia(dia, evs):
 # ingresso). Substitui a importação de CSV de entradas. Sem internet ou com o Maraca Acessos fora, responde sem os números.
 ACESSOS_API = os.environ.get("ETERNA_ACESSOS_API", "https://maraca-acessos.onrender.com").rstrip("/")
 _acessos_cache = {}
+# 26/11 (Ronaldo: "não dá pra ter falha nisso"): o painel do Maraca Acessos passou a exigir login e o /api/stats respondia 401.
+# O Eterna manda a chave dele em X-Eterna-Chave (gerada aqui na primeira vez, só o dono lê); o Maraca Acessos guarda só o
+# SHA-256 (ETERNA_STATS_SHA256 no Render), que aparece em GET /visitantes. O último número bom de cada período fica no disco:
+# falha de rede, Render dormindo ou reinício do agente não apagam os visitantes do funil.
+ACESSOS_CHAVE = os.path.join(HOME, "acessos-chave.txt")
+ACESSOS_CACHE_ARQ = os.path.join(HOME, "ponto", "visitantes-cache.json")
+
+
+def acessos_chave():
+    if not os.path.exists(ACESSOS_CHAVE):
+        _grava_privado(ACESSOS_CHAVE, secrets.token_urlsafe(32))
+    return open(ACESSOS_CHAVE, encoding="utf8").read().strip()
+
+
+def _acessos_disco(k, v=None):
+    """Sem v: o último número bom do período k no disco (ou None). Com v: grava (até 120 períodos)."""
+    try:
+        d = json.load(open(ACESSOS_CACHE_ARQ, encoding="utf8"))
+        d = d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        d = {}
+    if v is None:
+        x = d.get(k)
+        return x if isinstance(x, dict) and x.get("ok") else None
+    d[k] = v
+    if len(d) > 120:
+        for kk in sorted(d, key=lambda z: str((d[z] or {}).get("lido_em") or ""))[:len(d) - 120]:
+            d.pop(kk, None)
+    try:
+        os.makedirs(os.path.dirname(ACESSOS_CACHE_ARQ), exist_ok=True)
+        tmp = ACESSOS_CACHE_ARQ + ".tmp"
+        with open(tmp, "w", encoding="utf8") as f:
+            json.dump(d, f)
+        os.replace(tmp, ACESSOS_CACHE_ARQ)
+    except OSError:
+        pass
 
 
 def visitantes(de, ate):
@@ -15211,18 +16180,27 @@ def visitantes(de, ate):
         return c[1]
     try:
         rq = urllib.request.Request(ACESSOS_API + "/api/stats?" + urllib.parse.urlencode({"de": de, "ate": ate}),
-                                    headers={"User-Agent": "eterna-agente"})
+                                    headers={"User-Agent": "eterna-agente", "X-Eterna-Chave": acessos_chave()})
         with urllib.request.urlopen(rq, timeout=25) as r:
             j = json.loads(r.read(400000).decode("utf8"))
         ph = (j.get("por_hora") or {})
         out = {"ok": True, "de": de, "ate": ate, "total": int(j.get("total_hoje") or 0), "anterior": int(j.get("total_ontem") or 0),
                "por_hora": [int(x or 0) for x in (ph.get("hoje") or [])][:24],
                "por_canal": [{"canal": str(x.get("canal") or "")[:40], "n": int(x.get("n") or 0)} for x in (j.get("por_canal") or [])][:10],
-               "atualizado": j.get("atualizado_em"), "fonte": "Maraca Acessos"}
+               "atualizado": j.get("atualizado_em"), "fonte": "Maraca Acessos", "lido_em": _iso()}
     except Exception as ex:
+        print("  visitantes (Maraca Acessos): %s" % str(ex)[:120])
         if c:
             return c[1]
-        return {"ok": False, "erro": str(ex)[:120]}
+        d = _acessos_disco(k)
+        if d:
+            return dict(d, guardado=True)
+        try:
+            sha = hashlib.sha256(acessos_chave().encode()).hexdigest()
+        except Exception:
+            sha = None
+        return {"ok": False, "erro": str(ex)[:120], "chave_sha256": sha}
+    _acessos_disco(k, out)
     if len(_acessos_cache) > 60:
         _acessos_cache.clear()
     _acessos_cache[k] = (time.time(), out)
@@ -15234,15 +16212,20 @@ PESSOA_PERTO = 80   # largura do rosto (px na foto lida, lado 1600) a partir da 
 
 # 16/11 (v2, conferência do Ronaldo nos rostos de 15/11: muita gente repetida). A v1 agrupava todos os rostos pelo limite
 # da selfie e cada rosto de perfil, de costas, tapado (câmera, taça, mão) ou pequeno virava uma pessoa nova. Agora:
-#  1. Só rosto bom cria pessoa: frontal e nítido (tabela rosto_q) e com pelo menos PESSOA_SEMENTE px.
+#  1. Só rosto bom cria pessoa: frontal e nítido (tabela rosto_q) e com pelo menos PESSOA_SEMENTE px. (27/11: saiu; todo rosto
+#     visível cria pessoa, veja _pessoas_agrupa.)
 #  2. Os rostos bons se juntam por média do grupo (não pelo melhor par), com PESSOA_JUNTA; dois rostos da mesma foto nunca.
 #  3. Os outros rostos (perfil, pequenos) não criam pessoa: entram na pessoa mais parecida da MESMA sessão (a família que
 #     estava junto) com PESSOA_SESSAO, ou de qualquer sessão com LIMITE; sem par, ficam como "sem identificar".
 #  4. Quem aparece em PESSOA_EQUIPE sessões ou mais é a equipe (fotógrafo, guia, supervisor), contada à parte.
 PESSOA_SEMENTE = 60
-PESSOA_JUNTA = 0.40
+PESSOA_JUNTA = LIMITE   # 27/11 (06:33, 26/11 com 84 "pessoas da equipe"): 0,40 ainda juntava gente diferente; o mesmo limite da selfie
 PESSOA_SESSAO = 0.25
 PESSOA_EQUIPE = 4
+# 26/11 (Ronaldo, números confiáveis): em 25/11 59 "pessoas da equipe" saíram da conta: a família fotografada em 4 pontos do tour
+# também tinha 4 sessões. Equipe agora é quem tem PESSOA_EQUIPE sessões ou mais espalhadas por PESSOA_EQUIPE_HORAS ou mais (a
+# visita leva menos que isso; fotógrafo, guia e supervisor ficam o dia todo).
+PESSOA_EQUIPE_HORAS = 3
 
 
 def _pessoas_sessoes(dia):
@@ -15260,33 +16243,126 @@ def _pessoas_sessoes(dia):
     return out
 
 
-def _pessoas_agrupa(rows, np, boas=None, sess=None):
-    """rows = [(pid, largura, emb)]; boas = set de emb (bytes) frontais e nítidos; sess = {pid: card}.
+def _pessoas_tempos(rows):
+    """{pid: hora de chegada da foto (mtime do original)} das fotos com rosto."""
+    with lock:
+        arqs = {r[0]: (lib.get(r[0]) or {}).get("file") for r in rows}
+    out = {}
+    for pid, a in arqs.items():
+        try:
+            out[pid] = os.path.getmtime(a) if a else None
+        except OSError:
+            pass
+    return out
+
+
+PESSOA_VISITA = 0.33   # 27/11: rosto fraco numa sessão da mesma visita (outro fotógrafo, outro ponto do tour)
+# 27/11 (06:26, 25/11: 7.086 rostos e 77 "pessoas da equipe"): rosto fraco comparado com as ~500 pessoas do dia sempre achava
+# alguma acima de 0,40 por acaso e sumia dentro dela. Fora da própria visita, o rosto fraco só junta com PESSOA_FRACO_DIA.
+PESSOA_FRACO_DIA = 0.50
+_pessoas_stats = {}
+
+
+def _pessoas_ligas(dia):
+    """[cards] de cada venda do dia: a venda (pela selfie do Checkout) junta as sessões da mesma família."""
+    out = {}
+    try:
+        for e in _ev_ler(dia):
+            if e["tipo"] == "criar":
+                d = e["dados"] or {}
+                out.setdefault(e["venda"], set()).update(x for x in [d.get("card")] + list(d.get("sessoes") or []) if isinstance(x, str) and x)
+    except Exception:
+        pass
+    return [sorted(v) for v in out.values() if len(v) > 1]
+
+
+def _pessoas_agrupa(rows, np, boas=None, sess=None, tempos=None, ligas=None):
+    """rows = [(pid, largura, emb)]; boas = set de emb (bytes) frontais e nítidos; sess = {pid: card}; ligas = [cards] da mesma venda.
     -> lista de pessoas {pids:set, cards:set, maior, rep:(pid, vetor), equipe} e quantos rostos ficaram sem identificar."""
     boas = boas or set()
     sess = sess or {}
     M = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128).copy()
     M /= np.maximum(np.linalg.norm(M, axis=1, keepdims=True), 1e-9)
     larg = [float(r[1] or 0) for r in rows]
-    sem = [i for i in range(len(rows)) if rows[i][2] in boas and larg[i] >= PESSOA_SEMENTE]
-    resto = [i for i in range(len(rows)) if i not in set(sem)]
-    # 2. agrupamento por média (aglomerativo): começa cada rosto bom sozinho e junta o par de grupos mais parecido
-    G = [{"m": [i], "pids": {rows[i][0]}} for i in sem]
-    while len(G) > 1:
-        C = np.stack([M[g["m"]].mean(axis=0) for g in G])
-        C /= np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-9)
-        S = C @ C.T
-        np.fill_diagonal(S, -1)
-        for a in range(len(G)):
-            for b in range(a + 1, len(G)):
-                if G[a]["pids"] & G[b]["pids"]:
-                    S[a, b] = S[b, a] = -1
-        a, b = np.unravel_index(int(np.argmax(S)), S.shape)
-        if S[a, b] < PESSOA_JUNTA:
-            break
-        a, b = min(a, b), max(a, b)
-        G[a]["m"] += G[b]["m"]; G[a]["pids"] |= G[b]["pids"]
-        G.pop(b)
+    # 27/11 (Ronaldo: "a quantidade de rostos distintos nas fotos, simples assim"; "mesmo não sendo nítido, cada rosto é uma
+    # pessoa"): todo rosto lido cria pessoa, frontal ou não, nítido ou não, de qualquer tamanho.
+    # Para não contar a mesma pessoa duas vezes: os rostos bons (frontais e nítidos, tabela rosto_q) entram primeiro e formam
+    # as pessoas com assinatura firme; depois os outros, do maior para o menor. Rosto fraco (perfil, borrado) procura primeiro
+    # na MESMA sessão (a família fotografada junto, minutos antes ou depois) com o limite mais largo PESSOA_SESSAO, e só
+    # depois em todo o dia com PESSOA_JUNTA; sem par, vira pessoa nova. Dois rostos da mesma foto nunca são a mesma pessoa.
+    # 27/11 (Ronaldo: "a mesma pessoa pode tirar foto com a Marinara e com o Yago"): as sessões da mesma visita (outro fotógrafo,
+    # outro ponto do tour) ficam ligadas pela venda (a selfie do Checkout junta as sessões da família) e pelo rosto bom reconhecido
+    # nas duas (pessoa com até PESSOA_EQUIPE - 1 sessões: a equipe, que aparece em todas, não liga famílias diferentes). Rosto
+    # fraco procura na própria sessão (PESSOA_SESSAO), depois nas sessões ligadas (PESSOA_VISITA), depois no dia (PESSOA_JUNTA).
+    sem = list(range(len(rows)))
+    resto = []
+    bom = [rows[i][2] in boas and larg[i] >= PESSOA_SEMENTE for i in range(len(rows))]
+    G, na_foto, card_g, g_cards = [], {}, {}, []
+    pai = {}
+
+    def raiz(c):
+        pai.setdefault(c, c)
+        while pai[c] != c:
+            pai[c] = pai[pai[c]]
+            c = pai[c]
+        return c
+
+    def liga(a, b):
+        a, b = raiz(a), raiz(b)
+        if a != b:
+            pai[b] = a
+    for cs in ligas or []:
+        for c in cs[1:]:
+            liga(cs[0], c)
+    visita_g = None
+    st = {"rostos": len(rows), "bons": sum(bom), "novas_bons": 0, "novas_fracos": 0, "dia": 0, "visita": 0}
+    _pessoas_stats.clear(); _pessoas_stats.update(st)
+    Cn = np.zeros((len(sem), M.shape[1]), dtype="float32")
+    for i in sorted(sem, key=lambda k: (not bom[k], -larg[k])):
+        pid = rows[i][0]
+        cd = sess.get(pid)
+        alvo = -1
+        if G:
+            sv = Cn[:len(G)] @ M[i]
+            for k in na_foto.get(pid, ()):
+                sv[k] = -1
+            k = int(np.argmax(sv))
+            if sv[k] >= (PESSOA_JUNTA if bom[i] else PESSOA_FRACO_DIA):
+                alvo = k
+                st["dia"] += 1
+            elif not bom[i] and cd:
+                if visita_g is None:   # acabaram os rostos bons: as visitas estão formadas
+                    for k, cs in enumerate(g_cards):
+                        if 1 < len(cs) < PESSOA_EQUIPE:
+                            cs = sorted(cs)
+                            for c in cs[1:]:
+                                liga(cs[0], c)
+                    visita_g = {}
+                    for c, ks in card_g.items():
+                        visita_g.setdefault(raiz(c), set()).update(ks)
+                mesma = [k for k in card_g.get(cd, ()) if sv[k] >= PESSOA_SESSAO]
+                if not mesma:
+                    mesma = [k for k in visita_g.get(raiz(cd), ()) if sv[k] >= PESSOA_VISITA]
+                if mesma:
+                    alvo = max(mesma, key=lambda k: sv[k])
+                    st["visita"] += 1
+        if alvo < 0:
+            G.append({"m": [i], "pids": {pid}})
+            g_cards.append(set())
+            st["novas_bons" if bom[i] else "novas_fracos"] += 1
+            Cn[len(G) - 1] = M[i]
+            alvo = len(G) - 1
+        else:
+            # 27/11 (06:22, 26/11 com 83 "pessoas da equipe"): comparar com a média dos rostos da pessoa fazia a média virar
+            # "qualquer um" e juntar gente diferente num bolo só. A pessoa é comparada com o rosto que a criou (o melhor), fixo.
+            G[alvo]["m"].append(i); G[alvo]["pids"].add(pid)
+        na_foto.setdefault(pid, set()).add(alvo)
+        if cd:
+            card_g.setdefault(cd, set()).add(alvo)
+            g_cards[alvo].add(cd)
+            if visita_g is not None:
+                visita_g.setdefault(raiz(cd), set()).add(alvo)
+    _pessoas_stats.update(st)
     # 3. rostos que não criam pessoa: na mais parecida da mesma sessão, ou de qualquer uma pelo limite da selfie
     sem_id = 0
     if G:
@@ -15315,8 +16391,10 @@ def _pessoas_agrupa(rows, np, boas=None, sess=None):
     for g in G:
         r0 = max(g["m"], key=lambda k: larg[k])
         cs = {sess.get(rows[k][0]) for k in g["m"]} - {None}
-        out.append({"pids": g["pids"], "cards": cs, "maior": max(larg[k] for k in g["m"]), "rep": (rows[r0][0], M[r0]),
-                    "equipe": len(cs) >= PESSOA_EQUIPE})
+        ts = [t for t in ((tempos or {}).get(p) for p in g["pids"]) if t]
+        longe = (max(ts) - min(ts) >= PESSOA_EQUIPE_HORAS * 3600) if ts else tempos is None
+        out.append({"pids": g["pids"], "m": list(g["m"]), "cards": cs, "maior": max(larg[k] for k in g["m"]), "rep": (rows[r0][0], M[r0]),
+                    "equipe": len(cs) >= PESSOA_EQUIPE and longe})
     out.sort(key=lambda p: -p["maior"])
     return out, sem_id
 
@@ -15341,7 +16419,7 @@ def pessoas_rostos(dia):
         return None
     if not rows:
         return {"ok": True, "dia": dia, "pessoas": []}
-    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia))
+    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia), _pessoas_tempos(rows), _pessoas_ligas(dia))
     rep = [p["rep"] for p in P]
     cv2 = _cv["cv2"]
     out = []
@@ -15387,43 +16465,214 @@ def pessoas_rostos(dia):
 
 
 PESSOAS_HORA = int(os.environ.get("ETERNA_PESSOAS_HORA", "19"))   # 25/11 (Ronaldo): a contagem do dia roda às 19h, com o tour encerrado
+# 26/11 (Ronaldo: "os números precisam ser confiáveis"): a contagem ficava só na memória e sumia a cada reinício do agente (19h26 e
+# 21h22 de 26/11: o painel voltou a 0). Agora cada contagem vai para o HD das fotos (pasta contagens/pessoas ao lado da inbox real,
+# no estádio /srv/eterna-midia/contagens/pessoas), com a auditoria do dia junto: <dia>.json. Só números e códigos de sessão.
+PESSOAS_V = 12
+
+
+def _contagens_base():
+    """26/11 (no estádio, 22h19): a raiz do HD (/srv/eterna-midia) é do root e o agente não criava contagens/ (Permission denied),
+    então a recontagem não gravava. Usa o HD quando dá para escrever; senão ~/Eterna/contagens, avisando no registro. Quando o HD
+    passa a aceitar (sudo install -d -o eterna -g eterna /srv/eterna-midia/contagens), o que ficou em ~/Eterna/contagens é copiado."""
+    reserva = os.path.join(HOME, "contagens")
+    if os.environ.get("ETERNA_PESSOAS_DIR"):
+        return os.path.dirname(os.environ["ETERNA_PESSOAS_DIR"])
+    hd = os.path.join(os.path.dirname(os.path.realpath(INBOX)), "contagens")
+    try:
+        os.makedirs(hd, exist_ok=True)
+        t = os.path.join(hd, ".escrita")
+        open(t, "w").close()
+        os.remove(t)
+    except OSError as ex:
+        print("  contagens: HD sem escrita em %s (%s); usando %s" % (hd, ex.strerror or ex, reserva))
+        return reserva
+    if os.path.realpath(reserva) != os.path.realpath(hd) and os.path.isdir(reserva):
+        for raiz, _, arqs in os.walk(reserva):
+            for n in arqs:
+                o = os.path.join(raiz, n)
+                d = os.path.join(hd, os.path.relpath(o, reserva))
+                if not os.path.exists(d):
+                    try:
+                        os.makedirs(os.path.dirname(d), exist_ok=True)
+                        shutil.copy2(o, d)
+                    except OSError:
+                        pass
+    return hd
+
+
+CONTAGENS_DIR = _contagens_base()
+PESSOAS_DIR = os.environ.get("ETERNA_PESSOAS_DIR") or os.path.join(CONTAGENS_DIR, "pessoas")
+PESSOAS_REFAZ_SEG = 600          # hoje: refaz se chegaram fotos depois da conta ou se a leitura de rostos não tinha terminado
 _pessoas_cache = {}
 _pessoas_lock = threading.Lock()
 
 
+def _pessoas_arq(dia):
+    return os.path.join(PESSOAS_DIR, dia + ".json")
+
+
+def pessoas_disco_ler(dia):
+    """{v, calc_em, resultado, auditoria} gravado no HD, ou None (sem arquivo, versão antiga ou arquivo que não abre)."""
+    try:
+        with open(_pessoas_arq(dia), encoding="utf8") as f:
+            j = json.load(f)
+        return j if isinstance(j, dict) and j.get("v") == PESSOAS_V and isinstance(j.get("resultado"), dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _pessoas_disco_grava(dia, res, aud):
+    j = {"v": PESSOAS_V, "dia": dia, "calc_em": _iso(), "resultado": res, "auditoria": aud}
+    try:
+        os.makedirs(PESSOAS_DIR, exist_ok=True)
+        tmp = _pessoas_arq(dia) + ".tmp"
+        with open(tmp, "w", encoding="utf8") as f:
+            json.dump(j, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, _pessoas_arq(dia))
+    except OSError as ex:
+        print("  pessoas de %s: não gravou no HD (%s)" % (dia, ex))
+    return j
+
+
 def pessoas_dia(dia):
-    """A contagem de pessoas do dia, guardada: calculada uma vez por dia e por uma tarefa só. A de hoje só sai pelo
-    pessoas_loop depois das PESSOAS_HORA; antes disso (e enquanto outra conta) volta None, sem ocupar o processador."""
+    """A contagem de pessoas do dia: da memória, do HD ou (dia passado sem arquivo) calculada agora e gravada. A de hoje só sai
+    pelo pessoas_loop depois das PESSOAS_HORA; antes disso (e enquanto outra conta) volta None, sem ocupar o processador."""
     if dia in _pessoas_cache:
-        return _pessoas_cache[dia]
+        return _pessoas_cache[dia]["resultado"]
+    j = pessoas_disco_ler(dia)
+    if j:
+        _pessoas_cache[dia] = j
+        return j["resultado"]
     if dia >= _ff_hoje() or not _pessoas_lock.acquire(blocking=False):
         return None
     try:
-        r = _pessoas_dia_calc(dia)
-        if r is not None:
-            _pessoas_cache[dia] = r
-        return r
+        j = pessoas_contar(dia)
+        return j["resultado"] if j else None
     finally:
         _pessoas_lock.release()
 
 
+def pessoas_contar(dia, forcar=False):
+    """Conta, audita, grava no HD e guarda na memória (chamar com o _pessoas_lock). None se não deu para ler os rostos."""
+    t0 = time.time()
+    r = _pessoas_dia_calc(dia, forcar=forcar)
+    if r is None:
+        return None
+    res, aud = r
+    aud["segundos"] = round(time.time() - t0, 1)
+    j = _pessoas_disco_grava(dia, res, aud)
+    _pessoas_cache[dia] = j
+    print("  pessoas de %s: %s (rostos %s em %s fotos; agrupamento %s; maiores clientes %s fotos) · auditoria %s%s (%.0f s)" % (dia, res.get("pessoas"),
+          res.get("rostos"), res.get("fotos_com_rosto"), _pessoas_stats, aud.get("maiores_clientes_fotos"), aud.get("situacao"),
+          (": " + "; ".join(aud.get("ressalvas") or [])) if aud.get("ressalvas") else "", aud["segundos"]))
+    return j
+
+
+def _pessoas_hoje_refazer(hoje):
+    """Hoje depois das PESSOAS_HORA: conta se não há conta, e refaz (no máximo a cada PESSOAS_REFAZ_SEG) se a leitura de rostos
+    não tinha terminado ou se chegaram fotos depois da última conta."""
+    j = _pessoas_cache.get(hoje) or pessoas_disco_ler(hoje)
+    if not j:
+        return True
+    a = j.get("auditoria") or {}
+    if time.time() - _epoch(j.get("calc_em") or "") < PESSOAS_REFAZ_SEG:
+        return False
+    # 26/11 (23h): 1 foto sem leitura fazia recontar o dia inteiro (25 min) a cada 10 min. Só a fila de leitura ou foto nova refaz.
+    return bool(a.get("fila_leitura")) or _pessoas_fotos_do_dia(hoje) != a.get("fotos_do_dia")
+
+
 def pessoas_loop():
-    """25/11 (Ronaldo): "pode rodar por cron às 19h? o tour já acabou nesse horário". Uma vez por dia, depois das PESSOAS_HORA."""
+    """25/11 (Ronaldo): "pode rodar por cron às 19h? o tour já acabou nesse horário". Hoje depois das PESSOAS_HORA (e de novo se
+    faltava foto); ontem uma vez, se o HD ainda não tem a conta v3 (26/11: "reconta o de ontem")."""
     while True:
         time.sleep(60)
         hoje = _ff_hoje()
-        if hoje in _pessoas_cache or time.localtime().tm_hour < PESSOAS_HORA or not _pessoas_lock.acquire(blocking=False):
+        fazer = [(d, False) for d in (_ff_hoje(time.time() - 86400), _ff_hoje(time.time() - 2 * 86400)) if not pessoas_disco_ler(d)]
+        if time.localtime().tm_hour >= PESSOAS_HORA and _pessoas_hoje_refazer(hoje):
+            fazer.append((hoje, True))
+        if not fazer or not _pessoas_lock.acquire(blocking=False):
             continue
         try:
-            t0 = time.time()
-            r = _pessoas_dia_calc(hoje, forcar=True)
-            if r is not None:
-                _pessoas_cache[hoje] = r
-                print("  pessoas de %s: %s (%.0f s)" % (hoje, r.get("pessoas"), time.time() - t0))
-        except Exception as e:
-            print("  pessoas de %s: falhou (%s)" % (hoje, e))
+            for dia, forcar in fazer:
+                try:
+                    pessoas_contar(dia, forcar=forcar)
+                except Exception as e:
+                    print("  pessoas de %s: falhou (%s)" % (dia, e))
         finally:
             _pessoas_lock.release()
+
+
+def _pessoas_fotos_do_dia(dia):
+    with lock:
+        return sum(1 for e in lib.values() if os.path.basename(os.path.dirname(e.get("file") or "")) == dia)
+
+
+def _pessoas_vendidas(dia):
+    """Sessões (card) das vendas pagas e não canceladas do dia, com as sessões juntadas pela selfie."""
+    V = {}
+    for e in _ev_ler(dia):
+        v = V.setdefault(e["venda"], {"cards": set(), "paga": False, "cancelada": False})
+        if e["tipo"] == "criar":
+            d = e["dados"] or {}
+            v["cards"].update(x for x in [d.get("card")] + list(d.get("sessoes") or []) if isinstance(x, str) and x)
+        elif e["tipo"] == "pagar":
+            v["paga"] = True
+        elif e["tipo"] == "cancelar":
+            v["cancelada"] = True
+    out = set()
+    for v in V.values():
+        if v["paga"] and not v["cancelada"]:
+            out |= v["cards"]
+    return out
+
+
+def _pessoas_auditoria(dia, rows, P, sess):
+    """26/11 (Ronaldo: "gera uma auditoria sempre após essa recontagem"). Confere se a conta pode ser usada:
+    1. leitura: todas as fotos do dia com rostos lidos e a fila de leitura vazia;
+    2. sessões: cada sessão com rosto tem ao menos um cliente contado (as que não têm somam 1 pessoa cada, veja pessoas_dia_calc);
+    3. vendas: toda sessão vendida tem rosto e cliente contado;
+    4. grupos: nenhum "cliente" com fotos demais (sinal de pessoas diferentes juntadas)."""
+    cli = [p for p in P if not p["equipe"]]
+    fotos_dia = _pessoas_fotos_do_dia(dia)
+    try:
+        db = rostos_db()
+        try:
+            lidas = db.execute("select count(*) from foto where dia = ?", (dia,)).fetchone()[0]
+        finally:
+            db.close()
+    except Exception:
+        lidas = None
+    fila = fila_rostos.qsize() if dia >= _ff_hoje() else 0
+    ses_rosto = {sess.get(r[0]) for r in rows} - {None}
+    ses_cli = set().union(*[p["cards"] for p in cli]) if cli else set()
+    sem_cli = ses_rosto - ses_cli
+    vend = _pessoas_vendidas(dia)
+    vend_sem_rosto = vend - ses_rosto
+    vend_sem_cli = (vend & ses_rosto) - ses_cli
+    maiores = sorted((len(p["pids"]) for p in cli), reverse=True)[:5]
+    sem_leitura = max(0, fotos_dia - (lidas or 0)) if lidas is not None else None
+    ress = []
+    if sem_leitura:
+        ress.append("%d fotos do dia sem leitura de rostos" % sem_leitura)
+    if fila:
+        ress.append("%d fotos na fila de leitura" % fila)
+    if vend_sem_rosto:
+        ress.append("%d sessões vendidas sem nenhum rosto lido" % len(vend_sem_rosto))
+    if vend_sem_cli:
+        ress.append("%d sessões vendidas sem cliente contado" % len(vend_sem_cli))
+    eq = len(P) - len(cli)
+    if eq > 25:
+        ress.append("%d pessoas tratadas como equipe (esperado até 25)" % eq)
+    if maiores and maiores[0] > 300:
+        ress.append("um cliente com %d fotos (possível junção de pessoas diferentes)" % maiores[0])
+    if rows and len(sem_cli) > 0.5 * len(ses_rosto):
+        ress.append("%d de %d sessões com rosto sem cliente contado" % (len(sem_cli), len(ses_rosto)))
+    return {"situacao": "confiável" if not ress else "com ressalvas", "ressalvas": ress,
+            "fotos_do_dia": fotos_dia, "fotos_lidas": lidas, "fotos_sem_leitura": sem_leitura, "fila_leitura": fila,
+            "sessoes_com_rosto": len(ses_rosto), "sessoes_com_cliente": len(ses_rosto & ses_cli), "sessoes_sem_cliente": len(sem_cli),
+            "sessoes_vendidas": len(vend), "vendidas_sem_rosto": sorted(vend_sem_rosto)[:50], "vendidas_sem_cliente": sorted(vend_sem_cli)[:50],
+            "maiores_clientes_fotos": maiores, "equipe": eq}
 
 
 def _pessoas_dia_calc(dia, forcar=False):
@@ -15437,14 +16686,337 @@ def _pessoas_dia_calc(dia, forcar=False):
         np, rows, boas = _pessoas_le(dia)
     except Exception:
         return None
-    vazio = {"v": 2, "rostos": 0, "fotos_com_rosto": 0, "pessoas": 0, "equipe": 0, "sem_identificar": 0, "pessoas_perto": 0, "uma_foto": 0, "duas_ou_mais": 0}
-    if not rows:
-        return vazio
-    P, sem_id = _pessoas_agrupa(rows, np, boas, _pessoas_sessoes(dia))
+    sess = _pessoas_sessoes(dia)
+    P, sem_id = _pessoas_agrupa(rows, np, boas, sess, _pessoas_tempos(rows), _pessoas_ligas(dia)) if rows else ([], 0)
+    aud = _pessoas_auditoria(dia, rows, P, sess)
     cli = [p for p in P if not p["equipe"]]
-    return {"v": 2, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli), "equipe": len(P) - len(cli),
+    # 27/11: "pessoas" = rostos distintos nas fotos do dia, fora a equipe.
+    sem_cli = aud["sessoes_sem_cliente"]
+    return {"v": 12, "rostos": len(rows), "fotos_com_rosto": len({r[0] for r in rows}), "pessoas": len(cli),
+            "pessoas_grupos": len(cli),
+            "sessoes_sem_cliente": sem_cli, "equipe": len(P) - len(cli),
             "sem_identificar": sem_id, "pessoas_perto": sum(1 for p in cli if p["maior"] >= PESSOA_PERTO),
-            "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2)}
+            "uma_foto": sum(1 for p in cli if len(p["pids"]) == 1), "duas_ou_mais": sum(1 for p in cli if len(p["pids"]) >= 2),
+            "auditoria": {k: aud[k] for k in ("situacao", "ressalvas", "fotos_do_dia", "fotos_sem_leitura", "sessoes_com_rosto",
+                                               "sessoes_com_cliente", "sessoes_vendidas") if k in aud}}, aud
+
+
+# 26/11 (Ronaldo): "uma auditoria de todos os números minuciosa pra corrigir qualquer desvio, diária, sempre a do dia para não
+# mexer no passado, às 21h", com o resultado por e-mail. Uma vez por dia depois de AUDITORIA_HORA: refaz o que é refazível (métricas
+# do dia e contagem de pessoas), confere tudo e lista o que precisa de gente para corrigir. Grava no HD
+# (contagens/auditoria/<dia>.json) e a nuvem manda o e-mail (POST /ponto/auditoria, destino fixo na nuvem). Só hoje: o passado
+# nunca é alterado. A conferência com a Imply continua fora daqui (precisa da sessão do Ronaldo na Imply).
+AUDITORIA_HORA = int(os.environ.get("ETERNA_AUDITORIA_HORA", "21"))
+# 27/11 (Ronaldo): em dia de jogo no Maracanã o tour fecha 6 h antes do jogo; a auditoria roda 1 h depois desse fechamento
+# (jogo às 22h: tour fecha 16h, auditoria 17h). O jogo vem do Calendário do Eterna (agenda, tipo "jogo", com hora).
+AUDITORIA_JOGO_FECHA_H = 6
+AUDITORIA_DEPOIS_H = 1
+
+
+def auditoria_hora_hoje(dia=None):
+    """Minuto do dia (0 a 1439) a partir do qual a auditoria de hoje roda: AUDITORIA_HORA, ou mais cedo em dia de jogo."""
+    dia = dia or _ff_hoje()
+    m = AUDITORIA_HORA * 60
+    try:
+        for v in _agenda_todos().values():
+            if v and v.get("tipo") == "jogo" and v.get("data") == dia and re.match(r"^\d{1,2}:\d{2}$", str(v.get("hora") or "")):
+                h, mi = (int(x) for x in v["hora"].split(":"))
+                m = min(m, max(0, (h - AUDITORIA_JOGO_FECHA_H + AUDITORIA_DEPOIS_H) * 60 + mi))
+    except Exception:
+        pass
+    return m
+AUDITORIA_DIR = os.path.join(CONTAGENS_DIR, "auditoria")
+AUDITORIA_MEIOS = ("pix", "cartao", "dinheiro", "cortesia")
+AUDITORIA_V = 4      # versão das conferências: auditoria de hoje feita por versão anterior é refeita (e o e-mail sai de novo)
+
+
+def _auditoria_arq(dia):
+    return os.path.join(AUDITORIA_DIR, dia + ".json")
+
+
+def auditoria_ler(dia):
+    try:
+        with open(_auditoria_arq(dia), encoding="utf8") as f:
+            j = json.load(f)
+        return j if isinstance(j, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _auditoria_grava(j):
+    try:
+        os.makedirs(AUDITORIA_DIR, exist_ok=True)
+        tmp = _auditoria_arq(j["dia"]) + ".tmp"
+        with open(tmp, "w", encoding="utf8") as f:
+            json.dump(j, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, _auditoria_arq(j["dia"]))
+    except OSError as ex:
+        print("  auditoria de %s: não gravou no HD (%s)" % (j.get("dia"), ex))
+
+
+def _auditoria_pedidos_abertos():
+    with estado_lock:
+        db = pedidos_db()
+        try:
+            rows = db.execute("select valor from pedido where estado in ('aguardando','escolha') order by criada").fetchall()
+        finally:
+            db.close()
+    out = []
+    for (v,) in rows:
+        try:
+            x = json.loads(v)
+        except ValueError:
+            continue
+        out.append({"saleNo": x.get("saleNo") or x.get("id"), "posto": x.get("posto"), "criada": str(x.get("criada") or "")[:16],
+                    "total": x.get("total")})
+    return out
+
+
+def _hhmm_local(iso):
+    try:
+        return time.strftime("%H:%M", time.localtime(_epoch(iso or "")))
+    except Exception:
+        return "?"
+
+
+def _auditoria_parte(nome, desv, f):
+    """Cada parte da auditoria roda sozinha: erro numa parte vira desvio "não conferido" com a linha do erro, e o resto segue."""
+    try:
+        f()
+    except Exception as ex:
+        import traceback
+        tb = traceback.extract_tb(ex.__traceback__)
+        onde = ("linha %d" % tb[-1].lineno) if tb else ""
+        desv.append("%s não conferido (erro %s: %s)" % (nome, onde, str(ex)[:80]))
+        print("  auditoria: %s falhou em %s: %s" % (nome, onde, ex))
+
+
+def auditoria_dia(dia=None):
+    """Roda a auditoria de hoje. Devolve o registro gravado no HD."""
+    dia = dia or _ff_hoje()
+    if dia != _ff_hoje():
+        raise ValueError("a auditoria é só do dia")
+    corr, desv, num = [], [], []
+    br = lambda x: "R$ " + ("{:,.2f}".format(float(x or 0))).replace(",", "#").replace(".", ",").replace("#", ".")
+    # 1. o que se refaz sozinho: contagem de pessoas e métricas do dia
+    with _pessoas_lock:
+        try:
+            jp = _pessoas_cache.get(dia) or pessoas_disco_ler(dia)
+            if not jp or _pessoas_hoje_refazer(dia):
+                jp = pessoas_contar(dia, forcar=True)
+                corr.append("Contagem de pessoas refeita: %s" % ((jp or {}).get("resultado") or {}).get("pessoas"))
+            else:
+                corr.append("Contagem de pessoas das %s conferida: nenhuma foto nova depois dela" % _hhmm_local(jp.get("calc_em")))
+        except Exception as ex:
+            jp = None
+            desv.append("Contagem de pessoas falhou (%s)" % str(ex)[:80])
+    try:
+        m = metricas_gravar(dia)
+        corr.append("Métricas do dia recalculadas a partir das vendas")
+    except Exception as ex:
+        m = {}
+        desv.append("Métricas do dia não recalcularam (%s)" % str(ex)[:80])
+    # 2. os números do dia, cada um conferido (Ronaldo, 26/11: "no e-mail quero sempre os números do dia auditados e o resultado").
+    # Linha [rótulo, valor, conferência]; [título] abre um grupo. A conferência refaz a conta pelas vendas e compara com as Estatísticas.
+    M = m or {}
+    G = lambda t: num.append([t])
+
+    def L(rot, val, conf=None):
+        num.append([rot, str(val), conf or "conferido"])
+
+    def C(rot, nosso, deles, fmt=lambda x: str(x), tol=0.01):
+        """Compara a conta refeita com a das Estatísticas; diferença vira desvio."""
+        if deles is None:
+            return L(rot, fmt(nosso), "sem número nas Estatísticas")
+        if abs(float(nosso or 0) - float(deles or 0)) > tol:
+            desv.append("%s: vendas somam %s, Estatísticas dizem %s" % (rot, fmt(nosso), fmt(deles)))
+            return L(rot, fmt(nosso), "desvio: Estatísticas dizem %s" % fmt(deles))
+        L(rot, fmt(nosso))
+
+    def _p_vendas():
+        vs = vendas_do_dia()
+        vs = (vs.get("vendas") or []) if isinstance(vs, dict) else (vs or [])     # devolve {ok, dia, vendas}
+        vivas = [v for v in vs if not v.get("cancelada")]
+        pagas = [v for v in vivas if v.get("meio") != "cortesia" and float(v.get("total") or 0) > 0]
+        cort = [v for v in vivas if v.get("meio") == "cortesia" or not float(v.get("total") or 0)]
+        canc = [v for v in vs if v.get("cancelada")]
+        tot = sum(float(v.get("total") or 0) for v in pagas)
+        nf = lambda v: len(v.get("selected") or [])
+
+        def soma(campo):
+            out = {}
+            for v in pagas:
+                k = v.get(campo) or "sem %s" % campo
+                o = out.setdefault(k, [0, 0.0, 0])
+                o[0] += 1
+                o[1] += float(v.get("total") or 0)
+                o[2] += nf(v)
+            return out
+
+        G("Vendas")
+        C("Vendas pagas", len(pagas), sum(int((x or {}).get("vendas") or 0) for k, x in (M.get("por_meio") or {}).items() if k != "cortesia")
+          if M.get("por_meio") else None)
+        C("Valor", tot, M.get("faturamento") if M else None, br)
+        tm = tot / len(pagas) if pagas else 0
+        C("Valor médio por venda paga", tm, M.get("ticket_medio") if M else None, br, tol=0.5)
+        C("Fotos vendidas (pagas)", sum(nf(v) for v in pagas), None if not M.get("por_meio") else
+          sum(int((x or {}).get("fotos_vendidas") or 0) for k, x in M["por_meio"].items() if k != "cortesia"))
+        L("Cortesias", "%d (%d fotos)" % (len(cort), sum(nf(v) for v in cort)))
+        C("Canceladas", len(canc), M.get("canceladas") if M else None)
+        if M.get("fotos_ia_vendidas") is not None:
+            L("Fotos com fundo de IA vendidas", M["fotos_ia_vendidas"], "das Estatísticas")
+        G("Por meio de pagamento")
+        sm = soma("meio")
+        for k in sorted(set(sm) | {k for k in (M.get("por_meio") or {}) if k != "cortesia"}):
+            x = sm.get(k, [0, 0.0, 0])
+            C("%s: %d vendas" % (k, x[0]), x[1], ((M.get("por_meio") or {}).get(k) or {}).get("faturamento") if M.get("por_meio") else None, br)
+        G("Por posto")
+        sp = soma("posto")
+        for k in sorted(set(sp) | set(M.get("por_posto") or {})):
+            x = sp.get(k, [0, 0.0, 0])
+            C("%s: %d vendas, %d fotos" % (k, x[0], x[2]), x[1], ((M.get("por_posto") or {}).get(k) or {}).get("faturamento") if M.get("por_posto") else None, br)
+        G("Por vendedor")
+        sv = {}
+        for v in pagas:
+            k = v.get("vendedor") or v.get("por") or "sem vendedor"
+            k = k.get("nome") if isinstance(k, dict) else str(k)
+            o = sv.setdefault(k, [0, 0.0])
+            o[0] += 1
+            o[1] += float(v.get("total") or 0)
+        for k in sorted(sv, key=lambda k: -sv[k][1]):
+            C("%s: %d vendas" % (k, sv[k][0]), sv[k][1], ((M.get("por_vendedor") or {}).get(k) or {}).get("faturamento") if M.get("por_vendedor") else None, br)
+        if M.get("por_canal"):
+            G("Por canal")
+            for k, x in sorted(M["por_canal"].items()):
+                L("%s: %s vendas" % (k, (x or {}).get("vendas")), br((x or {}).get("faturamento")), "das Estatísticas")
+            sc = sum(float((x or {}).get("faturamento") or 0) for x in M["por_canal"].values())
+            if abs(sc - tot) > 0.01:
+                desv.append("Canais somam %s e as vendas pagas %s" % (br(sc), br(tot)))
+                num[-1][2] = "desvio: canais somam %s" % br(sc)
+        if M.get("online"):
+            L("Vendas online", "%s (%s)" % (M["online"].get("vendas") or 0, br(M["online"].get("faturamento"))), "das Estatísticas")
+        for v in vs:
+            n = v.get("saleNo") or v.get("venda")
+            if v.get("cancelada"):
+                continue
+            if v.get("meio") not in AUDITORIA_MEIOS:
+                desv.append("%s: meio de pagamento \"%s\"" % (n, v.get("meio")))
+            if v in pagas and not (v.get("vendedor") or v.get("por")):
+                desv.append("%s: venda paga sem vendedor" % n)
+            if (v.get("selected") or v.get("aiSel")) and not v.get("galeria"):
+                desv.append("%s: venda com fotos sem galeria online" % n)
+            if v in cort and v.get("meio") != "cortesia":
+                desv.append("%s: R$ 0 com meio \"%s\" (as Estatísticas contam como venda paga): virar cortesia ou cobrar" % (n, v.get("meio")))
+            if v in cort:
+                desv.append("%s: cortesia (%s, %d fotos): confirmar autorização" % (n, v.get("posto"), nf(v)))
+        ab = _auditoria_pedidos_abertos()
+        for x in ab:
+            desv.append("Pedido aberto %s (%s, %s, %s): cobrar ou cancelar" % (x["saleNo"], x["posto"], x["criada"], br(x["total"])))
+        L("Pedidos em aberto", len(ab), "conferido" if not ab else "desvio: cobrar ou cancelar")
+
+    _auditoria_parte("Vendas", desv, _p_vendas)
+
+    def _p_fotos():
+        pa = (jp or {}).get("auditoria") or {}
+        # 3. fotos, sessões, impressão
+        G("Fotos e sessões")
+        if M.get("fotos") is not None:
+            fd = pa.get("fotos_do_dia")
+            L("Fotos do dia", M["fotos"], "conferido" if fd in (None, M["fotos"]) else "contagem de pessoas leu %s" % fd)
+            sl = int(M["fotos"]) - int(M.get("fotos_indexadas") or 0)
+            L("Fotos sem leitura de rostos", max(0, sl), "conferido" if sl <= 0 else "desvio (na contagem de pessoas, abaixo)")
+        if M.get("sessoes") is not None:
+            L("Sessões", M["sessoes"])
+            L("Sessões com venda", "%s (%s%%)" % (M.get("sessoes_com_venda"), ("%.1f" % (100.0 * float(M.get("conversao_sessoes") or 0))).replace(".", ",")), "das Estatísticas")
+        if M.get("impressoes") is not None:
+            fi = int(M.get("impressoes_falhas") or 0)
+            L("Impressões", "%s (%d falhas)" % (M["impressoes"], fi), "conferido" if not fi else "%d falhas de impressão" % fi)
+
+    _auditoria_parte("Fotos e sessões", desv, _p_fotos)
+
+    def _p_pessoas():
+        pa = (jp or {}).get("auditoria") or {}
+        # 4. pessoas, visitantes, selfies
+        G("Pessoas e visitantes")
+        rp = (jp or {}).get("resultado") or {}
+        L("Pessoas fotografadas (rostos distintos)", rp.get("pessoas", "—"), "conferido" if not pa.get("ressalvas") else "com ressalvas (abaixo)")
+        L("Sessões com rosto / com cliente contado", "%s / %s" % (pa.get("sessoes_com_rosto", "—"), pa.get("sessoes_com_cliente", "—")))
+        if rp.get("equipe") is not None:
+            L("Tratadas como equipe", rp["equipe"])
+        for r_ in pa.get("ressalvas") or []:
+            desv.append("Pessoas: " + r_)
+        vi = visitantes(dia, dia) or {}
+        if vi.get("ok"):
+            L("Visitantes do Tour", vi.get("total"), "conferido" if not vi.get("guardado") else "número guardado de %s" % str(vi.get("lido_em") or "")[11:16])
+            if vi.get("guardado"):
+                desv.append("Visitantes: Maraca Acessos fora; número guardado de %s" % str(vi.get("lido_em") or "")[11:16])
+            pes = rp.get("pessoas")
+            if pes and vi.get("total"):
+                L("Abordagem (pessoas ÷ visitantes)", ("%.1f%%" % (100.0 * pes / vi["total"])).replace(".", ","))
+        else:
+            L("Visitantes do Tour", "—", "desvio: indisponível")
+            desv.append("Visitantes do Tour indisponíveis (%s)" % str(vi.get("erro") or "sem resposta")[:60])
+
+    _auditoria_parte("Pessoas e visitantes", desv, _p_pessoas)
+
+    def _p_selfies():
+        se = (selfies_dia(dia) or {}).get("por_origem") or {}
+        if se:
+            G("Selfies")
+        tp = 0
+        for o, x in sorted(se.items()):
+            n_, a_ = int(x.get("selfies", 0)), int(x.get("achou", 0))
+            L("Selfies %s" % o, "%d, acharam %d (%.0f%%)" % (n_, a_, 100.0 * a_ / n_ if n_ else 0))
+            L("Pessoas nas selfies %s (cada rosto, grupo ou sozinho)" % o, "%d, acharam %d" % (int(x.get("pessoas", 0)), int(x.get("pessoas_achou", 0))))
+            tp += int(x.get("pessoas_achou", 0))   # selfie repetida de quem não achou não é pessoa nova
+        pf = ((jp or {}).get("resultado") or {}).get("pessoas")
+        if se and pf:
+            L("Pessoas que acharam as fotos na selfie ÷ pessoas fotografadas", ("%.1f%%" % (100.0 * tp / pf)).replace(".", ","))
+
+    _auditoria_parte("Selfies", desv, _p_selfies)
+    j = {"v": AUDITORIA_V, "dia": dia, "feita_em": _iso(), "situacao": "sem desvios" if not desv else "%d desvios" % len(desv),
+         "correcoes": corr, "desvios": desv[:200], "numeros": num, "email": None}
+    _auditoria_grava(j)
+    print("  auditoria de %s: %s" % (dia, j["situacao"]))
+    return j
+
+
+def auditoria_email(j):
+    """A nuvem manda o e-mail com o resultado (SES; destino fixo na nuvem). True se a nuvem aceitou."""
+    if not NUVEM_API:
+        return False
+    corpo = {k: j.get(k) for k in ("dia", "situacao", "correcoes", "desvios", "numeros", "feita_em")}
+    rq = urllib.request.Request(NUVEM_API + "/ponto/auditoria", data=json.dumps(corpo, ensure_ascii=False).encode(), method="POST",
+                                headers={"Content-Type": "application/json", "X-Eterna-Ponto": nuvem_segredo(), "User-Agent": "eterna-agente"})
+    try:
+        with urllib.request.urlopen(rq, timeout=30) as r:
+            r.read()
+        return True
+    except Exception as ex:
+        print("  auditoria: e-mail não saiu (%s)" % str(ex)[:80])
+        return False
+
+
+def auditoria_loop():
+    """Uma vez por dia, depois das AUDITORIA_HORA (o tour já fechou). O e-mail tenta de novo a cada 10 min até sair."""
+    ult = 0
+    while True:
+        time.sleep(60)
+        hoje = _ff_hoje()
+        lt = time.localtime()
+        if lt.tm_hour * 60 + lt.tm_min < auditoria_hora_hoje(hoje):
+            continue
+        j = auditoria_ler(hoje)
+        try:
+            if not j or j.get("v") != AUDITORIA_V:
+                j = auditoria_dia(hoje)
+            if not j.get("email") and time.time() - ult > 600:
+                ult = time.time()
+                if auditoria_email(j):
+                    j["email"] = _iso()
+                    _auditoria_grava(j)
+        except Exception as ex:
+            print("  auditoria de %s: falhou (%s)" % (hoje, str(ex)[:120]))
 
 
 def selfies_dia(dia):
@@ -15454,21 +17026,25 @@ def selfies_dia(dia):
         with ev_lock:
             db = vendas_db()
             try:
-                rows = db.execute("select em, origem, resultado, fotos, ms from selfie where dia = ? order by em", (dia,)).fetchall()
+                rows = db.execute("select em, origem, resultado, fotos, ms, pessoas from selfie where dia = ? order by em", (dia,)).fetchall()
             finally:
                 db.close()
     except Exception:
         return None
     por = {}
-    for em, origem, res, n, ms in rows:
+    for em, origem, res, n, ms, pes in rows:
         o = por.setdefault(origem or "?", {"selfies": 0, "achou": 0, "nao_achou": 0, "sem_rosto": 0, "varias_pessoas": 0, "erro": 0,
-                                            "fotos": 0, "ms_soma": 0})
+                                            "fotos": 0, "ms_soma": 0, "pessoas": 0, "pessoas_achou": 0})
+        pes = int(pes) if pes is not None else (0 if res in ("sem_rosto", "erro") else 1)
+        o["pessoas"] += pes
+        if res == "achou":
+            o["pessoas_achou"] += pes
         o["selfies"] += 1
         o[res if res in o else "erro"] += 1
         o["fotos"] += int(n or 0)
         o["ms_soma"] += int(ms or 0)
     return {"por_origem": por, "lista": [{"em": str(em)[11:19], "origem": o, "resultado": r, "fotos": int(n or 0), "ms": int(ms or 0)}
-                                         for em, o, r, n, ms in rows][:2000]}
+                                         for em, o, r, n, ms, _p in rows][:2000]}
 
 
 def montagens_dia(dia):
@@ -20976,6 +22552,9 @@ ROTAS = (
     ("POST", "/ponto/montagens", "posto_ou_sessao", VENDER),   # v97 (selo): montagens vistas no Checkout; a rota confere o resto
     ("GET", "/ponto/impressoes", "posto_ou_sessao", VENDER),     # histórico de impressão das vendas (ev_impressoes)
     ("POST", "/rostos/buscar", "posto_ou_sessao", VENDER),
+    # 26/11: busca por selfie do vendedor (Procurar fotos). Só pessoa conectada com venda em Criar: posto pareado sem pessoa
+    # e o perfil Checkout não entram
+    ("POST", "/rostos/sessoes", "sessao", ("venda.c",)), ("POST", "/rostos/sessoes/marcar", "sessao", ("venda.c",)),
     ("POST", "/galerias/publicar", "posto_ou_sessao", VENDER), ("POST", "/galerias/montagem", "posto_ou_sessao", VENDER),  # cortesia nova só com galerias.u (a rota confere)
     ("POST", "/recorte", "posto_ou_sessao", VENDER), ("GET", "/recorte/", "posto_ou_sessao", VENDER),
     ("GET", "/montagem/", "posto_ou_sessao", VENDER), ("POST", "/montagens/pedir", "posto_ou_sessao", VENDER),   # montagem feita no servidor
@@ -24283,7 +25862,7 @@ class H(BaseHTTPRequestHandler):
                 ftp_ = {k: v for k, v in state["ftp"].items() if k != "users"}
                 st_ = dict(minimo, card=state["card"], copied=state["copied"], dups=state["dups"], events=len(events),
                            platform=sys.platform, ftp=ftp_,
-                           rostos={**rostos, "fila": fila_rostos.qsize()}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
+                           rostos={**rostos, "fila": fila_rostos.qsize(), "busca_vend": bool(BUSCA_VEND_ON)}, nuvem=nuvem, backup=backup, recorte=rs_, montagem=mt_, fundos_modo=fundos_modo(),
                            galeria_publica=os.environ.get("ETERNA_GALERIA_PUBLICA") or None,
                            impressora=IMPRESSORA or None, sessoes=ss_,
                            estatisticas={"v": 2, "migracao": dict(est_migra), "montagens_recusadas": mont_recusadas["n"], "fot": fot_status()}, fuso=fuso_info(),
@@ -24366,8 +25945,12 @@ class H(BaseHTTPRequestHandler):
                         except ValueError:
                             pass
             except OSError as ex:
-                return self.js({"ok": False, "dia": dia, "erro": str(ex)[:160], "buscas": []}, nostore=True)
-            return self.js({"ok": True, "dia": dia, "buscas": linhas[-3000:]}, nostore=True)
+                bv = busca_vend_dia(dia)
+                return self.js({"ok": False, "dia": dia, "erro": str(ex)[:160], "buscas": [], "vendedor": bv, "vendedor_resumo": busca_vend_resumo(bv)}, nostore=True)
+            # 26/11: "vendedor" = as buscas por selfie feitas pelo vendedor no Procurar fotos (quem, posto, achadas e marcadas);
+            # "vendedor_resumo" = por pessoa, quantas buscas fez e quantas terminaram sem venda marcada
+            bv = busca_vend_dia(dia)
+            return self.js({"ok": True, "dia": dia, "buscas": linhas[-3000:], "vendedor": bv, "vendedor_resumo": busca_vend_resumo(bv)}, nostore=True)
         if u.path == "/ponto/vendas-dia":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -24848,6 +26431,10 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 return self.js({"error": "corpo inválido"}, 400)
             return self.js(projecao_busca(pedido))
+        if u.path == "/rostos/sessoes":
+            return self.rostos_sessoes_post()
+        if u.path == "/rostos/sessoes/marcar":
+            return self.rostos_sessoes_marcar_post()
         if u.path in ("/rostos/buscar", "/rostos/medir"):
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -24892,6 +26479,111 @@ class H(BaseHTTPRequestHandler):
             except Exception as ex:
                 return self.js({"error": str(ex)}, 500)
         return self.js({"error": "not found"}, 404)
+
+    def rostos_vend_quem(self):
+        """Quem pode usar a busca do vendedor: pessoa conectada (nunca só o posto pareado) com venda em Criar. A tabela
+        ROTAS já barra; aqui é a segunda conferência, dentro da rota. -> a sessão, ou None com a resposta já dada."""
+        if not self.origem_local():
+            self.close_connection = True
+            self.js({"error": "origem não autorizada"}, 403)
+            return None
+        eu = self.sessao()
+        cad = (eu or {}).get("cadastro") or {}
+        # a mesma regra da tela (impPreso): quem tem vínculo de fotógrafo e Minhas fotos (set em Ver) só vê as próprias
+        # sessões, e esta busca devolve as de todos. Admin e Supervisora ficam de fora da regra
+        preso = bool(cad.get("key")) and cad.get("preset") not in ("admin", "supervisor") and auth_pode(cad, "set", "r")
+        if not eu or eu.get("assumido_por") or not auth_pode(cad, "venda", "c") or preso:
+            self.close_connection = True
+            self.js({"erro": "sem_permissao"}, 403, True)
+            return None
+        return eu
+
+    def rostos_sessoes_post(self):
+        """POST /rostos/sessoes {imagens: [dataURL x 1..3]} -> as sessões de hoje em que o rosto apareceu (certeza e pode_ser).
+        Quem pediu, o posto e a hora saem da sessão e do servidor; do corpo só se leem as imagens, que não são gravadas."""
+        eu = self.rostos_vend_quem()
+        if not eu:
+            return
+        body, err = self.corpo(BUSCA_VEND_CORPO)      # o corpo é lido antes das recusas abaixo, para a tela receber a resposta
+        if err:
+            return self.js({"ok": False, "erro": "grande" if err == 413 else "invalido"}, err, True)
+        if not BUSCA_VEND_ON:
+            return self.js({"error": "not found"}, 404)
+        if not rostos["ligado"] or not _cv.get("np"):
+            return self.js({"ok": False, "erro": "desligado"}, 503, True)
+        imgs = body.get("imagens")
+        if not isinstance(imgs, list) or not 1 <= len(imgs) <= BUSCA_VEND_IMGS or not all(isinstance(i, str) and i for i in imgs):
+            return self.js({"ok": False, "erro": "invalido"}, 400, True)
+        por = eu["usuario"]
+        pa = self.posto_atual()
+        # aparelho não pareado: fica ao menos o endereço de onde veio o pedido
+        posto = str(pa.get("nome") or "")[:30] if pa else ("ip " + str(self.client_address[0] if self.client_address else "?"))[:45]
+        bid = secrets.token_hex(8)
+        try:
+            motivo = busca_vend_reserva(bid, por, posto, limite_ok(por, "rostos-sessoes", BUSCA_VEND_POR_MIN))
+        except Exception:
+            return self.js({"ok": False, "erro": "registro"}, 500, True)
+        if motivo:
+            return self.js({"ok": False, "erro": "limite_dia" if motivo == "limite_dia" else "muitas_buscas"}, 429, True)
+        t0 = time.time()
+        _viz_tl.vets = None                     # os vetores desta busca não ficam guardados em lugar nenhum
+        try:
+            r = buscar_vend(imgs)
+            del imgs, body
+            ss = busca_vend_sessoes(r.get("fotos")) if r.get("rosto") else []
+        except BuscaVendGrande:
+            try:
+                busca_vend_grava(bid, "imagem_grande", [])
+            except Exception:
+                pass
+            return self.js({"ok": False, "erro": "grande"}, 413, True)
+        except BuscaVendInvalida:
+            try:
+                busca_vend_grava(bid, "imagem_invalida", [])
+            except Exception:
+                pass
+            return self.js({"ok": False, "erro": "invalido"}, 400, True)
+        except Exception as ex:
+            try:
+                busca_vend_grava(bid, "erro", [])
+            except Exception:
+                pass
+            selfie_diagnostico("vendedor", {"error": type(ex).__name__}, t0, "erro", posto, por)
+            return self.js({"ok": False, "erro": "busca"}, 500, True)
+        res = "sem_rosto" if not r.get("rosto") else "achou" if ss else "nao_achou"
+        try:
+            busca_vend_grava(bid, res, ss)
+        except Exception as ex:
+            print("  busca do vendedor: não registrou (%s): nada devolvido" % type(ex).__name__)
+            return self.js({"ok": False, "erro": "registro"}, 500, True)
+        # diagnóstico como o das outras selfies (origem "vendedor", lido em GET /ponto/selfies), só com as fotos que saíram na
+        # resposta. Não entra na tabela "selfie": aquela conta as selfies dos clientes (Estatísticas) e não muda
+        selfie_diagnostico("vendedor", {"rosto": bool(r.get("rosto")), "fotos": sorted((b for o in ss for b in o["bateu"]), key=lambda b: -b["sim"]),
+                                        "janela_min": 0, "fila": r.get("fila")}, t0, res, posto, por)
+        # a nota fica só no banco e no diagnóstico do servidor: a resposta leva o nível em palavras e as fotos, sem número
+        fora = [{k: v for k, v in o.items() if k != "sim"} for o in ss]
+        for o in fora:
+            o["bateu"] = [{"id": b["id"]} for b in o["bateu"]]
+        return self.js({"ok": True, "busca": bid, "rosto": bool(r.get("rosto")), "varias": bool(r.get("varias")),
+                        "fila": int(r.get("fila") or 0), "sessoes": fora}, 200, True)
+
+    def rostos_sessoes_marcar_post(self):
+        """POST /rostos/sessoes/marcar {busca, cards} -> {ok}. Guarda quais das achadas o vendedor marcou para a venda."""
+        eu = self.rostos_vend_quem()
+        if not eu:
+            return
+        body, err = self.corpo(4096)
+        if err:
+            return self.js({"ok": False, "erro": "invalido"}, err, True)
+        if not BUSCA_VEND_ON:
+            return self.js({"error": "not found"}, 404)
+        if not limite_ok(eu["usuario"], "rostos-sessoes-marcar", 30):
+            return self.js({"ok": False, "erro": "muitas_buscas"}, 429, True)
+        try:
+            res, st = busca_vend_marcar(body.get("busca"), eu["usuario"], body.get("cards"))
+        except Exception:
+            res, st = {"ok": False, "erro": "registro"}, 500
+        return self.js(res, st, True)
 
     # O app servido pelo próprio agente: o navegador abre http://127.0.0.1:8765 e
     # conversa com o agente na mesma origem (sem bloqueio de rede local do Chrome).
@@ -24946,6 +26638,12 @@ def main():
         print(f"  Sessões: {hoje} hoje (montadas aqui, pausa de {SESS_PAUSA} s e rostos; {novas} fotos agrupadas agora)")
     except Exception as ex:
         print("  sessões: não carreguei (%s)" % str(ex)[:120])
+    try:
+        nm = sess_num_migrar()                       # 26/11: número curto nos arquivos dos dias anteriores (uma vez)
+        if nm:
+            print("  Sessões: %d arquivos de dias anteriores ganharam o número curto" % nm)
+    except Exception as ex:
+        print("  sessões: número curto dos dias anteriores não gravado (%s)" % type(ex).__name__)
     threading.Thread(target=sess_loop, daemon=True).start()
     threading.Thread(target=app_preaquecer, daemon=True).start()     # v97: app, fontes e Checkout em disco para abrir sem internet
     threading.Thread(target=app_revisar_loop, daemon=True).start()
@@ -24957,6 +26655,7 @@ def main():
     threading.Thread(target=rftp_loop, daemon=True).start()
     threading.Thread(target=nuvem_loop, daemon=True).start()
     threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
+    threading.Thread(target=selfie_dia_loop, daemon=True).start()     # v99.108: selfie sem código na galeria pública
     threading.Thread(target=escola_loop, daemon=True).start()
     threading.Thread(target=nuvem_videos_loop, daemon=True).start()
     if IMPRESSORA and not os.environ.get("ETERNA_IMPRESSORA_TESTE"):
@@ -24993,6 +26692,7 @@ def main():
     threading.Thread(target=metricas_loop, daemon=True).start()
     threading.Thread(target=painel_fotos_loop, daemon=True).start()   # 25/11: aba Fotografia e BI do Caio (Roverpix saiu)
     threading.Thread(target=pessoas_loop, daemon=True).start()
+    threading.Thread(target=auditoria_loop, daemon=True).start()
     # Tem de ficar AQUI, antes do ThreadingHTTPServer, e na própria thread do main (não levar para uma thread): lê o cadastro e
     # grava depois, sem uma trava única; com o servidor aberto, uma edição do cadastro entre as duas seria desfeita.
     try:
@@ -25015,7 +26715,7 @@ def main():
     _rok, _rmot = rec_estado()
     print("  Recorte local:     " + ("pronto (BiRefNet + a regra do que encosta na pessoa, num processo à parte; abre na partida)" if _rok else "indisponível: %s (rode instalar-recorte)" % _rmot))
     print("  Agenda:            feriados automáticos; jogos " + ("pela API-Football" if af_cfg() else "sem chave (Configurações › Preços e Checkout)"))
-    print("  Roverpix:          " + ("chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
+    print("  Roverpix:          " + ("desligado (encerrado em 25/11)" if ROVER_DESLIGADO else "chave configurada, sincronizando a cada 5 min" if rover_cfg() else "sem chave (configure no Eterna: Repositório)"))
     time.sleep(0.4)
     print("  insira o cartão ou mande pelo CTP. Ctrl+C para parar.\n")
     try:

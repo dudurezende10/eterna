@@ -3,7 +3,7 @@
 // brightness, Restaurar original zera, ajuste antigo sem h vale 0, o automático não usa Sombras, e a curva num canvas com a mesma
 // string do filtro (cinza escuro sobe, claro não muda, preto fica preto).
 const {chromium}=require('playwright');const entrarTeste=require('./_entrar');
-(async()=>{const U=process.env.U||'http://127.0.0.1:8823/index.html';const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});const falhas=[];const ok=(c,m)=>{if(!c)falhas.push(m);return !!c;};const J=JSON.stringify;
+(async()=>{const U=process.env.U||'http://127.0.0.1:8823/index.html';const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900},locale:'pt-BR'});const falhas=[];const ok=(c,m)=>{if(!c)falhas.push(m);return !!c;};const J=JSON.stringify;
   await p.goto(U);await p.waitForTimeout(600);const email=await entrarTeste.adminFicticio(p);ok(await entrarTeste(p,email),'entrou');
   await p.evaluate(()=>{ETERNA.state.view='ajustes';ETERNA.state.ajustes.card=null;ETERNA.state.ajustes.photo=null;ETERNA.render();});await p.waitForTimeout(200);
   await p.click('[data-act="aj-sess"]');await p.waitForTimeout(200);await p.click('[data-act="aj-open"]');await p.waitForTimeout(250);
@@ -11,7 +11,7 @@ const {chromium}=require('playwright');const entrarTeste=require('./_entrar');
   // 1. o controle aparece, entre Exposição e Contraste, de 0 a 100 em passos de 10, começando em 0
   const ctl=await p.evaluate(()=>{const ks=[...document.querySelectorAll('[data-act="aj-range"]')].map(r=>r.dataset.k);const r=document.querySelector('[data-act="aj-range"][data-k="h"]');
     return {ks,min:r&&r.min,max:r&&r.max,step:r&&r.step,val:r&&r.value,rot:r&&r.getAttribute('aria-label'),lab:(document.querySelector('[data-ajv="h"]')||{}).textContent};});
-  ok(ctl.ks.join('')==='bhcstz','ordem dos controles: '+J(ctl.ks));ok(ctl.min==='0'&&ctl.max==='100'&&ctl.step==='10'&&ctl.val==='0','faixa do controle: '+J(ctl));ok(ctl.rot==='Sombras'&&ctl.lab==='0%','rótulo e valor: '+J(ctl));
+  ok(ctl.ks.join('')==='bhrcstz','ordem dos controles: '+J(ctl.ks));ok(ctl.min==='0'&&ctl.max==='100'&&ctl.step==='10'&&ctl.val==='0','faixa do controle: '+J(ctl));ok(ctl.rot==='Sombras'&&ctl.lab==='0%','rótulo e valor: '+J(ctl));
   // 2. mexer grava h, marca "à mão" e o filtro leva url(#shNN) antes do brightness
   await p.click('[data-act="aj-step"][data-k="h"][data-dv="10"]');await p.click('[data-act="aj-step"][data-k="h"][data-dv="10"]');await p.waitForTimeout(100);
   let r=await p.evaluate(id=>{const T=ETERNA.ajT;const e=T.SIM.edits[id];const pv=document.getElementById('aj-pv');return {e:{...e},tag:T.ajTag(id),ed:T.isEdited(id),st:pv.getAttribute('style'),comp:getComputedStyle(pv,'::before').filter,lab:document.querySelector('[data-ajv="h"]').textContent,nota:document.getElementById('aj-st').textContent,guardado:(JSON.parse(localStorage.getItem('eterna.sim.v1')||'{}').edits||{})[id]};},id);
