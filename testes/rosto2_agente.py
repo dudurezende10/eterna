@@ -51,7 +51,7 @@ try:
     me_s, me_a = v(128, 1.0), v(512, 1.0)
 
     # chave: ligada por padrão, corte padrão, grava e relê na hora
-    ok(m.r2_cfg() == {"ligado": True, "corte": m.R2_CORTE, "por": None, "em": None}, "chave padrão: %s" % m.r2_cfg())
+    ok(m.r2_cfg() == {"ligado": True, "corte": m.R2_CORTE, "por": None, "em": None, "busca": False}, "chave padrão: %s" % m.r2_cfg())
     ok(m.r2_cobre(DIA) and not m.r2_cobre("2020-01-01"), "cobertura do dia")
 
     # a regra de sempre (só SFace) traz o estranho e perde o de óculos; a soma faz o contrário
@@ -75,6 +75,45 @@ try:
     db1.commit()
     dois = {i for i, _ in m.r2_dia_fotos(me_s, me_a, DIA)}
     ok("ag_" + P["perfil"] in dois and "ag_" + P["parente"] not in dois, "passo 2: perfil entra (soma 0,82 com a selfie), parente não: %s" % sorted(dois))
+
+    # v99.110: reforço do Procurar fotos do Posto. Só soma: o de óculos entra como certo, o estranho que o primeiro trouxe fica
+    HOJE = time.strftime("%Y-%m-%d")
+    db2.execute("update rosto2 set dia=?", (HOJE,)); db2.execute("update foto2 set dia=?", (HOJE,)); db2.commit()
+    db1.execute("update foto set dia=?", (HOJE,)); db1.execute("update rosto set dia=?", (HOJE,)); db1.commit()
+    m._r2["mat"].clear()
+    base = {"rosto": True, "fotos": [{"id": P["frente"], "sim": 0.60, "principal": True}, {"id": P["estranho"], "sim": 0.47, "principal": True},
+                                     {"id": P["perfil"], "sim": 0.40, "principal": True}], "limite": m.LIMITE}
+    antes_txt = json.dumps(base, sort_keys=True)
+    rf = m.r2_reforco(base, me_s, [(me_s, me_a)])
+    ids = {f["id"]: f["sim"] for f in rf["fotos"]}
+    ok(json.dumps(base, sort_keys=True) == antes_txt, "reforço não mexe na resposta original")
+    ok(ids.get(P["oculos"]) == m.LIMITE, "reforço: o de óculos entra como certo: %s" % ids)
+    ok(ids.get(P["frente"]) == 0.60 and ids.get(P["estranho"]) == 0.47, "reforço: nada do primeiro sai nem desce: %s" % ids)
+    ok(ids.get(P["perfil"]) == 0.40 and P["parente"] not in ids, "reforço: abaixo do corte da soma não sobe nem entra: %s" % ids)
+    ok(m.r2_reforco(base, me_s, [(v(128, 0.0, 1.0), me_a)]) is base, "reforço: quadro de outra pessoa não é usado")
+    ok(m.r2_reforco(base, me_s, [(me_s, "quebrado")]) is base, "reforço: falha devolve a resposta como chegou")
+    guarda = m.sess_pids_janela
+    m.sess_pids_janela = lambda desde: {P["frente"]}
+    ok(m.r2_reforco(base, me_s, [(me_s, me_a)], 30) is base, "reforço: foto fora da janela do Checkout não entra")
+    m.sess_pids_janela = lambda desde: {P["oculos"]}
+    ok(P["oculos"] in {f["id"] for f in m.r2_reforco(base, me_s, [(me_s, me_a)], 30)["fotos"]}, "reforço: foto dentro da janela entra")
+    m.sess_pids_janela = guarda
+    quase = v(128, 0.8, 0.6)
+    ok(m.r2_reforco(base, me_s, [(quase, me_a)], mesmo=0.9) is base and m.r2_reforco(base, me_s, [(quase, me_a)]) is not base, "foto do grupo: só o par do mesmo rosto (0,9)")
+    m.r2["pronto"] = True
+    ok(not m.r2_busca_ligada(), "Procurar fotos: desligado por padrão")
+    m.r2_cfg_grava(None, None, "teste", busca=True)
+    ok(m.r2_cfg()["busca"] is True and m.r2_busca_ligada() and m.r2_status()["busca"] is True, "Procurar fotos: liga pela chave própria")
+    m.r2_cfg_grava(False, None, "teste")
+    ok(not m.r2_busca_ligada(), "Procurar fotos: não vale com a chave principal desligada")
+    m.r2_cfg_grava(True, None, "teste", busca=False)
+    ok(not m.r2_busca_ligada() and m.r2_cfg()["ligado"], "Procurar fotos: desliga sozinho, a principal fica")
+    m.r2["pronto"] = False
+    for b_ in (db1, db2):
+        for t_ in (("foto", "rosto") if b_ is db1 else ("foto2", "rosto2")):
+            b_.execute("update %s set dia=?" % t_, (DIA,))
+        b_.commit()
+    m._r2["mat"].clear()
 
     # selfie_dia_atende: com o segundo pronto e o dia coberto usa os dois; chave desligada ou falha, volta a regra de sempre
     usados = []

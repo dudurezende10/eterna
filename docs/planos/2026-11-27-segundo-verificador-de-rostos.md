@@ -6,6 +6,8 @@ Situação em 27/11/2026: **no agente desde a v99.109.0** (itens 1, 2, 3 e 5 de 
 
 Na tela: **Configurações > Checkout > Segundo verificador de rostos na selfie do site** (só o Admin, desde a v99.109.1). Ligada com o dia ainda em leitura, a etiqueta mostra quantas fotos de hoje faltam; a selfie só passa a usar os dois quando o dia está coberto.
 
+Na mesma tela, **Usar também no Procurar fotos do Posto e na selfie e na foto do grupo do Checkout** (v99.110.0, desligada por padrão; só vale com a principal ligada e as fotos de hoje lidas). Nessas buscas o segundo verificador só soma fotos: nada do que o primeiro trouxe sai. Pela rota: `{"busca": true}`.
+
 Pela rota, com permissão de configuração: `POST /rostos2` com `{"ligado": false}` desliga na hora; `{"ligado": true}` religa; `{"corte": 0.92}` troca o corte (0,80 a 1,20). `GET /rostos2` mostra ligado, pronto, motivo, fotos lidas, o que falta de hoje e se hoje está coberto. Fica em `~/Eterna/ponto/rostos2.json`. Sem tocar em nada, `ETERNA_ROSTO2=0` no serviço desliga de vez.
 
 ## Por quê
