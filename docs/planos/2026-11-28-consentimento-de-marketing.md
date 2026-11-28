@@ -1,6 +1,6 @@
 # Consentimento de Marketing
 
-Pedido do Ronaldo em 28/11/2026. Situação: plano aprovado nos seis pontos abaixo; duas decisões abertas; nada construído.
+Pedido do Ronaldo em 28/11/2026. Situação: plano aprovado e decidido; nada construído. Construção e publicação fora do horário de operação.
 
 ## Para que serve
 
@@ -25,10 +25,11 @@ Os supervisores (Igor, Karen, Tatiana) às vezes recolhem, no papel, a autoriza�
 - **Dados do cliente.** Nome e um contato, para ligar o papel à pessoa e achar o registro num pedido de retirada.
 - **Arquivo sem marca d'água.** O download do marketing é o original.
 
-## Decisões abertas (do Ronaldo)
+## Decisões do Ronaldo (28/11)
 
-1. **Foto com outras pessoas que não assinaram** (família, grupo): bloquear, ou liberar com aviso e a pessoa extra destacada para o supervisor decidir. Recomendação: aviso.
-2. **Menores:** aceitar com assinatura do responsável e campo próprio, ou recusar menor. Recomendação: aceitar só com o responsável identificado.
+- **Foto com outras pessoas que não assinaram:** liberada, sem bloqueio. O supervisor já confere foto a foto.
+- **Menores:** sem regra própria na tela nesta primeira versão; fica como o fluxo desenhado. Quem assina pelo menor no papel é assunto do processo dos supervisores.
+- Começa simples, do jeito desenhado, e ajusta com o uso.
 
 ## Acesso (suposição a confirmar)
 
