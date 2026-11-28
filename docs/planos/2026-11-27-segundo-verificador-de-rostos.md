@@ -40,3 +40,27 @@ Soma das duas notas com corte **0,88**, configurável. Só na selfie do site nes
 4. Tela da selfie: 5 quadros em 2 s, vale o melhor; sem achar, pede para tirar os óculos.
 5. Chave de desligar sem publicar versão.
 6. Antes de publicar: à noite, recorte, IA e AuraFace juntos, medindo o tempo do recorte e da IA com e sem ele.
+
+## Entrada em produção (27/11, 23:28)
+
+- v99.109.0 no servidor do estádio às 23:28:19, sem erro no log. O agente baixou o modelo (260 MB, SHA-256 conferido) e abriu a sessão na placa: 1.164 MiB no processo do agente; o recorte segue com os 9.274 MiB dele.
+- Recorte com o segundo verificador relendo fotos sem parar, 10 recortes novos por rodada (`POST /recorte`, etapa do modelo na placa e total, em ms):
+
+| Rodada | Modelo na placa (birefnet) | Total do recorte |
+|---|---|---|
+| Ligado | 521 a 533 | 952 a 1.177 |
+| Desligado pela chave | 521 a 525 | 970 a 1.132 |
+| Ligado de novo | 521 a 537 | 973 a 1.176 |
+
+- A chave foi usada nesse teste (desligou e religou na hora, registrado no log com o usuário).
+- Releitura: 27/11 coberto às 23:50; os dias anteriores seguem a cerca de 200 fotos por minuto, cedendo a vez ao recorte.
+- Releitura dos dias 27, 26 e 25/11 concluída por volta de 00:04 de 28/11 (mais de 10 mil fotos).
+- Teste pelo caminho do cliente (site, nuvem, estádio), dia 25/11, às 00:05 de 28/11, com as duas selfies de webcam do Ronaldo:
+
+| Selfie | Resultado | Linha do log do estádio |
+|---|---|---|
+| Sem óculos | achou, 1 foto (a dele) | `selfie sem código (2 verificadores, corte 0.88): passo 1 1, passo 2 0, 1 sessões` |
+| De óculos | não achou | `selfie sem código (2 verificadores, corte 0.88): passo 1 0, passo 2 0, 0 sessões` |
+
+- A selfie de óculos soma 0,835 e fica abaixo do corte 0,88, como previsto na medição. Para ela entrar, o corte teria de ser 0,83 (estranho em cerca de 14% das buscas, contra 7,4% em 0,88 e 41% da regra antiga). Decisão do Ronaldo pendente; a troca é pela chave, sem publicar versão.
+- Em operação o segundo leitor espera até 3 s por foto enquanto há recorte na fila: se ele atrasar, o dia de hoje fica abaixo de 97% e a selfie usa a regra de sempre até ele alcançar.
