@@ -12014,15 +12014,396 @@ def selfie_dia_galeria(dia, achados):
     return m
 
 
+# ---------- segundo verificador de rostos (v99.109; plano docs/planos/2026-11-27-segundo-verificador-de-rostos.md) ----------
+# Ronaldo, 27/11: a selfie sem código tem de achar quem está de óculos ou com pouca luz, sem custo e sem mostrar foto de
+# outra pessoa. O SFace segue como está; ao lado dele o AuraFace (Apache 2.0, só o glintr100.onnx) lê os mesmos rostos e a
+# busca do dia vale pela SOMA das duas notas (medição de 27/11: estranho em 7,4% das buscas com soma >= 0,88, contra 41% do
+# SFace >= 0,45 sozinho, achando mais). Tudo à parte: banco próprio (rostos2.db), leitor próprio, só na placa de vídeo, cedendo
+# a vez ao recorte. Chave de desligar na hora (POST /rostos2), sem publicar versão: desligado, vale a regra de sempre.
+# O Checkout do posto não usa nada daqui.
+R2_MODELO = "glintr100.onnx"
+R2_URL = "https://huggingface.co/fal/AuraFace-v1/resolve/main/glintr100.onnx"
+R2_SHA = "a7933ea5330113b01c9b60351d8f4c33003f145d8470ac5f0e52ee2effe25c60"
+R2_TAM = 260694151
+R2_DB = os.path.join(HOME, "rostos2.db")
+R2_CFG = os.path.join(HOME, "ponto", "rostos2.json")
+R2_ENV = os.environ.get("ETERNA_ROSTO2") != "0"
+R2_CORTE = 0.88            # soma SFace + AuraFace para "é a mesma pessoa" no dia inteiro
+R2_CORTE_MIN, R2_CORTE_MAX = 0.80, 1.20
+R2_REF_CORTE = 1.10        # soma com a selfie para a foto servir de referência no passo 2
+R2_PASSO2_PISO = 0.80      # passo 2: a foto que bate com a referência também tem de somar isto com a própria selfie
+R2_COBERTURA = 0.97        # o dia só vale pelos dois verificadores com esta parte das fotos já lida pelo segundo
+R2_MEM_MB = 2048           # teto de memória do modelo na placa
+R2_CEDE_SEG = 3.0          # espera no máximo isto por foto enquanto há recorte na fila ou em andamento
+R2_OPERACAO = (8, 18)      # dias antigos só são relidos fora deste horário
+R2_MOLDE = ((38.2946, 51.6963), (73.5318, 51.5014), (56.0252, 71.7366), (41.5493, 92.3655), (70.7299, 92.2041))
+r2 = {"pronto": False, "motivo": "iniciando", "lidas": 0, "falta_hoje": None, "ultima": None, "ms": None}
+_r2 = {"s": None, "ent": None, "cfg": None, "cfg_m": None, "mat": {}, "sem_arquivo": set()}
+_r2_lock = threading.Lock()         # uma leitura por vez na placa
+_r2_cfg_lock = threading.Lock()
+
+
+def r2_cfg():
+    """{"ligado", "corte", "por", "em"} da chave (arquivo pequeno, relido só quando muda)."""
+    try:
+        mt = os.path.getmtime(R2_CFG)
+    except OSError:
+        mt = None
+    with _r2_cfg_lock:
+        if _r2["cfg"] is None or _r2["cfg_m"] != mt:
+            c = {}
+            if mt is not None:
+                try:
+                    with open(R2_CFG, encoding="utf8") as fh:
+                        c = json.load(fh)
+                except (OSError, ValueError):
+                    c = {}
+            c = c if isinstance(c, dict) else {}
+            try:
+                corte = max(R2_CORTE_MIN, min(float(c.get("corte") or R2_CORTE), R2_CORTE_MAX))
+            except (TypeError, ValueError):
+                corte = R2_CORTE
+            _r2["cfg"] = {"ligado": c.get("ligado") is not False, "corte": corte, "por": c.get("por"), "em": c.get("em")}
+            _r2["cfg_m"] = mt
+        return dict(_r2["cfg"])
+
+
+def r2_cfg_grava(ligado=None, corte=None, por=""):
+    c = r2_cfg()
+    if ligado is not None:
+        c["ligado"] = bool(ligado)
+    if corte is not None:
+        c["corte"] = max(R2_CORTE_MIN, min(float(corte), R2_CORTE_MAX))
+    c["por"], c["em"] = str(por or "")[:80], _iso()
+    os.makedirs(os.path.dirname(R2_CFG), exist_ok=True)
+    with open(R2_CFG + ".tmp", "w", encoding="utf8") as fh:
+        json.dump(c, fh)
+    os.replace(R2_CFG + ".tmp", R2_CFG)
+    with _r2_cfg_lock:
+        _r2["cfg"] = None
+    print("  2º verificador de rostos: %s (corte %.2f) por %s" % ("ligado" if c["ligado"] else "DESLIGADO", c["corte"], c["por"] or "?"))
+    return r2_cfg()
+
+
+def r2_ligado():
+    return R2_ENV and r2_cfg()["ligado"]
+
+
+def r2_db():
+    c = sqlite3.connect(R2_DB, timeout=30, check_same_thread=False)
+    c.execute("pragma journal_mode=wal")
+    c.execute("create table if not exists foto2 (pid text primary key, dia text, n int, lida real)")
+    c.execute("create table if not exists rosto2 (pid text, dia text, larg real, s blob, a blob)")
+    c.execute("create index if not exists rosto2_dia on rosto2(dia)")
+    c.execute("create index if not exists rosto2_pid on rosto2(pid)")
+    c.execute("create index if not exists foto2_dia on foto2(dia)")
+    return c
+
+
+def r2_modelo_ok():
+    """Caminho do modelo já conferido (tamanho e SHA-256); baixa se faltar."""
+    dst = os.path.join(MODELOS, R2_MODELO)
+    if os.path.exists(dst) and os.path.getsize(dst) == R2_TAM:
+        return dst
+    os.makedirs(MODELOS, exist_ok=True)
+    print("  2º verificador de rostos: baixando o modelo (260 MB)...")
+    h = hashlib.sha256()
+    rq = urllib.request.Request(R2_URL, headers={"User-Agent": "eterna-agente"})
+    with urllib.request.urlopen(rq, timeout=60) as resp_, open(dst + ".tmp", "wb") as fh:
+        while True:
+            b = resp_.read(1 << 20)
+            if not b:
+                break
+            h.update(b); fh.write(b)
+    if h.hexdigest() != R2_SHA:
+        os.remove(dst + ".tmp")
+        raise RuntimeError("modelo com SHA-256 diferente")
+    os.replace(dst + ".tmp", dst)
+    return dst
+
+
+def r2_sessao():
+    """Sessão do modelo na placa de vídeo. Sem placa, erro: nunca na CPU."""
+    if _r2["s"] is not None:
+        return _r2["s"]
+    import ctypes, glob as _glob
+    import onnxruntime as ort
+    base = os.path.dirname(os.path.dirname(ort.__file__))
+    for _ in (1, 2):                                    # bibliotecas da placa instaladas no venv (duas passadas: dependências)
+        for f in sorted(_glob.glob(base + "/nvidia/*/lib/*.so*")):
+            try:
+                ctypes.CDLL(f, mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                pass
+    op = ort.SessionOptions()
+    op.intra_op_num_threads = 1; op.inter_op_num_threads = 1; op.log_severity_level = 3
+    s = ort.InferenceSession(r2_modelo_ok(), sess_options=op, providers=[
+        ("CUDAExecutionProvider", {"gpu_mem_limit": R2_MEM_MB << 20, "arena_extend_strategy": "kSameAsRequested",
+                                   "cudnn_conv_algo_search": "HEURISTIC"})])
+    if s.get_providers()[0] != "CUDAExecutionProvider":
+        raise RuntimeError("sem placa de vídeo")
+    _r2["s"], _r2["ent"] = s, s.get_inputs()[0].name
+    return s
+
+
+def r2_inferir(lote):
+    """lote n x 3 x 112 x 112 -> n x 512 (os testes trocam esta função)."""
+    with _r2_lock:
+        s = r2_sessao()
+        return s.run(None, {_r2["ent"]: lote})[0]
+
+
+def r2_vetores(img, det, rec, minimo=ROSTO_MIN):
+    """img BGR -> [(largura, vetor SFace 128, vetor AuraFace 512)] do maior para o menor rosto (mesma redução do ler_rostos)."""
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    h, w = img.shape[:2]
+    k = min(1.0, LADO / max(h, w))
+    if k < 1:
+        img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
+    det.setInputSize((img.shape[1], img.shape[0]))
+    _, f = det.detect(img)
+    f = [r for r in (f if f is not None else []) if r[2] >= minimo]
+    if not f:
+        return []
+    molde = np.array(R2_MOLDE, dtype="float32")
+    out, lote = [], []
+    for r in f:
+        e = rec.feature(rec.alignCrop(img, r)).flatten().astype("float32")
+        M, _ = cv2.estimateAffinePartial2D(r[4:14].reshape(5, 2).astype("float32"), molde, method=cv2.LMEDS)
+        if M is None:
+            continue
+        c = cv2.cvtColor(cv2.warpAffine(img, M, (112, 112)), cv2.COLOR_BGR2RGB)
+        lote.append((c.astype("float32") - 127.5) / 127.5)
+        out.append([float(r[2]), e / (np.linalg.norm(e) or 1)])
+    if not out:
+        return []
+    v = np.asarray(r2_inferir(np.stack(lote).transpose(0, 3, 1, 2)), dtype="float32")
+    v = v / np.maximum(np.linalg.norm(v, axis=1, keepdims=True), 1e-9)
+    return sorted([(o[0], o[1], v[i]) for i, o in enumerate(out)], key=lambda x: -x[0])
+
+
+def r2_grava(db, pid, dia, fs):
+    db.execute("delete from rosto2 where pid=?", (pid,))
+    db.executemany("insert into rosto2 values (?,?,?,?,?)", [(pid, dia, f[0], f[1].astype("float32").tobytes(), f[2].astype("float32").tobytes()) for f in fs])
+    db.execute("insert or replace into foto2 values (?,?,?,?)", (pid, dia, len(fs), time.time()))
+    db.commit()
+    with _r2_cfg_lock:
+        _r2["mat"].pop(dia, None)
+
+
+def r2_faltam(db1, db2, dia):
+    """(pids lidos pelo SFace que o segundo ainda não leu, quantos o SFace leu). Tira do segundo o que saiu do primeiro (LGPD)."""
+    um = {r[0] for r in db1.execute("select pid from foto where dia=?", (dia,))}
+    dois = {r[0] for r in db2.execute("select pid from foto2 where dia=?", (dia,))}
+    saiu = dois - um
+    if saiu:
+        for p in saiu:
+            db2.execute("delete from rosto2 where pid=?", (p,)); db2.execute("delete from foto2 where pid=?", (p,))
+        db2.commit()
+        with _r2_cfg_lock:
+            _r2["mat"].pop(dia, None)
+    return um - dois, len(um)
+
+
+def r2_cobre(dia):
+    """O dia já foi lido pelo segundo verificador (pelo menos R2_COBERTURA das fotos lidas pelo primeiro)?"""
+    try:
+        db1, db2 = rostos_db(), r2_db()
+        n1 = db1.execute("select count(*) from foto where dia=?", (dia,)).fetchone()[0]
+        n2 = db2.execute("select count(*) from foto2 where dia=?", (dia,)).fetchone()[0]
+        db1.close(); db2.close()
+    except sqlite3.Error:
+        return False
+    return n1 > 0 and n2 >= R2_COBERTURA * n1
+
+
+def r2_matriz(dia):
+    """(S n x 128, A n x 512, pids, larguras, {pid: maior largura}) do dia; fica em memória até a próxima gravação no dia."""
+    np = _cv["np"]
+    with _r2_cfg_lock:
+        m = _r2["mat"].get(dia)
+    if m is not None:
+        return m
+    db = r2_db()
+    rows = db.execute("select pid, larg, s, a from rosto2 where dia=?", (dia,)).fetchall()
+    db.close()
+    S = np.frombuffer(b"".join(r[2] for r in rows), dtype="float32").reshape(-1, 128) if rows else np.zeros((0, 128), "float32")
+    A = np.frombuffer(b"".join(r[3] for r in rows), dtype="float32").reshape(-1, 512) if rows else np.zeros((0, 512), "float32")
+    L = np.array([float(r[1] or 0) for r in rows], "float32")
+    mx = {}
+    for r in rows:
+        mx[r[0]] = max(mx.get(r[0], 0.0), float(r[1] or 0))
+    m = (S, A, [r[0] for r in rows], L, mx)
+    hoje = time.strftime("%Y-%m-%d")
+    with _r2_cfg_lock:
+        for d in [d for d in _r2["mat"] if d != hoje]:      # em memória só hoje e o último dia pedido
+            _r2["mat"].pop(d, None)
+        _r2["mat"][dia] = m
+    return m
+
+
+def r2_buscar(vs, va, dia, corte):
+    """Fotos do dia em que algum rosto soma >= corte com (vs, va): [{"id", "sim" (soma), "principal", "vs", "va"}], da maior soma."""
+    np = _cv["np"]
+    S, A, ps, L, mx = r2_matriz(dia)
+    melhor = {}
+    if len(ps):
+        soma = S @ vs + A @ va
+        for i in np.nonzero(soma >= corte)[0]:
+            pid = ps[i]; s_ = float(soma[i])
+            if s_ > melhor.get(pid, (0, 0, 0))[0]:
+                melhor[pid] = (s_, float(L[i]), int(i))
+    return sorted(({"id": k, "sim": round(v[0], 3), "principal": bool(v[1] >= ROSTO_PRINCIPAL * (mx.get(k) or 0)),
+                    "vs": S[v[2]], "va": A[v[2]]} for k, v in melhor.items()), key=lambda x: -x["sim"])
+
+
+def r2_dia_fotos(vs, va, dia):
+    """Como selfie_dia_fotos, pela soma dos dois verificadores. -> [(id do manifesto, sessão)]"""
+    np = _cv["np"]
+    corte = r2_cfg()["corte"]
+    dono, fora, quem = selfie_dia_sessoes(dia)
+    ok = lambda f: f.get("principal") and f["id"] not in fora
+    p1 = [f for f in r2_buscar(vs, va, dia, corte) if ok(f)]
+    achou = {f["id"]: f["sim"] for f in p1}
+    n2 = 0
+    refs = selfie_dia_referencias([dict(f, sim=f["sim"] * SELFIE_REF_CORTE / R2_REF_CORTE) for f in p1], dono, quem)
+    for ref in refs:
+        for f in r2_buscar(ref["vs"], ref["va"], dia, corte):
+            if f["id"] in achou or not ok(f):
+                continue
+            com_selfie = float(np.dot(f["vs"], vs) + np.dot(f["va"], va))
+            if com_selfie < R2_PASSO2_PISO:                 # bate com a referência mas não com a selfie: não entra
+                continue
+            achou[f["id"]] = com_selfie
+            n2 += 1
+    ids = sorted(achou, key=lambda k: -achou[k])[:SELFIE_DIA_MAX]
+    out = [("ag_" + k, dono.get(k, "")) for k in ids]
+    print("  selfie sem código (2 verificadores, corte %.2f): passo 1 %d, passo 2 %d, %d sessões" % (corte, len(p1), n2, len({c for _, c in out if c})))
+    return out
+
+
+def r2_selfie(b64):
+    """-> ("ok", vetor SFace, vetor AuraFace) | ("varias" | "sem_rosto", None, None). Mesmas regras da selfie_dia_vetor."""
+    np = _cv["np"]; cv2 = _cv["cv2"]
+    raw = base64.b64decode(str(b64 or "").split(",", 1)[-1])
+    if not raw or not img_aceita(raw):
+        return "sem_rosto", None, None
+    img = cv2.imdecode(np.frombuffer(raw, "uint8"), cv2.IMREAD_COLOR)
+    raw = None
+    if img is None:
+        return "sem_rosto", None, None
+    if not _selfie_leitor["m"]:
+        _selfie_leitor["m"] = leitor()
+    fs = r2_vetores(img, *_selfie_leitor["m"], minimo=60)
+    img = None
+    if varias_pessoas(fs):
+        return "varias", None, None
+    if not fs:
+        return "sem_rosto", None, None
+    return "ok", fs[0][1], fs[0][2]
+
+
+def r2_status():
+    c = r2_cfg()
+    return {"ligado": bool(R2_ENV and c["ligado"]), "chave": c["ligado"], "corte": c["corte"], "por": c.get("por"), "em": c.get("em"),
+            "pronto": r2["pronto"], "motivo": r2["motivo"], "lidas": r2["lidas"], "falta_hoje": r2["falta_hoje"],
+            "ultima": r2["ultima"], "ms": r2["ms"], "hoje_coberto": r2_cobre(time.strftime("%Y-%m-%d")) if r2["pronto"] else False}
+
+
+def r2_passada(det, rec, db1, db2, limite=300):
+    """Lê até `limite` fotos que faltam: hoje primeiro; dias antigos só fora do horário de operação. -> quantas leu."""
+    cv2 = _cv["cv2"]
+    agora = time.time()
+    dias = [time.strftime("%Y-%m-%d", time.localtime(agora - i * 86400)) for i in range(RETENCAO_DIAS)]
+    if R2_OPERACAO[0] <= time.localtime(agora).tm_hour < R2_OPERACAO[1]:
+        dias = dias[:1]
+    n = 0
+    for k, dia in enumerate(dias):
+        faltam, _tot = r2_faltam(db1, db2, dia)
+        if k == 0:
+            r2["falta_hoje"] = len(faltam)
+        for pid in sorted(faltam - _r2["sem_arquivo"], reverse=True):
+            if n >= limite or not r2_ligado():
+                return n
+            t0 = time.time()
+            while rec_jobs and time.time() - t0 < R2_CEDE_SEG:        # o recorte tem a vez na placa
+                time.sleep(0.1)
+            path = (lib.get(pid) or {}).get("file")
+            if not path or not os.path.exists(path):               # sem o arquivo a foto fica por ler: o dia não conta como coberto
+                _r2["sem_arquivo"].add(pid)
+                continue
+            img = cv2.imread(path, cv2.IMREAD_REDUCED_COLOR_2)
+            t1 = time.time()
+            fs = r2_vetores(img, det, rec) if img is not None else []
+            img = None
+            r2_grava(db2, pid, dia, fs)
+            r2["lidas"] += 1; r2["ultima"] = _iso(); r2["ms"] = round((time.time() - t1) * 1000, 1)
+            if k == 0:
+                r2["falta_hoje"] = max(0, (r2["falta_hoje"] or 1) - 1)
+            n += 1
+            if len(dias) == 1:
+                time.sleep(0.05)                                   # em operação, devagar: os leitores de sempre têm a vez
+        if n:
+            return n                       # recomeça por hoje antes de seguir nos dias antigos
+    if len(dias) == RETENCAO_DIAS:         # fora da operação: apaga o que passou do prazo
+        db2.execute("delete from rosto2 where dia < ?", (dias[-1],)); db2.execute("delete from foto2 where dia < ?", (dias[-1],)); db2.commit()
+    return n
+
+
+def r2_loop():
+    """Leitor do segundo verificador. Qualquer erro só desliga o segundo: a busca volta sozinha para a regra de sempre."""
+    if not R2_ENV:
+        r2["motivo"] = "desligado na instalação"
+        return
+    det = rec = db1 = db2 = None
+    while True:
+        try:
+            if not rostos["ligado"]:
+                r2["pronto"], r2["motivo"] = False, "aguardando a leitura de rostos"
+                time.sleep(10); continue
+            if not r2_cfg()["ligado"]:
+                r2["pronto"], r2["motivo"] = False, "desligado pela chave"
+                time.sleep(3); continue
+            r2_sessao()
+            if det is None:
+                det, rec = leitor(); db1, db2 = rostos_db(), r2_db()
+            r2["pronto"], r2["motivo"] = True, None
+            if not r2_passada(det, rec, db1, db2):
+                time.sleep(2)
+        except Exception as ex:
+            r2["pronto"], r2["motivo"] = False, ("%s: %s" % (type(ex).__name__, str(ex)[:120]))
+            print("  2º verificador de rostos: parado (%s)" % r2["motivo"])
+            _r2["s"] = None; det = None
+            time.sleep(60)
+
+
 def selfie_dia_atende(seg, p):
     """Um pedido da nuvem -> {"estado", "token"?}. A selfie sai da memória logo depois de lida."""
     dia = str(p.get("dia") or "")
     if not _re_dia.match(dia) or not rostos["ligado"]:
         return {"estado": "erro"}
-    est, me = selfie_dia_vetor(p.pop("imagem", None))
+    b64 = p.pop("imagem", None)
+    est = me = me2 = None
+    if r2_ligado() and r2["pronto"] and r2_cobre(dia):        # v99.109: dois verificadores; qualquer falha volta à regra de sempre
+        try:
+            est, me, me2 = r2_selfie(b64)
+        except Exception as ex:
+            print("  selfie sem código: 2º verificador falhou (%s); segue só com o primeiro" % type(ex).__name__)
+            est = me = me2 = None
+    if est is None:
+        est, me = selfie_dia_vetor(b64)
+    b64 = None
     if est != "ok":
         return {"estado": est}
-    m = selfie_dia_galeria(dia, selfie_dia_fotos(me, dia))
+    fotos = None
+    if me2 is not None:
+        try:
+            fotos = r2_dia_fotos(me, me2, dia)
+        except Exception as ex:
+            print("  selfie sem código: busca pelos 2 verificadores falhou (%s); segue só com o primeiro" % type(ex).__name__)
+    if fotos is None:
+        fotos = selfie_dia_fotos(me, dia)
+    m = selfie_dia_galeria(dia, fotos)
     if not m:
         return {"estado": "nao"}
     nuvem_publica_manifesto(seg, m)            # a nuvem precisa da galeria antes de dar o acesso ao cliente
@@ -22598,6 +22979,7 @@ ROTAS = (
     ("GET", "/galerias/vendas", "sessao", ("galerias.r",)), ("GET", "/galerias/status", "sessao", ("galerias.r",)),
     ("GET", "/escolas", "sessao", ("estatisticas.r",)),          # 17/11: painel Escolas (funil do voucher)
     ("POST", "/galerias/encerrar", "sessao", ("galerias.d",)),
+    ("GET", "/rostos2", "sessao", ("configuracao.r",)), ("POST", "/rostos2", "sessao", ("configuracao.u",)),   # v99.109: chave do 2º verificador
     ("POST", "/lgpd/excluir", "sessao", ("galerias.d",)),
     ("POST", "/rostos/medir", "sessao", ("qualidade.r",)),
     # 16/11: Treino da IA (Curadoria). Ler: Qualidade e IA em Ver; marcar: em Alterar (a rota confere origem, limite e corpo);
@@ -25816,6 +26198,8 @@ class H(BaseHTTPRequestHandler):
             return self.gal_get(u, q)
         if u.path == "/escolas":
             return self.js(escola_painel())
+        if u.path == "/rostos2":
+            return self.js(dict({"ok": True}, **r2_status()))
         if u.path in ("/auth/eu", "/auth/senhas"):
             return self.auth_get()
         if u.path in ("/postos", "/postos/eu", "/postos/aceitar"):
@@ -26239,6 +26623,15 @@ class H(BaseHTTPRequestHandler):
             return self.leitores_post(u.path)
         if u.path == "/postos/aceitar":
             return self.postos_aceitar_post()
+        if u.path == "/rostos2":                       # v99.109: liga e desliga o 2º verificador na hora (e o corte)
+            body, err = self.corpo(1024)
+            if err or not isinstance(body, dict):
+                return self.js({"error": "corpo inválido"}, err or 400)
+            lig, corte = body.get("ligado"), body.get("corte")
+            if (lig is not None and not isinstance(lig, bool)) or (corte is not None and (isinstance(corte, bool) or not isinstance(corte, (int, float)))):
+                return self.js({"error": "valor inválido"}, 400)
+            r2_cfg_grava(lig, corte, (eu or {}).get("usuario") or "")
+            return self.js(dict({"ok": True}, **r2_status()))
         if u.path == "/ponto/descancelar":
             if not self.origem_local():
                 return self.js({"error": "origem não autorizada"}, 403)
@@ -26656,6 +27049,7 @@ def main():
     threading.Thread(target=nuvem_loop, daemon=True).start()
     threading.Thread(target=nuvem_galerias_loop, daemon=True).start()
     threading.Thread(target=selfie_dia_loop, daemon=True).start()     # v99.108: selfie sem código na galeria pública
+    threading.Thread(target=r2_loop, daemon=True).start()             # v99.109: segundo verificador de rostos (AuraFace)
     threading.Thread(target=escola_loop, daemon=True).start()
     threading.Thread(target=nuvem_videos_loop, daemon=True).start()
     if IMPRESSORA and not os.environ.get("ETERNA_IMPRESSORA_TESTE"):

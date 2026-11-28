@@ -1567,7 +1567,7 @@ def selfie_pedido(corpo, ip):
         jpeg = False
     if not jpeg:
         return resp({"error": "imagem inválida"}, 400)
-    if not contar("SFI#" + ip_hash(ip), 3600, 6):
+    if not contar("SFI#" + ip_hash(ip), 3600, 30):     # 27/11 (Ronaldo): 6 travava a família, o hotel e o teste da equipe na mesma rede
         return resp({"motivo": "bloqueado", "ate": iso(time.time() // 3600 * 3600 + 3600)}, 429)
     if not selfie_estadio_ligado():
         return resp({"ok": False, "motivo": "indisponivel"}, 503)

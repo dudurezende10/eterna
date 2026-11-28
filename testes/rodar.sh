@@ -66,7 +66,7 @@ for t in testes/sessao_numero_agente.py; do
   conta "$(basename $t)" $RC "$OUT"
 done
 # 27/11: selfie sem código na galeria pública (linha própria, pelo mesmo motivo)
-for t in testes/selfie_dia_agente.py; do
+for t in testes/selfie_dia_agente.py testes/rosto2_agente.py; do
   H=$(mktemp -d); OUT=$(HOME=$H USERPROFILE=$H python3 -I "$t" agente/eterna-agente.py 2>&1); RC=$?; rm -rf "$H"
   conta "$(basename $t)" $RC "$OUT"
 done
