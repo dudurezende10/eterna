@@ -41,7 +41,7 @@ esperando → buscando → achou | nao | varias | sem_rosto | erro. Sem resposta
 
 ## Limites
 
-6 pedidos por IP por hora, 3 mil por dia no total, 40 consultas por minuto por IP, selfie até 350 mil caracteres (o celular reduz para 640 px), 400 fotos por galeria.
+30 pedidos por IP por hora (eram 6 até 27/11: travava quem divide a rede), 3 mil por dia no total, 40 consultas por minuto por IP, selfie até 350 mil caracteres (o celular reduz para 640 px), 400 fotos por galeria.
 
 ## Dependência
 
